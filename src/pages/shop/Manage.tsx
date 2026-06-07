@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee } from '../../../shared/types';
 
@@ -20,6 +20,7 @@ const ShopManage: React.FC = () => {
     specialty: '', 
     avatar: '' 
   });
+  const [copied, setCopied] = useState(false);
 
   if (!currentShop) {
     navigate('/shop/login');
@@ -72,6 +73,14 @@ const ShopManage: React.FC = () => {
     navigate('/shop');
   };
 
+  const copyShopLink = () => {
+    const shopUrl = `${window.location.origin}/customer/shop/${currentShop.id}`;
+    navigator.clipboard.writeText(shopUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm sticky top-0 z-50">
@@ -95,6 +104,62 @@ const ShopManage: React.FC = () => {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* 店铺专属入口 */}
+        <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl shadow-sm p-6 text-white">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Link2 size={20} />
+            店铺专属入口
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 链接 */}
+            <div>
+              <p className="text-sm opacity-90 mb-2">分享链接给顾客</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={`${window.location.origin}/customer/shop/${currentShop.id}`}
+                  className="flex-1 px-4 py-3 bg-white/20 rounded-xl text-white placeholder-white/60 border border-white/30 outline-none"
+                />
+                <button
+                  onClick={copyShopLink}
+                  className="flex items-center gap-2 bg-white text-orange-600 px-4 py-3 rounded-xl font-medium hover:bg-orange-50 transition-colors"
+                >
+                  {copied ? <Check size={18} /> : <Copy size={18} />}
+                  {copied ? '已复制' : '复制'}
+                </button>
+              </div>
+            </div>
+            {/* 二维码 */}
+            <div className="flex flex-col items-center">
+              <p className="text-sm opacity-90 mb-2">扫码预约</p>
+              <div className="bg-white p-4 rounded-xl">
+                {/* 使用二维码API生成店铺专属二维码 */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+                    `${window.location.origin}/customer/shop/${currentShop.id}`
+                  )}`}
+                  alt="店铺二维码"
+                  className="w-36 h-36"
+                />
+              </div>
+            </div>
+          </div>
+          {/* 快捷操作 */}
+          <div className="mt-6 pt-6 border-t border-white/20">
+            <p className="text-sm opacity-90 mb-3">快捷操作</p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => navigate('/shop/products')}
+                className="flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl font-medium transition-colors"
+              >
+                <Package size={16} />
+                商品管理
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* 基本信息 */}
         <div className="bg-white rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">

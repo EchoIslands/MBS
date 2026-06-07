@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Phone } from 'lucide-react';
 import { loginAsCustomer } from '../../store';
 
+const DEFAULT_SHOP_ID = "shop1";
+
 const CustomerLogin: React.FC = () => {
   const [phone, setPhone] = useState('13900000001');
   const [error, setError] = useState('');
@@ -14,7 +16,7 @@ const CustomerLogin: React.FC = () => {
     
     const customer = loginAsCustomer(phone);
     if (customer) {
-      navigate('/customer');
+      navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
     } else {
       setError('手机号不存在，试用账号：13900000001');
     }

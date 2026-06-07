@@ -67,12 +67,31 @@ const Booking: React.FC = () => {
     }
   };
 
+  // 检查技师在特定时间段是否已被预约
+  const isBarberBusy = (barberId: string, date: string, time: string): boolean => {
+    const selectedDateTime = new Date(`${date}T${time}`);
+    
+    return mockBookings.some(booking => {
+      if (booking.barberId !== barberId) return false;
+      if (booking.status === 'cancelled') return false;
+      
+      const bookingDateTime = new Date(booking.scheduledTime);
+      const bookingDate = bookingDateTime.toISOString().split('T')[0];
+      const bookingTime = bookingDateTime.toTimeString().slice(0, 5);
+      
+      return bookingDate === date && bookingTime === time;
+    });
+  };
+
   // 计算技师在特定时间段的可用性和预计等待时间
   const getBarberAvailability = (barber: Employee, date: string, time: string): { isAvailable: boolean, waitTime: number } => {
-    // 简单模拟：根据技师评分和随机值生成等待时间
-    // 实际上应该检查技师在该时间段的预约情况
+    // 检查是否已被预约
+    if (isBarberBusy(barber.id, date, time)) {
+      return { isAvailable: false, waitTime: -1 };
+    }
+    
+    // 根据技师评分和随机值生成等待时间
     const baseWaitTime = Math.floor(Math.random() * 30); // 0-30分钟基础等待
-    // 评分越高，等待时间越短
     const ratingBonus = (barber.rating - 4) * 5; 
     const waitTime = Math.max(0, baseWaitTime - ratingBonus);
     
@@ -249,19 +268,30 @@ const Booking: React.FC = () => {
             选择时间
           </h3>
           <div className="grid grid-cols-4 gap-3">
-            {timeSlots.map((time) => (
-              <button
-                key={time}
-                onClick={() => setSelectedTime(time)}
-                className={`py-3 rounded-xl text-center transition-all ${
-                  selectedTime === time
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {time}
-              </button>
-            ))}
+            {timeSlots.map((time) => {
+              // 检查该时间是否对所有技师都不可用
+              const allBarbersBusy = shop?.employees
+                .filter(e => e.isActive)
+                .every(e => isBarberBusy(e.id, selectedDate, time)) || false;
+              
+              return (
+                <button
+                  key={time}
+                  onClick={() => !allBarbersBusy && setSelectedTime(time)}
+                  disabled={allBarbersBusy}
+                  className={`py-3 rounded-xl text-center transition-all ${
+                    selectedTime === time
+                      ? 'bg-blue-500 text-white'
+                      : allBarbersBusy
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed line-through'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {time}
+                  {allBarbersBusy && <span className="text-xs block opacity-75">已满</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -329,14 +359,16 @@ const Booking: React.FC = () => {
             {shop?.employees
               ?.filter(emp => emp.isActive)
               .map((employee) => {
-                const { waitTime } = getBarberAvailability(employee, selectedDate, selectedTime);
+                const { isAvailable, waitTime } = getBarberAvailability(employee, selectedDate, selectedTime);
                 return (
                   <label
                     key={employee.id}
                     className={`flex items-center p-5 border-3 rounded-2xl cursor-pointer transition-all ${
                       selectionMode === 'specific' && selectedBarberId === employee.id
                         ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
+                        : isAvailable
+                          ? 'border-gray-200 hover:border-blue-300'
+                          : 'border-gray-100 bg-gray-50 opacity-60'
                     }`}
                   >
                     <input
@@ -345,9 +377,12 @@ const Booking: React.FC = () => {
                       value={employee.id}
                       checked={selectionMode === 'specific' && selectedBarberId === employee.id}
                       onChange={() => {
-                        setSelectionMode('specific');
-                        setSelectedBarberId(employee.id);
+                        if (isAvailable) {
+                          setSelectionMode('specific');
+                          setSelectedBarberId(employee.id);
+                        }
                       }}
+                      disabled={!isAvailable}
                       className="mr-4"
                     />
                     <div className="flex items-center gap-4 flex-1">
@@ -364,6 +399,11 @@ const Booking: React.FC = () => {
                               {employee.title}
                             </span>
                           )}
+                          {!isAvailable && (
+                            <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">
+                              该时段已约
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
                           <div className="flex items-center gap-1">
@@ -376,8 +416,10 @@ const Booking: React.FC = () => {
                               <span>{employee.specialty}</span>
                             </>
                           )}
-                          <span className="ml-auto text-green-600 font-bold text-base">
-                            等待 {waitTime} 分钟
+                          <span className={`ml-auto font-bold text-base ${
+                            isAvailable ? 'text-green-600' : 'text-red-500'
+                          }`}>
+                            {isAvailable ? `等待 ${waitTime} 分钟` : '已约满'}
                           </span>
                         </div>
                       </div>

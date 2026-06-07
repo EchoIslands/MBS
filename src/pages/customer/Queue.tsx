@@ -8,6 +8,7 @@ import {
   Music,
   CheckCircle,
   User,
+  Calendar,
 } from 'lucide-react';
 import { Booking, Queue as QueueType } from '../../../shared/types';
 import { bookingApi, queueApi, shopApi } from '../../api';
@@ -56,6 +57,40 @@ const Queue: React.FC = () => {
     alert(`播放音效: ${soundOptions.find((s) => s.id === sound)?.name}`);
   };
 
+  // 计算预约时间距离现在的时间差（以分钟为单位）
+  const getTimeUntilAppointment = (scheduledTime: Date): { totalMinutes: number; days: number; hours: number; minutes: number; isToday: boolean } => {
+    const now = new Date();
+    const scheduled = new Date(scheduledTime);
+    
+    const diffMs = scheduled.getTime() - now.getTime();
+    const totalMinutes = Math.floor(diffMs / 60000);
+    
+    const isToday = scheduled.toDateString() === now.toDateString();
+    
+    // 计算天数、小时、分钟
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const remainingAfterDays = totalMinutes % (24 * 60);
+    const hours = Math.floor(remainingAfterDays / 60);
+    const minutes = remainingAfterDays % 60;
+    
+    return { totalMinutes, days, hours, minutes, isToday };
+  };
+
+  // 格式化时间显示
+  const formatTimeUntil = (timeInfo: { days: number; hours: number; minutes: number; isToday: boolean }): string => {
+    if (timeInfo.isToday) {
+      if (timeInfo.hours > 0 || timeInfo.minutes > 0) {
+        return timeInfo.hours > 0 ? `${timeInfo.hours}小时${timeInfo.minutes}分钟` : `${timeInfo.minutes}分钟`;
+      }
+      return '即将开始';
+    } else {
+      if (timeInfo.days > 0) {
+        return `${timeInfo.days}天${timeInfo.hours}小时${timeInfo.minutes}分钟`;
+      }
+      return `${timeInfo.hours}小时${timeInfo.minutes}分钟`;
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
@@ -67,6 +102,9 @@ const Queue: React.FC = () => {
   const position = booking?.queueNumber || 1;
   const waitTime = queue?.estimatedWaitTime || 0;
   const shouldLeaveNow = waitTime <= walkTime + 5;
+
+  // 获取预约时间信息
+  const appointmentTimeInfo = booking ? getTimeUntilAppointment(booking.scheduledTime) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100">
@@ -91,33 +129,62 @@ const Queue: React.FC = () => {
             <div className="text-gray-500">当前排队号</div>
           </div>
 
-          <div className="bg-blue-50 rounded-2xl p-6 mb-6">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Clock size={24} className="text-blue-600" />
-              <div className="text-3xl font-bold text-blue-700">
-                约 {waitTime} 分钟
+          {/* 预约时间倒计时 */}
+          {appointmentTimeInfo && (
+            <div className="bg-blue-50 rounded-2xl p-6 mb-6">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                {appointmentTimeInfo.isToday ? (
+                  <Clock size={24} className="text-blue-600" />
+                ) : (
+                  <Calendar size={24} className="text-purple-600" />
+                )}
+                <div className="text-3xl font-bold text-blue-700">
+                  {formatTimeUntil(appointmentTimeInfo)}
+                </div>
               </div>
-            </div>
-            <div className="text-gray-600">预计等待时间</div>
-          </div>
-
-          {/* 进度条 */}
-          <div className="mb-6">
-            <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000"
-                style={{ width: `${Math.max(0, 100 - (position / 10) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          {shouldLeaveNow && (
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-6 animate-pulse">
-              <div className="flex items-center justify-center gap-2 text-orange-700 font-bold">
-                <MapPin size={20} />
-                该出发了！步行需要 {walkTime} 分钟
+              <div className="text-gray-600">
+                {appointmentTimeInfo.isToday ? '距离预约时间' : '距离预约时间（已自动计算隔天时间）'}
               </div>
+              {!appointmentTimeInfo.isToday && appointmentTimeInfo.days > 0 && (
+                <div className="text-sm text-purple-600 mt-2 font-medium">
+                  您的预约在 {appointmentTimeInfo.days} 天后
+                </div>
+              )}
             </div>
+          )}
+
+          {/* 仅当天预约显示排队信息 */}
+          {appointmentTimeInfo && appointmentTimeInfo.isToday && (
+            <>
+              <div className="bg-orange-50 rounded-2xl p-4 mb-6">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <Clock size={24} className="text-orange-600" />
+                  <div className="text-2xl font-bold text-orange-700">
+                    约 {waitTime} 分钟
+                  </div>
+                </div>
+                <div className="text-gray-600">当前等待时间</div>
+              </div>
+
+              {/* 进度条 */}
+              <div className="mb-6">
+                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.max(0, 100 - (position / 10) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {shouldLeaveNow && (
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-6 animate-pulse">
+                  <div className="flex items-center justify-center gap-2 text-orange-700 font-bold">
+                    <MapPin size={20} />
+                    该出发了！步行需要 {walkTime} 分钟
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -228,11 +295,27 @@ const Queue: React.FC = () => {
                 <span>服务项目</span>
                 <span className="font-medium text-gray-800">{booking.serviceName}</span>
               </div>
-              <div className="flex justify-between">
-                <span>预约时间</span>
-                <span className="font-medium text-gray-800">
-                  {new Date(booking.scheduledTime).toLocaleString()}
+              <div className="flex justify-between items-start">
+                <span className="flex items-center gap-2">
+                  <Calendar size={16} className="text-blue-500" />
+                  预约时间
                 </span>
+                <div className="text-right">
+                  <div className="font-medium text-gray-800">
+                    {new Date(booking.scheduledTime).toLocaleDateString('zh-CN', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric',
+                      weekday: 'long'
+                    })}
+                  </div>
+                  <div className="text-blue-600 font-bold">
+                    {new Date(booking.scheduledTime).toLocaleTimeString('zh-CN', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
+                </div>
               </div>
               {booking.barberName && (
                 <div className="flex justify-between">
@@ -246,6 +329,14 @@ const Queue: React.FC = () => {
                   {booking.status === 'pending' ? '等待确认' : '已确认'}
                 </span>
               </div>
+              {appointmentTimeInfo && !appointmentTimeInfo.isToday && appointmentTimeInfo.days > 0 && (
+                <div className="flex justify-between pt-2 border-t border-purple-100">
+                  <span className="text-purple-600">距离预约</span>
+                  <span className="font-bold text-purple-600">
+                    {appointmentTimeInfo.days}天 {appointmentTimeInfo.hours}小时
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}

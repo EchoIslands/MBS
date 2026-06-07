@@ -1,25 +1,46 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Store, Lock, Eye, EyeOff } from 'lucide-react';
-import { loginAsShop } from '../../store';
+import { ArrowLeft, Store, Lock, Eye, EyeOff, User, Phone } from 'lucide-react';
+import { loginAsShop, loginAsStylist } from '../../store';
 import { mockShops } from '../../../shared/mockData';
 
+const DEFAULT_SHOP_ID = 'shop1';
+
 const ShopLogin: React.FC = () => {
-  const [selectedShop, setSelectedShop] = useState('shop1');
+  const [loginMode, setLoginMode] = useState<'shop' | 'stylist'>('shop');
+  const [selectedStylist, setSelectedStylist] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const currentShop = mockShops.find(s => s.id === DEFAULT_SHOP_ID);
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
-    const shop = loginAsShop(selectedShop, password);
-    if (shop) {
-      navigate('/shop');
+    if (loginMode === 'shop') {
+      const shop = loginAsShop(DEFAULT_SHOP_ID, password);
+      if (shop) {
+        navigate('/shop');
+      } else {
+        setError('密码错误，请重新输入');
+      }
     } else {
-      setError('密码错误，请重新输入');
+      // 根据手机号查找发型师
+      const stylist = currentShop?.employees.find(e => e.phone === phone);
+      if (!stylist) {
+        setError('手机号不存在，请重新输入');
+        return;
+      }
+      const loggedIn = loginAsStylist(DEFAULT_SHOP_ID, stylist.id, password);
+      if (loggedIn) {
+        navigate('/shop/stylist');
+      } else {
+        setError('密码错误，请重新输入');
+      }
     }
   };
 
@@ -34,43 +55,57 @@ const ShopLogin: React.FC = () => {
           返回
         </button>
         
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">理发店登录</h1>
-        <p className="text-gray-600 mb-8">选择您的店铺并输入密码登录</p>
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">皓诗造型设计登录</h1>
+        <p className="text-gray-600 mb-6">选择登录身份</p>
+        
+        {/* 登录模式切换 */}
+        <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
+          <button
+            onClick={() => setLoginMode('shop')}
+            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+              loginMode === 'shop'
+                ? 'bg-white text-orange-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <Store size={18} />
+              老板/店长
+            </div>
+          </button>
+          <button
+            onClick={() => setLoginMode('stylist')}
+            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+              loginMode === 'stylist'
+                ? 'bg-white text-orange-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <User size={18} />
+              发型师
+            </div>
+          </button>
+        </div>
         
         <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              选择店铺
-            </label>
-            <div className="space-y-3">
-              {mockShops.map((shop) => (
-                <label
-                  key={shop.id}
-                  className={`flex items-center p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                    selectedShop === shop.id
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-gray-200 hover:border-orange-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="shop"
-                    value={shop.id}
-                    checked={selectedShop === shop.id}
-                    onChange={(e) => setSelectedShop(e.target.value)}
-                    className="mr-3"
-                  />
-                  <div className="flex items-center gap-3">
-                    <Store size={24} className="text-orange-500" />
-                    <div>
-                      <div className="font-medium text-gray-800">{shop.name}</div>
-                      <div className="text-sm text-gray-500">{shop.address}</div>
-                    </div>
-                  </div>
-                </label>
-              ))}
+          {loginMode === 'stylist' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                手机号
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="请输入手机号 (演示: 13900000011)"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
+                />
+              </div>
             </div>
-          </div>
+          )}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -105,7 +140,7 @@ const ShopLogin: React.FC = () => {
             type="submit"
             className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-3 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
           >
-            登录管理后台
+            {loginMode === 'shop' ? '登录管理后台看板' : '登录发型师看板'}
           </button>
         </form>
       </div>

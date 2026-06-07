@@ -13,6 +13,7 @@ const CustomerHome: React.FC = () => {
   const [filterLevel, setFilterLevel] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const navigate = useNavigate();
   const { currentCustomer, logout } = useAppStore();
 
@@ -61,6 +62,13 @@ const CustomerHome: React.FC = () => {
                 className="p-2 hover:bg-blue-500 rounded-lg transition-colors"
               >
                 <Filter size={20} />
+              </button>
+              <button
+                onClick={() => setShowHelp(true)}
+                className="p-2 hover:bg-blue-500 rounded-lg transition-colors"
+                title="使用帮助"
+              >
+                <span className="text-lg">?</span>
               </button>
               <div className="relative">
                 <button
@@ -242,6 +250,71 @@ const CustomerHome: React.FC = () => {
           }
         `
       }} />
+
+      {/* 帮助模态框 */}
+      {showHelp && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800">使用帮助</h3>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                X
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div>
+                <h4 className="font-bold text-gray-700 mb-2">📱 如何预约？</h4>
+                <ol className="list-decimal list-inside text-gray-600 space-y-1">
+                  <li>在首页浏览附近的理发店</li>
+                  <li>点击店铺卡片查看详情</li>
+                  <li>选择服务项目和时间</li>
+                  <li>选择发型师或使用智能匹配</li>
+                  <li>确认预约信息并提交</li>
+                </ol>
+              </div>
+              
+              <div>
+                <h4 className="font-bold text-gray-700 mb-2">⚡ 最快匹配是什么？</h4>
+                <p className="text-gray-600">
+                  最快匹配会自动为您选择当前最空闲的发型师，减少您的等待时间。
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-bold text-gray-700 mb-2">❓ 如何取消预约？</h4>
+                <p className="text-gray-600">
+                  在"个人中心" &gt; "我的预约"中，找到要取消的订单，点击"取消预约"即可。
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-bold text-gray-700 mb-2">⭐ 如何评价服务？</h4>
+                <p className="text-gray-600">
+                  服务完成后，在"个人中心" &gt; "我的预约"中找到已完成的订单，点击"评价"即可。
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-bold text-gray-700 mb-2">💸 如何申请退款？</h4>
+                <p className="text-gray-600">
+                  在"个人中心" &gt; "退款管理"中，选择要退款的订单，填写原因后提交申请。
+                </p>
+              </div>
+            </div>
+            
+            <button
+              onClick={() => setShowHelp(false)}
+              className="w-full mt-6 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

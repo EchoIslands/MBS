@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Calendar, Star, LogOut, Clock, MapPin, CheckCircle } from 'lucide-react';
+import { User, Calendar, Star, LogOut, Clock, MapPin, CheckCircle, AlertCircle, MessageSquare } from 'lucide-react';
 import { Booking } from '../../../shared/types';
 import { bookingApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -138,6 +138,26 @@ const Profile: React.FC = () => {
               <p>暂无预约记录</p>
             </div>
           )}
+        </div>
+
+        {/* 快捷功能 */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <button
+            onClick={() => navigate('/customer/refund')}
+            className="bg-white rounded-2xl shadow-sm p-5 text-left hover:shadow-md transition-shadow"
+          >
+            <AlertCircle size={24} className="text-orange-500 mb-2" />
+            <div className="font-medium text-gray-800">退款管理</div>
+            <div className="text-sm text-gray-500">申请退款和查看进度</div>
+          </button>
+          <button
+            onClick={() => navigate('/customer/feedback')}
+            className="bg-white rounded-2xl shadow-sm p-5 text-left hover:shadow-md transition-shadow"
+          >
+            <MessageSquare size={24} className="text-blue-500 mb-2" />
+            <div className="font-medium text-gray-800">意见反馈</div>
+            <div className="text-sm text-gray-500">提交建议和投诉</div>
+          </button>
         </div>
 
         {/* 退出登录 */}

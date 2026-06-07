@@ -1,21 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   MapPin,
   Phone,
   Star,
   Clock,
-  Calendar,
-  CheckCircle,
+  Settings,
+  ShoppingBag,
 } from 'lucide-react';
 import { Shop, Review } from '../../../shared/types';
 import { shopApi } from '../../api';
-
-// 移除等级颜色，仅保留评分
+import { useAppStore } from '../../store';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { currentShop, setCurrentShop } = useAppStore();
   const [shop, setShop] = useState<Shop | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +34,7 @@ const ShopDetail: React.FC = () => {
         shopApi.getShopReviews(id!),
       ]);
       setShop(shopData);
+      setCurrentShop(shopData);
       setReviews(reviewsData);
     } catch (error) {
       console.error('Failed to load shop data:', error);
@@ -64,20 +64,20 @@ const ShopDetail: React.FC = () => {
       {/* 头部 */}
       <header className="sticky top-0 bg-white shadow-sm z-50">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <h1 className="font-bold text-xl text-gray-800">{shop.name}</h1>
           <button
-            onClick={() => navigate('/customer')}
+            onClick={() => navigate('/shop/login')}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            title="店铺管理"
           >
-            <ArrowLeft size={20} />
+            <Settings size={20} />
           </button>
-          <h1 className="font-semibold text-gray-800">店铺详情</h1>
-          <div className="w-10" />
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 pb-24">
         {/* 图片轮播 */}
-        <div className="relative">
+        <div className="relative mt-4">
           <div className="aspect-video rounded-2xl overflow-hidden bg-gray-200">
             <img
               src={shop.images[activeImage]}
@@ -171,6 +171,54 @@ const ShopDetail: React.FC = () => {
           </div>
         )}
 
+        {/* 商品商城 */}
+        {shop.products && shop.products.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800">商品商城</h3>
+              <button
+                onClick={() => navigate(`/customer/products/${shop.id}`)}
+                className="text-orange-500 text-sm font-medium hover:text-orange-600"
+              >
+                查看全部 →
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {shop.products
+                .filter(p => p.isActive)
+                .slice(0, 4)
+                .map((product) => (
+                  <div
+                    key={product.id}
+                    onClick={() => navigate(`/customer/products/${shop.id}`)}
+                    className="bg-gray-50 rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+                  >
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="p-3">
+                      <h4 className="font-medium text-gray-800 text-sm line-clamp-2 mb-1">
+                        {product.name}
+                      </h4>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-bold text-red-500">
+                          ¥{product.price}
+                        </span>
+                        {product.originalPrice && (
+                          <span className="text-xs text-gray-400 line-through">
+                            ¥{product.originalPrice}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
         {/* 服务项目 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
           <h3 className="text-lg font-bold text-gray-800 mb-4">服务项目</h3>
@@ -239,12 +287,19 @@ const ShopDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* 底部预约按钮 */}
+      {/* 底部操作栏 */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto flex gap-3">
+          <button
+            onClick={() => navigate(`/customer/products/${shop.id}`)}
+            className="flex-1 bg-orange-50 hover:bg-orange-100 text-orange-600 py-4 px-6 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2"
+          >
+            <ShoppingBag size={20} />
+            商品商城
+          </button>
           <button
             onClick={() => navigate(`/customer/booking/${shop.id}`)}
-            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all"
+            className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all"
           >
             立即预约
           </button>
