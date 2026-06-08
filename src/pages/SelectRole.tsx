@@ -9,7 +9,7 @@ const SelectRole: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">欢迎来到皓诗造型</h1>
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">欢迎来到皓诗形象设计</h1>
           <p className="text-gray-600">请选择您的身份</p>
         </div>
         
@@ -34,7 +34,7 @@ const SelectRole: React.FC = () => {
             <div className="flex items-center justify-center gap-4">
               <Scissors size={48} />
               <div className="text-left">
-                <div className="text-2xl font-bold">皓诗造型设计</div>
+                <div className="text-2xl font-bold">皓诗形象设计</div>
                 <div className="text-orange-100">管理预约、查看数据</div>
               </div>
             </div>

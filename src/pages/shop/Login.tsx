@@ -55,7 +55,7 @@ const ShopLogin: React.FC = () => {
           返回
         </button>
         
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">皓诗造型设计登录</h1>
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">皓诗形象设计登录</h1>
         <p className="text-gray-600 mb-6">选择登录身份</p>
         
         {/* 登录模式切换 */}

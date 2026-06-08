@@ -30,7 +30,7 @@ export const stylistPasswords: Record<string, string> = {
 export const mockShops: Shop[] = [
   {
     id: 'shop1',
-    name: '皓诗造型设计',
+    name: '皓诗形象设计',
     description: '专业剪发、烫染护理，让您拥有时尚发型',
     address: '北京市朝阳区建国路88号',
     latitude: 39.9042,
