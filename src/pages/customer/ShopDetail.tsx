@@ -8,7 +8,7 @@ import {
   Settings,
   ShoppingBag,
 } from 'lucide-react';
-import { Shop, Review } from '../../../shared/types';
+import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
 
@@ -16,7 +16,6 @@ const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { currentShop, setCurrentShop } = useAppStore();
   const [shop, setShop] = useState<Shop | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeImage, setActiveImage] = useState(0);
   const navigate = useNavigate();
@@ -29,13 +28,9 @@ const ShopDetail: React.FC = () => {
 
   const loadShopData = async () => {
     try {
-      const [shopData, reviewsData] = await Promise.all([
-        shopApi.getShop(id!),
-        shopApi.getShopReviews(id!),
-      ]);
+      const shopData = await shopApi.getShop(id!);
       setShop(shopData);
       setCurrentShop(shopData);
-      setReviews(reviewsData);
     } catch (error) {
       console.error('Failed to load shop data:', error);
     } finally {
@@ -105,11 +100,6 @@ const ShopDetail: React.FC = () => {
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">{shop.name}</h2>
-              <div className="flex items-center gap-2 text-gray-600 mb-2">
-                <Star size={18} className="text-yellow-500 fill-yellow-500" />
-                <span className="font-bold text-lg">{shop.rating}</span>
-                <span className="text-gray-400">({shop.reviewCount}条评价)</span>
-              </div>
             </div>
           </div>
 
@@ -247,44 +237,7 @@ const ShopDetail: React.FC = () => {
           </div>
         </div>
 
-        {/* 用户评价 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">用户评价</h3>
-          {reviews.length > 0 ? (
-            <div className="space-y-4">
-              {reviews.map((review) => (
-                <div key={review.id} className="pb-4 border-b border-gray-100 last:border-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-gray-800">{review.customerName}</div>
-                    <div className="flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          size={14}
-                          className={
-                            star <= Math.round(review.overallScore)
-                              ? 'text-yellow-500 fill-yellow-500'
-                              : 'text-gray-300'
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex gap-4 text-sm text-gray-500 mb-2">
-                    <span>服务 {review.serviceScore}分</span>
-                    <span>价格 {review.priceScore}分</span>
-                    <span>技术 {review.skillScore}分</span>
-                  </div>
-                  <p className="text-gray-600">{review.comment}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center text-gray-400 py-8">
-              暂无评价
-            </div>
-          )}
-        </div>
+
       </div>
 
       {/* 底部操作栏 */}

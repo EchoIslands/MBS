@@ -52,8 +52,6 @@ export const mockShops: Shop[] = [
     ],
     products: generateMockProducts('shop1'),
     openingHours: defaultOpeningHours,
-    rating: 4.8,
-    reviewCount: 126,
     level: 'excellent',
     isActive: true,
     createdAt: new Date(),
@@ -81,8 +79,6 @@ export const mockShops: Shop[] = [
     ],
     products: generateMockProducts('shop2'),
     openingHours: defaultOpeningHours,
-    rating: 4.5,
-    reviewCount: 89,
     level: 'good',
     isActive: true,
     createdAt: new Date(),
@@ -109,8 +105,6 @@ export const mockShops: Shop[] = [
     ],
     products: generateMockProducts('shop3'),
     openingHours: defaultOpeningHours,
-    rating: 3.8,
-    reviewCount: 45,
     level: 'average',
     isActive: true,
     createdAt: new Date(),
@@ -278,7 +272,7 @@ export function getOwnerDashboard(): OwnerDashboard {
   const baseRevenue = 150000;
   const baseServices = 800;
   const baseCustomers = 600;
-  
+
   // 店铺统计
   const shopStats = mockShops.map(shop => {
     const shopRevenue = Math.floor(baseRevenue * (0.3 + Math.random() * 0.2));
@@ -288,11 +282,10 @@ export function getOwnerDashboard(): OwnerDashboard {
       revenue: shopRevenue,
       services: Math.floor(baseServices * (shopRevenue / baseRevenue)),
       customers: Math.floor(baseCustomers * (shopRevenue / baseRevenue)),
-      rating: shop.rating,
       employees: shop.employees.filter(e => e.isActive).length,
     };
   });
-  
+
   // 跨店铺发型师排名
   const topStylists = mockShops.flatMap(shop => 
     shop.employees
@@ -308,7 +301,7 @@ export function getOwnerDashboard(): OwnerDashboard {
         rating: emp.rating || 4.5,
       }))
   ).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-  
+
   return {
     totalRevenue: {
       today: Math.floor(baseRevenue * 0.04) + Math.floor(Math.random() * 2000),
@@ -328,7 +321,6 @@ export function getOwnerDashboard(): OwnerDashboard {
       month: baseCustomers + Math.floor(Math.random() * 150),
       year: baseCustomers * 12 + Math.floor(Math.random() * 1500),
     },
-    averageRating: mockShops.reduce((sum, s) => sum + s.rating, 0) / mockShops.length,
     shopStats,
     topStylists,
   };

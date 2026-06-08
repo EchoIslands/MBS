@@ -125,7 +125,6 @@ const Dashboard: React.FC = () => {
     { label: '今日预约', value: todayBookings.length, icon: Calendar, color: 'text-blue-500' },
     { label: '已完成', value: completedBookings.length, icon: CheckCircle, color: 'text-green-500' },
     { label: '营业额', value: `¥${totalRevenue}`, icon: DollarSign, color: 'text-orange-500' },
-    { label: '店铺评分', value: currentShop?.rating.toFixed(1) || '0', icon: Star, color: 'text-yellow-500' },
   ];
 
   return (
@@ -150,7 +149,7 @@ const Dashboard: React.FC = () => {
 
       <div className="max-w-6xl mx-auto px-4 py-6">
         {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
           {stats.map((stat, index) => {
             const Icon = stat.icon;
             return (

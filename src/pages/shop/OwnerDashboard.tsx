@@ -49,13 +49,12 @@ const OwnerDashboardPage: React.FC = () => {
       ['总客户数', dashboard.totalCustomers.today, dashboard.totalCustomers.week, dashboard.totalCustomers.month, dashboard.totalCustomers.year],
       [],
       ['店铺业绩'],
-      ['店铺', '营收(元)', '服务数', '客户数', '评分', '员工数'],
+      ['店铺', '营收(元)', '服务数', '客户数', '员工数'],
       ...dashboard.shopStats.map(shop => [
         shop.shopName,
         shop.revenue,
         shop.services,
         shop.customers,
-        shop.rating,
         shop.employees
       ]),
       [],
@@ -146,7 +145,7 @@ const OwnerDashboardPage: React.FC = () => {
         </div>
 
         {/* 核心数据卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-2xl p-6 text-white">
             <div className="flex items-center justify-between mb-4">
               <div className="p-3 bg-white/20 rounded-xl">
@@ -179,7 +178,7 @@ const OwnerDashboardPage: React.FC = () => {
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white">
             <div className="flex items-center justify-between mb-4">
               <div className="p-3 bg-white/20 rounded-xl">
-                <Star size={24} />
+                <BarChart3 size={24} />
               </div>
               <div className="text-sm opacity-80">客户数</div>
             </div>
@@ -187,22 +186,6 @@ const OwnerDashboardPage: React.FC = () => {
               {dashboard.totalCustomers[selectedPeriod]}
             </div>
             <div className="text-sm opacity-80">独立客户数</div>
-          </div>
-
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-white/20 rounded-xl">
-                <BarChart3 size={24} />
-              </div>
-              <div className="text-sm opacity-80">平均评分</div>
-            </div>
-            <div className="text-3xl font-bold mb-1">
-              {dashboard.averageRating.toFixed(1)}
-            </div>
-            <div className="text-sm opacity-80 flex items-center gap-1">
-              <Star size={14} className="fill-current" />
-              所有店铺平均
-            </div>
           </div>
         </div>
 
@@ -278,10 +261,6 @@ const OwnerDashboardPage: React.FC = () => {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h3 className="font-bold text-gray-800">{shop.shopName}</h3>
-                    <div className="flex items-center gap-1 mt-1">
-                      <Star size={14} className="text-yellow-500 fill-yellow-500" />
-                      <span className="text-sm text-gray-600">{shop.rating.toFixed(1)}</span>
-                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-xl font-bold text-purple-600">

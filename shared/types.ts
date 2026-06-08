@@ -98,8 +98,6 @@ export interface Shop {
   employees: Employee[];
   products: Product[]; // 新增：店铺商品
   openingHours: OpeningHours;
-  rating: number;
-  reviewCount: number;
   level?: 'excellent' | 'good' | 'average' | 'poor'; // 保留但可选，不再显示
   isActive: boolean;
   createdAt: Date;
@@ -282,7 +280,6 @@ export interface OwnerDashboard {
     month: number;
     year: number;
   };
-  averageRating: number;
   // 店铺列表
   shopStats: Array<{
     shopId: string;
@@ -290,7 +287,6 @@ export interface OwnerDashboard {
     revenue: number;
     services: number;
     customers: number;
-    rating: number;
     employees: number;
   }>;
   // 跨店铺发型师排名
