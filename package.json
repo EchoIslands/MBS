@@ -10,9 +10,12 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "server:dev": "nodemon",
-    "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\""
+    "server:api": "npx tsx api/server.ts",
+    "dev": "concurrently \"npm run client:dev\" \"npm run server:api\"",
+    "seed-db": "tsx scripts/seed-db.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "dayjs": "^1.11.21",

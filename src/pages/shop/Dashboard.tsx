@@ -13,6 +13,7 @@ import {
   MessageSquare,
   TrendingUp,
   User,
+  UserCircle,
   Check,
   Eye,
   BarChart3,
@@ -22,10 +23,20 @@ import {
   Package,
   ChevronDown,
   ChevronUp,
+  CreditCard,
+  Crown,
 } from 'lucide-react';
-import { Booking, Employee } from '../../../shared/types';
+import { Booking, Employee, UserRole } from '../../../shared/types';
 import { useAppStore } from '../../store';
 import { mockBookings } from '../../../shared/mockData';
+
+const roleLabels: Record<string, string> = {
+  [UserRole.CEO]: 'CEO/老板',
+  [UserRole.CUSTOMER_SERVICE]: '客服专员',
+  [UserRole.SHOP_MANAGER]: '店长',
+  [UserRole.STYLIST]: '发型师',
+  [UserRole.SHOP_OWNER]: '老板',
+};
 
 const Dashboard: React.FC = () => {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
@@ -38,7 +49,13 @@ const Dashboard: React.FC = () => {
   const [cancelBookingId, setCancelBookingId] = useState('');
   const [showAllBookings, setShowAllBookings] = useState(false);
   const navigate = useNavigate();
-  const { currentShop, logout } = useAppStore();
+  const { currentShop, currentEmployee, userRole, logout } = useAppStore();
+
+  // 权限控制
+  const isCEO = userRole === UserRole.CEO || userRole === UserRole.SHOP_OWNER;
+  const isCS = userRole === UserRole.CUSTOMER_SERVICE;
+  const isManager = userRole === UserRole.SHOP_MANAGER;
+  const isStylist = userRole === UserRole.STYLIST;
 
   // 生成可用时间
   const timeSlots = [];
@@ -135,6 +152,15 @@ const Dashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold">{currentShop?.name}</h1>
+              {currentEmployee && (
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-white/20 rounded-lg text-sm">
+                  <User size={16} />
+                  <span>{currentEmployee.name}</span>
+                  <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                    {roleLabels[userRole || ''] || '管理员'}
+                  </span>
+                </div>
+              )}
             </div>
             <button
               onClick={handleLogout}
@@ -299,62 +325,127 @@ const Dashboard: React.FC = () => {
 
         {/* 快捷菜单 */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {(isCEO || isManager || isCS || isStylist) && (
+            <button
+              onClick={() => navigate('/shop/manage')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <Settings size={24} className="text-orange-500 mb-2" />
+              <div className="font-medium text-gray-800">店铺管理</div>
+              <div className="text-sm text-gray-500">编辑店铺信息和服务</div>
+            </button>
+          )}
+          {(isCEO || isManager) && (
+            <button
+              onClick={() => navigate('/shop/products')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <Package size={24} className="text-pink-500 mb-2" />
+              <div className="font-medium text-gray-800">商品管理</div>
+              <div className="text-sm text-gray-500">上架商品和库存管理</div>
+            </button>
+          )}
           <button
-            onClick={() => navigate('/shop/manage')}
-            className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
-          >
-            <Settings size={24} className="text-orange-500 mb-2" />
-            <div className="font-medium text-gray-800">店铺管理</div>
-            <div className="text-sm text-gray-500">编辑店铺信息和服务</div>
-          </button>
-          <button
-            onClick={() => navigate('/shop/products')}
-            className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
-          >
-            <Package size={24} className="text-pink-500 mb-2" />
-            <div className="font-medium text-gray-800">商品管理</div>
-            <div className="text-sm text-gray-500">上架商品和库存管理</div>
-          </button>
-          <button
-            onClick={() => navigate('/shop/reviews')}
+            onClick={() => navigate('/shop/review-management')}
             className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
           >
             <MessageSquare size={24} className="text-orange-500 mb-2" />
             <div className="font-medium text-gray-800">评价管理</div>
             <div className="text-sm text-gray-500">查看和回复顾客评价</div>
           </button>
-          <button
-            onClick={() => navigate('/shop/financial')}
-            className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
-          >
-            <BarChart3 size={24} className="text-green-500 mb-2" />
-            <div className="font-medium text-gray-800">财务报表</div>
-            <div className="text-sm text-gray-500">查看营收和导出Excel</div>
-          </button>
+          {isCEO && (
+            <button
+              onClick={() => navigate('/shop/financial')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <BarChart3 size={24} className="text-green-500 mb-2" />
+              <div className="font-medium text-gray-800">财务报表</div>
+              <div className="text-sm text-gray-500">查看营收和导出Excel</div>
+            </button>
+          )}
           <button
             onClick={() => navigate('/shop/stylist')}
             className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
           >
             <FileSpreadsheet size={24} className="text-blue-500 mb-2" />
-            <div className="font-medium text-gray-800">发型师看板</div>
-            <div className="text-sm text-gray-500">个人业绩和预约</div>
+            <div className="font-medium text-gray-800">
+              {isStylist ? '我的业绩' : '发型师看板'}
+            </div>
+            <div className="text-sm text-gray-500">{isStylist ? '查看个人业绩' : '个人业绩和预约'}</div>
           </button>
+          {(isCEO || isManager) && (
+            <button
+              onClick={() => navigate('/shop/refunds')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <AlertTriangle size={24} className="text-red-500 mb-2" />
+              <div className="font-medium text-gray-800">退款管理</div>
+              <div className="text-sm text-gray-500">处理退款申请</div>
+            </button>
+          )}
           <button
-            onClick={() => navigate('/shop/refunds')}
+            onClick={() => navigate('/shop/customers')}
             className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
           >
-            <AlertTriangle size={24} className="text-red-500 mb-2" />
-            <div className="font-medium text-gray-800">退款管理</div>
-            <div className="text-sm text-gray-500">处理退款申请</div>
+            <User size={24} className="text-cyan-500 mb-2" />
+            <div className="font-medium text-gray-800">客户管理</div>
+            <div className="text-sm text-gray-500">
+              {isStylist ? '查看我的客户' : '客户信息和会员管理'}
+            </div>
           </button>
-          <button
-            onClick={() => navigate('/shop/owner')}
-            className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow text-white"
-          >
-            <Building2 size={24} className="mb-2" />
-            <div className="font-medium">老板视图</div>
-            <div className="text-sm opacity-80">多店铺统一管理</div>
-          </button>
+          {(isCEO || isManager) && (
+            <button
+              onClick={() => navigate('/shop/settlement')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <CreditCard size={24} className="text-green-500 mb-2" />
+              <div className="font-medium text-gray-800">结算管理</div>
+              <div className="text-sm text-gray-500">收款结算和支付管理</div>
+            </button>
+          )}
+          {(isCEO || isManager || isCS) && (
+            <button
+              onClick={() => navigate('/shop/membership')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <Crown size={24} className="text-purple-500 mb-2" />
+              <div className="font-medium text-gray-800">会员管理</div>
+              <div className="text-sm text-gray-500">会员等级和权益管理</div>
+            </button>
+          )}
+          {(isCEO || isCS) && (
+            <button
+              onClick={() => navigate('/shop/survey')}
+              className="bg-white rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow"
+            >
+              <MessageSquare size={24} className="text-teal-500 mb-2" />
+              <div className="font-medium text-gray-800">满意度回访</div>
+              <div className="text-sm text-gray-500">客户反馈和回访记录</div>
+            </button>
+          )}
+          {(isCEO || isStylist) && (
+            <button
+              onClick={() => {
+                // 跳转到客户管理，技师可以从那里选择客户录入画像
+                navigate('/shop/customers');
+              }}
+              className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow text-white"
+            >
+              <UserCircle size={24} className="mb-2" />
+              <div className="font-medium">客户画像</div>
+              <div className="text-sm opacity-80">录入客户偏好和特征</div>
+            </button>
+          )}
+          {isCEO && (
+            <button
+              onClick={() => navigate('/shop/owner')}
+              className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl shadow-sm p-6 text-left hover:shadow-md transition-shadow text-white"
+            >
+              <Building2 size={24} className="mb-2" />
+              <div className="font-medium">老板视图</div>
+              <div className="text-sm opacity-80">多店铺统一管理</div>
+            </button>
+          )}
         </div>
       </div>
 

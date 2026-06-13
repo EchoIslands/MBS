@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AppState, UserRole, Customer, Shop, Employee, Product, CartItem } from '../shared/types';
-import { mockCustomers, mockShops, shopPasswords, stylistPasswords } from '../shared/mockData';
+import { mockCustomers, mockShops, shopPasswords, stylistPasswords, ceoPasswords, csPasswords, managerPasswords } from '../shared/mockData';
 
 export const useAppStore = create<AppState>((set, get) => ({
   userRole: null,
@@ -117,9 +117,40 @@ export const loginAsStylist = (shopId: string, stylistId: string, password?: str
     useAppStore.getState().setCurrentShop(shop);
     useAppStore.getState().setCurrentEmployee({
       ...stylist,
-      role: UserRole.STYLIST
+      role: UserRole.STYLIST,
     });
     return stylist;
+  }
+  return null;
+};
+
+// 新增：通用员工登录（支持 CEO / 客服专员 / 店长 等所有角色）
+export const loginAsEmployee = (
+  shopId: string,
+  employeeId: string,
+  password?: string
+): Employee | null => {
+  const shop = mockShops.find((s) => s.id === shopId);
+  const employee = shop?.employees.find((e) => e.id === employeeId);
+  if (shop && employee) {
+    // 验证密码（根据角色选择对应的密码映射表）
+    if (password !== undefined) {
+      let expected: string | undefined;
+      if (employee.role === UserRole.CEO) expected = ceoPasswords[employeeId];
+      else if (employee.role === UserRole.CUSTOMER_SERVICE) expected = csPasswords[employeeId];
+      else if (employee.role === UserRole.SHOP_MANAGER) expected = managerPasswords[employeeId];
+      else expected = stylistPasswords[employeeId] || shopPasswords[shopId];
+
+      if (expected && password !== expected) {
+        return null;
+      }
+    }
+    useAppStore.getState().setCurrentShop(shop);
+    useAppStore.getState().setCurrentEmployee({
+      ...employee,
+      role: employee.role || UserRole.STYLIST,
+    });
+    return employee;
   }
   return null;
 };

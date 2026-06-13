@@ -1,9 +1,7 @@
-import { Shop, Customer, Booking, Review, Queue, Service, OpeningHours, Employee, StylistPerformance, FinancialReport, DateRange, UserRole, OwnerDashboard, RefundRequest, RefundStatus, CustomerFeedback, FeedbackType, CustomerSuccessMetrics, Product, ProductCategory } from './types';
+import { Shop, Customer, Booking, Review, Queue, Service, OpeningHours, Employee, StylistPerformance, FinancialReport, DateRange, UserRole, OwnerDashboard, RefundRequest, RefundStatus, CustomerFeedback, FeedbackType, CustomerSuccessMetrics, Product, ProductCategory, CustomerTag, MembershipLevel, Settlement, SatisfactionSurvey, MembershipBenefit, ReferralRecord, CustomerProfile, HaircutStylePreference, HairColorPreference, PermColorPreference, TreatmentPreference, HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle, ExtraServicePreference, VisitTimePreference, CustomerVisitRecord, ShopReview, StylistReview, FollowUpRecord } from './types';
 
-// 生成ID
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 默认营业时间
 const defaultOpeningHours: OpeningHours = {
   monday: { open: '09:00', close: '21:00', isOpen: true },
   tuesday: { open: '09:00', close: '21:00', isOpen: true },
@@ -14,19 +12,28 @@ const defaultOpeningHours: OpeningHours = {
   sunday: { open: '10:00', close: '20:00', isOpen: true },
 };
 
-// 店铺密码映射（演示用）
 export const shopPasswords: Record<string, string> = {
   'shop1': '123456',
 };
 
-// 发型师密码映射（演示用）
 export const stylistPasswords: Record<string, string> = {
   'e1': '123456',
   'e2': '123456',
   'e3': '123456',
 };
 
-// 模拟理发店数据
+export const ceoPasswords: Record<string, string> = {
+  'ceo1': '123456',
+};
+
+export const csPasswords: Record<string, string> = {
+  'cs1': '123456',
+};
+
+export const managerPasswords: Record<string, string> = {
+  'mgr1': '123456',
+};
+
 export const mockShops: Shop[] = [
   {
     id: 'shop1',
@@ -46,9 +53,12 @@ export const mockShops: Shop[] = [
       { id: 's3', name: '护理', price: 168, duration: 60, description: '深层护理' },
     ],
     employees: [
-      { id: 'e1', name: '李明', phone: '13900000011', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=LiMing', title: '首席发型师', rating: 4.9, isActive: true, specialty: '精剪、烫染' },
-      { id: 'e2', name: '王芳', phone: '13900000012', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=WangFang', title: '资深发型师', rating: 4.7, isActive: true, specialty: '护理、造型' },
-      { id: 'e3', name: '张伟', phone: '13900000013', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ZhangWei', title: '发型师', rating: 4.5, isActive: true, specialty: '精剪' },
+      { id: 'e1', name: '李明', phone: '13900000011', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=LiMing', title: '首席发型师', rating: 4.9, isActive: true, specialty: '精剪、烫染', role: UserRole.STYLIST },
+      { id: 'e2', name: '王芳', phone: '13900000012', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=WangFang', title: '资深发型师', rating: 4.7, isActive: true, specialty: '护理、造型', role: UserRole.STYLIST },
+      { id: 'e3', name: '张伟', phone: '13900000013', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ZhangWei', title: '发型师', rating: 4.5, isActive: true, specialty: '精剪', role: UserRole.STYLIST },
+      { id: 'ceo1', name: '陈总', phone: '13900000100', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ChenZong', title: 'CEO/老板', rating: 5.0, isActive: true, specialty: '店铺管理', role: UserRole.CEO },
+      { id: 'cs1', name: '刘客服', phone: '13900000101', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=LiuKefu', title: '客服专员', rating: 4.8, isActive: true, specialty: '客户回访/维护', role: UserRole.CUSTOMER_SERVICE },
+      { id: 'mgr1', name: '张店长', phone: '13900000102', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ZhangDianzhang', title: '店长', rating: 4.7, isActive: true, specialty: '店铺运营', role: UserRole.SHOP_MANAGER },
     ],
     products: generateMockProducts('shop1'),
     openingHours: defaultOpeningHours,
@@ -112,17 +122,356 @@ export const mockShops: Shop[] = [
   },
 ];
 
-// 模拟顾客
 export const mockCustomers: Customer[] = [
   {
     id: 'cust1',
     name: '张三',
     phone: '13900000001',
     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+    gender: 'male',
+    age: 32,
+    tags: [CustomerTag.HAIRCUT, CustomerTag.PERM, CustomerTag.FREQUENT, CustomerTag.VIP],
+    visitCount: 28,
+    totalSpent: 5680,
+    membershipLevel: MembershipLevel.PREMIUM,
+    balance: 2000,
+    points: 568,
+    joinedAt: new Date(Date.now() - 365 * 86400000),
+    lastVisitAt: new Date(Date.now() - 7 * 86400000),
+    birthday: new Date('1992-05-15'),
+    preferences: ['精剪', '烫染'],
+    isStockholder: true,
+    stockholderSince: new Date(Date.now() - 180 * 86400000),
+    referralBonusRate: 0.05,
+    referralEarnings: 1280,
+    source: '朋友推荐',
+    servedByStylistIds: ['e1', 'e2'],
+    profile: {
+      id: 'prof1',
+      customerId: 'cust1',
+      updatedBy: 'e1',
+      updatedByName: '李明',
+      updatedAt: new Date(Date.now() - 7 * 86400000),
+      haircutStyles: [HaircutStylePreference.SHORT, HaircutStylePreference.UNDERCUT],
+      hairColors: [HairColorPreference.NATURAL_BLACK, HairColorPreference.BROWN],
+      permColors: [PermColorPreference.BIG_CURL, PermColorPreference.DIGITAL_PERM],
+      treatments: [TreatmentPreference.DEEP_TREATMENT, TreatmentPreference.KERATIN],
+      hairType: HairType.NORMAL,
+      hairLength: HairLength.SHORT,
+      visitFrequency: VisitFrequency.EVERY_MONTH,
+      budgetRange: BudgetRange.R300_500,
+      communicationStyle: CommunicationStyle.CHATTY,
+      extraServices: [ExtraServicePreference.HEAD_MASSAGE, ExtraServicePreference.HOT_TOWEL],
+      visitTimes: [VisitTimePreference.WEEKEND, VisitTimePreference.AFTERNOON],
+      notes: '客户喜欢时尚造型，对发型要求较高',
+      allergies: '无',
+      productsUsed: ['专业防脱洗发水', '深层滋养发膜'],
+      createdAt: new Date(Date.now() - 30 * 86400000),
+    },
+    visitRecords: [
+      {
+        id: 'vr1',
+        customerId: 'cust1',
+        shopId: 'shop1',
+        bookingId: 'book1',
+        stylistId: 'e1',
+        stylistName: '李明',
+        serviceIds: ['s1', 's2'],
+        serviceNames: ['精剪', '烫染套餐'],
+        products: [{ id: 'p1', name: '专业防脱洗发水', quantity: 1 }],
+        totalAmount: 456,
+        paymentMethod: 'wechat',
+        checkInTime: new Date(Date.now() - 7 * 86400000),
+        notes: '客户很满意，预约了下次',
+        createdAt: new Date(Date.now() - 7 * 86400000),
+      },
+      {
+        id: 'vr2',
+        customerId: 'cust1',
+        shopId: 'shop1',
+        stylistId: 'e2',
+        stylistName: '王芳',
+        serviceIds: ['s3'],
+        serviceNames: ['护理'],
+        totalAmount: 168,
+        paymentMethod: 'balance',
+        checkInTime: new Date(Date.now() - 30 * 86400000),
+        notes: '',
+        createdAt: new Date(Date.now() - 30 * 86400000),
+      },
+    ],
+  },
+  {
+    id: 'cust2',
+    name: '李四',
+    phone: '13900000002',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=face',
+    gender: 'female',
+    age: 28,
+    tags: [CustomerTag.COLOR, CustomerTag.TREATMENT, CustomerTag.NEW],
+    visitCount: 8,
+    totalSpent: 1860,
+    membershipLevel: MembershipLevel.REGULAR,
+    balance: 500,
+    points: 186,
+    joinedAt: new Date(Date.now() - 90 * 86400000),
+    lastVisitAt: new Date(Date.now() - 3 * 86400000),
+    birthday: new Date('1998-08-22'),
+    preferences: ['染发', '护理'],
+    isStockholder: false,
+    source: '路过进店',
+    servedByStylistIds: ['e2'],
+    profile: {
+      id: 'prof2',
+      customerId: 'cust2',
+      updatedBy: 'e2',
+      updatedByName: '王芳',
+      updatedAt: new Date(Date.now() - 3 * 86400000),
+      haircutStyles: [HaircutStylePreference.MEDIUM, HaircutStylePreference.LAYERED],
+      hairColors: [HairColorPreference.BROWN, HairColorPreference.GOLD],
+      permColors: [PermColorPreference.BIG_CURL],
+      treatments: [TreatmentPreference.MOISTURE, TreatmentPreference.OIL_TREATMENT],
+      hairType: HairType.DRY,
+      hairLength: HairLength.MEDIUM,
+      visitFrequency: VisitFrequency.EVERY_2_MONTHS,
+      budgetRange: BudgetRange.R100_300,
+      communicationStyle: CommunicationStyle.QUIET,
+      extraServices: [ExtraServicePreference.HAIR_WASH],
+      visitTimes: [VisitTimePreference.EVENING, VisitTimePreference.WEEKDAY],
+      notes: '客户喜欢安静的服务环境',
+      allergies: '对某些染发剂过敏',
+      productsUsed: ['深层滋养发膜'],
+      createdAt: new Date(Date.now() - 60 * 86400000),
+    },
+    visitRecords: [
+      {
+        id: 'vr3',
+        customerId: 'cust2',
+        shopId: 'shop1',
+        stylistId: 'e2',
+        stylistName: '王芳',
+        serviceIds: ['s2'],
+        serviceNames: ['烫染套餐'],
+        totalAmount: 388,
+        paymentMethod: 'alipay',
+        checkInTime: new Date(Date.now() - 3 * 86400000),
+        notes: '染发效果很好',
+        createdAt: new Date(Date.now() - 3 * 86400000),
+      },
+    ],
+  },
+  {
+    id: 'cust3',
+    name: '王五',
+    phone: '13900000003',
+    avatar: 'https://images.unsplash.com/photo-150703211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face',
+    gender: 'male',
+    age: 45,
+    tags: [CustomerTag.HAIRCUT, CustomerTag.WIG, CustomerTag.FREQUENT],
+    visitCount: 45,
+    totalSpent: 8920,
+    membershipLevel: MembershipLevel.STOCKHOLDER,
+    balance: 5000,
+    points: 892,
+    joinedAt: new Date(Date.now() - 730 * 86400000),
+    lastVisitAt: new Date(Date.now() - 2 * 86400000),
+    birthday: new Date('1981-11-30'),
+    preferences: ['精剪', '假发'],
+    isStockholder: true,
+    stockholderSince: new Date(Date.now() - 365 * 86400000),
+    referralBonusRate: 0.05,
+    referralEarnings: 3560,
+    source: '网络搜索',
+    servedByStylistIds: ['e1', 'e3'],
+    profile: {
+      id: 'prof3',
+      customerId: 'cust3',
+      updatedBy: 'e1',
+      updatedByName: '李明',
+      updatedAt: new Date(Date.now() - 2 * 86400000),
+      haircutStyles: [HaircutStylePreference.SHORT, HaircutStylePreference.PIXIE],
+      hairColors: [HairColorPreference.NATURAL_BLACK],
+      permColors: [PermColorPreference.NO_PERM],
+      treatments: [TreatmentPreference.SCALP_CARE],
+      hairType: HairType.OILY,
+      hairLength: HairLength.SHORT,
+      visitFrequency: VisitFrequency.EVERY_2_WEEKS,
+      budgetRange: BudgetRange.R500_1000,
+      communicationStyle: CommunicationStyle.PROFESSIONAL,
+      extraServices: [ExtraServicePreference.BEARD_TRIM, ExtraServicePreference.HOT_TOWEL],
+      visitTimes: [VisitTimePreference.MORNING],
+      notes: 'VIP客户，服务要特别关照',
+      allergies: '无',
+      productsUsed: ['专业防脱洗发水', '强力定型发胶'],
+      createdAt: new Date(Date.now() - 100 * 86400000),
+    },
+    visitRecords: [
+      {
+        id: 'vr4',
+        customerId: 'cust3',
+        shopId: 'shop1',
+        stylistId: 'e1',
+        stylistName: '李明',
+        serviceIds: ['s1'],
+        serviceNames: ['精剪'],
+        products: [{ id: 'p3', name: '强力定型发胶', quantity: 2 }],
+        totalAmount: 244,
+        paymentMethod: 'balance',
+        checkInTime: new Date(Date.now() - 2 * 86400000),
+        notes: '',
+        createdAt: new Date(Date.now() - 2 * 86400000),
+      },
+      {
+        id: 'vr5',
+        customerId: 'cust3',
+        shopId: 'shop1',
+        stylistId: 'e3',
+        stylistName: '张伟',
+        serviceIds: ['s1'],
+        serviceNames: ['精剪'],
+        totalAmount: 68,
+        paymentMethod: 'cash',
+        checkInTime: new Date(Date.now() - 14 * 86400000),
+        notes: '',
+        createdAt: new Date(Date.now() - 14 * 86400000),
+      },
+    ],
+  },
+  {
+    id: 'cust4',
+    name: '赵六',
+    phone: '13900000004',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop&crop=face',
+    gender: 'female',
+    age: 25,
+    tags: [CustomerTag.PRODUCTS, CustomerTag.NEW],
+    visitCount: 3,
+    totalSpent: 456,
+    membershipLevel: MembershipLevel.REGULAR,
+    balance: 0,
+    points: 46,
+    joinedAt: new Date(Date.now() - 30 * 86400000),
+    lastVisitAt: new Date(Date.now() - 1 * 86400000),
+    birthday: new Date('2001-03-12'),
+    preferences: ['洗护产品'],
+    isStockholder: false,
+    source: '老客户介绍',
+    servedByStylistIds: ['e2'],
+    profile: {
+      id: 'prof4',
+      customerId: 'cust4',
+      updatedBy: 'e2',
+      updatedByName: '王芳',
+      updatedAt: new Date(Date.now() - 1 * 86400000),
+      haircutStyles: [HaircutStylePreference.LONG, HaircutStylePreference.BANGS],
+      hairColors: [HairColorPreference.FASHION_COLOR],
+      permColors: [PermColorPreference.SMALL_CURL],
+      treatments: [TreatmentPreference.NO_TREATMENT],
+      hairType: HairType.NORMAL,
+      hairLength: HairLength.LONG,
+      visitFrequency: VisitFrequency.IRREGULAR,
+      budgetRange: BudgetRange.UNDER_100,
+      communicationStyle: CommunicationStyle.NO_PREFERENCE,
+      extraServices: [ExtraServicePreference.NO_EXTRA],
+      visitTimes: [VisitTimePreference.WEEKEND],
+      notes: '年轻客户，喜欢尝试新潮发型',
+      allergies: '无',
+      productsUsed: ['深层滋养发膜'],
+      createdAt: new Date(Date.now() - 20 * 86400000),
+    },
+    visitRecords: [
+      {
+        id: 'vr6',
+        customerId: 'cust4',
+        shopId: 'shop1',
+        stylistId: 'e2',
+        stylistName: '王芳',
+        serviceIds: ['s1'],
+        serviceNames: ['精剪'],
+        products: [{ id: 'p2', name: '深层滋养发膜', quantity: 1 }],
+        totalAmount: 196,
+        paymentMethod: 'wechat',
+        checkInTime: new Date(Date.now() - 1 * 86400000),
+        notes: '第一次来店体验',
+        createdAt: new Date(Date.now() - 1 * 86400000),
+      },
+    ],
+  },
+  {
+    id: 'cust5',
+    name: '孙七',
+    phone: '13900000005',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&crop=face',
+    gender: 'male',
+    age: 38,
+    tags: [CustomerTag.HAIRCUT, CustomerTag.PERM, CustomerTag.COLOR, CustomerTag.FREQUENT],
+    visitCount: 35,
+    totalSpent: 6780,
+    membershipLevel: MembershipLevel.PREMIUM,
+    balance: 1500,
+    points: 678,
+    joinedAt: new Date(Date.now() - 180 * 86400000),
+    lastVisitAt: new Date(Date.now() - 5 * 86400000),
+    birthday: new Date('1988-07-08'),
+    preferences: ['精剪', '烫染', '染发'],
+    isStockholder: false,
+    source: '朋友推荐',
+    servedByStylistIds: ['e1', 'e2', 'e3'],
+    profile: {
+      id: 'prof5',
+      customerId: 'cust5',
+      updatedBy: 'e1',
+      updatedByName: '李明',
+      updatedAt: new Date(Date.now() - 5 * 86400000),
+      haircutStyles: [HaircutStylePreference.MEDIUM, HaircutStylePreference.LAYERED],
+      hairColors: [HairColorPreference.BROWN, HairColorPreference.RED],
+      permColors: [PermColorPreference.BIG_CURL, PermColorPreference.DIGITAL_PERM],
+      treatments: [TreatmentPreference.DEEP_TREATMENT],
+      hairType: HairType.COLOR_TREATED,
+      hairLength: HairLength.MEDIUM,
+      visitFrequency: VisitFrequency.EVERY_MONTH,
+      budgetRange: BudgetRange.R300_500,
+      communicationStyle: CommunicationStyle.CHATTY,
+      extraServices: [ExtraServicePreference.HEAD_MASSAGE],
+      visitTimes: [VisitTimePreference.AFTERNOON, VisitTimePreference.EVENING],
+      notes: '客户很健谈，喜欢边做边聊',
+      allergies: '无',
+      productsUsed: ['专业防脱洗发水', '深层滋养发膜', '强力定型发胶'],
+      createdAt: new Date(Date.now() - 90 * 86400000),
+    },
+    visitRecords: [
+      {
+        id: 'vr7',
+        customerId: 'cust5',
+        shopId: 'shop1',
+        stylistId: 'e1',
+        stylistName: '李明',
+        serviceIds: ['s1', 's2'],
+        serviceNames: ['精剪', '烫染套餐'],
+        totalAmount: 456,
+        paymentMethod: 'wechat',
+        checkInTime: new Date(Date.now() - 5 * 86400000),
+        notes: '非常满意的服务',
+        createdAt: new Date(Date.now() - 5 * 86400000),
+      },
+      {
+        id: 'vr8',
+        customerId: 'cust5',
+        shopId: 'shop1',
+        stylistId: 'e3',
+        stylistName: '张伟',
+        serviceIds: ['s1'],
+        serviceNames: ['精剪'],
+        totalAmount: 68,
+        paymentMethod: 'alipay',
+        checkInTime: new Date(Date.now() - 35 * 86400000),
+        notes: '',
+        createdAt: new Date(Date.now() - 35 * 86400000),
+      },
+    ],
   },
 ];
 
-// 模拟预约
 export const mockBookings: Booking[] = [
   {
     id: 'book1',
@@ -141,7 +490,6 @@ export const mockBookings: Booking[] = [
   },
 ];
 
-// 模拟评价
 export const mockReviews: Review[] = [
   {
     id: 'rev1',
@@ -158,7 +506,6 @@ export const mockReviews: Review[] = [
   },
 ];
 
-// 模拟排队队列
 export const mockQueues: Queue[] = [
   {
     id: 'queue1',
@@ -169,7 +516,6 @@ export const mockQueues: Queue[] = [
   },
 ];
 
-// 音效列表
 export const soundOptions = [
   { id: 'chime', name: '清脆铃声' },
   { id: 'bell', name: '传统铃铛' },
@@ -177,18 +523,15 @@ export const soundOptions = [
   { id: 'ding', name: '叮咚声' },
 ];
 
-// 生成模拟业绩数据
 export function getMockStylistPerformance(
-  stylistId: string, 
+  stylistId: string,
   shopId: string
 ): StylistPerformance {
-  // 找到对应的发型师
   const shop = mockShops.find(s => s.id === shopId);
   const stylist = shop?.employees.find(e => e.id === stylistId);
-  
-  // 生成模拟业绩（基于评分）
+
   const baseRevenue = stylist?.rating ? (stylist.rating * 500) : 2000;
-  
+
   return {
     stylistId,
     stylistName: stylist?.name || '发型师',
@@ -212,13 +555,11 @@ export function getMockStylistPerformance(
   };
 }
 
-// 获取模拟财务报表
 export function getMockFinancialReport(shopId: string): FinancialReport {
   const shop = mockShops.find(s => s.id === shopId);
-  
+
   const baseRevenue = 50000;
-  
-  // 生成发型师排名
+
   const topStylists = shop?.employees
     .filter(emp => emp.isActive)
     .map(emp => ({
@@ -230,7 +571,7 @@ export function getMockFinancialReport(shopId: string): FinancialReport {
       rating: emp.rating || 4.5,
     }))
     .sort((a, b) => b.revenue - a.revenue) || [];
-  
+
   return {
     revenue: {
       today: Math.floor(baseRevenue * 0.05) + Math.floor(Math.random() * 1000),
@@ -254,26 +595,22 @@ export function getMockFinancialReport(shopId: string): FinancialReport {
   };
 }
 
-// 辅助：计算日期范围
 export function getDefaultDateRange(): DateRange {
   const today = new Date();
   const lastWeek = new Date(today);
   lastWeek.setDate(lastWeek.getDate() - 7);
-  
+
   return {
     start: lastWeek,
     end: today,
   };
 }
 
-// 获取老板视角 - 多店铺概览数据
 export function getOwnerDashboard(): OwnerDashboard {
-  // 计算所有店铺的总体数据
   const baseRevenue = 150000;
   const baseServices = 800;
   const baseCustomers = 600;
 
-  // 店铺统计
   const shopStats = mockShops.map(shop => {
     const shopRevenue = Math.floor(baseRevenue * (0.3 + Math.random() * 0.2));
     return {
@@ -286,8 +623,7 @@ export function getOwnerDashboard(): OwnerDashboard {
     };
   });
 
-  // 跨店铺发型师排名
-  const topStylists = mockShops.flatMap(shop => 
+  const topStylists = mockShops.flatMap(shop =>
     shop.employees
       .filter(emp => emp.isActive)
       .map(emp => ({
@@ -326,7 +662,6 @@ export function getOwnerDashboard(): OwnerDashboard {
   };
 }
 
-// 模拟退款申请数据
 export const mockRefundRequests: RefundRequest[] = [
   {
     id: 'refund1',
@@ -372,7 +707,6 @@ export const mockRefundRequests: RefundRequest[] = [
   },
 ];
 
-// 模拟客户反馈数据
 export const mockCustomerFeedbacks: CustomerFeedback[] = [
   {
     id: 'feedback1',
@@ -416,7 +750,6 @@ export const mockCustomerFeedbacks: CustomerFeedback[] = [
   },
 ];
 
-// 生成模拟商品数据
 export function generateMockProducts(shopId: string): Product[] {
   return [
     {
@@ -542,11 +875,10 @@ export function generateMockProducts(shopId: string): Product[] {
   ];
 }
 
-// 获取客户成功指标
 export function getCustomerSuccessMetrics(customerId: string): CustomerSuccessMetrics {
   const customer = mockCustomers.find(c => c.id === customerId);
   const bookings = mockBookings.filter(b => b.customerId === customerId);
-  
+
   return {
     customerId,
     totalBookings: bookings.length,
@@ -562,3 +894,375 @@ export function getCustomerSuccessMetrics(customerId: string): CustomerSuccessMe
     customerSince: new Date(Date.now() - Math.floor(Math.random() * 365) * 86400000),
   };
 }
+
+export const membershipBenefits: MembershipBenefit[] = [
+  {
+    level: MembershipLevel.REGULAR,
+    discount: 1,
+    pointsRate: 1,
+    gifts: [],
+    canBecomeStockholder: false,
+  },
+  {
+    level: MembershipLevel.PREMIUM,
+    discount: 0.9,
+    pointsRate: 1.5,
+    gifts: ['免费护理一次', '生日礼品'],
+    canBecomeStockholder: true,
+    referralBonusRate: 0.03,
+  },
+  {
+    level: MembershipLevel.STOCKHOLDER,
+    discount: 0.8,
+    pointsRate: 2,
+    gifts: ['专属发型师', '优先预约', '生日派对'],
+    canBecomeStockholder: true,
+    referralBonusRate: 0.05,
+  },
+];
+
+export const mockSettlements: Settlement[] = [
+  {
+    id: 'settle1',
+    shopId: 'shop1',
+    customerId: 'cust1',
+    customerName: '张三',
+    bookingId: 'book1',
+    items: [
+      { type: 'service', id: 's1', name: '精剪', price: 68, quantity: 1 },
+      { type: 'product', id: 'p1', name: '防脱洗发水', price: 168, quantity: 1 },
+    ],
+    subtotal: 236,
+    discount: 23.6,
+    tax: 0,
+    total: 212.4,
+    paymentMethod: 'wechat',
+    paymentStatus: 'completed',
+    createdAt: new Date(Date.now() - 86400000),
+    processedBy: '收银员小王',
+  },
+  {
+    id: 'settle2',
+    shopId: 'shop1',
+    customerId: 'cust3',
+    customerName: '王五',
+    items: [
+      { type: 'service', id: 's2', name: '烫染套餐', price: 388, quantity: 1 },
+    ],
+    subtotal: 388,
+    discount: 77.6,
+    tax: 0,
+    total: 310.4,
+    paymentMethod: 'balance',
+    paymentStatus: 'completed',
+    createdAt: new Date(Date.now() - 172800000),
+    processedBy: '店长',
+  },
+  {
+    id: 'settle3',
+    shopId: 'shop1',
+    customerId: 'cust5',
+    customerName: '孙七',
+    items: [
+      { type: 'service', id: 's3', name: '护理', price: 168, quantity: 1 },
+      { type: 'product', id: 'p2', name: '发膜', price: 128, quantity: 1 },
+      { type: 'product', id: 'p3', name: '发胶', price: 88, quantity: 2 },
+    ],
+    subtotal: 472,
+    discount: 47.2,
+    tax: 0,
+    total: 424.8,
+    paymentMethod: 'alipay',
+    paymentStatus: 'completed',
+    createdAt: new Date(Date.now() - 259200000),
+    processedBy: '收银员小王',
+  },
+];
+
+export const mockSurveys: SatisfactionSurvey[] = [
+  {
+    id: 'survey1',
+    bookingId: 'book1',
+    customerId: 'cust1',
+    customerName: '张三',
+    shopId: 'shop1',
+    rating: 5,
+    comment: '发型师技术非常好，服务态度也很棒！下次还来！',
+    recommended: true,
+    createdAt: new Date(Date.now() - 86400000),
+  },
+  {
+    id: 'survey2',
+    bookingId: 'book2',
+    customerId: 'cust2',
+    customerName: '李四',
+    shopId: 'shop1',
+    rating: 4,
+    comment: '整体不错，就是等待时间有点长',
+    recommended: true,
+    createdAt: new Date(Date.now() - 172800000),
+  },
+  {
+    id: 'survey3',
+    bookingId: 'book3',
+    customerId: 'cust3',
+    customerName: '王五',
+    shopId: 'shop1',
+    rating: 5,
+    comment: '作为股东会员，享受了很好的服务体验',
+    recommended: true,
+    createdAt: new Date(Date.now() - 259200000),
+  },
+];
+
+export const mockReferrals: ReferralRecord[] = [
+  {
+    id: 'ref1',
+    referrerId: 'cust1',
+    referrerName: '张三',
+    referredId: 'cust2',
+    referredName: '李四',
+    referredPhone: '13900000002',
+    bonusAmount: 23.6,
+    status: 'paid',
+    createdAt: new Date(Date.now() - 30 * 86400000),
+    confirmedAt: new Date(Date.now() - 25 * 86400000),
+  },
+  {
+    id: 'ref2',
+    referrerId: 'cust3',
+    referrerName: '王五',
+    referredId: 'cust5',
+    referredName: '孙七',
+    referredPhone: '13900000005',
+    bonusAmount: 31.04,
+    status: 'confirmed',
+    createdAt: new Date(Date.now() - 20 * 86400000),
+    confirmedAt: new Date(Date.now() - 15 * 86400000),
+  },
+  {
+    id: 'ref3',
+    referrerId: 'cust1',
+    referrerName: '张三',
+    referredId: 'cust4',
+    referredName: '赵六',
+    referredPhone: '13900000004',
+    bonusAmount: 21.24,
+    status: 'pending',
+    createdAt: new Date(Date.now() - 5 * 86400000),
+  },
+];
+
+export const mockShopReviews: ShopReview[] = [
+  {
+    id: 'sr1',
+    shopId: 'shop1',
+    customerId: 'cust1',
+    customerName: '张三',
+    customerAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+    bookingId: 'book1',
+    rating: 5,
+    serviceRating: 5,
+    skillRating: 5,
+    environmentRating: 4,
+    priceRating: 4,
+    comment: '整体服务非常好，发型师技术精湛，环境也很舒适，会推荐给朋友！',
+    tags: ['技术好', '服务棒', '环境舒适'],
+    reply: '感谢您的好评，我们会继续努力！',
+    replyBy: '张店长',
+    replyAt: new Date(Date.now() - 80000000),
+    isHidden: false,
+    createdAt: new Date(Date.now() - 86400000),
+  },
+  {
+    id: 'sr2',
+    shopId: 'shop1',
+    customerId: 'cust2',
+    customerName: '李四',
+    customerAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=face',
+    rating: 4,
+    serviceRating: 4,
+    skillRating: 5,
+    environmentRating: 4,
+    priceRating: 3,
+    comment: '技术不错，就是价格稍微偏高了一点',
+    tags: ['技术好', '价格偏高'],
+    isHidden: false,
+    createdAt: new Date(Date.now() - 3 * 86400000),
+  },
+  {
+    id: 'sr3',
+    shopId: 'shop1',
+    customerId: 'cust3',
+    customerName: '王五',
+    customerAvatar: 'https://images.unsplash.com/photo-150703211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face',
+    rating: 5,
+    serviceRating: 5,
+    skillRating: 5,
+    environmentRating: 5,
+    priceRating: 5,
+    comment: '作为老客户，一直很信赖这家店，服务态度好，技术也很专业。',
+    tags: ['老客户推荐', '服务好', '技术专业'],
+    isHidden: false,
+    createdAt: new Date(Date.now() - 7 * 86400000),
+  },
+];
+
+export const mockStylistReviews: StylistReview[] = [
+  {
+    id: 'str1',
+    shopId: 'shop1',
+    stylistId: 'e1',
+    stylistName: '李明',
+    customerId: 'cust1',
+    customerName: '张三',
+    customerAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+    bookingId: 'book1',
+    serviceName: '精剪',
+    rating: 5,
+    skillRating: 5,
+    serviceRating: 5,
+    communicationRating: 5,
+    comment: '李明老师技术非常好，很懂客户需求，沟通很专业！',
+    tags: ['技术精湛', '沟通好', '专业'],
+    reply: '谢谢张三的认可，期待下次为您服务！',
+    replyAt: new Date(Date.now() - 80000000),
+    isHidden: false,
+    createdAt: new Date(Date.now() - 86400000),
+  },
+  {
+    id: 'str2',
+    shopId: 'shop1',
+    stylistId: 'e2',
+    stylistName: '王芳',
+    customerId: 'cust2',
+    customerName: '李四',
+    customerAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=face',
+    serviceName: '烫染套餐',
+    rating: 5,
+    skillRating: 5,
+    serviceRating: 4,
+    communicationRating: 5,
+    comment: '王芳老师做的烫染效果很好，颜色很自然，非常满意！',
+    tags: ['烫染效果好', '颜色自然'],
+    isHidden: false,
+    createdAt: new Date(Date.now() - 3 * 86400000),
+  },
+  {
+    id: 'str3',
+    shopId: 'shop1',
+    stylistId: 'e1',
+    stylistName: '李明',
+    customerId: 'cust3',
+    customerName: '王五',
+    customerAvatar: 'https://images.unsplash.com/photo-150703211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face',
+    serviceName: '精剪',
+    rating: 5,
+    skillRating: 5,
+    serviceRating: 5,
+    communicationRating: 5,
+    comment: '李明老师剪发很仔细，每次都让我很满意！',
+    tags: ['细心', '技术好'],
+    isHidden: false,
+    createdAt: new Date(Date.now() - 2 * 86400000),
+  },
+  {
+    id: 'str4',
+    shopId: 'shop1',
+    stylistId: 'e3',
+    stylistName: '张伟',
+    customerId: 'cust5',
+    customerName: '孙七',
+    customerAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&crop=face',
+    serviceName: '精剪',
+    rating: 4,
+    skillRating: 4,
+    serviceRating: 5,
+    communicationRating: 4,
+    comment: '张伟老师服务态度很好，剪发也不错！',
+    tags: ['服务好'],
+    isHidden: false,
+    createdAt: new Date(Date.now() - 5 * 86400000),
+  },
+];
+
+export const mockFollowUps: FollowUpRecord[] = [
+  {
+    id: 'fu1',
+    customerId: 'cust1',
+    customerName: '张三',
+    shopId: 'shop1',
+    followUpBy: 'cs1',
+    followUpByName: '刘客服',
+    type: 'wechat',
+    purpose: 'satisfaction',
+    result: 'success',
+    rating: 5,
+    comment: '客户对上次服务非常满意，已预约下周再次到店。',
+    nextAction: '预约确认',
+    nextFollowUpAt: new Date(Date.now() + 7 * 86400000),
+    bookingId: 'book1',
+    createdAt: new Date(Date.now() - 5 * 86400000),
+  },
+  {
+    id: 'fu2',
+    customerId: 'cust2',
+    customerName: '李四',
+    shopId: 'shop1',
+    followUpBy: 'cs1',
+    followUpByName: '刘客服',
+    type: 'phone',
+    purpose: 'rebooking',
+    result: 'success',
+    rating: 4,
+    comment: '客户表示会考虑再次到店，已发送优惠券。',
+    nextAction: '发送促销信息',
+    nextFollowUpAt: new Date(Date.now() + 14 * 86400000),
+    createdAt: new Date(Date.now() - 2 * 86400000),
+  },
+  {
+    id: 'fu3',
+    customerId: 'cust3',
+    customerName: '王五',
+    shopId: 'shop1',
+    followUpBy: 'mgr1',
+    followUpByName: '张店长',
+    type: 'visit',
+    purpose: 'membership',
+    result: 'success',
+    rating: 5,
+    comment: '股东会员客户，对店铺运营情况反馈很好。',
+    nextAction: '定期回访',
+    nextFollowUpAt: new Date(Date.now() + 30 * 86400000),
+    createdAt: new Date(Date.now() - 1 * 86400000),
+  },
+  {
+    id: 'fu4',
+    customerId: 'cust4',
+    customerName: '赵六',
+    shopId: 'shop1',
+    followUpBy: 'cs1',
+    followUpByName: '刘客服',
+    type: 'sms',
+    purpose: 'promotion',
+    result: 'pending',
+    comment: '新客户，发送了新店活动信息，等待客户回复。',
+    nextAction: '等待回复',
+    nextFollowUpAt: new Date(Date.now() + 3 * 86400000),
+    createdAt: new Date(Date.now() - 1 * 86400000),
+  },
+  {
+    id: 'fu5',
+    customerId: 'cust5',
+    customerName: '孙七',
+    shopId: 'shop1',
+    followUpBy: 'cs1',
+    followUpByName: '刘客服',
+    type: 'wechat',
+    purpose: 'satisfaction',
+    result: 'success',
+    rating: 5,
+    comment: '客户对烫染服务非常满意，会推荐朋友来店。',
+    createdAt: new Date(Date.now() - 4 * 86400000),
+  },
+];

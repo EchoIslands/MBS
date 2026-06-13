@@ -25,6 +25,12 @@ import FinancialReport from "./pages/shop/FinancialReport";
 import OwnerDashboard from "./pages/shop/OwnerDashboard";
 import RefundManagement from "./pages/shop/RefundManagement";
 import ProductManagement from "./pages/shop/ProductManagement";
+import CustomerManagement from "./pages/shop/CustomerManagement";
+import SettlementManagement from "./pages/shop/SettlementManagement";
+import MembershipManagement from "./pages/shop/MembershipManagement";
+import SatisfactionSurveyManagement from "./pages/shop/SatisfactionSurveyManagement";
+import ReviewManagement from "./pages/shop/ReviewManagement";
+import CustomerProfileForm from "./pages/shop/CustomerProfileForm";
 
 // 默认店铺ID
 const DEFAULT_SHOP_ID = "shop1";
@@ -67,6 +73,12 @@ export default function App() {
         <Route path="/shop/financial" element={<FinancialReport />} />
         <Route path="/shop/owner" element={<OwnerDashboard />} />
         <Route path="/shop/refunds" element={<RefundManagement />} />
+        <Route path="/shop/customers" element={<CustomerManagement />} />
+        <Route path="/shop/settlement" element={<SettlementManagement />} />
+        <Route path="/shop/membership" element={<MembershipManagement />} />
+        <Route path="/shop/survey" element={<SatisfactionSurveyManagement />} />
+        <Route path="/shop/review-management" element={<ReviewManagement />} />
+        <Route path="/shop/customer-profile/:customerId" element={<CustomerProfileForm />} />
 
         {/* 店铺专属入口 */}
         <Route path="/s/:shopId" element={<ShopRedirect />} />
