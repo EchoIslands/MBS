@@ -18,23 +18,30 @@ const modeToRole: Record<LoginMode, UserRole> = {
 };
 
 const ShopLogin: React.FC = () => {
-  // 测试版：默认选中店长模式，手机号和密码预填
+  // 从 mockData 中读取各角色首个员工的手机号作为默认
+  // —— 避免 Login.tsx 和 mockData.ts 两处手机号反复改来改去不一致
+  const shopEmployees = mockShops.find((s) => s.id === DEFAULT_SHOP_ID)?.employees || [];
+  const ceoEmp = shopEmployees.find((e) => e.role === UserRole.CEO);
+  const csEmp = shopEmployees.find((e) => e.role === UserRole.CUSTOMER_SERVICE);
+  const mgrEmp = shopEmployees.find((e) => e.role === UserRole.SHOP_MANAGER);
+  const stlEmp = shopEmployees.find((e) => e.role === UserRole.STYLIST);
+
+  const modeDefaultPhone: Record<LoginMode, string> = {
+    ceo: ceoEmp?.phone || '13900000100',
+    cs: csEmp?.phone || '13900000101',
+    manager: mgrEmp?.phone || '13900000102',
+    stylist: stlEmp?.phone || '13900000011',
+  };
+
+  // 测试版：默认店长模式，手机号从 mockData 读取
   const [loginMode, setLoginMode] = useState<LoginMode>('manager');
-  const [phone, setPhone] = useState('13900000102'); // 测试版预填手机号
-  const [password, setPassword] = useState('123456'); // 测试版预填密码
-  const [showPassword, setShowPassword] = useState(true); // 测试版默认显示密码
-  const [error, setError] = useState('');
+  const [phone, setPhone] = useState<string>(modeDefaultPhone.manager);
+  const [password, setPassword] = useState<string>('123456');
+  const [showPassword, setShowPassword] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
   const navigate = useNavigate();
 
   const currentShop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
-
-  // 切换角色时自动填入对应的测试手机号
-  const modeDefaultPhone: Record<LoginMode, string> = {
-    ceo: '13900000100',
-    cs: '13900000101',
-    manager: '13900000102',
-    stylist: '13900000011',
-  };
 
   const handleModeChange = (mode: LoginMode) => {
     setLoginMode(mode);
@@ -48,14 +55,11 @@ const ShopLogin: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    // 根据角色查找员工
-    const expectedRole = modeToRole[loginMode];
-    const employee = currentShop?.employees.find(
-      (emp) => emp.phone === phone && emp.role === expectedRole,
-    );
+    // 只按手机号查找员工 —— 不再强制校验角色
+    const employee = currentShop?.employees.find((emp) => emp.phone === phone);
 
     if (!employee) {
-      setError('手机号或角色不匹配，请重新输入');
+      setError('手机号不存在，请重新输入');
       return;
     }
 
@@ -79,25 +83,25 @@ const ShopLogin: React.FC = () => {
     ceo: {
       title: 'CEO',
       subtitle: '最高权限，可查看所有数据',
-      placeholder: 'CEO 手机号（演示：13900000100）',
+      placeholder: `CEO 手机号（演示：${modeDefaultPhone.ceo}）`,
       icon: <Crown size={22} />,
     },
     cs: {
       title: '客服专员',
       subtitle: '客户管理 / 评价回复 / 回访',
-      placeholder: '客服手机号（演示：13900000101）',
+      placeholder: `客服手机号（演示：${modeDefaultPhone.cs}）`,
       icon: <Headphones size={22} />,
     },
     manager: {
       title: '店长',
       subtitle: '店铺运营 / 预约管理 / 员工管理',
-      placeholder: '店长手机号（演示：13900000102）',
+      placeholder: `店长手机号（演示：${modeDefaultPhone.manager}）`,
       icon: <UserCheck size={22} />,
     },
     stylist: {
       title: '发型师',
-      subtitle: '个人业绩 / 预约 / 客户画像',
-      placeholder: '发型师手机号（演示：13900000011）',
+      subtitle: '个人业绩 / 客户服务 / 排队状态',
+      placeholder: `发型师手机号（演示：${modeDefaultPhone.stylist}）`,
       icon: <User size={22} />,
     },
   };
