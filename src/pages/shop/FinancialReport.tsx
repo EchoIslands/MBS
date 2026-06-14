@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Download, BarChart3, TrendingUp, Users, Calendar, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ShopLayout from './ShopLayout';
@@ -7,21 +7,24 @@ import { getMockFinancialReport, mockBookings } from '../../../shared/mockData';
 import { FinancialReport } from '../../../shared/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
+const DEFAULT_SHOP_ID = 'shop1';
+
 const FinancialReportPage: React.FC = () => {
   const { currentShop } = useAppStore();
-  const [report, setReport] = useState<FinancialReport | null>(null);
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
 
-  useEffect(() => {
-    if (!currentShop) {
-      return;
-    }
+  // 直接同步计算 report，不依赖 useEffect 异步初始化
+  // 用 currentShop?.id（如果存在）或 DEFAULT_SHOP_ID 作为兜底
+  const shopId = currentShop?.id || DEFAULT_SHOP_ID;
+  const report: FinancialReport = useMemo(
+    () => getMockFinancialReport(shopId),
+    [shopId]
+  );
 
-    setReport(getMockFinancialReport(currentShop.id));
-  }, [currentShop]);
-
+  // 趋势图数据（随时间范围切换横坐标）
   const chartData = useMemo(() => {
-    const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const rand = (min: number, max: number) =>
+      Math.floor(Math.random() * (max - min + 1)) + min;
     if (dateRange === 'week') {
       return [
         { name: '周一', revenue: rand(500, 2500) },
@@ -73,62 +76,88 @@ const FinancialReportPage: React.FC = () => {
       ? '本季度营收趋势（按月）'
       : '本年营收趋势（按月）';
 
-  if (!report || !currentShop) {
-    return (
-      <ShopLayout title="财务报表">
-        <div className="max-w-6xl mx-auto px-4 py-12 flex items-center justify-center">
-          <div className="text-gray-400">加载中...</div>
-        </div>
-      </ShopLayout>
-    );
-  }
-
   const exportToExcel = () => {
+    const shopName = currentShop?.name || '店铺';
     const data = [
-      ['财务报表', currentShop.name],
+      ['财务报表', shopName],
       ['生成时间', new Date().toLocaleString('zh-CN')],
       [],
       ['业绩汇总'],
       ['日期', '今日', '本周', '本月', '本年'],
-      ['营收(元)', report.revenue.today, report.revenue.week, report.revenue.month, report.revenue.year],
-      ['服务数', report.services.today, report.services.week, report.services.month, report.services.year],
-      ['客单价(元)', report.averageTicket.today, report.averageTicket.week, report.averageTicket.month, report.averageTicket.year],
+      [
+        '营收(元)',
+        report.revenue.today,
+        report.revenue.week,
+        report.revenue.month,
+        report.revenue.year,
+      ],
+      [
+        '服务数',
+        report.services.today,
+        report.services.week,
+        report.services.month,
+        report.services.year,
+      ],
+      [
+        '客单价(元)',
+        report.averageTicket.today,
+        report.averageTicket.week,
+        report.averageTicket.month,
+        report.averageTicket.year,
+      ],
       [],
       ['发型师业绩'],
       ['发型师', '今日业绩(元)', '服务数', '平均评分'],
-      ...report.topStylists.map(stylist => [
+      ...report.topStylists.map((stylist) => [
         stylist.name,
         stylist.revenue,
         stylist.services,
-        stylist.rating
-      ])
+        stylist.rating,
+      ]),
     ];
 
     const bookingsData = [
       ['预约记录'],
       ['时间', '顾客', '服务', '发型师', '金额', '状态'],
       ...mockBookings
-        .filter(b => b.shopId === currentShop.id)
-        .map(booking => [
+        .filter((b) => b.shopId === shopId)
+        .map((booking) => [
           new Date(booking.scheduledTime).toLocaleString('zh-CN'),
           booking.customerName,
           booking.serviceName,
           booking.barberName || '随机',
           booking.price,
-          booking.status === 'confirmed' ? '已确认' : booking.status === 'completed' ? '已完成' : '待确认'
-        ])
+          booking.status === 'confirmed'
+            ? '已确认'
+            : booking.status === 'completed'
+            ? '已完成'
+            : '待确认',
+        ]),
     ];
 
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.aoa_to_sheet(data);
     const ws2 = XLSX.utils.aoa_to_sheet(bookingsData);
-    
-    ws1['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
-    ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
-    
+
+    ws1['!cols'] = [
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+    ];
+    ws2['!cols'] = [
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 10 },
+    ];
+
     XLSX.utils.book_append_sheet(wb, ws1, '财务汇总');
     XLSX.utils.book_append_sheet(wb, ws2, '预约记录');
-    XLSX.writeFile(wb, `${currentShop.name}_财务报表_${new Date().toLocaleDateString('zh-CN')}.xlsx`);
+    XLSX.writeFile(wb, `${shopName}_财务报表_${new Date().toLocaleDateString('zh-CN')}.xlsx`);
   };
 
   return (
@@ -138,7 +167,7 @@ const FinancialReportPage: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Calendar size={20} className="text-gray-500" />
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {(['week', 'month', 'quarter', 'year'] as const).map((range) => (
                 <button
                   key={range}
@@ -149,7 +178,13 @@ const FinancialReportPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {range === 'week' ? '本周' : range === 'month' ? '本月' : range === 'quarter' ? '本季度' : '本年'}
+                  {range === 'week'
+                    ? '本周'
+                    : range === 'month'
+                    ? '本月'
+                    : range === 'quarter'
+                    ? '本季度'
+                    : '本年'}
                 </button>
               ))}
             </div>
@@ -172,7 +207,9 @@ const FinancialReportPage: React.FC = () => {
               </div>
               <div className="text-sm opacity-80">今日</div>
             </div>
-            <div className="text-3xl font-bold mb-1">¥{report.revenue.today.toLocaleString()}</div>
+            <div className="text-3xl font-bold mb-1">
+              ¥{report.revenue.today.toLocaleString()}
+            </div>
             <div className="text-sm opacity-80">较昨日 +{Math.floor(Math.random() * 30)}%</div>
           </div>
 
@@ -183,8 +220,12 @@ const FinancialReportPage: React.FC = () => {
               </div>
               <div className="text-sm opacity-80">本月</div>
             </div>
-            <div className="text-3xl font-bold mb-1">¥{report.revenue.month.toLocaleString()}</div>
-            <div className="text-sm opacity-80">目标完成 {Math.floor(Math.random() * 20 + 80)}%</div>
+            <div className="text-3xl font-bold mb-1">
+              ¥{report.revenue.month.toLocaleString()}
+            </div>
+            <div className="text-sm opacity-80">
+              目标完成 {Math.floor(Math.random() * 20 + 80)}%
+            </div>
           </div>
 
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white">
@@ -219,10 +260,20 @@ const FinancialReportPage: React.FC = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="name" stroke="#6b7280" />
                 <YAxis stroke="#6b7280" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                  }}
                 />
-                <Line type="monotone" dataKey="revenue" stroke="#f97316" strokeWidth={3} fill="#fed7aa" />
+                <Line
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#f97316"
+                  strokeWidth={3}
+                  fill="#fed7aa"
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -233,25 +284,38 @@ const FinancialReportPage: React.FC = () => {
           <h2 className="text-lg font-bold text-gray-800 mb-4">发型师业绩排名</h2>
           <div className="space-y-4">
             {report.topStylists.map((stylist, index) => (
-              <div key={stylist.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-orange-300 transition-colors">
+              <div
+                key={stylist.id}
+                className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-orange-300 transition-colors"
+              >
                 <div className="flex items-center gap-4">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
-                    index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-700' : 'bg-gray-300'
-                  }`}>
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
+                      index === 0
+                        ? 'bg-yellow-500'
+                        : index === 1
+                        ? 'bg-gray-400'
+                        : index === 2
+                        ? 'bg-orange-700'
+                        : 'bg-gray-300'
+                    }`}
+                  >
                     {index + 1}
                   </div>
-                  <img
-                    src={stylist.avatar}
-                    alt={stylist.name}
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
+                  <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold">
+                    {stylist.name.charAt(0)}
+                  </div>
                   <div>
                     <div className="font-medium text-gray-800">{stylist.name}</div>
-                    <div className="text-sm text-gray-500">服务 {stylist.services} 单 · 评分 {stylist.rating}</div>
+                    <div className="text-sm text-gray-500">
+                      服务 {stylist.services} 单 · 评分 {stylist.rating}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xl font-bold text-orange-500">¥{stylist.revenue.toLocaleString()}</div>
+                  <div className="text-xl font-bold text-orange-500">
+                    ¥{stylist.revenue.toLocaleString()}
+                  </div>
                 </div>
               </div>
             ))}
@@ -283,18 +347,25 @@ const FinancialReportPage: React.FC = () => {
                         {isIncome ? '精剪服务' : '店铺租金'}
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          isIncome 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-red-100 text-red-700'
-                        }`}>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            isIncome
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
                           {isIncome ? '收入' : '支出'}
                         </span>
                       </td>
-                      <td className={`py-3 px-4 text-sm text-right font-medium ${
-                        isIncome ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {isIncome ? '+' : '-'}¥{isIncome ? Math.floor(Math.random() * 300 + 50) : Math.floor(Math.random() * 5000 + 1000)}
+                      <td
+                        className={`py-3 px-4 text-sm text-right font-medium ${
+                          isIncome ? 'text-green-600' : 'text-red-600'
+                        }`}
+                      >
+                        {isIncome ? '+' : '-'}¥
+                        {isIncome
+                          ? Math.floor(Math.random() * 300 + 50)
+                          : Math.floor(Math.random() * 5000 + 1000)}
                       </td>
                     </tr>
                   );
