@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Download, BarChart3, TrendingUp, Users, Calendar, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ShopLayout from './ShopLayout';
@@ -72,15 +72,59 @@ const FinancialReportPage: React.FC = () => {
     XLSX.writeFile(wb, `${currentShop.name}_财务报表_${new Date().toLocaleDateString('zh-CN')}.xlsx`);
   };
 
-  const chartData = [
-    { name: '周一', revenue: Math.floor(Math.random() * 2000) + 500 },
-    { name: '周二', revenue: Math.floor(Math.random() * 2000) + 500 },
-    { name: '周三', revenue: Math.floor(Math.random() * 2000) + 500 },
-    { name: '周四', revenue: Math.floor(Math.random() * 2000) + 500 },
-    { name: '周五', revenue: Math.floor(Math.random() * 3000) + 1000 },
-    { name: '周六', revenue: Math.floor(Math.random() * 4000) + 1500 },
-    { name: '周日', revenue: Math.floor(Math.random() * 3500) + 1200 },
-  ];
+  const chartData = useMemo(() => {
+    const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+    if (dateRange === 'week') {
+      return [
+        { name: '周一', revenue: rand(500, 2500) },
+        { name: '周二', revenue: rand(500, 2500) },
+        { name: '周三', revenue: rand(500, 2500) },
+        { name: '周四', revenue: rand(500, 2500) },
+        { name: '周五', revenue: rand(1000, 4000) },
+        { name: '周六', revenue: rand(1500, 5500) },
+        { name: '周日', revenue: rand(1200, 4700) },
+      ];
+    }
+    if (dateRange === 'month') {
+      return [
+        { name: '第1周', revenue: rand(5000, 12000) },
+        { name: '第2周', revenue: rand(5000, 12000) },
+        { name: '第3周', revenue: rand(5000, 12000) },
+        { name: '第4周', revenue: rand(5000, 12000) },
+      ];
+    }
+    if (dateRange === 'quarter') {
+      return [
+        { name: '第1月', revenue: rand(20000, 45000) },
+        { name: '第2月', revenue: rand(20000, 45000) },
+        { name: '第3月', revenue: rand(20000, 45000) },
+      ];
+    }
+    // year
+    return [
+      { name: '1月', revenue: rand(25000, 50000) },
+      { name: '2月', revenue: rand(25000, 50000) },
+      { name: '3月', revenue: rand(25000, 50000) },
+      { name: '4月', revenue: rand(25000, 50000) },
+      { name: '5月', revenue: rand(25000, 50000) },
+      { name: '6月', revenue: rand(25000, 50000) },
+      { name: '7月', revenue: rand(25000, 50000) },
+      { name: '8月', revenue: rand(25000, 50000) },
+      { name: '9月', revenue: rand(25000, 50000) },
+      { name: '10月', revenue: rand(25000, 50000) },
+      { name: '11月', revenue: rand(25000, 50000) },
+      { name: '12月', revenue: rand(25000, 50000) },
+    ];
+  }, [dateRange]);
+
+  const chartTitle =
+    dateRange === 'week'
+      ? '本周营收趋势'
+      : dateRange === 'month'
+      ? '本月营收趋势（按周）'
+      : dateRange === 'quarter'
+      ? '本季度营收趋势（按月）'
+      : '本年营收趋势（按月）';
 
   return (
     <ShopLayout title="财务报表">
@@ -163,7 +207,7 @@ const FinancialReportPage: React.FC = () => {
 
         {/* 业绩图表 */}
         <div className="bg-white rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">本周营收趋势</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-4">{chartTitle}</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>

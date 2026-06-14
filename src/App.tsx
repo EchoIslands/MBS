@@ -70,7 +70,7 @@ export default function App() {
         <Route path="/shop" element={<Dashboard />} />
         <Route path="/shop/manage" element={<ShopManage />} />
         <Route path="/shop/products" element={<ProductManagement />} />
-        <Route path="/shop/reviews" element={<ReviewsManagement />} />
+        <Route path="/shop/reviews" element={<ReviewManagement />} />
         <Route path="/shop/stylist" element={<StylistDashboard />} />
         <Route path="/shop/financial" element={<FinancialReport />} />
         <Route path="/shop/owner" element={<OwnerDashboard />} />
@@ -81,12 +81,12 @@ export default function App() {
         <Route path="/shop/membership" element={<MembershipManagement />} />
         <Route path="/shop/survey" element={<SatisfactionSurveyManagement />} />
         <Route path="/shop/review-management" element={<ReviewManagement />} />
+        <Route path="/shop/customer-profile" element={<CustomerManagement />} />
         <Route path="/shop/customer-profile/:customerId" element={<CustomerProfileForm />} />
         <Route path="/shop/customer-recall" element={<CustomerRecall />} />
 
-        {/* 店铺专属入口 */}
+        {/* 店铺专属入口（保留短链，但移除 /shop/:shopId 通配，避免误匹配管理端路径） */}
         <Route path="/s/:shopId" element={<ShopRedirect />} />
-        <Route path="/shop/:shopId" element={<ShopRedirect />} />
       </Routes>
     </Router>
   );

@@ -13,6 +13,7 @@ import {
 } from '../../../shared/types';
 import { mockCustomers } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
+import ShopLayout from './ShopLayout';
 
 const CustomerProfileForm: React.FC = () => {
   const { customerId } = useParams<{ customerId: string }>();
@@ -370,29 +371,8 @@ const CustomerProfileForm: React.FC = () => {
   const isEditMode = !!customer.profile;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-32">
-      {/* 顶部标题栏 */}
-      <header className="bg-gradient-to-r from-orange-500 to-orange-600 text-white sticky top-0 z-40 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2 hover:bg-orange-400 rounded-lg transition-colors"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">
-                {isEditMode ? '编辑客户画像' : '新建客户画像'}
-              </h1>
-              <p className="text-sm opacity-90 mt-0.5">
-                技师选择题录入 · 了解客户偏好，提供更好服务
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <ShopLayout title={isEditMode ? '编辑客户画像' : '新建客户画像'}>
+      <div className="min-h-screen bg-gray-50 pb-32">
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* 客户信息卡片 */}
         <div className="bg-white rounded-2xl shadow-sm p-5 mb-5">
@@ -746,7 +726,8 @@ const CustomerProfileForm: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </ShopLayout>
   );
 };
 
