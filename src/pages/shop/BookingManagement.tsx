@@ -1,0 +1,401 @@
+import React, { useState, useMemo } from 'react';
+import {
+  Calendar,
+  Clock,
+  User,
+  Phone,
+  Scissors,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Search,
+  Filter,
+  RefreshCw,
+  MessageSquare,
+  ChevronRight,
+  X,
+} from 'lucide-react';
+import { Booking, UserRole } from '../../../shared/types';
+import { mockBookings } from '../../../shared/mockData';
+import ShopLayout from './ShopLayout';
+
+const BookingManagement: React.FC = () => {
+  const [bookings] = useState<Booking[]>(mockBookings);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Booking['status'] | 'all'>('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
+
+  // 状态配置
+  const statusConfig: Record<
+    Booking['status'],
+    { label: string; color: string; bgColor: string; icon: React.ElementType }
+  > = {
+    pending: {
+      label: '待确认',
+      color: 'text-yellow-700',
+      bgColor: 'bg-yellow-100',
+      icon: AlertCircle,
+    },
+    confirmed: {
+      label: '已确认',
+      color: 'text-blue-700',
+      bgColor: 'bg-blue-100',
+      icon: CheckCircle,
+    },
+    completed: {
+      label: '已完成',
+      color: 'text-green-700',
+      bgColor: 'bg-green-100',
+      icon: CheckCircle,
+    },
+    cancelled: {
+      label: '已取消',
+      color: 'text-gray-500',
+      bgColor: 'bg-gray-100',
+      icon: XCircle,
+    },
+  };
+
+  // 统计
+  const stats = useMemo(() => {
+    return [
+      {
+        label: '待确认',
+        value: bookings.filter((b) => b.status === 'pending').length,
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-50',
+      },
+      {
+        label: '今日预约',
+        value: bookings.filter((b) => {
+          const today = new Date().toDateString();
+          return new Date(b.scheduledTime).toDateString() === today;
+        }).length,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50',
+      },
+      {
+        label: '本周预约',
+        value: bookings.filter((b) => {
+          const now = new Date();
+          const bookingDate = new Date(b.scheduledTime);
+          const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          return bookingDate >= weekStart && bookingDate <= weekEnd;
+        }).length,
+        color: 'text-purple-600',
+        bgColor: 'bg-purple-50',
+      },
+      {
+        label: '本月完成',
+        value: bookings.filter((b) => b.status === 'completed').length,
+        color: 'text-green-600',
+        bgColor: 'bg-green-50',
+      },
+    ];
+  }, [bookings]);
+
+  // 筛选
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const matchesSearch =
+        searchTerm === '' ||
+        b.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.barberName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.serviceName?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
+
+      const matchesDate =
+        dateFilter === 'all' ||
+        new Date(b.scheduledTime).toDateString() === new Date(dateFilter).toDateString();
+
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  }, [bookings, searchTerm, statusFilter, dateFilter]);
+
+  // 按日期分组
+  const groupedBookings = useMemo(() => {
+    const groups: Record<string, Booking[]> = {};
+    filteredBookings.forEach((booking) => {
+      const dateKey = new Date(booking.scheduledTime).toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+      });
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(booking);
+    });
+    return groups;
+  }, [filteredBookings]);
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setDateFilter('all');
+  };
+
+  return (
+    <ShopLayout title="预约管理">
+      {/* 统计卡片 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {stats.map((stat, index) => (
+          <div
+            key={index}
+            className={`${stat.bgColor} rounded-2xl p-4 border border-gray-100`}
+          >
+            <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
+            <div className="text-sm text-gray-500 mt-1">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 筛选栏 */}
+      <div className="bg-white rounded-2xl shadow-sm p-4 mb-5 border border-gray-100">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search
+              size={18}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              type="text"
+              placeholder="搜索客户姓名 / 发型师 / 服务..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as Booking['status'] | 'all')}
+            className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+          >
+            <option value="all">全部状态</option>
+            <option value="pending">待确认</option>
+            <option value="confirmed">已确认</option>
+            <option value="completed">已完成</option>
+            <option value="cancelled">已取消</option>
+          </select>
+
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+          />
+
+          {(searchTerm || statusFilter !== 'all' || dateFilter !== 'all') && (
+            <button
+              onClick={resetFilters}
+              className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
+            >
+              <RefreshCw size={16} />
+              重置
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 预约列表 */}
+      <div className="space-y-6">
+        {Object.keys(groupedBookings).length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm p-12 text-center border border-gray-100">
+            <Calendar size={48} className="mx-auto mb-3 text-gray-300" />
+            <p className="text-gray-500">暂无预约记录</p>
+            <button
+              onClick={resetFilters}
+              className="mt-3 px-4 py-2 text-sm bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors"
+            >
+              重置筛选
+            </button>
+          </div>
+        ) : (
+          Object.entries(groupedBookings).map(([date, dateBookings]) => (
+            <div key={date} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <Calendar size={16} className="text-orange-500" />
+                  {date}
+                </div>
+                <span className="text-xs text-gray-400">{dateBookings.length} 个预约</span>
+              </div>
+
+              <div className="divide-y divide-gray-50">
+                {dateBookings.map((booking) => {
+                  const StatusIcon = statusConfig[booking.status].icon;
+                  return (
+                    <div
+                      key={booking.id}
+                      className="px-5 py-4 hover:bg-orange-50/30 transition-colors cursor-pointer"
+                      onClick={() => setViewingBooking(booking)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {/* 排队号 */}
+                          <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-lg flex-shrink-0">
+                            {booking.queueNumber || '-'}
+                          </div>
+
+                          {/* 信息 */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-gray-800">{booking.customerName}</span>
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[booking.status].bgColor} ${statusConfig[booking.status].color}`}>
+                                <StatusIcon size={12} />
+                                {statusConfig[booking.status].label}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Scissors size={14} />
+                                {booking.serviceName}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock size={14} />
+                                {new Date(booking.scheduledTime).toLocaleTimeString('zh-CN', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                              {booking.barberName && (
+                                <span className="flex items-center gap-1">
+                                  <User size={14} />
+                                  {booking.barberName}
+                                </span>
+                              )}
+                              {booking.price && (
+                                <span className="text-orange-600 font-medium">¥{booking.price}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <ChevronRight size={18} className="text-gray-400 flex-shrink-0" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 预约详情弹窗 */}
+      {viewingBooking && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-xl font-bold text-gray-800">预约详情</h3>
+              <button
+                onClick={() => setViewingBooking(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* 状态 */}
+              <div className={`flex items-center gap-3 p-4 rounded-xl ${statusConfig[viewingBooking.status].bgColor}`}>
+                {React.createElement(statusConfig[viewingBooking.status].icon, {
+                  size: 20,
+                  className: statusConfig[viewingBooking.status].color,
+                })}
+                <span className={`font-medium ${statusConfig[viewingBooking.status].color}`}>
+                  {statusConfig[viewingBooking.status].label}
+                </span>
+              </div>
+
+              {/* 基本信息 */}
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <User size={16} /> 客户姓名
+                  </span>
+                  <span className="font-medium text-gray-800">{viewingBooking.customerName}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <Scissors size={16} /> 服务项目
+                  </span>
+                  <span className="font-medium text-gray-800">{viewingBooking.serviceName}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <Calendar size={16} /> 预约时间
+                  </span>
+                  <span className="font-medium text-gray-800">
+                    {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
+                  </span>
+                </div>
+                {viewingBooking.barberName && (
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <User size={16} /> 指定发型师
+                    </span>
+                    <span className="font-medium text-gray-800">{viewingBooking.barberName}</span>
+                  </div>
+                )}
+                {viewingBooking.price && (
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      ¥ 服务价格
+                    </span>
+                    <span className="font-bold text-orange-500">¥{viewingBooking.price}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    # 排队号
+                  </span>
+                  <span className="font-medium text-gray-800">#{viewingBooking.queueNumber || '-'}</span>
+                </div>
+                {viewingBooking.notes && (
+                  <div className="py-2 border-b border-gray-100">
+                    <span className="text-gray-500 text-sm flex items-center gap-2 mb-1">
+                      <MessageSquare size={16} /> 备注
+                    </span>
+                    <p className="text-gray-700 mt-1">{viewingBooking.notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="flex gap-3 mt-6">
+              {viewingBooking.status === 'pending' && (
+                <>
+                  <button className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors">
+                    确认预约
+                  </button>
+                  <button className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors">
+                    取消预约
+                  </button>
+                </>
+              )}
+              {viewingBooking.status === 'confirmed' && (
+                <button className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors">
+                  开始服务
+                </button>
+              )}
+              <button
+                onClick={() => setViewingBooking(null)}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ShopLayout>
+  );
+};
+
+export default BookingManagement;
