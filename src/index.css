@@ -12,3 +12,106 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ===== 移动端全局优化 ===== */
+
+/* 1. 安全区域（iPhone 刘海/底部横条） */
+html, body {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* 2. 所有可点击按钮/输入框最小 44px 高（苹果 HIG 推荐） */
+button,
+input,
+select,
+textarea {
+  min-height: 44px;
+}
+
+/* 3. 小屏下按钮的点击区域更舒适 */
+@media (max-width: 640px) {
+  button {
+    min-height: 44px;
+  }
+
+  /* 4. 防止页面横向滚动（手机浏览体验） */
+  html, body {
+    overflow-x: hidden;
+  }
+
+  /* 4-1. 让内部允许横向滚动的元素不受影响（使用独立 wrapper） */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 5. 卡片内边距在手机上减小一点，但不要太紧 */
+  .rounded-2xl,
+  .rounded-xl,
+  .rounded-3xl {
+    padding: 1rem;
+  }
+
+  /* 6. 字号在手机屏上更合理 */
+  .text-5xl {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+  .text-4xl {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+  }
+  .text-3xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+  .text-2xl {
+    font-size: 1.375rem;
+    line-height: 1.75rem;
+  }
+
+  /* 7. 底部固定栏（如购物车结算、预约页提交）增加安全区 */
+  .fixed.bottom-0 {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0) + 0.5rem);
+  }
+
+  /* 8. 防止长按选择按钮文案 */
+  button {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* 9. 字号缩小：表格行在手机端显示更合理 */
+  table {
+    font-size: 0.875rem;
+  }
+
+  /* 10. 底部导航 / 管理端底部的安全区 */
+  .mobile-safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0) + 0.5rem);
+  }
+}
+
+/* 11. 平滑滚动 */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 12. 管理端底部导航（仅在 < 768px 显示） */
+.shop-bottom-nav {
+  display: none;
+}
+@media (max-width: 767px) {
+  .shop-side-nav {
+    display: none !important;
+  }
+  .shop-bottom-nav {
+    display: flex;
+  }
+}
+
+/* 13. 管理端内容区在手机端减少 padding */
+@media (max-width: 767px) {
+  .shop-main-content {
+    padding: 1rem 0.75rem !important;
+  }
+}

@@ -174,29 +174,34 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   const employeeName = currentEmployee?.name || currentShop?.name || '管理后台';
   const roleLabel = roleLabels[userRole || ''] || '管理员';
 
+  // 手机端只显示前 5 个菜单（避免底部导航过密）
+  const bottomMenus = visibleMenus.slice(0, 5);
+  const moreMenus = visibleMenus.slice(5);
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* 顶部栏 */}
       <header className="bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow sticky top-0 z-50">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {/* 返回按钮 - 非首页显示 */}
             {!isHomePage && (
               <button
                 onClick={handleBack}
-                className="flex items-center gap-1 px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                className="flex items-center gap-1 px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm flex-shrink-0"
               >
                 <ArrowLeft size={16} />
                 <span className="hidden sm:inline">返回</span>
               </button>
             )}
-            <Scissors size={24} />
-            <div>
-              <div className="font-bold">{currentShop?.name || '皓诗形象设计'}</div>
-              <div className="text-xs text-orange-100">{displayTitle}</div>
+            <Scissors size={20} className="sm:hidden flex-shrink-0" />
+            <Scissors size={24} className="hidden sm:inline flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold text-sm sm:text-base truncate">{currentShop?.name || '皓诗形象设计'}</div>
+              <div className="text-xs text-orange-100 truncate">{displayTitle}</div>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
             <div className="hidden sm:flex items-center gap-2 text-sm bg-white/10 px-3 py-1.5 rounded-lg">
               <UserCircle size={18} />
               <div>
@@ -206,7 +211,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
             </div>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
             >
               <LogOut size={16} />
               <span className="hidden sm:inline">退出</span>
@@ -217,8 +222,8 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 
       {/* 主体区 */}
       <div className="flex flex-1">
-        {/* 左侧导航 */}
-        <aside className="w-48 md:w-56 bg-white border-r border-gray-200 min-h-[calc(100vh-56px)] py-3">
+        {/* 左侧导航 —— 桌面端显示 */}
+        <aside className="shop-side-nav w-48 md:w-56 bg-white border-r border-gray-200 min-h-[calc(100vh-56px)] py-3 flex-shrink-0">
           <nav className="space-y-1 px-2">
             {visibleMenus.map((item) => {
               const isActive =
@@ -252,10 +257,49 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
         </aside>
 
         {/* 右侧内容 */}
-        <main className="flex-1 px-4 md:px-6 py-6 overflow-x-hidden">
-          <div className="max-w-5xl mx-auto">{children}</div>
+        <main className="shop-main-content flex-1 px-3 sm:px-4 md:px-6 py-4 sm:py-6 overflow-x-hidden w-full">
+          <div className="max-w-5xl mx-auto pb-24">{children}</div>
         </main>
       </div>
+
+      {/* 手机端底部导航栏 */}
+      <nav className="shop-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40 mobile-safe-bottom">
+        <div className="flex justify-around items-stretch">
+          {bottomMenus.map((item) => {
+            const isActive =
+              item.path === '/shop'
+                ? location.pathname === '/shop'
+                : location.pathname.startsWith(item.path);
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs transition-colors min-h-[56px] ${
+                  isActive ? 'text-orange-600' : 'text-gray-500'
+                } ${isActive ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
+              >
+                <div className={isActive ? 'text-orange-600' : 'text-gray-500'}>
+                  {item.icon}
+                </div>
+                <span className="truncate max-w-full px-1 text-[11px] font-medium">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+          {moreMenus.length > 0 && (
+            <button
+              onClick={() => navigate(moreMenus[0].path)}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs text-gray-500 hover:bg-gray-50 min-h-[56px]"
+            >
+              <Crown size={18} />
+              <span className="truncate max-w-full px-1 text-[11px] font-medium">
+                {moreMenus[0].label}
+              </span>
+            </button>
+          )}
+        </div>
+      </nav>
     </div>
   );
 };

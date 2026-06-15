@@ -153,64 +153,67 @@ const Booking: React.FC = () => {
 
       <div className="max-w-2xl mx-auto px-4">
         {/* 店铺信息 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 mt-4">
-          <div className="flex items-center gap-4">
+        <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 mt-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             <img
               src={shop.images[0]}
               alt={shop.name}
-              className="w-14 h-14 rounded-xl object-cover"
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover flex-shrink-0"
             />
-            <div>
-              <h2 className="font-bold text-gray-800">{shop.name}</h2>
-              <p className="text-sm text-gray-500">{shop.address}</p>
+            <div className="min-w-0">
+              <h2 className="font-bold text-gray-800 truncate">{shop.name}</h2>
+              <p className="text-xs sm:text-sm text-gray-500 truncate">{shop.address}</p>
             </div>
           </div>
         </div>
 
         {/* 选择服务 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-4">选择服务</h3>
-          <div className="space-y-3">
+        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
+          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4">选择服务</h3>
+          <div className="space-y-2 sm:space-y-3">
             {shop.services.map((service) => (
               <label
                 key={service.id}
-                className={`flex items-center justify-between p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                className={`flex items-center justify-between p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
                   selectedService === service.id
                     ? 'border-orange-500 bg-orange-50'
                     : 'border-gray-200 hover:border-orange-200'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                   <input
                     type="radio"
                     name="service"
                     checked={selectedService === service.id}
                     onChange={() => setSelectedService(service.id)}
-                    className="accent-orange-500"
+                    className="accent-orange-500 flex-shrink-0"
                   />
-                  <div>
-                    <div className="font-medium text-gray-800">{service.name}</div>
-                    <div className="text-sm text-gray-500">约 {service.duration} 分钟</div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-800 text-sm sm:text-base">{service.name}</div>
+                    <div className="text-xs sm:text-sm text-gray-500">约 {service.duration} 分钟</div>
                   </div>
                 </div>
-                <div className="text-orange-500 font-bold text-lg">¥{service.price}</div>
+                <div className="text-orange-500 font-bold text-base sm:text-lg flex-shrink-0 ml-2">
+                  ¥{service.price}
+                </div>
               </label>
             ))}
           </div>
         </div>
 
         {/* 选择日期 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <CalendarIcon size={20} />
+        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
+          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+            <CalendarIcon size={18} className="sm:hidden" />
+            <CalendarIcon size={20} className="hidden sm:inline" />
             选择日期
           </h3>
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
             {dates.map((d) => (
               <button
                 key={d.value}
                 onClick={() => setSelectedDate(d.value)}
-                className={`flex-shrink-0 px-4 py-3 rounded-xl text-center transition-all min-w-[78px] ${
+                className={`flex-shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl text-center transition-all min-w-[72px] sm:min-w-[78px] ${
                   selectedDate === d.value
                     ? 'bg-orange-500 text-white shadow'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -224,12 +227,13 @@ const Booking: React.FC = () => {
         </div>
 
         {/* 选择时间 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Clock size={20} />
+        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
+          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+            <Clock size={18} className="sm:hidden" />
+            <Clock size={20} className="hidden sm:inline" />
             选择时间
           </h3>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
             {timeSlots.map((time) => {
               const allBusy = stylists.every((e) => isBarberBusy(e.id, selectedDate, time));
               return (
@@ -237,7 +241,7 @@ const Booking: React.FC = () => {
                   key={time}
                   onClick={() => !allBusy && setSelectedTime(time)}
                   disabled={allBusy}
-                  className={`py-2.5 rounded-xl text-center transition-all text-sm ${
+                  className={`py-2.5 sm:py-3 rounded-xl text-center transition-all text-sm ${
                     selectedTime === time
                       ? 'bg-orange-500 text-white shadow'
                       : allBusy
@@ -254,40 +258,41 @@ const Booking: React.FC = () => {
         </div>
 
         {/* 选择发型师 —— 核心改造 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Scissors size={22} className="text-orange-500" />
+        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
+          <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+            <Scissors size={20} className="text-orange-500" />
             选择发型师
           </h3>
 
           {/* 智能匹配卡片 */}
-          <div className={`p-4 border-2 rounded-2xl cursor-pointer transition-all mb-4 ${
+          <div className={`p-3 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all mb-3 sm:mb-4 ${
             selectionMode === 'fastest'
               ? 'border-green-500 bg-green-50'
               : 'border-gray-200 hover:border-green-300'
           }`}
           >
-            <label className="flex items-start gap-3 cursor-pointer">
+            <label className="flex items-start gap-2 sm:gap-3 cursor-pointer">
               <input
                 type="radio"
                 name="barberSelection"
                 checked={selectionMode === 'fastest'}
                 onChange={() => setSelectionMode('fastest')}
-                className="mt-2 accent-green-500"
+                className="mt-2 sm:mt-3 accent-green-500 flex-shrink-0"
               />
-              <div className="flex items-start gap-3 flex-1">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
-                  <Zap size={22} className="text-green-600" />
+              <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
+                  <Zap size={18} className="sm:hidden text-green-600" />
+                  <Zap size={22} className="hidden sm:inline text-green-600" />
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-gray-800">智能匹配 · 最快服务</span>
-                    <span className="text-xs px-2 py-0.5 bg-green-600 text-white rounded-full">推荐</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
+                    <span className="font-bold text-gray-800 text-sm sm:text-base">智能匹配 · 最快服务</span>
+                    <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-green-600 text-white rounded-full">推荐</span>
                   </div>
-                  <div className="text-sm text-gray-500 mb-2">
+                  <div className="text-xs sm:text-sm text-gray-500 mb-2 line-clamp-2">
                     系统为您匹配当前最空闲的发型师，节省等待时间
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-xs sm:text-sm flex-wrap">
                     {fastest ? (
                       <>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded border border-gray-200 text-gray-700">
@@ -306,25 +311,25 @@ const Booking: React.FC = () => {
             </label>
           </div>
 
-          {/* 分隔线 */}
-          <div className="relative my-5">
+          {/* 分隔线 —— 手机端简化，只保留一行 */}
+          <div className="relative my-3 sm:my-5">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200" />
             </div>
             <div className="relative flex justify-center">
-              <span className="bg-white px-4 text-xs text-gray-500">或选择指定发型师</span>
+              <span className="bg-white px-3 sm:px-4 text-xs text-gray-500">或选择指定发型师</span>
             </div>
           </div>
 
-          {/* 发型师列表 —— 每个卡片展示手艺值、擅长标签、服务数 */}
-          <div className="space-y-3">
+          {/* 发型师列表 —— 手机端卡片压缩信息密度，桌面端完整展示 */}
+          <div className="space-y-2 sm:space-y-3">
             {stylists.map((stylist) => {
               const av = getBarberAvailability(stylist, selectedDate, selectedTime);
               const isSelected = selectionMode === 'specific' && selectedBarberId === stylist.id;
               return (
                 <label
                   key={stylist.id}
-                  className={`flex items-start p-4 border-2 rounded-2xl cursor-pointer transition-all ${
+                  className={`flex items-start p-3 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all ${
                     isSelected
                       ? 'border-orange-500 bg-orange-50'
                       : av.isAvailable
@@ -343,68 +348,78 @@ const Booking: React.FC = () => {
                         setSelectedBarberId(stylist.id);
                       }
                     }}
-                    className="mt-4 accent-orange-500 mr-3"
+                    className="mt-3 sm:mt-4 accent-orange-500 mr-2 sm:mr-3 flex-shrink-0"
                   />
 
-                  {/* 头像 */}
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center overflow-hidden flex-shrink-0 mr-3">
+                  {/* 头像 —— 手机端小一点 */}
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center overflow-hidden flex-shrink-0 mr-2 sm:mr-3">
                     {stylist.avatar ? (
                       <img src={stylist.avatar} alt={stylist.name} className="w-full h-full object-cover" />
                     ) : (
-                      <User size={26} className="text-orange-600" />
+                      <User size={22} className="sm:hidden text-orange-600" />
+                      )}
+                    {stylist.avatar ? null : (
+                      <User size={26} className="hidden sm:inline text-orange-600" />
                     )}
                   </div>
 
-                  {/* 信息 */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <span className="font-bold text-gray-800">{stylist.name}</span>
+                  {/* 信息 —— 手机端更紧凑 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
+                      <span className="font-bold text-gray-800 text-sm sm:text-base">{stylist.name}</span>
                       {stylist.title && (
-                        <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-medium">
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-medium">
                           {stylist.title}
                         </span>
                       )}
                       {!av.isAvailable && (
-                        <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">
-                          该时段已约
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">
+                          已约
                         </span>
                       )}
                     </div>
 
-                    {/* 手艺值行 */}
-                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-2 flex-wrap">
+                    {/* 手艺值行 —— 手机端只展示关键数据，桌面端完整显示 */}
+                    <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600 mb-1.5 sm:mb-2 flex-wrap">
                       <div className="flex items-center gap-1">
-                        <Award size={14} className="text-yellow-500" />
-                        <span className="text-xs">手艺值</span>
-                        <span className="font-bold text-sm text-gray-800">{(stylist.skillValue || stylist.rating || 4.5).toFixed(1)}</span>
-                        {renderSkillStars(stylist.skillValue || stylist.rating)}
+                        <Award size={12} className="sm:hidden text-yellow-500" />
+                        <Award size={14} className="hidden sm:inline text-yellow-500" />
+                        <span className="font-bold text-gray-800 text-xs sm:text-sm">
+                          {(stylist.skillValue || stylist.rating || 4.5).toFixed(1)}
+                        </span>
+                        {/* 只在桌面端显示 5 颗星 —— 手机端省略以省空间 */}
+                        <div className="hidden sm:flex items-center gap-0.5">
+                          {renderSkillStars(stylist.skillValue || stylist.rating)}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 text-gray-500 text-xs">
-                        <ThumbsUp size={12} />
-                        <span>{stylist.reviewCount || 100}+ 评价</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-gray-500 text-xs">
-                        <Users size={12} />
-                        <span>服务 {stylist.totalServices || 200}+ 次</span>
+                      <div className="flex items-center gap-1 text-gray-500 text-[11px] sm:text-xs">
+                        <Users size={12} className="sm:hidden" />
+                        <Users size={12} className="hidden sm:inline" />
+                        <span>{stylist.totalServices || 200}+次</span>
                       </div>
                     </div>
 
-                    {/* 擅长标签 */}
+                    {/* 擅长标签 —— 手机端只显示前 2 个 */}
                     {stylist.tags && stylist.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mb-2">
-                        {stylist.tags.map((tag) => (
+                      <div className="flex flex-wrap gap-1 mb-1.5 sm:mb-2">
+                        {stylist.tags.slice(0, 2).map((tag) => (
                           <span
                             key={tag}
-                            className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"
+                            className="text-[10px] sm:text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"
                           >
                             #{tag}
                           </span>
                         ))}
+                        {stylist.tags.length > 2 && (
+                          <span className="text-[10px] sm:text-xs text-gray-400">
+                            +{stylist.tags.length - 2}
+                          </span>
+                        )}
                       </div>
                     )}
 
                     {/* 等待时间 */}
-                    <div className={`text-sm font-semibold ${
+                    <div className={`text-xs sm:text-sm font-semibold ${
                       av.isAvailable ? 'text-green-600' : 'text-red-500'
                     }`}>
                       {av.isAvailable ? `预计等待 ${av.waitTime} 分钟` : '当前时段已满'}
@@ -417,58 +432,64 @@ const Booking: React.FC = () => {
         </div>
 
         {/* 备注 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Sparkles size={20} /> 备注（可选）
+        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
+          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+            <Sparkles size={18} className="sm:hidden" />
+            <Sparkles size={20} className="hidden sm:inline" />
+            备注（可选）
           </h3>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="您的发型偏好、特殊需求等..."
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
+            className="w-full px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none text-sm sm:text-base"
             rows={3}
           />
         </div>
 
         {/* 预约信息摘要 */}
         {selectedServiceData && (
-          <div className="bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl p-6 mt-4 border border-orange-100">
-            <h3 className="font-bold text-gray-800 mb-3">预约信息</h3>
-            <div className="space-y-2 text-gray-700 text-sm">
-              <div className="flex justify-between">
-                <span>服务项目</span>
-                <span className="font-medium">{selectedServiceData.name}</span>
+          <div className="bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl p-4 sm:p-6 mt-4 border border-orange-100">
+            <h3 className="font-bold text-gray-800 mb-2 sm:mb-3 text-sm sm:text-base">预约信息</h3>
+            <div className="space-y-1.5 sm:space-y-2 text-gray-700 text-xs sm:text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="flex-shrink-0">服务项目</span>
+                <span className="font-medium text-right">{selectedServiceData.name}</span>
               </div>
-              <div className="flex justify-between">
-                <span>预约时间</span>
-                <span className="font-medium">{selectedDate} {selectedTime || '--:--'}</span>
+              <div className="flex justify-between gap-4">
+                <span className="flex-shrink-0">预约时间</span>
+                <span className="font-medium text-right">{selectedDate} {selectedTime || '--:--'}</span>
               </div>
-              <div className="flex justify-between">
-                <span>发型师</span>
-                <span className="font-medium">
+              <div className="flex justify-between gap-4">
+                <span className="flex-shrink-0">发型师</span>
+                <span className="font-medium text-right">
                   {selectionMode === 'fastest'
                     ? (fastest ? fastest.name : '待安排')
                     : stylists.find((e) => e.id === selectedBarberId)?.name || '待安排'}
                 </span>
               </div>
-              <div className="flex justify-between pt-2 border-t border-orange-200 text-base">
-                <span className="font-bold">预计费用</span>
-                <span className="font-bold text-orange-600 text-lg">¥{selectedServiceData.price}</span>
+              <div className="flex justify-between pt-2 border-t border-orange-200 text-sm sm:text-base gap-4">
+                <span className="font-bold flex-shrink-0">预计费用</span>
+                <span className="font-bold text-orange-600 text-right">¥{selectedServiceData.price}</span>
               </div>
             </div>
           </div>
         )}
+
+        {/* 底部按钮占位 —— 防止底部固定按钮遮挡内容 */}
+        <div className="h-24" />
       </div>
 
-      {/* 底部按钮 */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4 z-30">
+      {/* 底部固定按钮 —— 手机端保持较大的点击区域 */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-3 sm:p-4 z-30">
         <div className="max-w-2xl mx-auto">
           <button
             onClick={handleBooking}
             disabled={booking}
-            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-2"
+            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg transition-all flex items-center justify-center gap-2"
           >
-            <CheckCircle size={20} />
+            <CheckCircle size={18} className="sm:hidden" />
+            <CheckCircle size={20} className="hidden sm:inline" />
             {booking ? '预约中...' : '确认预约'}
           </button>
         </div>
