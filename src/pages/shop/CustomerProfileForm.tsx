@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   UserCircle, Check, X, Save, ArrowLeft, Plus, Trash2,
   Scissors, Palette, Heart, HandCoins, MessageSquare, Clock,
-  Star, Wallet, Tag, AlertTriangle, Package
+  Star, Wallet, Tag, AlertTriangle, Package, Loader2,
 } from 'lucide-react';
 import {
   Customer, CustomerProfile, UserRole,
@@ -11,9 +11,10 @@ import {
   HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle,
   ExtraServicePreference, VisitTimePreference
 } from '../../../shared/types';
-import { mockCustomers } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
+
+const API_BASE = '/api';
 
 const CustomerProfileForm: React.FC = () => {
   const { customerId } = useParams<{ customerId: string }>();
@@ -22,6 +23,7 @@ const CustomerProfileForm: React.FC = () => {
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
   // 多选字段
@@ -46,13 +48,24 @@ const CustomerProfileForm: React.FC = () => {
   const [productsUsed, setProductsUsed] = useState<string[]>([]);
   const [newProduct, setNewProduct] = useState('');
 
-  useEffect(() => {
+  const fetchCustomerData = useCallback(async () => {
+    if (!customerId) return;
     setLoading(true);
-    const found = mockCustomers.find(c => c.id === customerId);
-    if (found) {
-      setCustomer(found);
-      if (found.profile) {
-        const p = found.profile;
+    try {
+      // 先获取客户基本信息
+      const customerRes = await fetch(`${API_BASE}/customers/${customerId}`);
+      const customerData = await customerRes.json();
+      if (!customerData.success || !customerData.data) {
+        setCustomer(null);
+        return;
+      }
+
+      const fetchedCustomer = customerData.data;
+      setCustomer(fetchedCustomer);
+
+      // 如果已有画像，回填表单字段
+      if (fetchedCustomer.profile) {
+        const p = fetchedCustomer.profile;
         setHaircutStyles(p.haircutStyles || []);
         setHairColors(p.hairColors || []);
         setPermColors(p.permColors || []);
@@ -70,9 +83,17 @@ const CustomerProfileForm: React.FC = () => {
         setAllergies(has ? p.allergies || '' : '');
         setProductsUsed(p.productsUsed || []);
       }
+    } catch (err) {
+      console.error('Failed to fetch customer data:', err);
+      setCustomer(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [customerId]);
+
+  useEffect(() => {
+    fetchCustomerData();
+  }, [fetchCustomerData]);
 
   const canEditProfile =
     !userRole ||
@@ -312,43 +333,61 @@ const CustomerProfileForm: React.FC = () => {
     setProductsUsed(productsUsed.filter((_, i) => i !== idx));
   };
 
-  const handleSave = () => {
-    if (!customer) return;
+  const handleSave = async () => {
+    if (!customer || !customerId) return;
 
-    const profile: CustomerProfile = {
-      id: customer.profile?.id || `prof_${customer.id}`,
-      customerId: customer.id,
+    setSaving(true);
+
+    const profileData = {
       updatedBy: currentEmployee?.id || '',
       updatedByName: currentEmployee?.name || '技师',
-      updatedAt: new Date(),
-      haircutStyles: haircutStyles as HaircutStylePreference[],
-      hairColors: hairColors as HairColorPreference[],
-      permColors: permColors as PermColorPreference[],
-      treatments: treatments as TreatmentPreference[],
-      hairType: (hairType as HairType) || HairType.NORMAL,
-      hairLength: (hairLength as HairLength) || HairLength.MEDIUM,
-      visitFrequency: (visitFrequency as VisitFrequency) || VisitFrequency.EVERY_MONTH,
-      budgetRange: (budgetRange as BudgetRange) || BudgetRange.R100_300,
-      communicationStyle: (communicationStyle as CommunicationStyle) || CommunicationStyle.NO_PREFERENCE,
-      extraServices: extraServices as ExtraServicePreference[],
-      visitTimes: visitTimes as VisitTimePreference[],
-      notes: notes.trim() || '',
+      haircutStyles,
+      hairColors,
+      permColors,
+      treatments,
+      hairType,
+      hairLength,
+      visitFrequency,
+      budgetRange,
+      communicationStyle,
+      extraServices,
+      visitTimes,
+      notes: notes.trim(),
       allergies: hasAllergies ? allergies.trim() : '无',
-      productsUsed: productsUsed.length > 0 ? productsUsed : [],
-      createdAt: customer.profile?.createdAt || new Date(),
+      productsUsed,
     };
 
-    console.log('Saving profile:', profile);
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      navigate('/shop/customers');
-    }, 1500);
+    try {
+      const method = customer.profile ? 'PUT' : 'POST';
+      const res = await fetch(`${API_BASE}/customers/${customerId}/profile`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileData),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+          navigate(-1);
+        }, 1500);
+      } else {
+        console.error('保存失败:', data.error);
+        alert('保存失败: ' + (data.error || '未知错误'));
+      }
+    } catch (err: any) {
+      console.error('保存失败:', err);
+      alert('保存失败: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4">
+        <Loader2 size={48} className="animate-spin text-orange-500" />
         <div className="text-gray-500">加载中...</div>
       </div>
     );
@@ -699,17 +738,27 @@ const CustomerProfileForm: React.FC = () => {
           </div>
           <button
             onClick={() => navigate(-1)}
-            className="px-5 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+            disabled={saving}
+            className="px-5 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 font-medium disabled:opacity-50"
           >
             取消
           </button>
           <button
             onClick={handleSave}
-            disabled={!canEditProfile}
+            disabled={!canEditProfile || saving}
             className="flex-1 sm:flex-none sm:px-8 py-3 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 shadow-sm"
           >
-            <Save size={18} />
-            保存画像
+            {saving ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                保存中...
+              </>
+            ) : (
+              <>
+                <Save size={18} />
+                保存画像
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -8,6 +8,122 @@ const USE_REAL_API = (typeof import.meta !== 'undefined' && (import.meta as any)
 
 const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE) || '/api';
 
+// 认证 Token 存储
+const AUTH_TOKEN_KEY = 'mbs_auth_token';
+const AUTH_USER_KEY = 'mbs_auth_user';
+
+// 保存 Token
+export const saveAuthToken = (token: string) => {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+};
+
+// 获取 Token
+export const getAuthToken = (): string | null => {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+// 删除 Token
+export const clearAuthToken = () => {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+};
+
+// 保存用户信息
+export const saveAuthUser = (user: any) => {
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+};
+
+// 获取用户信息
+export const getAuthUser = (): any | null => {
+  const user = localStorage.getItem(AUTH_USER_KEY);
+  return user ? JSON.parse(user) : null;
+};
+
+// 认证相关 API
+export const authApi = {
+  // 登录
+  login: async (phone: string, password: string) => {
+    const result = await http<{
+      success: boolean;
+      data?: {
+        token: string;
+        user: any;
+      };
+      error?: string;
+    }>(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      body: JSON.stringify({ phone, password }),
+    });
+    
+    if (result?.success && result.data) {
+      saveAuthToken(result.data.token);
+      saveAuthUser(result.data.user);
+      return result.data;
+    }
+    
+    throw new Error(result?.error || '登录失败');
+  },
+  
+  // 获取当前用户
+  getCurrentUser: async () => {
+    const token = getAuthToken();
+    if (!token) return null;
+    
+    try {
+      const result = await http<{
+        success: boolean;
+        data?: any;
+        error?: string;
+      }>(`${API_BASE}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (result?.success && result.data) {
+        saveAuthUser(result.data);
+        return result.data;
+      }
+      
+      return null;
+    } catch {
+      return null;
+    }
+  },
+  
+  // 登出
+  logout: () => {
+    clearAuthToken();
+  },
+  
+  // 检查是否已登录
+  isAuthenticated: (): boolean => {
+    return !!getAuthToken();
+  },
+  
+  // 验证 Token
+  verifyToken: async (): Promise<boolean> => {
+    const token = getAuthToken();
+    if (!token) return false;
+    
+    try {
+      const result = await http<{
+        success: boolean;
+        valid?: boolean;
+      }>(`${API_BASE}/auth/verify`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      return result?.success === true;
+    } catch {
+      return false;
+    }
+  },
+};
+
 // 带有"失败自动回退 mock"的 HTTP 客户端。
 // 当后端没启动、网络超时或任何异常时，不抛错，而是返回 null，
 // 让上层调用方判断并自动 fallback 到 mockData。

@@ -1,0 +1,117 @@
+{
+  "lastUpdated": "2026-06-16T09:00:00.000Z",
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "员工登录 API",
+      "status": "done",
+      "completedAt": "2026-06-15T13:30:00.000Z",
+      "note": "JWT + bcrypt 认证，支持 mock 和数据库模式"
+    },
+    {
+      "id": "task-2",
+      "title": "API 中间件",
+      "status": "done",
+      "completedAt": "2026-06-15T13:45:00.000Z",
+      "note": "鉴权中间件、错误处理、日志、CORS、响应格式"
+    },
+    {
+      "id": "task-3",
+      "title": "前端登录页对接",
+      "status": "done",
+      "completedAt": "2026-06-15T14:00:00.000Z",
+      "note": "登录页对接真实 API，添加 loading 状态，自动降级 mock"
+    },
+    {
+      "id": "task-4",
+      "title": "预约列表筛选 API",
+      "status": "done",
+      "completedAt": "2026-06-15T14:20:00.000Z",
+      "note": "支持状态、发型师、日期筛选，分页和排序"
+    },
+    {
+      "id": "task-5",
+      "title": "队列管理 API",
+      "status": "done",
+      "completedAt": "2026-06-15T14:35:00.000Z",
+      "note": "支持叫号、跳过、重置、统计功能"
+    },
+    {
+      "id": "task-6",
+      "title": "预约管理页面对接",
+      "status": "done",
+      "completedAt": "2026-06-16T09:00:00.000Z",
+      "note": "BookingManagement.tsx 对接 /api/bookings，添加 loading/error 状态，字段映射兼容"
+    },
+    {
+      "id": "task-7",
+      "title": "客户 CRUD API",
+      "status": "done",
+      "completedAt": "2026-06-16T09:22:00.000Z",
+      "note": "customers.ts 实现客户 CRUD，支持搜索/标签/等级筛选、分页；CustomerManagement.tsx 对接 /api/customers，添加 loading/error 状态"
+    },
+    {
+      "id": "task-8",
+      "title": "客户画像 API",
+      "status": "done",
+      "completedAt": "2026-06-16T09:29:00.000Z",
+      "note": "customers.ts 增加客户画像 CRUD，GET/POST/PUT /api/customers/:customerId/profile；CustomerProfileForm.tsx 对接真实 API，添加 loading/saving 状态"
+    },
+    {
+      "id": "task-9",
+      "title": "到店记录 API",
+      "status": "done",
+      "completedAt": "2026-06-16T09:36:00.000Z",
+      "note": "visits.ts 实现到店记录 API：POST /checkin（到店打卡）、POST /checkout（离店结算）、GET /customer/:id（客户记录）、GET /shop/:id（店铺记录）、GET /shop/:id/today（今日统计）；结算后自动更新客户 visitCount 和 totalSpent"
+    },
+    {
+      "id": "task-10",
+      "title": "财务报表聚合 API",
+      "status": "done",
+      "completedAt": "2026-06-16T09:45:00.000Z",
+      "note": "reports.ts 实现财务报表聚合：GET /shop/:id（按日/周/月/年聚合营收、服务数、客单价、趋势）、GET /shop/:id/compare（月度对比）、GET /stylist/:id（技师业绩）、GET /shop/:id/daily（近N天汇总）"
+    },
+    {
+      "id": "task-11",
+      "title": "发型师业绩 API",
+      "status": "done",
+      "completedAt": "2026-06-16T09:55:00.000Z",
+      "note": "stylists.ts 实现发型师业绩 API：GET /:id/performance（个人营收、服务数、评分统计）、GET /:id/services（服务排行）、GET /:id/customers（客户统计）、GET /:id/trend（每日趋势）、GET /ranking（业绩排名）；兼容 barberId/stylistId 字段"
+    },
+    {
+      "id": "task-12",
+      "title": "会员管理 API",
+      "status": "done",
+      "completedAt": "2026-06-16T10:03:00.000Z",
+      "note": "members.ts 实现会员管理 API：GET /:id/benefits（权益查看）、POST /:id/upgrade（会员升级）、GET /:id/referrals（推荐记录）、POST /:id/referrals（创建推荐）、POST /referrals/:id/confirm（确认推荐）、POST /:id/points/redeem（积分兑换）、GET /levels（等级配置）"
+    },
+    {
+      "id": "task-13",
+      "title": "退款申请 API",
+      "status": "done",
+      "completedAt": "2026-06-16T10:12:00.000Z",
+      "note": "refunds.ts 实现退款申请 API：GET /（列表）、GET /:id（详情）、POST /（创建）、POST /:id/approve（审批）、POST /:id/reject（拒绝）、POST /:id/process（处理退款）、POST /:id/cancel（取消）、GET /stats/summary（统计）；处理退款时自动扣减客户累计消费"
+    },
+    {
+      "id": "task-14",
+      "title": "评价管理 API",
+      "status": "done",
+      "completedAt": "2026-06-16T10:20:00.000Z",
+      "note": "reviews-manage.ts 实现评价管理 API：GET /（列表，支持多条件筛选）、GET /:id（详情）、POST /:id/reply（回复）、PUT /:id/reply（编辑回复）、DELETE /:id/reply（删除回复）、POST /:id/hide（隐藏）、POST /:id/show（显示）、GET /stats/summary（统计）、GET /shop/:id（店铺评价）、GET /stylist/:id（发型师评价）"
+    },
+    {
+      "id": "task-15",
+      "title": "商品 CRUD API",
+      "status": "done",
+      "completedAt": "2026-06-16T10:30:00.000Z",
+      "note": "products.ts 实现商品 CRUD API：GET/POST/PUT/DELETE /（商品增删改查）、GET /inventory/list（库存列表）、POST /:id/stock/in（入库）、POST /:id/stock/out（出库）、POST /:id/stock/adjust（调整）、GET /:id/stock/records（变动记录）、GET /categories/list（分类列表）、GET /inventory/stats（库存统计）"
+    },
+    {
+      "id": "task-16",
+      "title": "购物车+订单 API",
+      "status": "done",
+      "completedAt": "2026-06-16T10:40:00.000Z",
+      "note": "orders.ts 实现购物车+订单 API：购物车（GET/POST/PUT/DELETE /cart/:customerId/items、DELETE /cart/:customerId）、订单（GET/POST /orders、GET /orders/:id、POST /orders/:id/pay|complete|cancel|refund、GET /orders/stats/summary）；支持订单状态机、金额计算、支付/完成/取消/退款流程、边界验证"
+    }
+  ]
+}

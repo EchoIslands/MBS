@@ -56,7 +56,6 @@ router.post('/', async (req: Request, res: Response) => {
     return;
   }
 
-  // 后备：写 mockData
   const fallback = {
     id: newBooking.id,
     shopId: newBooking.shop_id,
@@ -76,6 +75,92 @@ router.post('/', async (req: Request, res: Response) => {
   };
   mockBookings.push(fallback);
   res.status(201).json(fallback);
+});
+
+// 预约列表筛选 API
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const {
+      shopId,
+      status,
+      stylistId,
+      customerId,
+      dateStart,
+      dateEnd,
+      page = '1',
+      pageSize = '20',
+      sortBy = 'scheduledTime',
+      sortOrder = 'desc',
+    } = req.query;
+
+    let dbBookings = await bookingQueries.listByShop(String(shopId || 'shop1'));
+    let bookings = dbBookings.map(bookingFromDb);
+
+    if (bookings.length === 0) {
+      bookings = mockBookings.filter((b: any) => !shopId || b.shopId === shopId);
+    }
+
+    if (status && status !== 'all') {
+      bookings = bookings.filter((b: any) => b.status === status);
+    }
+
+    if (stylistId) {
+      bookings = bookings.filter((b: any) => b.stylistId === stylistId);
+    }
+
+    if (customerId) {
+      bookings = bookings.filter((b: any) => b.customerId === customerId);
+    }
+
+    if (dateStart) {
+      const startDate = new Date(String(dateStart));
+      bookings = bookings.filter((b: any) => {
+        const bookingDate = new Date(b.scheduledTime || b.scheduled_time);
+        return bookingDate >= startDate;
+      });
+    }
+
+    if (dateEnd) {
+      const endDate = new Date(String(dateEnd));
+      endDate.setDate(endDate.getDate() + 1);
+      bookings = bookings.filter((b: any) => {
+        const bookingDate = new Date(b.scheduledTime || b.scheduled_time);
+        return bookingDate < endDate;
+      });
+    }
+
+    bookings.sort((a: any, b: any) => {
+      const fieldA = a[sortBy] || a[sortBy.replace(/([A-Z])/g, '_$1').toLowerCase()];
+      const fieldB = b[sortBy] || b[sortBy.replace(/([A-Z])/g, '_$1').toLowerCase()];
+      if (sortOrder === 'asc') {
+        return fieldA > fieldB ? 1 : -1;
+      }
+      return fieldA < fieldB ? 1 : -1;
+    });
+
+    const pageNum = parseInt(String(page), 10);
+    const size = parseInt(String(pageSize), 10);
+    const total = bookings.length;
+    const totalPages = Math.ceil(total / size);
+    const offset = (pageNum - 1) * size;
+    const paginatedBookings = bookings.slice(offset, offset + size);
+
+    res.json({
+      success: true,
+      data: paginatedBookings,
+      pagination: {
+        page: pageNum,
+        pageSize: size,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '获取预约列表失败',
+    });
+  }
 });
 
 // 获取预约详情

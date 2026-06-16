@@ -4,6 +4,7 @@ import { ArrowLeft, Lock, Eye, EyeOff, Phone, Crown, Headphones, UserCheck, User
 import { loginAsShop, loginAsEmployee } from '../../store';
 import { mockShops } from '../../../shared/mockData';
 import { UserRole } from '../../../shared/types';
+import { authApi } from '../../api';
 
 const DEFAULT_SHOP_ID = 'shop1';
 
@@ -19,7 +20,6 @@ const modeToRole: Record<LoginMode, UserRole> = {
 
 const ShopLogin: React.FC = () => {
   // 从 mockData 中读取各角色首个员工的手机号作为默认
-  // —— 避免 Login.tsx 和 mockData.ts 两处手机号反复改来改去不一致
   const shopEmployees = mockShops.find((s) => s.id === DEFAULT_SHOP_ID)?.employees || [];
   const ceoEmp = shopEmployees.find((e) => e.role === UserRole.CEO);
   const csEmp = shopEmployees.find((e) => e.role === UserRole.CUSTOMER_SERVICE);
@@ -33,12 +33,12 @@ const ShopLogin: React.FC = () => {
     stylist: stlEmp?.phone || '13900000011',
   };
 
-  // 测试版：默认店长模式，手机号从 mockData 读取
   const [loginMode, setLoginMode] = useState<LoginMode>('manager');
   const [phone, setPhone] = useState<string>(modeDefaultPhone.manager);
   const [password, setPassword] = useState<string>('123456');
   const [showPassword, setShowPassword] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
   const navigate = useNavigate();
 
   const currentShop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
@@ -51,23 +51,41 @@ const ShopLogin: React.FC = () => {
     setShowPassword(true);
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    // 只按手机号查找员工 —— 不再强制校验角色
-    const employee = currentShop?.employees.find((emp) => emp.phone === phone);
+    try {
+      // 优先使用真实 API 登录
+      const result = await authApi.login(phone, password);
+      
+      if (result?.user) {
+        // 真实 API 登录成功
+        console.log('[Login] API 登录成功:', result.user);
+        navigate('/shop');
+        return;
+      }
+    } catch (apiError: any) {
+      console.log('[Login] API 登录失败，尝试 mock 登录:', apiError.message);
+      
+      // API 失败时降级到 mock 登录
+      const employee = currentShop?.employees.find((emp) => emp.phone === phone);
 
-    if (!employee) {
-      setError('手机号不存在，请重新输入');
-      return;
-    }
+      if (!employee) {
+        setError('手机号不存在，请重新输入');
+        setLoading(false);
+        return;
+      }
 
-    const loggedIn = loginAsEmployee(DEFAULT_SHOP_ID, employee.id, password);
-    if (loggedIn) {
-      navigate('/shop');
-    } else {
-      setError('密码错误，请重新输入');
+      const loggedIn = loginAsEmployee(DEFAULT_SHOP_ID, employee.id, password);
+      if (loggedIn) {
+        navigate('/shop');
+      } else {
+        setError('密码错误，请重新输入');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -122,7 +140,7 @@ const ShopLogin: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-800 mb-1">皓诗形象设计</h1>
         <p className="text-gray-500 mb-6">选择登录身份</p>
 
-        {/* 登录模式切换 - 改为更清晰的大卡片 */}
+        {/* 登录模式切换 */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           {(Object.keys(modeConfig) as LoginMode[]).map((mode) => (
             <button
@@ -157,7 +175,8 @@ const ShopLogin: React.FC = () => {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder={current.placeholder}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
+                disabled={loading}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all disabled:bg-gray-100"
               />
             </div>
           </div>
@@ -174,7 +193,8 @@ const ShopLogin: React.FC = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="请输入密码（演示密码：123456）"
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
+                disabled={loading}
+                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all disabled:bg-gray-100"
               />
               <button
                 type="button"
@@ -192,9 +212,17 @@ const ShopLogin: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-3 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-3 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            登录后台
+            {loading ? (
+              <>
+                <span className="animate-spin">⏳</span>
+                <span>登录中...</span>
+              </>
+            ) : (
+              '登录后台'
+            )}
           </button>
         </form>
       </div>

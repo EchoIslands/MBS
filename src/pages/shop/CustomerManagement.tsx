@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   User,
@@ -30,6 +30,8 @@ import {
   AlertTriangle,
   Bell,
   Download,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { Customer, CustomerTag, MembershipLevel, UserRole } from '../../../shared/types';
 import {
@@ -49,14 +51,50 @@ import { mockCustomers, membershipBenefits } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
+const API_BASE = '/api';
+
 const CustomerManagement: React.FC = () => {
-  const [customers] = useState<Customer[]>(mockCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTag, setActiveTag] = useState<CustomerTag | 'all'>('all');
   const [activeLevel, setActiveLevel] = useState<MembershipLevel | 'all'>('all');
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const navigate = useNavigate();
   const { currentEmployee, userRole } = useAppStore();
+
+  // 获取客户列表
+  const fetchCustomers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set('page', '1');
+      params.set('pageSize', '100');
+      if (searchTerm) { params.set('search', searchTerm); }
+      if (activeTag !== 'all') { params.set('tag', activeTag); }
+      if (activeLevel !== 'all') { params.set('level', activeLevel); }
+      if (currentEmployee?.id) { params.set('shopId', currentEmployee.id); }
+
+      const res = await fetch(`${API_BASE}/customers?${params.toString()}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        setCustomers(data.data);
+      } else {
+        setError(data.error || '获取客户列表失败');
+      }
+    } catch (err: any) {
+      setError(err.message || '网络错误');
+    } finally {
+      setLoading(false);
+    }
+  }, [searchTerm, activeTag, activeLevel, currentEmployee]);
+
+  // 初始加载和筛选变化时获取数据
+  React.useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   // 标签名称映射
   const tagLabels: Record<CustomerTag, string> = {
@@ -358,6 +396,14 @@ const CustomerManagement: React.FC = () => {
               className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
             />
           </div>
+          <button
+            onClick={fetchCustomers}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            {loading ? '刷新中...' : '刷新'}
+          </button>
           {(activeTag !== 'all' || activeLevel !== 'all' || searchTerm !== '') && (
             <button
               onClick={resetFilters}
@@ -488,7 +534,30 @@ const CustomerManagement: React.FC = () => {
           )}
         </div>
 
-        {filteredCustomers.length > 0 ? (
+        {/* Loading 状态 */}
+        {loading && !error && (
+          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+            <Loader2 size={48} className="animate-spin mb-4 text-orange-500" />
+            <p className="text-sm">加载中...</p>
+          </div>
+        )}
+
+        {/* Error 状态 */}
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center py-12 text-red-500">
+            <AlertCircle size={48} className="mb-4" />
+            <p className="text-sm mb-4">{error}</p>
+            <button
+              onClick={fetchCustomers}
+              className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors text-sm"
+            >
+              重试
+            </button>
+          </div>
+        )}
+
+        {/* 客户列表 */}
+        {!loading && !error && filteredCustomers.length > 0 ? (
           <div className="space-y-3">
             {filteredCustomers.map((customer) => (
               <div

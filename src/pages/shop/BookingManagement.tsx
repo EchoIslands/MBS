@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Calendar,
   Clock,
@@ -14,17 +14,62 @@ import {
   MessageSquare,
   ChevronRight,
   X,
+  Loader2,
 } from 'lucide-react';
 import { Booking, UserRole } from '../../../shared/types';
-import { mockBookings } from '../../../shared/mockData';
 import ShopLayout from './ShopLayout';
 
+const API_BASE = '/api';
+
 const BookingManagement: React.FC = () => {
-  const [bookings] = useState<Booking[]>(mockBookings);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<Booking['status'] | 'all'>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
+
+  // 从 API 获取预约列表
+  const fetchBookings = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set('shopId', 'shop1');
+      params.set('page', '1');
+      params.set('pageSize', '50');
+      if (statusFilter !== 'all') {
+        params.set('status', statusFilter);
+      }
+      if (dateFilter !== 'all') {
+        params.set('dateStart', dateFilter);
+      }
+
+      const res = await fetch(`${API_BASE}/bookings?${params.toString()}`);
+      const data = await res.json();
+
+      if (data.success && data.data) {
+        setBookings(data.data);
+      } else {
+        setError(data.error || '获取预约列表失败');
+      }
+    } catch (err: any) {
+      setError(err.message || '网络错误');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, dateFilter]);
+
+  useEffect(() => {
+    fetchBookings();
+  }, [fetchBookings]);
+
+  // 兼容 API 返回的 stylistName/stylistId 与 mock 使用的 barberName/barberId
+  const getBarberName = (booking: Booking) =>
+    (booking as any).stylistName || booking.barberName || '';
+  const getBarberId = (booking: Booking) =>
+    (booking as any).stylistId || booking.barberId || '';
 
   // 状态配置
   const statusConfig: Record<
@@ -103,7 +148,7 @@ const BookingManagement: React.FC = () => {
       const matchesSearch =
         searchTerm === '' ||
         b.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.barberName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getBarberName(b)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         b.serviceName?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
@@ -198,8 +243,37 @@ const BookingManagement: React.FC = () => {
               重置
             </button>
           )}
+          <button
+            onClick={fetchBookings}
+            className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
+            title="刷新数据"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
         </div>
       </div>
+
+      {/* 加载状态 */}
+      {loading && (
+        <div className="bg-white rounded-2xl shadow-sm p-12 text-center border border-gray-100">
+          <Loader2 size={48} className="mx-auto mb-3 text-orange-500 animate-spin" />
+          <p className="text-gray-500">加载中...</p>
+        </div>
+      )}
+
+      {/* 错误状态 */}
+      {error && !loading && (
+        <div className="bg-red-50 rounded-2xl shadow-sm p-12 text-center border border-red-100">
+          <AlertCircle size={48} className="mx-auto mb-3 text-red-400" />
+          <p className="text-red-600 mb-3">{error}</p>
+          <button
+            onClick={fetchBookings}
+            className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition-colors text-sm"
+          >
+            重试
+          </button>
+        </div>
+      )}
 
       {/* 预约列表 */}
       <div className="space-y-6">
@@ -262,10 +336,10 @@ const BookingManagement: React.FC = () => {
                                   minute: '2-digit',
                                 })}
                               </span>
-                              {booking.barberName && (
+                              {getBarberName(booking) && (
                                 <span className="flex items-center gap-1">
                                   <User size={14} />
-                                  {booking.barberName}
+                                  {getBarberName(booking)}
                                 </span>
                               )}
                               {booking.price && (
@@ -334,12 +408,12 @@ const BookingManagement: React.FC = () => {
                     {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
                   </span>
                 </div>
-                {viewingBooking.barberName && (
+                {getBarberName(viewingBooking) && (
                   <div className="flex items-center justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500 flex items-center gap-2">
                       <User size={16} /> 指定发型师
                     </span>
-                    <span className="font-medium text-gray-800">{viewingBooking.barberName}</span>
+                    <span className="font-medium text-gray-800">{getBarberName(viewingBooking)}</span>
                   </div>
                 )}
                 {viewingBooking.price && (
