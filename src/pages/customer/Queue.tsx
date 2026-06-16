@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Booking, Queue as QueueType, Employee } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
+import { bookingApi } from '../../../src/api';
 
 // 模拟服务步骤（用于可视化进度）
 const serviceSteps = [
@@ -42,50 +43,39 @@ const Queue: React.FC = () => {
     return new Date() >= new Date(booking.scheduledTime);
   }, [booking, isFromApi]);
 
-  // 加载预约数据（直接调用后端API获取真实数据）
+  // 加载预约数据（使用 bookingApi，与创建预约使用同一数据源）
   useEffect(() => {
     async function fetchBooking() {
-      // 直接调用后端API
-      const API_URL = '/api';
-      
       try {
-        const response = await fetch(`${API_URL}/bookings/${bookingId}`);
-        if (response.ok) {
-          const result = await response.json();
-          // 解析后端返回的数据格式
-          const bookingData = result.data || result;
-          if (bookingData && bookingData.id) {
-            // 标记从API获取了真实数据
-            setIsFromApi(true);
-            // 转换后端数据格式为前端格式
-            const bookingFromApi: Booking = {
-              id: bookingData.id,
-              shopId: bookingData.shopId || bookingData.shop_id,
-              customerId: bookingData.customerId || bookingData.customer_id,
-              serviceId: bookingData.serviceId || bookingData.service_id,
-              barberId: bookingData.barberId || bookingData.stylistId || bookingData.barber_id,
-              barberName: bookingData.barberName || bookingData.stylistName,
-              scheduledTime: new Date(bookingData.scheduledTime || bookingData.scheduled_time),
-              status: bookingData.status,
-              queueNumber: bookingData.queueNumber || bookingData.queue_number,
-              serviceName: bookingData.serviceName || bookingData.service_name,
-              price: bookingData.price,
-              customerName: bookingData.customerName || bookingData.customer_name,
-              shopName: bookingData.shopName || bookingData.shop_name,
-            };
-            console.log('从后端获取到真实预约:', bookingFromApi);
-            console.log('预约时间:', bookingFromApi.scheduledTime);
-            setBooking(bookingFromApi);
-            setLoading(false);
-            return;
-          }
+        // 优先使用 bookingApi.getBooking（与 createBooking 使用同一数据源）
+        const result = await bookingApi.getBooking(bookingId || '');
+        if (result && result.id) {
+          // bookingApi 返回的 scheduledTime 可能是 Date 对象或 ISOstring
+          const scheduledTimeDate = result.scheduledTime instanceof Date
+            ? result.scheduledTime
+            : new Date(result.scheduledTime);
+
+          // 后端可能返回 stylistId/stylistName，前端使用 barberId/barberName
+          const fetchedBooking: Booking = {
+            ...result,
+            scheduledTime: scheduledTimeDate,
+            barberId: (result as any).barberId || (result as any).stylistId,
+            barberName: (result as any).barberName || (result as any).stylistName,
+          };
+          // 标记为真实数据（从 bookingApi 获取，无论是 mock 还是真实 API）
+          setIsFromApi(true);
+          console.log('从 bookingApi 获取到预约:', fetchedBooking);
+          console.log('预约时间:', fetchedBooking.scheduledTime);
+          console.log('是否已到达预约时间:', new Date() >= scheduledTimeDate);
+          setBooking(fetchedBooking);
+          setLoading(false);
+          return;
         }
-        console.log('后端API未返回有效数据，状态码:', response.status);
       } catch (error) {
-        console.log('从后端获取预约失败，使用模拟数据:', error);
+        console.log('从 bookingApi 获取预约失败，使用模拟数据:', error);
       }
-      
-      // 后端获取失败时使用模拟数据（兼容演示模式）
+
+      // 兜底：使用模拟数据（兼容演示模式）
       console.log('使用模拟数据，预约时间将是15分钟后');
       const currentShop = mockShops[0];
       const mockBooking: Booking = {
@@ -93,7 +83,7 @@ const Queue: React.FC = () => {
         shopId: currentShop.id,
         customerId: 'cust1',
         serviceId: 's1',
-        scheduledTime: new Date(Date.now() + 15 * 60 * 1000), // 默认15分钟后（模拟）
+        scheduledTime: new Date(Date.now() + 15 * 60 * 1000),
         status: 'confirmed',
         queueNumber: 2,
         serviceName: '精剪',
@@ -113,7 +103,7 @@ const Queue: React.FC = () => {
       });
       setLoading(false);
     }
-    
+
     fetchBooking();
   }, [bookingId]);
 

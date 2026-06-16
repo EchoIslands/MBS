@@ -208,6 +208,29 @@ export const shopApi = {
   },
 };
 
+// 将后端/模拟数据转换为统一的 Booking 格式
+function normalizeBooking(b: any): Booking {
+  const scheduledTime = b.scheduledTime instanceof Date
+    ? b.scheduledTime
+    : new Date(b.scheduledTime || b.scheduled_time);
+  return {
+    id: b.id,
+    shopId: b.shopId || b.shop_id,
+    customerId: b.customerId || b.customer_id,
+    serviceId: b.serviceId || b.service_id,
+    barberId: b.barberId || b.stylistId || b.barber_id || b.stylist_id,
+    barberName: b.barberName || b.stylistName || b.barber_name || b.stylist_name,
+    scheduledTime: scheduledTime,
+    status: b.status || 'confirmed',
+    queueNumber: b.queueNumber || b.queue_number || 1,
+    serviceName: b.serviceName || b.service_name || '服务',
+    price: typeof b.price === 'number' ? b.price : 0,
+    customerName: b.customerName || b.customer_name || '顾客',
+    shopName: b.shopName || b.shop_name || '店铺',
+    createdAt: b.createdAt ? (b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt)) : new Date(),
+  };
+}
+
 // 预约相关 API
 export const bookingApi = {
   createBooking: async (
@@ -218,7 +241,10 @@ export const bookingApi = {
         method: 'POST',
         body: JSON.stringify(data),
       });
-      if (result && result.id) return result;
+      if (result && result.id) {
+        console.log('[api] createBooking 返回真实数据:', result);
+        return normalizeBooking(result);
+      }
       console.warn('[api] /api/bookings 创建失败，使用本地模拟');
     }
     await new Promise((r) => setTimeout(r, 300));
@@ -237,17 +263,22 @@ export const bookingApi = {
     };
 
     mockBookings.push(newBooking);
+    console.log('[api] createBooking 返回模拟数据:', newBooking);
     return newBooking;
   },
 
   getBooking: async (id: string): Promise<Booking> => {
     if (USE_REAL_API) {
       const result = await http<Booking>(`${API_BASE}/bookings/${id}`);
-      if (result) return result;
+      if (result && result.id) {
+        console.log('[api] getBooking 返回真实数据:', result);
+        return normalizeBooking(result);
+      }
     }
     await new Promise((r) => setTimeout(r, 200));
     const booking = mockBookings.find((b) => b.id === id);
     if (!booking) throw new Error('Booking not found');
+    console.log('[api] getBooking 返回模拟数据:', booking);
     return booking;
   },
 

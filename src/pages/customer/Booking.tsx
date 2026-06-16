@@ -44,14 +44,36 @@ const Booking: React.FC = () => {
   }, []);
 
   // 生成时段（每30分钟）
-  const timeSlots = useMemo(() => {
+  // 如果是今天，只显示当前时间之后的时段；如果是未来日期，显示所有时段
+  const availableTimeSlots = useMemo(() => {
     const arr: string[] = [];
     for (let h = 9; h <= 20; h++) {
       arr.push(`${h.toString().padStart(2, '0')}:00`);
       arr.push(`${h.toString().padStart(2, '0')}:30`);
     }
+    // 判断是否是今天
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    if (selectedDate === todayStr) {
+      // 今天，只显示当前时间之后的时段
+      const currentHour = today.getHours();
+      const currentMinute = today.getMinutes();
+      return arr.filter((time) => {
+        const [h, m] = time.split(':').map(Number);
+        if (h > currentHour) return true;
+        if (h === currentHour && m > currentMinute) return true;
+        return false;
+      });
+    }
     return arr;
-  }, []);
+  }, [selectedDate]);
+
+  // 默认选择第一个可用的时段
+  useEffect(() => {
+    if (availableTimeSlots.length > 0 && !availableTimeSlots.includes(selectedTime)) {
+      setSelectedTime(availableTimeSlots[0]);
+    }
+  }, [availableTimeSlots, selectedTime]);
 
   useEffect(() => {
     if (shop && shop.services.length > 0 && !selectedService) {
@@ -254,7 +276,7 @@ const Booking: React.FC = () => {
             选择时间
           </h3>
           <div className="grid grid-cols-4 gap-2 sm:gap-3">
-            {timeSlots.map((time) => {
+            {availableTimeSlots.map((time) => {
               const allBusy = stylists.every((e) => isBarberBusy(e.id, selectedDate, time));
               return (
                 <button

@@ -3,8 +3,11 @@ import { mockBookings, mockShops, mockCustomers } from '../../shared/mockData';
 
 const router = Router();
 
-// 内存存储 - 用于存储预约数据
-const bookingsDb = new Map<string, any>();
+// 使用 global 对象确保 bookingsDb 在模块多次加载时保持单例
+declare global {
+  var __bookingsDb: Map<string, any> | undefined;
+}
+const bookingsDb: Map<string, any> = globalThis.__bookingsDb || (globalThis.__bookingsDb = new Map<string, any>());
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -29,7 +32,11 @@ const bookingFromDb = (b: any): any => ({
 router.post('/', async (req: Request, res: Response) => {
   console.log('=== POST /api/bookings called ===');
   console.log('req.body:', req.body);
-  const { shopId, customerId, serviceId, stylistName, scheduledTime, notes, customerName } = req.body;
+  // 兼容前端可能传入的字段名（barberId/stylistId 等）
+  const { shopId, customerId, serviceId, scheduledTime, notes } = req.body;
+  const barberId = req.body.barberId || req.body.stylistId;
+  const barberName = req.body.barberName || req.body.stylistName;
+  const customerName = req.body.customerName;
 
   const shop = mockShops.find((s: any) => s.id === shopId);
   const service = shop?.services?.find((s: any) => s.id === serviceId);
@@ -40,26 +47,42 @@ router.post('/', async (req: Request, res: Response) => {
     if (b.shop_id === shopId) countFromDb++;
   });
 
+  // 处理 scheduledTime：可能是 Date、ISOstring、或其他格式
+  let scheduledTimeDate: Date;
+  try {
+    scheduledTimeDate = scheduledTime instanceof Date
+      ? scheduledTime
+      : new Date(scheduledTime);
+    // 检查是否有效日期
+    if (isNaN(scheduledTimeDate.getTime())) {
+      scheduledTimeDate = new Date();
+    }
+  } catch (e) {
+    scheduledTimeDate = new Date();
+  }
+  console.log('Parsed scheduledTime:', scheduledTimeDate.toISOString());
+
   const newBooking = {
     id: generateId(),
     shop_id: shopId,
     customer_id: customerId,
     customer_name: customerName || '顾客',
-    stylist_id: req.body.stylistId,
-    stylist_name: stylistName,
+    stylist_id: barberId,
+    stylist_name: barberName || service?.name || '发型师',
     service_id: serviceId,
-    service_name: service?.name,
+    service_name: service?.name || '服务',
     price: service?.price || 0,
-    scheduled_time: new Date(scheduledTime).toISOString(),
+    scheduled_time: scheduledTimeDate.toISOString(),
     queue_number: countFromDb + 1,
-    status: 'pending',
-    notes: notes,
+    status: 'confirmed',
+    notes: notes || '',
     created_at: new Date().toISOString(),
   };
 
   // 直接存储到本地 Map
   bookingsDb.set(newBooking.id, newBooking);
   console.log('bookingsDb.set:', newBooking.id, 'total:', bookingsDb.size);
+  console.log('返回预约 scheduledTime:', newBooking.scheduled_time);
 
   res.status(201).json(bookingFromDb(newBooking));
 });

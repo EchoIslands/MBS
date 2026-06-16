@@ -516,6 +516,7 @@ const ShopManage: React.FC = () => {
             {saving ? '保存中...' : '保存设置'}
           </button>
         </div>
+        </div>
       </div>
     </ShopLayout>
   );
