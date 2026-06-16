@@ -30,12 +30,17 @@ const Queue: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [stepProgress, setStepProgress] = useState(0);
   const [serviceStarted, setServiceStarted] = useState(false);
+  // 标记是否从后端获取到了真实数据
+  const [isFromApi, setIsFromApi] = useState(false);
 
   // 响应式计算：判断预约时间是否已到（当booking更新时会重新计算）
+  // 只有从后端获取真实数据后才计算，否则显示倒计时
   const isAppointmentTimeReached = useMemo(() => {
     if (!booking) return false;
+    // 如果是模拟数据（15分钟后），永远不认为时间到达
+    if (!isFromApi) return false;
     return new Date() >= new Date(booking.scheduledTime);
-  }, [booking]);
+  }, [booking, isFromApi]);
 
   // 加载预约数据（直接调用后端API获取真实数据）
   useEffect(() => {
@@ -50,6 +55,8 @@ const Queue: React.FC = () => {
           // 解析后端返回的数据格式
           const bookingData = result.data || result;
           if (bookingData && bookingData.id) {
+            // 标记从API获取了真实数据
+            setIsFromApi(true);
             // 转换后端数据格式为前端格式
             const bookingFromApi: Booking = {
               id: bookingData.id,
@@ -66,16 +73,20 @@ const Queue: React.FC = () => {
               customerName: bookingData.customerName || bookingData.customer_name,
               shopName: bookingData.shopName || bookingData.shop_name,
             };
+            console.log('从后端获取到真实预约:', bookingFromApi);
+            console.log('预约时间:', bookingFromApi.scheduledTime);
             setBooking(bookingFromApi);
             setLoading(false);
             return;
           }
         }
+        console.log('后端API未返回有效数据，状态码:', response.status);
       } catch (error) {
         console.log('从后端获取预约失败，使用模拟数据:', error);
       }
       
       // 后端获取失败时使用模拟数据（兼容演示模式）
+      console.log('使用模拟数据，预约时间将是15分钟后');
       const currentShop = mockShops[0];
       const mockBooking: Booking = {
         id: bookingId || 'queue-demo',

@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { mockBookings, mockShops, mockCustomers } from '../../shared/mockData';
-import { bookingQueries } from '../db';
 
 const router = Router();
+
+// 内存存储 - 用于存储预约数据
+const bookingsDb = new Map<string, any>();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -25,13 +27,18 @@ const bookingFromDb = (b: any): any => ({
 
 // 创建预约
 router.post('/', async (req: Request, res: Response) => {
+  console.log('=== POST /api/bookings called ===');
+  console.log('req.body:', req.body);
   const { shopId, customerId, serviceId, stylistName, scheduledTime, notes, customerName } = req.body;
 
   const shop = mockShops.find((s: any) => s.id === shopId);
   const service = shop?.services?.find((s: any) => s.id === serviceId);
 
-  const allBookings = await bookingQueries.listByShop(shopId);
-  const countFromDb = allBookings.length;
+  // 从本地存储获取该店铺的预约数量
+  let countFromDb = 0;
+  bookingsDb.forEach((b) => {
+    if (b.shop_id === shopId) countFromDb++;
+  });
 
   const newBooking = {
     id: generateId(),
@@ -50,31 +57,11 @@ router.post('/', async (req: Request, res: Response) => {
     created_at: new Date().toISOString(),
   };
 
-  const created = await bookingQueries.create(newBooking);
-  if (created && created.id) {
-    res.status(201).json(bookingFromDb(created));
-    return;
-  }
+  // 直接存储到本地 Map
+  bookingsDb.set(newBooking.id, newBooking);
+  console.log('bookingsDb.set:', newBooking.id, 'total:', bookingsDb.size);
 
-  const fallback = {
-    id: newBooking.id,
-    shopId: newBooking.shop_id,
-    customerId: newBooking.customer_id,
-    customerName: newBooking.customer_name,
-    stylistId: newBooking.stylist_id,
-    stylistName: newBooking.stylist_name,
-    serviceId: newBooking.service_id,
-    serviceName: newBooking.service_name,
-    price: newBooking.price,
-    scheduledTime: new Date(scheduledTime),
-    queueNumber: newBooking.queue_number,
-    status: newBooking.status,
-    notes: newBooking.notes,
-    shopName: shop?.name,
-    createdAt: new Date(),
-  };
-  mockBookings.push(fallback);
-  res.status(201).json(fallback);
+  res.status(201).json(bookingFromDb(newBooking));
 });
 
 // 预约列表筛选 API
@@ -93,7 +80,14 @@ router.get('/', async (req: Request, res: Response) => {
       sortOrder = 'desc',
     } = req.query;
 
-    let dbBookings = await bookingQueries.listByShop(String(shopId || 'shop1'));
+    // 从本地 Map 获取该店铺的预约
+    const shopIdStr = String(shopId || 'shop1');
+    let dbBookings: any[] = [];
+    bookingsDb.forEach((b) => {
+      if (b.shop_id === shopIdStr) {
+        dbBookings.push(b);
+      }
+    });
     let bookings = dbBookings.map(bookingFromDb);
 
     if (bookings.length === 0) {
@@ -165,12 +159,20 @@ router.get('/', async (req: Request, res: Response) => {
 
 // 获取预约详情
 router.get('/:id', async (req: Request, res: Response) => {
-  const dbBooking = await bookingQueries.get(req.params.id);
+  console.log('=== GET /api/bookings/:id called ===');
+  console.log('req.params.id:', req.params.id, 'type:', typeof req.params.id);
+  console.log('bookingsDb.size:', bookingsDb.size);
+  console.log('bookingsDb keys:', Array.from(bookingsDb.keys()));
+
+  // 直接从本地 Map 获取
+  const dbBooking = bookingsDb.get(req.params.id) || null;
+  console.log('dbBooking from Map:', dbBooking);
   if (dbBooking) {
     res.json(bookingFromDb(dbBooking));
     return;
   }
   const booking = mockBookings.find((b: any) => b.id === req.params.id);
+  console.log('mock booking:', booking);
   if (!booking) {
     return res.status(404).json({ message: '预约不存在' });
   }
@@ -181,8 +183,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   const { status } = req.body;
 
-  const updated = await bookingQueries.update(req.params.id, { status });
-  if (updated) {
+  const existing = bookingsDb.get(req.params.id);
+  if (existing) {
+    const updated = { ...existing, status, updated_at: new Date().toISOString() };
+    bookingsDb.set(req.params.id, updated);
     res.json(bookingFromDb(updated));
     return;
   }
@@ -197,7 +201,12 @@ router.put('/:id', async (req: Request, res: Response) => {
 
 // 获取顾客的预约
 router.get('/customer/:customerId', async (req: Request, res: Response) => {
-  const dbBookings = await bookingQueries.listByCustomer(req.params.customerId);
+  const dbBookings: any[] = [];
+  bookingsDb.forEach((b) => {
+    if (b.customer_id === req.params.customerId) {
+      dbBookings.push(b);
+    }
+  });
   if (dbBookings.length > 0) {
     res.json(dbBookings.map(bookingFromDb));
     return;
