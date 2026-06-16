@@ -759,6 +759,7 @@ export interface AppState {
   setUserRole: (role: UserRole) => void;
   setCurrentCustomer: (customer: Customer | null) => void;
   setCurrentShop: (shop: Shop | null) => void;
+  updateShop: (shopData: Partial<Shop>) => void;
   setCurrentEmployee: (employee: Employee | null) => void;
   logout: () => void;
   // 新增：购物车操作

@@ -1,13 +1,33 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { Service, Employee } from '../../../shared/types';
+import { Service, Employee, OpeningHours } from '../../../shared/types';
 import ShopLayout from './ShopLayout';
+
+const defaultOpeningHours: OpeningHours = {
+  monday: { open: '09:00', close: '21:00', isOpen: true },
+  tuesday: { open: '09:00', close: '21:00', isOpen: true },
+  wednesday: { open: '09:00', close: '21:00', isOpen: true },
+  thursday: { open: '09:00', close: '21:00', isOpen: true },
+  friday: { open: '09:00', close: '22:00', isOpen: true },
+  saturday: { open: '10:00', close: '22:00', isOpen: true },
+  sunday: { open: '10:00', close: '20:00', isOpen: true },
+};
+
+const weekDayLabels: { key: keyof OpeningHours; label: string }[] = [
+  { key: 'monday', label: '周一' },
+  { key: 'tuesday', label: '周二' },
+  { key: 'wednesday', label: '周三' },
+  { key: 'thursday', label: '周四' },
+  { key: 'friday', label: '周五' },
+  { key: 'saturday', label: '周六' },
+  { key: 'sunday', label: '周日' },
+];
 
 const ShopManage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentShop } = useAppStore();
+  const { currentShop, updateShop } = useAppStore();
   const [shopName, setShopName] = useState(currentShop?.name || '');
   const [shopDesc, setShopDesc] = useState(currentShop?.description || '');
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
@@ -21,7 +41,9 @@ const ShopManage: React.FC = () => {
     specialty: '', 
     avatar: '' 
   });
+  const [openingHours, setOpeningHours] = useState<OpeningHours>(currentShop?.openingHours || defaultOpeningHours);
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const addService = () => {
     if (!newService.name || !newService.price || !newService.duration) return;
@@ -64,9 +86,71 @@ const ShopManage: React.FC = () => {
     ));
   };
 
-  const handleSave = () => {
-    alert('保存成功！');
-    navigate('/shop');
+  const handleSave = async () => {
+    if (!currentShop) return;
+    setSaving(true);
+    try {
+      const shopData = {
+        name: shopName,
+        description: shopDesc,
+        phone: shopPhone,
+        address: shopAddress,
+        services,
+        employees,
+        openingHours,
+      };
+      const response = await fetch(`/api/shops/${currentShop.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(shopData),
+      });
+      if (response.ok) {
+        // 同时更新 store 中的店铺
+        updateShop({
+          ...currentShop,
+          name: shopName,
+          description: shopDesc,
+          phone: shopPhone,
+          address: shopAddress,
+          services,
+          employees,
+          openingHours,
+        });
+        alert('保存成功！');
+        navigate('/shop');
+      } else {
+        alert('保存失败，请重试');
+      }
+    } catch (error) {
+      console.error('保存失败:', error);
+      alert('保存失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateOpeningHour = (
+    day: keyof OpeningHours,
+    field: 'open' | 'close',
+    value: string
+  ) => {
+    setOpeningHours({
+      ...openingHours,
+      [day]: {
+        ...openingHours[day],
+        [field]: value,
+      },
+    });
+  };
+
+  const toggleOpeningHour = (day: keyof OpeningHours) => {
+    setOpeningHours({
+      ...openingHours,
+      [day]: {
+        ...openingHours[day],
+        isOpen: !openingHours[day].isOpen,
+      },
+    });
   };
 
   const copyShopLink = () => {
@@ -366,6 +450,71 @@ const ShopManage: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* 营业时间设置 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Calendar size={20} className="text-orange-500" />
+            营业时间
+          </h2>
+          <div className="space-y-3">
+            {weekDayLabels.map(({ key, label }) => (
+              <div
+                key={key}
+                className={`flex items-center justify-between p-4 border rounded-xl transition-colors ${
+                  openingHours[key].isOpen
+                    ? 'border-gray-200 hover:border-orange-300'
+                    : 'border-gray-100 bg-gray-50 opacity-60'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => toggleOpeningHour(key)}
+                    className={`w-12 h-7 rounded-full relative transition-colors ${
+                      openingHours[key].isOpen ? 'bg-orange-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${
+                        openingHours[key].isOpen ? 'left-6' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                  <span className="font-medium text-gray-800 w-12">{label}</span>
+                </div>
+                {openingHours[key].isOpen ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={openingHours[key].open}
+                      onChange={(e) => updateOpeningHour(key, 'open', e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
+                    />
+                    <span className="text-gray-400">~</span>
+                    <input
+                      type="time"
+                      value={openingHours[key].close}
+                      onChange={(e) => updateOpeningHour(key, 'close', e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-sm text-gray-400">休息</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* 保存按钮栏 */}
+        <div className="sticky bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 shadow-lg mt-6 -mx-4 mb-0">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Save size={20} />
+            {saving ? '保存中...' : '保存设置'}
+          </button>
         </div>
       </div>
     </ShopLayout>

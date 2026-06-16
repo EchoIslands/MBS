@@ -81,6 +81,112 @@ router.get('/:id', async (req: Request, res: Response) => {
   res.json(shop);
 });
 
+// 更新店铺信息
+router.put('/:id', async (req: Request, res: Response) => {
+  const { name, description, phone, address, services, employees, openingHours } = req.body;
+
+  // 先尝试从数据库更新
+  const shop = await shopQueries.get(req.params.id);
+  if (shop) {
+    const updateData: any = {
+      name: name || shop.name,
+      description: description || shop.description,
+      phone: phone || shop.phone,
+      address: address || shop.address,
+    };
+    if (services !== undefined) updateData.services = JSON.stringify(services);
+    if (employees !== undefined) updateData.employees = JSON.stringify(employees);
+    if (openingHours !== undefined) updateData.opening_hours = JSON.stringify(openingHours);
+    updateData.updated_at = new Date().toISOString();
+
+    const updated = await shopQueries.update(req.params.id, updateData);
+    if (updated) {
+      res.json({ success: true, message: '店铺信息已更新' });
+      return;
+    }
+  }
+
+  // fallback 到 mockShops
+  const shopIndex = mockShops.findIndex((s: any) => s.id === req.params.id);
+  if (shopIndex === -1) {
+    return res.status(404).json({ message: '店铺不存在' });
+  }
+  const existing = mockShops[shopIndex];
+  mockShops[shopIndex] = {
+    ...existing,
+    name: name || existing.name,
+    description: description || existing.description,
+    phone: phone || existing.phone,
+    address: address || existing.address,
+    services: services !== undefined ? services : existing.services,
+    employees: employees !== undefined ? employees : existing.employees,
+    openingHours: openingHours !== undefined ? openingHours : existing.openingHours,
+    updatedAt: new Date(),
+  };
+  res.json({ success: true, message: '店铺信息已更新' });
+});
+
+// 创建店铺
+router.post('/', async (req: Request, res: Response) => {
+  const { name, description, phone, address, services = [], employees = [], openingHours } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: '店铺名称不能为空' });
+  }
+
+  const newId = 'shop_' + Math.random().toString(36).substr(2, 9);
+  const newShop: any = {
+    id: newId,
+    name,
+    description: description || '',
+    address: address || '',
+    latitude: 39.9042,
+    longitude: 116.4074,
+    phone: phone || '',
+    images: [],
+    services: services.map((s: any, i: number) => ({
+      id: s.id || 'svc_' + i,
+      name: s.name,
+      price: s.price,
+      duration: s.duration,
+      description: s.description,
+    })),
+    employees: employees.map((e: any, i: number) => ({
+      id: e.id || 'emp_' + i,
+      name: e.name,
+      title: e.title,
+      specialty: e.specialty,
+      avatar: e.avatar,
+      rating: e.rating || 5.0,
+      skillValue: e.skillValue || 5.0,
+      reviewCount: e.reviewCount || 0,
+      totalServices: e.totalServices || 0,
+      isActive: e.isActive !== false,
+      role: e.role || 'stylist',
+      weeklyRevenue: e.weeklyRevenue || 0,
+      tags: e.tags || [],
+    })),
+    products: [],
+    openingHours: openingHours || {
+      monday: { open: '09:00', close: '21:00', isOpen: true },
+      tuesday: { open: '09:00', close: '21:00', isOpen: true },
+      wednesday: { open: '09:00', close: '21:00', isOpen: true },
+      thursday: { open: '09:00', close: '21:00', isOpen: true },
+      friday: { open: '09:00', close: '22:00', isOpen: true },
+      saturday: { open: '10:00', close: '22:00', isOpen: true },
+      sunday: { open: '10:00', close: '20:00', isOpen: true },
+    },
+    level: 'excellent',
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  // 同时更新 mockShops
+  mockShops.push(newShop);
+  res.status(201).json({ success: true, data: newShop, message: '店铺创建成功' });
+});
+
 // 获取店铺的预约
 router.get('/:id/bookings', async (req: Request, res: Response) => {
   const dbBookings = await bookingQueries.listByShop(req.params.id);

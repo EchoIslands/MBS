@@ -13,6 +13,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ currentCustomer: customer, userRole: customer ? UserRole.CUSTOMER : null }),
   setCurrentShop: (shop: Shop | null) => 
     set({ currentShop: shop, userRole: shop ? UserRole.SHOP_OWNER : null }),
+  updateShop: (shopData: Partial<Shop>) =>
+    set((state) => state.currentShop ? { currentShop: { ...state.currentShop, ...shopData } } : state),
   setCurrentEmployee: (employee: Employee | null) => 
     set({ 
       currentEmployee: employee, 
