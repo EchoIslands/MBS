@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Clock, MapPin, Bell, Music, CheckCircle, User, Calendar,
+  ArrowLeft, Clock as ClockIcon, MapPin, Bell, Music, CheckCircle, User, Calendar,
   Scissors, Star, Sparkles, Award, ChevronRight, Zap, Users,
 } from 'lucide-react';
 import { Booking, Queue as QueueType, Employee } from '../../../shared/types';
@@ -35,12 +35,31 @@ const Queue: React.FC = () => {
   const [walkTime] = useState(15);
   const navigate = useNavigate();
 
-  // 实时模拟服务进度
+  // 判断预约时间是否已到或已过
+  const isAppointmentTimeReached = () => {
+    if (!booking) return false;
+    const now = new Date();
+    const scheduled = new Date(booking.scheduledTime);
+    return now >= scheduled;
+  };
+
+  // 实时模拟服务进度（仅在预约时间到达后开始）
   const [currentStep, setCurrentStep] = useState(1);
-  const [stepProgress, setStepProgress] = useState(35); // 当前步骤内进度 %
-  const [elapsedMinutes, setElapsedMinutes] = useState(5); // 已服务分钟数
+  const [stepProgress, setStepProgress] = useState(0); // 初始为0，不是35
+  const [elapsedMinutes, setElapsedMinutes] = useState(0);
+  const [serviceStarted, setServiceStarted] = useState(false);
+  const appointmentReached = isAppointmentTimeReached();
 
   useEffect(() => {
+    if (!appointmentReached || !booking) {
+      // 预约时间未到，不启动服务模拟
+      setServiceStarted(false);
+      return;
+    }
+
+    // 预约时间已到，等待队列轮到后开始服务
+    setServiceStarted(true);
+
     // 模拟：逐步推进服务进度
     const timer = setInterval(() => {
       setStepProgress((prev) => {
@@ -54,6 +73,11 @@ const Queue: React.FC = () => {
       setElapsedMinutes((prev) => prev + 1);
     }, 3000);
 
+    return () => clearInterval(timer);
+  }, [appointmentReached, booking]);
+
+  // 加载预约数据
+  useEffect(() => {
     // 模拟：从 mock 数据读取预约信息
     const currentShop = mockShops[0];
     const mockBooking: Booking = {
@@ -61,7 +85,7 @@ const Queue: React.FC = () => {
       shopId: currentShop.id,
       customerId: 'cust1',
       serviceId: 's1',
-      scheduledTime: new Date(Date.now() + 15 * 60 * 1000),
+      scheduledTime: new Date(Date.now() + 15 * 60 * 1000), // 默认15分钟后
       status: 'confirmed',
       queueNumber: 2,
       serviceName: '精剪',
@@ -80,8 +104,6 @@ const Queue: React.FC = () => {
       bookings: [mockBooking],
     });
     setLoading(false);
-
-    return () => clearInterval(timer);
   }, [bookingId]);
 
   // 当前为您服务的发型师
@@ -145,10 +167,17 @@ const Queue: React.FC = () => {
         {/* ===== 【核心区域 1】当前发型师卡片 ===== */}
         <div className="bg-white rounded-3xl shadow-lg p-5 mb-4 border border-orange-100">
           <div className="flex items-center gap-2 mb-4 text-sm">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-medium">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              正在为您服务
-            </div>
+            {appointmentReached && serviceStarted ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                正在为您服务
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
+                <ClockIcon size={14} />
+                等待预约时间
+              </div>
+            )}
           </div>
 
           <div className="flex items-start gap-4">
@@ -214,80 +243,112 @@ const Queue: React.FC = () => {
           </div>
         </div>
 
-        {/* ===== 【核心区域 2】服务进度可视化 ===== */}
-        <div className="bg-white rounded-3xl shadow-lg p-5 mb-4 border border-orange-100">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-base">
-              <Scissors size={18} className="text-orange-500" />
-              服务进度
-            </h3>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-orange-600">{remainingMinutes}</div>
-              <div className="text-xs text-gray-500">预计剩余分钟</div>
+        {/* ===== 【核心区域 2】服务进度可视化（仅预约时间到达后显示） ===== */}
+        {appointmentReached && serviceStarted && (
+          <div className="bg-white rounded-3xl shadow-lg p-5 mb-4 border border-orange-100">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2 text-base">
+                <Scissors size={18} className="text-orange-500" />
+                服务进度
+              </h3>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-orange-600">{remainingMinutes}</div>
+                <div className="text-xs text-gray-500">预计剩余分钟</div>
+              </div>
             </div>
-          </div>
 
-          {/* 总体进度条 */}
-          <div className="mb-5">
-            <div className="flex items-center justify-between mb-2 text-sm">
-              <span className="text-gray-500">总进度</span>
-              <span className="font-bold text-gray-700">{overallProgress}%</span>
-            </div>
-            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-orange-400 via-orange-500 to-yellow-400 rounded-full transition-all duration-1000 shadow-sm"
-                style={{ width: `${overallProgress}%` }}
-              />
-            </div>
-          </div>
-
-          {/* 步骤进度 — 横向时间线 */}
-          <div className="space-y-2.5">
-            {serviceSteps.map((step, idx) => {
-              const isDone = idx < currentStep;
-              const isActive = idx === currentStep;
-              const StepIcon = step.icon;
-              return (
+            {/* 总体进度条 */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2 text-sm">
+                <span className="text-gray-500">总进度</span>
+                <span className="font-bold text-gray-700">{overallProgress}%</span>
+              </div>
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  key={step.key}
-                  className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
-                    isActive ? 'bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 shadow-sm' :
-                    isDone ? 'bg-green-50/50' : 'bg-gray-50'
-                  }`}
-                >
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    isDone ? 'bg-green-500 text-white' :
-                    isActive ? 'bg-orange-500 text-white shadow-md' :
-                    'bg-gray-200 text-gray-400'
-                  }`}>
-                    {isDone ? <CheckCircle size={18} /> : <StepIcon size={18} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-medium text-sm ${isActive ? 'text-orange-700' : isDone ? 'text-green-700' : 'text-gray-500'}`}>
-                      {step.label}
-                      <span className="ml-2 text-xs text-gray-400 font-normal">· 约 {step.duration} 分钟</span>
+                  className="h-full bg-gradient-to-r from-orange-400 via-orange-500 to-yellow-400 rounded-full transition-all duration-1000 shadow-sm"
+                  style={{ width: `${overallProgress}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 步骤进度 — 横向时间线 */}
+            <div className="space-y-2.5">
+              {serviceSteps.map((step, idx) => {
+                const isDone = idx < currentStep;
+                const isActive = idx === currentStep;
+                const StepIcon = step.icon;
+                return (
+                  <div
+                    key={step.key}
+                    className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                      isActive ? 'bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 shadow-sm' :
+                      isDone ? 'bg-green-50/50' : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      isDone ? 'bg-green-500 text-white' :
+                      isActive ? 'bg-orange-500 text-white shadow-md' :
+                      'bg-gray-200 text-gray-400'
+                    }`}>
+                      {isDone ? <CheckCircle size={18} /> : <StepIcon size={18} />}
                     </div>
-                    {isActive && (
-                      <div className="mt-1">
-                        <div className="h-1.5 bg-white rounded-full overflow-hidden border border-orange-100">
-                          <div
-                            className="h-full bg-orange-500 rounded-full transition-all duration-1000"
-                            style={{ width: `${stepProgress}%` }}
-                          />
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-medium text-sm ${isActive ? 'text-orange-700' : isDone ? 'text-green-700' : 'text-gray-500'}`}>
+                        {step.label}
+                        <span className="ml-2 text-xs text-gray-400 font-normal">· 约 {step.duration} 分钟</span>
                       </div>
-                    )}
+                      {isActive && (
+                        <div className="mt-1">
+                          <div className="h-1.5 bg-white rounded-full overflow-hidden border border-orange-100">
+                            <div
+                              className="h-full bg-orange-500 rounded-full transition-all duration-1000"
+                              style={{ width: `${stepProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {isDone && <span className="text-xs text-green-600 font-medium">✓ 完成</span>}
+                      {isActive && <span className="text-xs text-orange-600 font-medium">进行中 {stepProgress}%</span>}
+                      {!isDone && !isActive && <span className="text-xs text-gray-400">等待</span>}
+                    </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    {isDone && <span className="text-xs text-green-600 font-medium">✓ 完成</span>}
-                    {isActive && <span className="text-xs text-orange-600 font-medium">进行中 {stepProgress}%</span>}
-                    {!isDone && !isActive && <span className="text-xs text-gray-400">等待</span>}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* ===== 预约尚未到达提醒 ===== */}
+        {!appointmentReached && booking && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl shadow-lg p-5 mb-4 border border-blue-100">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <ClockIcon size={24} className="text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-800">预约尚未开始</h3>
+                <p className="text-sm text-gray-500">请在预约时间到达后刷新页面</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-500 text-sm">预约时间</span>
+                <span className="font-bold text-blue-600">
+                  {new Date(booking.scheduledTime).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })} {new Date(booking.scheduledTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500 text-sm">距离预约</span>
+                <span className="font-bold text-gray-800">
+                  {appointmentInfo.days > 0 ? `${appointmentInfo.days}天 ` : ''}
+                  {appointmentInfo.hours}小时{appointmentInfo.minutes}分钟
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ===== 排队状态卡片 ===== */}
         <div className="bg-white rounded-3xl shadow-lg p-5 mb-4 border border-blue-100">
