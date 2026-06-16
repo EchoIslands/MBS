@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Booking, Queue as QueueType, Employee } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
+import { bookingApi } from '../../../src/api';
 
 // 模拟服务步骤（用于可视化进度）
 const serviceSteps = [
@@ -35,32 +36,68 @@ const Queue: React.FC = () => {
   const [walkTime] = useState(15);
   const navigate = useNavigate();
 
-  // 判断预约时间是否已到或已过
-  const isAppointmentTimeReached = () => {
-    if (!booking) return false;
-    const now = new Date();
-    const scheduled = new Date(booking.scheduledTime);
-    return now >= scheduled;
-  };
-
-  // 实时模拟服务进度（仅在预约时间到达后开始）
-  const [currentStep, setCurrentStep] = useState(1);
-  const [stepProgress, setStepProgress] = useState(0); // 初始为0，不是35
-  const [elapsedMinutes, setElapsedMinutes] = useState(0);
+  // 服务进度状态
+  const [currentStep, setCurrentStep] = useState(0); // 从0开始
+  const [stepProgress, setStepProgress] = useState(0);
   const [serviceStarted, setServiceStarted] = useState(false);
-  const appointmentReached = isAppointmentTimeReached();
 
+  // 判断预约时间是否已到（响应式）
+  const isAppointmentTimeReached = booking && new Date() >= new Date(booking.scheduledTime);
+
+  // 加载预约数据（从后端获取真实数据）
   useEffect(() => {
-    if (!appointmentReached || !booking) {
-      // 预约时间未到，不启动服务模拟
+    async function fetchBooking() {
+      try {
+        // 尝试从后端获取真实预约
+        const booking = await bookingApi.getBooking(bookingId || 'queue-demo');
+        setBooking(booking);
+        setLoading(false);
+      } catch (error) {
+        console.log('从后端获取预约失败，使用模拟数据');
+        
+        // 后端获取失败时使用模拟数据（兼容演示模式）
+        const currentShop = mockShops[0];
+        const mockBooking: Booking = {
+          id: bookingId || 'queue-demo',
+          shopId: currentShop.id,
+          customerId: 'cust1',
+          serviceId: 's1',
+          scheduledTime: new Date(Date.now() + 15 * 60 * 1000), // 默认15分钟后（模拟）
+          status: 'confirmed',
+          queueNumber: 2,
+          serviceName: '精剪',
+          price: 68,
+          customerName: '张三',
+          shopName: currentShop.name,
+          barberId: currentShop.employees[0]?.id,
+          barberName: currentShop.employees[0]?.name,
+        };
+        setBooking(mockBooking);
+        setQueue({
+          id: 'queue1',
+          shopId: currentShop.id,
+          currentNumber: 1,
+          estimatedWaitTime: 15,
+          bookings: [mockBooking],
+        });
+        setLoading(false);
+      }
+    }
+    
+    fetchBooking();
+  }, [bookingId]);
+
+  // 启动服务进度模拟
+  useEffect(() => {
+    if (!booking || !isAppointmentTimeReached) {
       setServiceStarted(false);
       return;
     }
 
-    // 预约时间已到，等待队列轮到后开始服务
     setServiceStarted(true);
+    setCurrentStep(0);
+    setStepProgress(0);
 
-    // 模拟：逐步推进服务进度
     const timer = setInterval(() => {
       setStepProgress((prev) => {
         const next = prev + 5;
@@ -70,41 +107,10 @@ const Queue: React.FC = () => {
         }
         return next;
       });
-      setElapsedMinutes((prev) => prev + 1);
     }, 3000);
 
     return () => clearInterval(timer);
-  }, [appointmentReached, booking]);
-
-  // 加载预约数据
-  useEffect(() => {
-    // 模拟：从 mock 数据读取预约信息
-    const currentShop = mockShops[0];
-    const mockBooking: Booking = {
-      id: bookingId || 'queue-demo',
-      shopId: currentShop.id,
-      customerId: 'cust1',
-      serviceId: 's1',
-      scheduledTime: new Date(Date.now() + 15 * 60 * 1000), // 默认15分钟后
-      status: 'confirmed',
-      queueNumber: 2,
-      serviceName: '精剪',
-      price: 68,
-      customerName: '张三',
-      shopName: currentShop.name,
-      barberId: currentShop.employees[0]?.id,
-      barberName: currentShop.employees[0]?.name,
-    };
-    setBooking(mockBooking);
-    setQueue({
-      id: 'queue1',
-      shopId: currentShop.id,
-      currentNumber: 1,
-      estimatedWaitTime: 15,
-      bookings: [mockBooking],
-    });
-    setLoading(false);
-  }, [bookingId]);
+  }, [isAppointmentTimeReached, booking]);
 
   // 当前为您服务的发型师
   const currentShop = mockShops[0];
@@ -113,14 +119,16 @@ const Queue: React.FC = () => {
 
   // 当前服务进度
   const totalMinutes = serviceSteps.reduce((sum, s) => sum + s.duration, 0);
+  const currentStepDuration = serviceSteps[currentStep]?.duration || 0;
   const completedMinutes = serviceSteps.slice(0, currentStep).reduce((sum, s) => sum + s.duration, 0) +
-    Math.floor((stepProgress / 100) * serviceSteps[currentStep].duration);
-  const overallProgress = Math.min(100, Math.floor((completedMinutes / totalMinutes) * 100));
+    Math.floor((stepProgress / 100) * currentStepDuration);
+  const overallProgress = totalMinutes > 0 ? Math.min(100, Math.floor((completedMinutes / totalMinutes) * 100)) : 0;
   const remainingMinutes = Math.max(0, totalMinutes - completedMinutes);
 
   const position = booking?.queueNumber || 2;
-  const waitTime = queue?.estimatedWaitTime || remainingMinutes;
-  const shouldLeaveNow = waitTime <= walkTime + 5;
+  // 如果服务已开始，显示剩余分钟；否则显示预计等待时间
+  const waitTime = serviceStarted ? remainingMinutes : (queue?.estimatedWaitTime || 15);
+  const shouldLeaveNow = !serviceStarted && waitTime <= walkTime + 5;
 
   // 获取预约时间信息
   const getTimeUntilAppointment = () => {
@@ -167,7 +175,7 @@ const Queue: React.FC = () => {
         {/* ===== 【核心区域 1】当前发型师卡片 ===== */}
         <div className="bg-white rounded-3xl shadow-lg p-5 mb-4 border border-orange-100">
           <div className="flex items-center gap-2 mb-4 text-sm">
-            {appointmentReached && serviceStarted ? (
+            {isAppointmentTimeReached && serviceStarted ? (
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-medium">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 正在为您服务
@@ -244,7 +252,7 @@ const Queue: React.FC = () => {
         </div>
 
         {/* ===== 【核心区域 2】服务进度可视化（仅预约时间到达后显示） ===== */}
-        {appointmentReached && serviceStarted && (
+        {isAppointmentTimeReached && serviceStarted && (
           <div className="bg-white rounded-3xl shadow-lg p-5 mb-4 border border-orange-100">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-800 flex items-center gap-2 text-base">
@@ -321,7 +329,7 @@ const Queue: React.FC = () => {
         )}
 
         {/* ===== 预约尚未到达提醒 ===== */}
-        {!appointmentReached && booking && (
+        {!isAppointmentTimeReached && booking && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl shadow-lg p-5 mb-4 border border-blue-100">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">

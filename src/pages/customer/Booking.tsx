@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { mockShops, mockBookings } from '../../../shared/mockData';
 import { Employee } from '../../../shared/types';
+import { bookingApi } from '../../../src/api';
 
 type SelectionMode = 'specific' | 'fastest';
 
@@ -110,10 +111,29 @@ const Booking: React.FC = () => {
       return;
     }
     setBooking(true);
-    setTimeout(() => {
-      const service = shop?.services.find((s) => s.id === selectedService);
-      navigate(`/customer/queue/mock_${Date.now()}`);
-    }, 600);
+    
+    // 构建预约时间
+    const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
+    const service = shop?.services.find((s) => s.id === selectedService);
+    
+    try {
+      // 调用后端API创建预约
+      const newBooking = await bookingApi.createBooking({
+        shopId: shop?.id || 'shop1',
+        customerId: 'cust1', // 实际应从登录状态获取
+        serviceId: selectedService,
+        scheduledTime: scheduledTime,
+        barberId: target.id,
+        barberName: target.name,
+      } as any);
+      
+      // 使用真实的预约ID跳转
+      navigate(`/customer/queue/${newBooking.id}`);
+    } catch (error) {
+      console.error('预约失败:', error);
+      alert('预约失败，请检查网络连接');
+      setBooking(false);
+    }
   };
 
   const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
