@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Clock as ClockIcon, MapPin, Bell, Music, CheckCircle, User, Calendar,
@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { Booking, Queue as QueueType, Employee } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
-import { bookingApi } from '../../../src/api';
 
 // 模拟服务步骤（用于可视化进度）
 const serviceSteps = [
@@ -16,15 +15,6 @@ const serviceSteps = [
   { key: 'finish', label: '吹干整理', icon: Star, duration: 10 },
 ];
 
-// 烫发服务步骤
-const permServiceSteps = [
-  { key: 'checkin', label: '到店确认', icon: CheckCircle, duration: 5 },
-  { key: 'wash', label: '洗发', icon: Sparkles, duration: 10 },
-  { key: 'soften', label: '软化/冷烫', icon: Zap, duration: 30 },
-  { key: 'shape', label: '上卷定型', icon: Scissors, duration: 35 },
-  { key: 'finish', label: '吹干整理', icon: Star, duration: 15 },
-];
-
 const Queue: React.FC = () => {
   const { bookingId } = useParams<{ bookingId: string }>();
   const [booking, setBooking] = useState<Booking | null>(null);
@@ -32,56 +22,85 @@ const Queue: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [selectedSound] = useState('清脆铃声');
-  const [distance] = useState(1.2); // 模拟距离
+  const [distance] = useState(1.2);
   const [walkTime] = useState(15);
   const navigate = useNavigate();
 
   // 服务进度状态
-  const [currentStep, setCurrentStep] = useState(0); // 从0开始
+  const [currentStep, setCurrentStep] = useState(0);
   const [stepProgress, setStepProgress] = useState(0);
   const [serviceStarted, setServiceStarted] = useState(false);
 
-  // 判断预约时间是否已到（响应式）
-  const isAppointmentTimeReached = booking && new Date() >= new Date(booking.scheduledTime);
+  // 响应式计算：判断预约时间是否已到（当booking更新时会重新计算）
+  const isAppointmentTimeReached = useMemo(() => {
+    if (!booking) return false;
+    return new Date() >= new Date(booking.scheduledTime);
+  }, [booking]);
 
-  // 加载预约数据（从后端获取真实数据）
+  // 加载预约数据（直接调用后端API获取真实数据）
   useEffect(() => {
     async function fetchBooking() {
+      // 直接调用后端API
+      const API_URL = '/api';
+      
       try {
-        // 尝试从后端获取真实预约
-        const booking = await bookingApi.getBooking(bookingId || 'queue-demo');
-        setBooking(booking);
-        setLoading(false);
+        const response = await fetch(`${API_URL}/bookings/${bookingId}`);
+        if (response.ok) {
+          const result = await response.json();
+          // 解析后端返回的数据格式
+          const bookingData = result.data || result;
+          if (bookingData && bookingData.id) {
+            // 转换后端数据格式为前端格式
+            const bookingFromApi: Booking = {
+              id: bookingData.id,
+              shopId: bookingData.shopId || bookingData.shop_id,
+              customerId: bookingData.customerId || bookingData.customer_id,
+              serviceId: bookingData.serviceId || bookingData.service_id,
+              barberId: bookingData.barberId || bookingData.stylistId || bookingData.barber_id,
+              barberName: bookingData.barberName || bookingData.stylistName,
+              scheduledTime: new Date(bookingData.scheduledTime || bookingData.scheduled_time),
+              status: bookingData.status,
+              queueNumber: bookingData.queueNumber || bookingData.queue_number,
+              serviceName: bookingData.serviceName || bookingData.service_name,
+              price: bookingData.price,
+              customerName: bookingData.customerName || bookingData.customer_name,
+              shopName: bookingData.shopName || bookingData.shop_name,
+            };
+            setBooking(bookingFromApi);
+            setLoading(false);
+            return;
+          }
+        }
       } catch (error) {
-        console.log('从后端获取预约失败，使用模拟数据');
-        
-        // 后端获取失败时使用模拟数据（兼容演示模式）
-        const currentShop = mockShops[0];
-        const mockBooking: Booking = {
-          id: bookingId || 'queue-demo',
-          shopId: currentShop.id,
-          customerId: 'cust1',
-          serviceId: 's1',
-          scheduledTime: new Date(Date.now() + 15 * 60 * 1000), // 默认15分钟后（模拟）
-          status: 'confirmed',
-          queueNumber: 2,
-          serviceName: '精剪',
-          price: 68,
-          customerName: '张三',
-          shopName: currentShop.name,
-          barberId: currentShop.employees[0]?.id,
-          barberName: currentShop.employees[0]?.name,
-        };
-        setBooking(mockBooking);
-        setQueue({
-          id: 'queue1',
-          shopId: currentShop.id,
-          currentNumber: 1,
-          estimatedWaitTime: 15,
-          bookings: [mockBooking],
-        });
-        setLoading(false);
+        console.log('从后端获取预约失败，使用模拟数据:', error);
       }
+      
+      // 后端获取失败时使用模拟数据（兼容演示模式）
+      const currentShop = mockShops[0];
+      const mockBooking: Booking = {
+        id: bookingId || 'queue-demo',
+        shopId: currentShop.id,
+        customerId: 'cust1',
+        serviceId: 's1',
+        scheduledTime: new Date(Date.now() + 15 * 60 * 1000), // 默认15分钟后（模拟）
+        status: 'confirmed',
+        queueNumber: 2,
+        serviceName: '精剪',
+        price: 68,
+        customerName: '张三',
+        shopName: currentShop.name,
+        barberId: currentShop.employees[0]?.id,
+        barberName: currentShop.employees[0]?.name,
+      };
+      setBooking(mockBooking);
+      setQueue({
+        id: 'queue1',
+        shopId: currentShop.id,
+        currentNumber: 1,
+        estimatedWaitTime: 15,
+        bookings: [mockBooking],
+      });
+      setLoading(false);
     }
     
     fetchBooking();
