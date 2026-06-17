@@ -47,7 +47,12 @@ router.post('/', async (req: Request, res: Response) => {
     if (b.shop_id === shopId) countFromDb++;
   });
 
-  // 处理 scheduledTime：可能是 Date、ISOstring、或其他格式
+  // 处理 scheduledTime：验证时间是否有效且未来时间
+  if (!scheduledTime) {
+    console.error('❌ scheduledTime 为空');
+    return res.status(400).json({ message: '预约时间不能为空' });
+  }
+  
   let scheduledTimeDate: Date;
   try {
     scheduledTimeDate = scheduledTime instanceof Date
@@ -55,12 +60,22 @@ router.post('/', async (req: Request, res: Response) => {
       : new Date(scheduledTime);
     // 检查是否有效日期
     if (isNaN(scheduledTimeDate.getTime())) {
-      scheduledTimeDate = new Date();
+      console.error('❌ scheduledTime 无效:', scheduledTime);
+      return res.status(400).json({ message: '预约时间格式无效' });
     }
   } catch (e) {
-    scheduledTimeDate = new Date();
+    console.error('❌ scheduledTime 解析失败:', scheduledTime, e);
+    return res.status(400).json({ message: '预约时间解析失败' });
   }
-  console.log('Parsed scheduledTime:', scheduledTimeDate.toISOString());
+  
+  // 检查时间是否是未来时间（允许当前时间之后的预约）
+  const now = new Date();
+  if (scheduledTimeDate < now) {
+    console.error('❌ scheduledTime 已是过去时间:', scheduledTimeDate.toISOString(), 'now:', now.toISOString());
+    return res.status(400).json({ message: '预约时间不能是过去时间' });
+  }
+  
+  console.log('✅ Parsed scheduledTime:', scheduledTimeDate.toISOString());
 
   const newBooking = {
     id: generateId(),

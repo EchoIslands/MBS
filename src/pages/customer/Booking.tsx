@@ -136,6 +136,13 @@ const Booking: React.FC = () => {
     
     // 构建预约时间
     const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
+    console.log('🔍 传给后端的 scheduledTime:', {
+      selectedDate,
+      selectedTime,
+      scheduledTime,
+      scheduledTimeISO: scheduledTime.toISOString(),
+      isValid: !isNaN(scheduledTime.getTime())
+    });
     const service = shop?.services.find((s) => s.id === selectedService);
     
     try {
@@ -144,7 +151,7 @@ const Booking: React.FC = () => {
         shopId: shop?.id || 'shop1',
         customerId: 'cust1', // 实际应从登录状态获取
         serviceId: selectedService,
-        scheduledTime: scheduledTime,
+        scheduledTime: scheduledTime.toISOString(), // 明确转换为 ISO 字符串
         barberId: target.id,
         barberName: target.name,
       } as any);
