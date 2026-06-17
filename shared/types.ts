@@ -714,18 +714,35 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
+  wechat?: string;               // 微信
   avatar?: string;
   gender?: Gender;
   age?: number;
+  birthday?: Date;               // 生日
+  idCardNumber?: string;         // 身份证号
+  hobbies?: string;              // 爱好及其它
   tags: CustomerTag[];
   visitCount: number;
-  totalSpent: number;
+  totalSpent: number;            // 消费金额（累计）
+  lastServiceItems?: string[];   // 上次消费项目
+  lastServiceAmount?: number;    // 上次消费金额
+  hasBooking?: boolean;          // 是否预约
+  lastStylist?: string;          // 上次服务设计师
   membershipLevel: MembershipLevel;
+  isMember?: boolean;             // 是否会员
+  hasRecharged?: boolean;        // 是否充值
+  rechargeLevel?: string;        // 充值级别
   balance: number;
   points: number;
+  isReferred?: boolean;          // 是否转介绍
+  referrerName?: string;         // 转介绍人员
+  referrerPhone?: string;        // 转介绍人员电话
+  referralConsumption?: number;  // 转介绍带来的消费金额
+  sharedFund?: number;           // 共享基金
+  totalSharedFund?: number;      // 合计共享基金
+  withdrawableAmount?: number;   // 可取现金额
   joinedAt: Date;
   lastVisitAt?: Date;
-  birthday?: Date;
   preferences?: string[];
   // 股东相关
   isStockholder: boolean;
@@ -740,7 +757,7 @@ export interface Customer {
   visitRecords?: CustomerVisitRecord[];
   // 新增：来源
   source?: string;
-  // 新增：Step 3 / Step 4 —— 会员累计节省金额、召回相关
+  // 新增：会员累计节省金额、召回相关
   totalSaved?: number;           // 作为高级/股东会员累计节省的金额
   daysSinceLastVisit?: number;   // 距离上次到店天数（计算字段）
   estimatedNextVisitAt?: Date;   // 预计下次到店时间

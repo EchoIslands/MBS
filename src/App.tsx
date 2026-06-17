@@ -26,6 +26,7 @@ import OwnerDashboard from "./pages/shop/OwnerDashboard";
 import RefundManagement from "./pages/shop/RefundManagement";
 import ProductManagement from "./pages/shop/ProductManagement";
 import CustomerManagement from "./pages/shop/CustomerManagement";
+import CustomerTableManagement from "./pages/shop/CustomerTableManagement";
 import SettlementManagement from "./pages/shop/SettlementManagement";
 import MembershipManagement from "./pages/shop/MembershipManagement";
 import SatisfactionSurveyManagement from "./pages/shop/SatisfactionSurveyManagement";
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/shop/owner" element={<OwnerDashboard />} />
         <Route path="/shop/refunds" element={<RefundManagement />} />
         <Route path="/shop/customers" element={<CustomerManagement />} />
+        <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
         <Route path="/shop/bookings" element={<BookingManagement />} />
         <Route path="/shop/settlement" element={<SettlementManagement />} />
         <Route path="/shop/membership" element={<MembershipManagement />} />
