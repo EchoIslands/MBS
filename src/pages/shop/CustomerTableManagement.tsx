@@ -123,40 +123,60 @@ const CustomerTableManagement: React.FC = () => {
     });
   }, [customers, searchTerm, filterLevel, filterMember, filterBooking]);
 
-  // 导出CSV
+  // 导出CSV - 完整24个字段
   const handleExportCSV = () => {
     const headers = [
-      '序号', '入店日期', '客户称呼', '联系方式', '微信', '性别', '年龄',
-      '生日', '爱好', '消费项目', '消费金额', '是否预约', '设计师',
-      '是否会员', '会员级别', '是否充值', '充值级别', '余额',
-      '是否转介绍', '转介绍人员', '消费金额', '共享基金', '合计共享基金', '可取现金额'
+      '序号',          // 1
+      '入店日期',      // 2
+      '客户称呼',      // 3
+      '联系方式',      // 4
+      '微信',          // 5
+      '性别',          // 6
+      '年龄',          // 7
+      '生日',          // 8
+      '爱好',          // 9
+      '消费项目',      // 10
+      '消费金额',      // 11
+      '是否预约',      // 12
+      '设计师',        // 13
+      '是否会员',      // 14
+      '会员级别',      // 15
+      '是否充值',      // 16
+      '充值级别',      // 17
+      '余额',          // 18
+      '是否转介绍',    // 19
+      '转介绍人员',    // 20
+      '转介绍消费',    // 21 - 这里之前是错误的"消费金额"
+      '共享基金',      // 22
+      '合计共享基金',  // 23
+      '可取现金额'     // 24
     ];
 
     const rows = filteredCustomers.map((c, idx) => [
-      idx + 1,
-      c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString('zh-CN') : '',
-      c.name,
-      c.phone,
-      c.wechat || '',
-      c.gender === 'male' ? '男' : c.gender === 'female' ? '女' : '其他',
-      c.age || '',
-      c.birthday ? new Date(c.birthday).toLocaleDateString('zh-CN') : '',
-      c.hobbies || '',
-      c.lastServiceItems?.join('/') || '',
-      c.totalSpent,
-      c.hasBooking ? '是' : '否',
-      c.lastStylist || '',
-      c.isMember ? '是' : '否',
-      c.isStockholder ? '股东会员' : c.membershipLevel === MembershipLevel.PREMIUM ? '高级会员' : '普通',
-      c.hasRecharged ? '是' : '否',
-      c.rechargeLevel || '',
-      c.balance,
-      c.isReferred ? '是' : '否',
-      c.referrerName || '',
-      c.referralConsumption || 0,
-      c.sharedFund?.toFixed(2) || '0.00',
-      c.totalSharedFund?.toFixed(2) || '0.00',
-      c.withdrawableAmount?.toFixed(2) || '0.00',
+      idx + 1,                                                  // 1. 序号
+      c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString('zh-CN') : '',  // 2. 入店日期
+      c.name,                                                   // 3. 客户称呼
+      c.phone,                                                  // 4. 联系方式
+      c.wechat || '',                                           // 5. 微信
+      c.gender === 'male' ? '男' : c.gender === 'female' ? '女' : '其他',  // 6. 性别
+      c.age || '',                                              // 7. 年龄
+      c.birthday ? new Date(c.birthday).toLocaleDateString('zh-CN') : '',  // 8. 生日
+      c.hobbies || '',                                          // 9. 爱好
+      c.lastServiceItems?.join('/') || '',                      // 10. 消费项目
+      `¥${c.totalSpent.toLocaleString()}`,                      // 11. 消费金额
+      c.hasBooking ? '是' : '否',                               // 12. 是否预约
+      c.lastStylist || '',                                      // 13. 设计师
+      c.isMember ? '是' : '否',                                 // 14. 是否会员
+      c.isStockholder ? '股东会员' : c.membershipLevel === MembershipLevel.PREMIUM ? '高级会员' : '普通',  // 15. 会员级别
+      c.hasRecharged ? '是' : '否',                             // 16. 是否充值
+      c.rechargeLevel || '',                                    // 17. 充值级别
+      `¥${c.balance.toLocaleString()}`,                         // 18. 余额
+      c.isReferred ? '是' : '否',                               // 19. 是否转介绍
+      c.referrerName || '',                                     // 20. 转介绍人员
+      c.referralConsumption ? `¥${c.referralConsumption.toLocaleString()}` : '',  // 21. 转介绍消费
+      c.sharedFund ? `¥${c.sharedFund.toFixed(2)}` : '',        // 22. 共享基金
+      c.totalSharedFund ? `¥${c.totalSharedFund.toFixed(2)}` : '',  // 23. 合计共享基金
+      c.withdrawableAmount ? `¥${c.withdrawableAmount.toFixed(2)}` : '',  // 24. 可取现金额
     ]);
 
     const csvContent = '\uFEFF' + [headers, ...rows]
@@ -1045,6 +1065,16 @@ const CustomerTableManagement: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm text-gray-600 mb-1">上次消费项目</label>
+                  <input
+                    type="text"
+                    defaultValue={showEdit?.lastServiceItems?.join('、') || ''}
+                    id="edit-service-items"
+                    placeholder="请输入消费项目，用、分隔"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm text-gray-600 mb-1">累计消费金额 (¥)</label>
                   <input
                     type="number"
@@ -1053,6 +1083,28 @@ const CustomerTableManagement: React.FC = () => {
                     placeholder="请输入累计消费金额"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">入店日期</label>
+                  <input
+                    type="date"
+                    defaultValue={showEdit?.lastVisitAt ? new Date(showEdit.lastVisitAt).toISOString().split('T')[0] : ''}
+                    id="edit-visit-date"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">充值级别</label>
+                  <select
+                    id="edit-recharge-level"
+                    defaultValue={showEdit?.rechargeLevel || ''}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm bg-white"
+                  >
+                    <option value="">未设置</option>
+                    <option value="银卡">银卡</option>
+                    <option value="金卡">金卡</option>
+                    <option value="钻石卡">钻石卡</option>
+                  </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
@@ -1188,7 +1240,10 @@ const CustomerTableManagement: React.FC = () => {
                   const balanceInput = document.getElementById('edit-balance') as HTMLInputElement;
                   const pointsInput = document.getElementById('edit-points') as HTMLInputElement;
                   const stylistInput = document.getElementById('edit-stylist') as HTMLInputElement;
+                  const serviceItemsInput = document.getElementById('edit-service-items') as HTMLInputElement;
                   const totalInput = document.getElementById('edit-total') as HTMLInputElement;
+                  const visitDateInput = document.getElementById('edit-visit-date') as HTMLInputElement;
+                  const rechargeLevelInput = document.getElementById('edit-recharge-level') as HTMLSelectElement;
                   const bookingInput = document.getElementById('edit-booking') as HTMLInputElement;
                   const rechargedInput = document.getElementById('edit-recharged') as HTMLInputElement;
                   const referredInput = document.getElementById('edit-is-referred') as HTMLSelectElement;
@@ -1222,10 +1277,12 @@ const CustomerTableManagement: React.FC = () => {
                       balance: parseFloat(balanceInput.value) || 0,
                       points: parseInt(pointsInput.value) || 0,
                       lastStylist: stylistInput.value,
+                      lastServiceItems: serviceItemsInput.value ? serviceItemsInput.value.split(/[、,，]/).map(s => s.trim()).filter(Boolean) : [],
                       totalSpent: parseFloat(totalInput.value) || 0,
+                      lastVisitAt: visitDateInput.value ? new Date(visitDateInput.value) : undefined,
                       hasBooking: bookingInput.checked,
                       hasRecharged: rechargedInput.checked,
-                      rechargeLevel: parseFloat(balanceInput.value) > 1000 ? '金卡' : parseFloat(balanceInput.value) > 0 ? '银卡' : '',
+                      rechargeLevel: rechargeLevelInput.value || (parseFloat(balanceInput.value) > 1000 ? '金卡' : parseFloat(balanceInput.value) > 0 ? '银卡' : ''),
                       isReferred: referredInput.value === 'yes',
                       referrerName: referrerNameInput.value,
                       referrerPhone: referrerPhoneInput.value,
@@ -1250,9 +1307,12 @@ const CustomerTableManagement: React.FC = () => {
                       balance: parseFloat(balanceInput.value) || 0,
                       points: parseInt(pointsInput.value) || 0,
                       lastStylist: stylistInput.value,
+                      lastServiceItems: serviceItemsInput.value ? serviceItemsInput.value.split(/[、,，]/).map(s => s.trim()).filter(Boolean) : [],
                       totalSpent: parseFloat(totalInput.value) || 0,
+                      lastVisitAt: visitDateInput.value ? new Date(visitDateInput.value) : undefined,
                       hasBooking: bookingInput.checked,
                       hasRecharged: rechargedInput.checked,
+                      rechargeLevel: rechargeLevelInput.value || (parseFloat(balanceInput.value) > 1000 ? '金卡' : parseFloat(balanceInput.value) > 0 ? '银卡' : ''),
                       isReferred: referredInput.value === 'yes',
                       referrerName: referrerNameInput.value,
                       referrerPhone: referrerPhoneInput.value,
