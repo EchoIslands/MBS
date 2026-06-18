@@ -249,8 +249,8 @@ router.post('/register', async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 10)
 
     // 创建员工（这里需要直接在数据库插入）
-    const dbModule = await import('../db.js');
-    const db = dbModule.default;
+    const { default: getDb } = await import('../db.js');
+    const db = getDb();
     if (!db) {
       return res.status(500).json({
         success: false,
@@ -353,8 +353,8 @@ router.put('/password', async (req: Request, res: Response) => {
     }
 
     // 更新密码
-    const dbModule = await import('../db.js');
-    const db = dbModule.default;
+    const { default: getDb } = await import('../db.js');
+    const db = getDb();
     if (!db) {
       return res.status(500).json({
         success: false,
