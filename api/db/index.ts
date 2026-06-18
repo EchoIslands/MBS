@@ -212,3 +212,4 @@ export const queueQueries = {
 };
 
 export default { bookingQueries, shopQueries, reviewQueries, queueQueries };
+
