@@ -105,24 +105,21 @@ router.post('/', async (req: Request, res: Response) => {
 // 预约列表筛选 API
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const {
-      shopId,
-      status,
-      stylistId,
-      customerId,
-      dateStart,
-      dateEnd,
-      page = '1',
-      pageSize = '20',
-      sortBy = 'scheduledTime',
-      sortOrder = 'desc',
-    } = req.query;
+    const shopId = String(req.query.shopId || 'shop1');
+    const status = req.query.status as string | undefined;
+    const stylistId = req.query.stylistId as string | undefined;
+    const customerId = req.query.customerId as string | undefined;
+    const dateStart = req.query.dateStart as string | undefined;
+    const dateEnd = req.query.dateEnd as string | undefined;
+    const page = String(req.query.page || '1');
+    const pageSize = String(req.query.pageSize || '20');
+    const sortBy = String(req.query.sortBy || 'scheduledTime');
+    const sortOrder = String(req.query.sortOrder || 'desc');
 
     // 从本地 Map 获取该店铺的预约
-    const shopIdStr = String(shopId || 'shop1');
     let dbBookings: any[] = [];
     bookingsDb.forEach((b) => {
-      if (b.shop_id === shopIdStr) {
+      if (b.shop_id === shopId) {
         dbBookings.push(b);
       }
     });
@@ -145,7 +142,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     if (dateStart) {
-      const startDate = new Date(String(dateStart));
+      const startDate = new Date(dateStart);
       bookings = bookings.filter((b: any) => {
         const bookingDate = new Date(b.scheduledTime || b.scheduled_time);
         return bookingDate >= startDate;
@@ -153,7 +150,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     if (dateEnd) {
-      const endDate = new Date(String(dateEnd));
+      const endDate = new Date(dateEnd);
       endDate.setDate(endDate.getDate() + 1);
       bookings = bookings.filter((b: any) => {
         const bookingDate = new Date(b.scheduledTime || b.scheduled_time);
@@ -170,8 +167,8 @@ router.get('/', async (req: Request, res: Response) => {
       return fieldA < fieldB ? 1 : -1;
     });
 
-    const pageNum = parseInt(String(page), 10);
-    const size = parseInt(String(pageSize), 10);
+    const pageNum = parseInt(page, 10);
+    const size = parseInt(pageSize, 10);
     const total = bookings.length;
     const totalPages = Math.ceil(total / size);
     const offset = (pageNum - 1) * size;

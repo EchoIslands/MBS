@@ -127,4 +127,88 @@ export const bookingQueries = {
   },
 };
 
-export default { bookingQueries };
+// 店铺数据结构
+interface ShopRow {
+  id: string;
+  name: string;
+  description: string;
+  address: string;
+  phone: string;
+  latitude: number;
+  longitude: number;
+  level: string;
+  is_active: boolean;
+  avatar: string;
+  images: string[];
+  services: any[];
+  created_at: string;
+  updated_at: string;
+}
+
+// 使用全局变量确保单例
+declare global {
+  var __shops: Map<string, ShopRow> | undefined;
+  var __reviews: Map<string, any> | undefined;
+  var __queues: Map<string, any> | undefined;
+}
+
+if (!global.__shops) {
+  global.__shops = new Map();
+}
+if (!global.__reviews) {
+  global.__reviews = new Map();
+}
+if (!global.__queues) {
+  global.__queues = new Map();
+}
+
+export const shopQueries = {
+  async list(): Promise<ShopRow[]> {
+    return Array.from(global.__shops!.values());
+  },
+
+  async get(id: string): Promise<ShopRow | null> {
+    return global.__shops!.get(id) || null;
+  },
+
+  async update(id: string, data: Partial<ShopRow>): Promise<ShopRow | null> {
+    const existing = global.__shops!.get(id);
+    if (!existing) return null;
+    const updated = { ...existing, ...data };
+    global.__shops!.set(id, updated);
+    return updated;
+  },
+
+  async create(data: ShopRow): Promise<ShopRow | null> {
+    global.__shops!.set(data.id, data);
+    return data;
+  },
+};
+
+export const reviewQueries = {
+  async listByShop(shopId: string): Promise<any[]> {
+    return Array.from(global.__reviews!.values()).filter((r: any) => r.shop_id === shopId);
+  },
+
+  async listByStylist(stylistId: string): Promise<any[]> {
+    return Array.from(global.__reviews!.values()).filter((r: any) => r.stylist_id === stylistId);
+  },
+
+  async create(data: any): Promise<any> {
+    global.__reviews!.set(data.id, data);
+    return data;
+  },
+};
+
+export const queueQueries = {
+  async getByShop(shopId: string): Promise<any | null> {
+    return global.__queues!.get(shopId) || null;
+  },
+
+  async createOrUpdate(shopId: string, data: any): Promise<any> {
+    global.__queues!.set(shopId, data);
+    return data;
+  },
+};
+
+export default { bookingQueries, shopQueries, reviewQueries, queueQueries };

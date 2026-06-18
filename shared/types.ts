@@ -203,6 +203,8 @@ export interface Booking {
   serviceId: string;
   barberId?: string;
   barberName?: string;
+  stylistId?: string;        // 与 barberId 同义，后端统一使用
+  stylistName?: string;      // 与 barberName 同义，后端统一使用
   scheduledTime: Date;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
   notes?: string;
