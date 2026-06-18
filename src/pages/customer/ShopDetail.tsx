@@ -11,6 +11,7 @@ import {
 import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
+import { getAvatarUrl } from '../../lib/avatar';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -132,7 +133,7 @@ const ShopDetail: React.FC = () => {
                     className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl"
                   >
                     <img
-                      src={employee.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(employee.name)}`}
+                      src={employee.avatar || getAvatarUrl(employee.name)}
                       alt={employee.name}
                       className="w-16 h-16 rounded-full object-cover"
                     />

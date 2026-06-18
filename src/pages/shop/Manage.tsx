@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours } from '../../../shared/types';
+import { getAvatarUrl } from '../../lib/avatar';
 import ShopLayout from './ShopLayout';
 
 const defaultOpeningHours: OpeningHours = {
@@ -68,7 +69,7 @@ const ShopManage: React.FC = () => {
       name: newEmployee.name,
       title: newEmployee.title || undefined,
       specialty: newEmployee.specialty || undefined,
-      avatar: newEmployee.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(newEmployee.name)}`,
+      avatar: newEmployee.avatar || getAvatarUrl(newEmployee.name),
       rating: 5.0,
       isActive: true,
     };
@@ -398,7 +399,7 @@ const ShopManage: React.FC = () => {
               >
                 <div className="flex items-center gap-4">
                   <img
-                    src={employee.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(employee.name)}`}
+                    src={employee.avatar || getAvatarUrl(employee.name)}
                     alt={employee.name}
                     className="w-12 h-12 rounded-full object-cover"
                   />

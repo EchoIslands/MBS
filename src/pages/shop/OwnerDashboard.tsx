@@ -15,6 +15,7 @@ import {
 import { useAppStore } from '../../store';
 import { getOwnerDashboard, mockShops } from '../../../shared/mockData';
 import { OwnerDashboard, UserRole } from '../../../shared/types';
+import { getAvatarUrl } from '../../lib/avatar';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import ShopLayout from './ShopLayout';
 
@@ -282,7 +283,7 @@ const OwnerDashboardPage: React.FC = () => {
                     {index + 1}
                   </div>
                   <img
-                    src={stylist.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(stylist.name)}`}
+                    src={stylist.avatar || getAvatarUrl(stylist.name)}
                     alt={stylist.name}
                     className="w-12 h-12 rounded-full object-cover"
                   />
