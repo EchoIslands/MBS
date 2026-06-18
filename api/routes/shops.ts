@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { mockShops, mockBookings, mockReviews, mockQueues } from '../../shared/mockData.js';
+import { mockShops, mockBookings, mockReviews, mockQueues } from '../_internal/mockData.js';
 import { shopQueries, bookingQueries, reviewQueries, queueQueries } from '../db/index.js';
 
 const router = Router();

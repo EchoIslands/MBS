@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { mockCustomers } from '../shared/mockData.js';
+import { mockCustomers } from '../_internal/mockData.js';
 
 const router = Router();
 
