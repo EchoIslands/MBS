@@ -22,29 +22,24 @@ router.get('/', (req: Request, res: Response) => {
 
   let reviews = [...mockReviews];
 
-  // 店铺筛选
-  if (shopId) {
+  // 店铺筛�?  if (shopId) {
     reviews = reviews.filter((r) => r.shopId === shopId);
   }
 
-  // 发型师筛选
-  if (stylistId) {
+  // 发型师筛�?  if (stylistId) {
     reviews = reviews.filter((r) => r.stylistId === stylistId);
   }
 
-  // 客户筛选
-  if (customerId) {
+  // 客户筛�?  if (customerId) {
     reviews = reviews.filter((r) => r.customerId === customerId);
   }
 
-  // 评分筛选
-  if (rating) {
+  // 评分筛�?  if (rating) {
     const ratingNum = parseInt(rating as string, 10);
     reviews = reviews.filter((r) => Math.floor(r.overallScore) === ratingNum);
   }
 
-  // 是否有回复
-  if (hasReply === 'true') {
+  // 是否有回�?  if (hasReply === 'true') {
     reviews = reviews.filter((r) => (r as any).reply);
   } else if (hasReply === 'false') {
     reviews = reviews.filter((r) => !(r as any).reply);
@@ -85,7 +80,7 @@ router.get('/:id', (req: Request, res: Response) => {
   const review = mockReviews.find((r) => r.id === id);
 
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存在' });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   res.json({ success: true, data: review });
@@ -98,7 +93,7 @@ router.post('/:id/reply', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存在' });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!content || content.trim() === '') {
@@ -133,11 +128,11 @@ router.put('/:id/reply', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存在' });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!(review as any).reply) {
-    return res.status(400).json({ success: false, error: '该评价尚未回复' });
+    return res.status(400).json({ success: false, error: '该评价尚未回�? });
   }
 
   if (!content || content.trim() === '') {
@@ -162,11 +157,11 @@ router.delete('/:id/reply', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存在' });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!(review as any).reply) {
-    return res.status(400).json({ success: false, error: '该评价尚未回复' });
+    return res.status(400).json({ success: false, error: '该评价尚未回�? });
   }
 
   delete (review as any).reply;
@@ -175,7 +170,7 @@ router.delete('/:id/reply', (req: Request, res: Response) => {
     success: true,
     data: {
       id: review.id,
-      message: '回复已删除',
+      message: '回复已删�?,
     },
   });
 });
@@ -187,7 +182,7 @@ router.post('/:id/hide', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存在' });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if ((review as any).isHidden) {
@@ -217,7 +212,7 @@ router.post('/:id/show', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存在' });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!(review as any).isHidden) {
@@ -235,7 +230,7 @@ router.post('/:id/show', (req: Request, res: Response) => {
     data: {
       id: review.id,
       isHidden: false,
-      message: '评价已显示',
+      message: '评价已显�?,
     },
   });
 });
@@ -316,8 +311,7 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
   });
 });
 
-// 获取发型师评价列表
-router.get('/stylist/:stylistId', (req: Request, res: Response) => {
+// 获取发型师评价列�?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
   const { stylistId } = req.params;
   const { rating, page = '1', pageSize = '20' } = req.query;
 

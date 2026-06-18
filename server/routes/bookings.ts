@@ -41,15 +41,14 @@ router.post('/', async (req: Request, res: Response) => {
   const shop = mockShops.find((s: any) => s.id === shopId);
   const service = shop?.services?.find((s: any) => s.id === serviceId);
 
-  // 从本地存储获取该店铺的预约数量
-  let countFromDb = 0;
+  // 从本地存储获取该店铺的预约数�?  let countFromDb = 0;
   bookingsDb.forEach((b) => {
     if (b.shop_id === shopId) countFromDb++;
   });
 
   // 处理 scheduledTime：验证时间是否有效且未来时间
   if (!scheduledTime) {
-    console.error('❌ scheduledTime 为空');
+    console.error('�?scheduledTime 为空');
     return res.status(400).json({ message: '预约时间不能为空' });
   }
   
@@ -58,24 +57,22 @@ router.post('/', async (req: Request, res: Response) => {
     scheduledTimeDate = scheduledTime instanceof Date
       ? scheduledTime
       : new Date(scheduledTime);
-    // 检查是否有效日期
-    if (isNaN(scheduledTimeDate.getTime())) {
-      console.error('❌ scheduledTime 无效:', scheduledTime);
+    // 检查是否有效日�?    if (isNaN(scheduledTimeDate.getTime())) {
+      console.error('�?scheduledTime 无效:', scheduledTime);
       return res.status(400).json({ message: '预约时间格式无效' });
     }
   } catch (e) {
-    console.error('❌ scheduledTime 解析失败:', scheduledTime, e);
+    console.error('�?scheduledTime 解析失败:', scheduledTime, e);
     return res.status(400).json({ message: '预约时间解析失败' });
   }
   
-  // 检查时间是否是未来时间（允许当前时间之后的预约）
-  const now = new Date();
+  // 检查时间是否是未来时间（允许当前时间之后的预约�?  const now = new Date();
   if (scheduledTimeDate < now) {
-    console.error('❌ scheduledTime 已是过去时间:', scheduledTimeDate.toISOString(), 'now:', now.toISOString());
-    return res.status(400).json({ message: '预约时间不能是过去时间' });
+    console.error('�?scheduledTime 已是过去时间:', scheduledTimeDate.toISOString(), 'now:', now.toISOString());
+    return res.status(400).json({ message: '预约时间不能是过去时�? });
   }
   
-  console.log('✅ Parsed scheduledTime:', scheduledTimeDate.toISOString());
+  console.log('�?Parsed scheduledTime:', scheduledTimeDate.toISOString());
 
   const newBooking = {
     id: generateId(),
@@ -83,7 +80,7 @@ router.post('/', async (req: Request, res: Response) => {
     customer_id: customerId,
     customer_name: customerName || '顾客',
     stylist_id: barberId,
-    stylist_name: barberName || service?.name || '发型师',
+    stylist_name: barberName || service?.name || '发型�?,
     service_id: serviceId,
     service_name: service?.name || '服务',
     price: service?.price || 0,
@@ -94,7 +91,7 @@ router.post('/', async (req: Request, res: Response) => {
     created_at: new Date().toISOString(),
   };
 
-  // 直接存储到本地 Map
+  // 直接存储到本�?Map
   bookingsDb.set(newBooking.id, newBooking);
   console.log('bookingsDb.set:', newBooking.id, 'total:', bookingsDb.size);
   console.log('返回预约 scheduledTime:', newBooking.scheduled_time);
@@ -102,7 +99,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.status(201).json(bookingFromDb(newBooking));
 });
 
-// 预约列表筛选 API
+// 预约列表筛�?API
 router.get('/', async (req: Request, res: Response) => {
   try {
     const shopId = String(req.query.shopId || 'shop1');
@@ -116,7 +113,7 @@ router.get('/', async (req: Request, res: Response) => {
     const sortBy = String(req.query.sortBy || 'scheduledTime');
     const sortOrder = String(req.query.sortOrder || 'desc');
 
-    // 从本地 Map 获取该店铺的预约
+    // 从本�?Map 获取该店铺的预约
     let dbBookings: any[] = [];
     bookingsDb.forEach((b) => {
       if (b.shop_id === shopId) {
@@ -199,7 +196,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   console.log('bookingsDb.size:', bookingsDb.size);
   console.log('bookingsDb keys:', Array.from(bookingsDb.keys()));
 
-  // 直接从本地 Map 获取
+  // 直接从本�?Map 获取
   const dbBooking = bookingsDb.get(req.params.id) || null;
   console.log('dbBooking from Map:', dbBooking);
   if (dbBooking) {
@@ -209,13 +206,12 @@ router.get('/:id', async (req: Request, res: Response) => {
   const booking = mockBookings.find((b: any) => b.id === req.params.id);
   console.log('mock booking:', booking);
   if (!booking) {
-    return res.status(404).json({ message: '预约不存在' });
+    return res.status(404).json({ message: '预约不存�? });
   }
   res.json(booking);
 });
 
-// 更新预约状态
-router.put('/:id', async (req: Request, res: Response) => {
+// 更新预约状�?router.put('/:id', async (req: Request, res: Response) => {
   const { status } = req.body;
 
   const existing = bookingsDb.get(req.params.id);
@@ -228,14 +224,13 @@ router.put('/:id', async (req: Request, res: Response) => {
 
   const idx = mockBookings.findIndex((b: any) => b.id === req.params.id);
   if (idx === -1) {
-    return res.status(404).json({ message: '预约不存在' });
+    return res.status(404).json({ message: '预约不存�? });
   }
   mockBookings[idx] = { ...mockBookings[idx], status };
   res.json(mockBookings[idx]);
 });
 
-// 获取顾客的预约
-router.get('/customer/:customerId', async (req: Request, res: Response) => {
+// 获取顾客的预�?router.get('/customer/:customerId', async (req: Request, res: Response) => {
   const dbBookings: any[] = [];
   bookingsDb.forEach((b) => {
     if (b.customer_id === req.params.customerId) {

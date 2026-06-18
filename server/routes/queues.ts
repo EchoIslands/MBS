@@ -39,7 +39,7 @@ router.get('/:shopId', async (req: Request, res: Response) => {
     });
     return;
   }
-  return res.status(404).json({ success: false, error: '队列不存在' });
+  return res.status(404).json({ success: false, error: '队列不存�? });
 });
 
 // 更新队列
@@ -71,17 +71,15 @@ router.post('/:shopId/next', async (req: Request, res: Response) => {
   const dbQueue = await queueQueries.getByShop(shopId);
   
   if (!dbQueue) {
-    return res.status(404).json({ success: false, error: '队列不存在' });
+    return res.status(404).json({ success: false, error: '队列不存�? });
   }
 
-  // 获取所有待处理的预约
-  const bookings = await bookingQueries.listByShop(shopId);
+  // 获取所有待处理的预�?  const bookings = await bookingQueries.listByShop(shopId);
   const pendingBookings = bookings.filter(
     (b: any) => b.status === 'pending' || b.status === 'confirmed'
   );
 
-  // 找到当前号码对应的预约
-  const currentBooking = pendingBookings.find(
+  // 找到当前号码对应的预�?  const currentBooking = pendingBookings.find(
     (b: any) => b.queue_number === dbQueue.current_number
   );
 
@@ -94,8 +92,7 @@ router.post('/:shopId/next', async (req: Request, res: Response) => {
     updated_at: new Date().toISOString(),
   });
 
-  // 如果有当前预约，更新其状态为服务中
-  if (currentBooking) {
+  // 如果有当前预约，更新其状态为服务�?  if (currentBooking) {
     await bookingQueries.update(currentBooking.id, { status: 'serving' });
   }
 
@@ -122,11 +119,10 @@ router.post('/:shopId/skip', async (req: Request, res: Response) => {
   const dbQueue = await queueQueries.getByShop(shopId);
   
   if (!dbQueue) {
-    return res.status(404).json({ success: false, error: '队列不存在' });
+    return res.status(404).json({ success: false, error: '队列不存�? });
   }
 
-  // 获取所有待处理的预约
-  const bookings = await bookingQueries.listByShop(shopId);
+  // 获取所有待处理的预�?  const bookings = await bookingQueries.listByShop(shopId);
   const pendingBookings = bookings.filter(
     (b: any) => b.status === 'pending' || b.status === 'confirmed'
   );
@@ -186,7 +182,7 @@ router.post('/:shopId/reset', async (req: Request, res: Response) => {
       estimatedWaitTime: result.estimated_wait_time,
       updatedAt: result.updated_at,
     },
-    message: '队列已重置',
+    message: '队列已重�?,
   });
 });
 

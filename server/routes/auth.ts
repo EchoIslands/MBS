@@ -27,8 +27,7 @@ const getPasswordMap = (role?: string): Record<string, string> => {
   }
 }
 
-// 从 mock 数据中查找员工
-const findMockEmployee = (phone: string) => {
+// �?mock 数据中查找员�?const findMockEmployee = (phone: string) => {
   for (const shop of mockShops) {
     const employee = shop.employees.find(e => (e as any).phone === phone)
     if (employee) {
@@ -42,8 +41,7 @@ const findMockEmployee = (phone: string) => {
 const verifyMockPassword = (employeeId: string, password: string, role?: string): boolean => {
   if (password !== '123456') return false
   const passwords = getPasswordMap(role)
-  return passwords[employeeId] === '123456' || true // 默认 123456 都可以登录
-}
+  return passwords[employeeId] === '123456' || true // 默认 123456 都可以登�?}
 
 // 登录
 router.post('/login', async (req: Request, res: Response) => {
@@ -54,12 +52,11 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!phone || !password) {
       return res.status(400).json({
         success: false,
-        error: '请输入手机号和密码',
+        error: '请输入手机号和密�?,
       })
     }
 
-    // 先尝试从数据库查询
-    const dbEmployee = await employeeQueries.getByPhone(phone)
+    // 先尝试从数据库查�?    const dbEmployee = await employeeQueries.getByPhone(phone)
     
     let employee = dbEmployee
     let isFromDb = true
@@ -81,12 +78,12 @@ router.post('/login', async (req: Request, res: Response) => {
     let isValidPassword = false
     
     if (isFromDb) {
-      // 数据库模式：支持 bcrypt 加密密码或明文 123456
+      // 数据库模式：支持 bcrypt 加密密码或明�?123456
       isValidPassword = password === '123456' ||
         (employee as any).password_hash === password ||
         await bcrypt.compare(password, (employee as any).password_hash || '')
     } else {
-      // Mock 模式：默认密码 123456
+      // Mock 模式：默认密�?123456
       isValidPassword = verifyMockPassword(employee.id, password, (employee as any).role)
     }
 
@@ -97,11 +94,10 @@ router.post('/login', async (req: Request, res: Response) => {
       })
     }
 
-    // 检查员工是否在职
-    if ((employee as any).is_active === false) {
+    // 检查员工是否在�?    if ((employee as any).is_active === false) {
       return res.status(403).json({
         success: false,
-        error: '该账号已被禁用',
+        error: '该账号已被禁�?,
       })
     }
 
@@ -145,10 +141,9 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 })
 
-// 获取当前用户信息（需要 token）
-router.get('/me', async (req: Request, res: Response) => {
+// 获取当前用户信息（需�?token�?router.get('/me', async (req: Request, res: Response) => {
   try {
-    // 从 header 获取 token
+    // �?header 获取 token
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
@@ -163,14 +158,13 @@ router.get('/me', async (req: Request, res: Response) => {
     const decoded = jwt.verify(token, JWT_SECRET) as any
     console.log('[auth/me] decoded:', decoded)
 
-    // 先尝试从数据库查询
-    let employee = null
+    // 先尝试从数据库查�?    let employee = null
     if (decoded.shopId) {
       const employees = await employeeQueries.listByShop(decoded.shopId)
       employee = employees.find((e: any) => e.id === decoded.id)
     }
     
-    // 如果数据库没有，尝试根据手机号查找 mock 数据
+    // 如果数据库没有，尝试根据手机号查�?mock 数据
     if (!employee && decoded.phone) {
       const mockEmployee = findMockEmployee(decoded.phone)
       if (mockEmployee && (mockEmployee as any).id === decoded.id) {
@@ -181,7 +175,7 @@ router.get('/me', async (req: Request, res: Response) => {
     if (!employee) {
       return res.status(404).json({
         success: false,
-        error: '用户不存在',
+        error: '用户不存�?,
       })
     }
 
@@ -209,7 +203,7 @@ router.get('/me', async (req: Request, res: Response) => {
     if ((error as any).name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        error: 'Token 已过期，请重新登录',
+        error: 'Token 已过期，请重新登�?,
       })
     }
     console.error('获取用户信息失败:', error)
@@ -220,8 +214,7 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 })
 
-// 注册（演示用，生产环境应关闭）
-router.post('/register', async (req: Request, res: Response) => {
+// 注册（演示用，生产环境应关闭�?router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, phone, password, role, shopId, title, specialty } = req.body
 
@@ -229,16 +222,15 @@ router.post('/register', async (req: Request, res: Response) => {
     if (!name || !phone || !password) {
       return res.status(400).json({
         success: false,
-        error: '请填写完整信息',
+        error: '请填写完整信�?,
       })
     }
 
-    // 检查手机号是否已存在
-    const existingEmployee = await employeeQueries.getByPhone(phone)
+    // 检查手机号是否已存�?    const existingEmployee = await employeeQueries.getByPhone(phone)
     if (existingEmployee) {
       return res.status(400).json({
         success: false,
-        error: '该手机号已注册',
+        error: '该手机号已注�?,
       })
     }
 
@@ -313,7 +305,7 @@ router.put('/password', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        error: '未登录',
+        error: '未登�?,
       })
     }
 
@@ -336,19 +328,18 @@ router.put('/password', async (req: Request, res: Response) => {
     if (!employee) {
       return res.status(404).json({
         success: false,
-        error: '用户不存在',
+        error: '用户不存�?,
       })
     }
 
-    // 验证旧密码
-    const isValid = oldPassword === '123456' ||
+    // 验证旧密�?    const isValid = oldPassword === '123456' ||
       (employee as any).password_hash === oldPassword ||
       await bcrypt.compare(oldPassword, (employee as any).password_hash || '')
 
     if (!isValid) {
       return res.status(401).json({
         success: false,
-        error: '旧密码错误',
+        error: '旧密码错�?,
       })
     }
 
@@ -396,7 +387,7 @@ router.post('/verify', async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         valid: false,
-        error: '未登录',
+        error: '未登�?,
       })
     }
 

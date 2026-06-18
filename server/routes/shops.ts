@@ -4,8 +4,7 @@ import { shopQueries, bookingQueries, reviewQueries, queueQueries } from '../db/
 
 const router = Router();
 
-// 计算两点之间的距离（公里）
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+// 计算两点之间的距离（公里�?const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -17,8 +16,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 };
 
-// 将 snake_case 数据转为 camelCase 供前端使用
-const shopFromDb = (row: any): any => ({
+// �?snake_case 数据转为 camelCase 供前端使�?const shopFromDb = (row: any): any => ({
   id: row.id,
   name: row.name,
   description: row.description,
@@ -34,8 +32,7 @@ const shopFromDb = (row: any): any => ({
   createdAt: row.created_at,
 });
 
-// 获取附近的店铺
-router.get('/', async (req: Request, res: Response) => {
+// 获取附近的店�?router.get('/', async (req: Request, res: Response) => {
   const { lat = 39.9042, lon = 116.4074, level } = req.query;
 
   const dbShops = await shopQueries.list();
@@ -76,7 +73,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
   const shop = mockShops.find((s: any) => s.id === req.params.id);
   if (!shop) {
-    return res.status(404).json({ message: '店铺不存在' });
+    return res.status(404).json({ message: '店铺不存�? });
   }
   res.json(shop);
 });
@@ -85,8 +82,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   const { name, description, phone, address, services, employees, openingHours } = req.body;
 
-  // 先尝试从数据库更新
-  const shop = await shopQueries.get(req.params.id);
+  // 先尝试从数据库更�?  const shop = await shopQueries.get(req.params.id);
   if (shop) {
     const updateData: any = {
       name: name || shop.name,
@@ -101,15 +97,15 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const updated = await (shopQueries as any).update(req.params.id, updateData);
     if (updated) {
-      res.json({ success: true, message: '店铺信息已更新' });
+      res.json({ success: true, message: '店铺信息已更�? });
       return;
     }
   }
 
-  // fallback 到 mockShops
+  // fallback �?mockShops
   const shopIndex = mockShops.findIndex((s: any) => s.id === req.params.id);
   if (shopIndex === -1) {
-    return res.status(404).json({ message: '店铺不存在' });
+    return res.status(404).json({ message: '店铺不存�? });
   }
   const existing = mockShops[shopIndex];
   mockShops[shopIndex] = {
@@ -123,7 +119,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     openingHours: openingHours !== undefined ? openingHours : existing.openingHours,
     updatedAt: new Date(),
   };
-  res.json({ success: true, message: '店铺信息已更新' });
+  res.json({ success: true, message: '店铺信息已更�? });
 });
 
 // 创建店铺
@@ -187,8 +183,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.status(201).json({ success: true, data: newShop, message: '店铺创建成功' });
 });
 
-// 获取店铺的预约
-router.get('/:id/bookings', async (req: Request, res: Response) => {
+// 获取店铺的预�?router.get('/:id/bookings', async (req: Request, res: Response) => {
   const dbBookings = await bookingQueries.listByShop(req.params.id);
   if (dbBookings.length > 0) {
     const camel = dbBookings.map((b: any) => ({
@@ -215,8 +210,7 @@ router.get('/:id/bookings', async (req: Request, res: Response) => {
   res.json(bookings);
 });
 
-// 获取店铺的评价
-router.get('/:id/reviews', async (req: Request, res: Response) => {
+// 获取店铺的评�?router.get('/:id/reviews', async (req: Request, res: Response) => {
   const dbReviews = await reviewQueries.listByShop(req.params.id);
   if (dbReviews.length > 0) {
     const camel = dbReviews.map((r: any) => ({
@@ -250,8 +244,7 @@ router.get('/:id/reviews', async (req: Request, res: Response) => {
   res.json(reviews);
 });
 
-// 获取店铺的排队队列
-router.get('/:id/queue', async (req: Request, res: Response) => {
+// 获取店铺的排队队�?router.get('/:id/queue', async (req: Request, res: Response) => {
   const dbQueue = await queueQueries.getByShop(req.params.id);
   if (dbQueue) {
     const bookings = await bookingQueries.listByShop(req.params.id);
@@ -286,7 +279,7 @@ router.get('/:id/queue', async (req: Request, res: Response) => {
 
   const queue = mockQueues.find((q: any) => q.shopId === req.params.id);
   if (!queue) {
-    return res.status(404).json({ message: '队列不存在' });
+    return res.status(404).json({ message: '队列不存�? });
   }
   queue.bookings = mockBookings.filter(
     (b: any) => b.shopId === req.params.id && (b.status === 'pending' || b.status === 'confirmed'),

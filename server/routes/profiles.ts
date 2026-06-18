@@ -12,7 +12,7 @@ router.get('/:customerId/profile', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存在' });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   res.json({
@@ -27,11 +27,11 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存在' });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   if (customer.profile) {
-    return res.status(400).json({ success: false, error: '该客户已有画像，请使用更新接口' });
+    return res.status(400).json({ success: false, error: '该客户已有画像，请使用更新接�? });
   }
 
   const {
@@ -49,7 +49,7 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
     extraServices = [],
     visitTimes = [],
     notes = '',
-    allergies = '无',
+    allergies = '�?,
     productsUsed = [],
   } = req.body;
 
@@ -57,7 +57,7 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
     id: generateId(),
     customerId,
     updatedBy: updatedBy || '',
-    updatedByName: updatedByName || '技师',
+    updatedByName: updatedByName || '技�?,
     updatedAt: new Date(),
     haircutStyles,
     hairColors,
@@ -87,7 +87,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存在' });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   const existing = customer.profile;
@@ -116,7 +116,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
     id: existing?.id || generateId(),
     customerId,
     updatedBy: updatedBy || existing?.updatedBy || '',
-    updatedByName: updatedByName || existing?.updatedByName || '技师',
+    updatedByName: updatedByName || existing?.updatedByName || '技�?,
     updatedAt: now,
     haircutStyles: haircutStyles !== undefined ? haircutStyles : existing?.haircutStyles || [],
     hairColors: hairColors !== undefined ? hairColors : existing?.hairColors || [],
@@ -130,7 +130,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
     extraServices: extraServices !== undefined ? extraServices : existing?.extraServices || [],
     visitTimes: visitTimes !== undefined ? visitTimes : existing?.visitTimes || [],
     notes: notes !== undefined ? notes : existing?.notes || '',
-    allergies: allergies !== undefined ? allergies : existing?.allergies || '无',
+    allergies: allergies !== undefined ? allergies : existing?.allergies || '�?,
     productsUsed: productsUsed !== undefined ? productsUsed : existing?.productsUsed || [],
     createdAt: existing?.createdAt || now,
   };
