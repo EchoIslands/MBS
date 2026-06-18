@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockRefundRequests, mockCustomers, mockBookings } from '../_internal/mockData.js';
 import { RefundStatus } from '../_internal/types.js';
 
@@ -6,25 +6,25 @@ const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// ==================== 閫€娆剧敵璇?API ====================
+// ==================== 退款申�?API ====================
 
-// 鑾峰彇閫€娆剧敵璇峰垪琛?router.get('/', (req: Request, res: Response) => {
+// 获取退款申请列�?router.get('/', (req: Request, res: Response) => {
   const { shopId, status, page = '1', pageSize = '20' } = req.query;
 
   let refunds = [...mockRefundRequests];
 
-  // 搴楅摵绛涢€?  if (shopId) {
+  // 店铺筛�?  if (shopId) {
     refunds = refunds.filter((r) => r.shopId === shopId);
   }
 
-  // 鐘舵€佺瓫閫?  if (status) {
+  // 状态筛�?  if (status) {
     refunds = refunds.filter((r) => r.status === status);
   }
 
-  // 鎸夊垱寤烘椂闂村€掑簭
+  // 按创建时间倒序
   refunds.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = refunds.length;
@@ -43,18 +43,18 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   });
 });
 
-// 鑾峰彇鍗曚釜閫€娆剧敵璇疯鎯?router.get('/:id', (req: Request, res: Response) => {
+// 获取单个退款申请详�?router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const refund = mockRefundRequests.find((r) => r.id === id);
 
   if (!refund) {
-    return res.status(404).json({ success: false, error: '閫€娆剧敵璇蜂笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '退款申请不存在' });
   }
 
   res.json({ success: true, data: refund });
 });
 
-// 鍒涘缓閫€娆剧敵璇?router.post('/', (req: Request, res: Response) => {
+// 创建退款申�?router.post('/', (req: Request, res: Response) => {
   const { 
     shopId, 
     customerId, 
@@ -62,26 +62,26 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
     amount, 
     reason, 
     description,
-    type = 'refund' // refund 鎴?partial_refund
+    type = 'refund' // refund �?partial_refund
   } = req.body;
 
-  // 楠岃瘉蹇呭～瀛楁
+  // 验证必填字段
   if (!shopId || !customerId || !amount || !reason) {
     return res.status(400).json({ 
       success: false, 
-      error: '搴楅摵ID銆佸鎴稩D銆侀€€娆鹃噾棰濆拰閫€娆惧師鍥犱负蹇呭～椤? 
+      error: '店铺ID、客户ID、退款金额和退款原因为必填�? 
     });
   }
 
-  // 楠岃瘉瀹㈡埛瀛樺湪
+  // 验证客户存在
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
-  // 楠岃瘉閲戦
+  // 验证金额
   if (amount <= 0) {
-    return res.status(400).json({ success: false, error: '閫€娆鹃噾棰濆繀椤诲ぇ浜?' });
+    return res.status(400).json({ success: false, error: '退款金额必须大�?' });
   }
 
   const refund = {
@@ -103,17 +103,17 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   res.status(201).json({ success: true, data: refund });
 });
 
-// 瀹℃壒閫€娆剧敵璇?router.post('/:id/approve', (req: Request, res: Response) => {
+// 审批退款申�?router.post('/:id/approve', (req: Request, res: Response) => {
   const { id } = req.params;
   const { approvedBy, approvedByName, note } = req.body;
 
   const refund = mockRefundRequests.find((r) => r.id === id);
   if (!refund) {
-    return res.status(404).json({ success: false, error: '閫€娆剧敵璇蜂笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '退款申请不存在' });
   }
 
   if (refund.status !== 'pending') {
-    return res.status(400).json({ success: false, error: '鍙兘瀹℃壒寰呭鐞嗙殑閫€娆剧敵璇? });
+    return res.status(400).json({ success: false, error: '只能审批待处理的退款申�? });
   }
 
   refund.status = RefundStatus.APPROVED;
@@ -134,21 +134,21 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   });
 });
 
-// 鎷掔粷閫€娆剧敵璇?router.post('/:id/reject', (req: Request, res: Response) => {
+// 拒绝退款申�?router.post('/:id/reject', (req: Request, res: Response) => {
   const { id } = req.params;
   const { rejectedBy, rejectedByName, reason } = req.body;
 
   const refund = mockRefundRequests.find((r) => r.id === id);
   if (!refund) {
-    return res.status(404).json({ success: false, error: '閫€娆剧敵璇蜂笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '退款申请不存在' });
   }
 
   if (refund.status !== 'pending') {
-    return res.status(400).json({ success: false, error: '鍙兘鎷掔粷寰呭鐞嗙殑閫€娆剧敵璇? });
+    return res.status(400).json({ success: false, error: '只能拒绝待处理的退款申�? });
   }
 
   if (!reason) {
-    return res.status(400).json({ success: false, error: '鎷掔粷鍘熷洜蹇呭～' });
+    return res.status(400).json({ success: false, error: '拒绝原因必填' });
   }
 
   refund.status = RefundStatus.REJECTED;
@@ -170,18 +170,18 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   });
 });
 
-// 澶勭悊閫€娆撅紙瀹屾垚閫€娆撅級
+// 处理退款（完成退款）
 router.post('/:id/process', (req: Request, res: Response) => {
   const { id } = req.params;
   const { processedBy, processedByName, transactionId, note } = req.body;
 
   const refund = mockRefundRequests.find((r) => r.id === id);
   if (!refund) {
-    return res.status(404).json({ success: false, error: '閫€娆剧敵璇蜂笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '退款申请不存在' });
   }
 
   if (refund.status !== 'approved') {
-    return res.status(400).json({ success: false, error: '鍙兘澶勭悊宸插鎵圭殑閫€娆剧敵璇? });
+    return res.status(400).json({ success: false, error: '只能处理已审批的退款申�? });
   }
 
   refund.status = RefundStatus.COMPLETED;
@@ -191,7 +191,7 @@ router.post('/:id/process', (req: Request, res: Response) => {
   (refund as any).transactionId = transactionId;
   (refund as any).processNote = note;
 
-  // 鏇存柊瀹㈡埛绱娑堣垂锛堟墸闄ら€€娆鹃噾棰濓級
+  // 更新客户累计消费（扣除退款金额）
   const customer = mockCustomers.find((c) => c.id === refund.customerId);
   if (customer) {
     customer.totalSpent = Math.max(0, (customer.totalSpent || 0) - refund.amount);
@@ -211,17 +211,17 @@ router.post('/:id/process', (req: Request, res: Response) => {
   });
 });
 
-// 鍙栨秷閫€娆剧敵璇?router.post('/:id/cancel', (req: Request, res: Response) => {
+// 取消退款申�?router.post('/:id/cancel', (req: Request, res: Response) => {
   const { id } = req.params;
   const { cancelledBy, reason } = req.body;
 
   const refund = mockRefundRequests.find((r) => r.id === id);
   if (!refund) {
-    return res.status(404).json({ success: false, error: '閫€娆剧敵璇蜂笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '退款申请不存在' });
   }
 
   if (!['pending', 'approved'].includes(refund.status)) {
-    return res.status(400).json({ success: false, error: '鍙兘鍙栨秷寰呭鐞嗘垨宸插鎵圭殑閫€娆剧敵璇? });
+    return res.status(400).json({ success: false, error: '只能取消待处理或已审批的退款申�? });
   }
 
   refund.status = RefundStatus.CANCELLED;
@@ -241,7 +241,7 @@ router.post('/:id/process', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇閫€娆剧粺璁?router.get('/stats/summary', (req: Request, res: Response) => {
+// 获取退款统�?router.get('/stats/summary', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
   let refunds = [...mockRefundRequests];
@@ -268,4 +268,3 @@ router.post('/:id/process', (req: Request, res: Response) => {
 });
 
 export default router;
-

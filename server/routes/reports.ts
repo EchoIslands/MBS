@@ -1,14 +1,14 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockBookings } from '../_internal/mockData.js';
 
 const router = Router();
 
-// ==================== 璐㈠姟鎶ヨ〃鑱氬悎 API ====================
+// ==================== 财务报表聚合 API ====================
 
-// 鑱氬悎绫诲瀷
+// 聚合类型
 type TimeRange = 'day' | 'week' | 'month' | 'year';
 
-// 鑾峰彇鏃堕棿鑼冨洿鐨勫紑濮嬪拰缁撴潫鏃ユ湡
+// 获取时间范围的开始和结束日期
 const getDateRange = (type: TimeRange, date?: string): { start: Date; end: Date } => {
   const refDate = date ? new Date(date) : new Date();
   refDate.setHours(0, 0, 0, 0);
@@ -23,7 +23,7 @@ const getDateRange = (type: TimeRange, date?: string): { start: Date; end: Date 
       end.setDate(end.getDate() + 1);
       break;
     case 'week':
-      // 鍛ㄤ竴浣滀负涓€鍛ㄥ紑濮?      const dayOfWeek = refDate.getDay() || 7; // 鍛ㄦ棩杩斿洖7
+      // 周一作为一周开�?      const dayOfWeek = refDate.getDay() || 7; // 周日返回7
       start = new Date(refDate);
       start.setDate(start.getDate() - dayOfWeek + 1);
       end = new Date(start);
@@ -46,7 +46,7 @@ const getDateRange = (type: TimeRange, date?: string): { start: Date; end: Date 
   return { start, end };
 };
 
-// 鑾峰彇搴楅摵璐㈠姟鎶ヨ〃
+// 获取店铺财务报表
 router.get('/shop/:shopId', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { range = 'month', date } = req.query;
@@ -54,7 +54,7 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
   const timeRange = range as TimeRange;
   const { start, end } = getDateRange(timeRange, date as string);
 
-  // 绛涢€夎搴楅摵宸插畬鎴愮殑棰勭害
+  // 筛选该店铺已完成的预约
   const shopBookings = mockBookings.filter((b) => {
     const bookingDate = new Date(b.scheduledTime);
     return (
@@ -65,12 +65,12 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
     );
   });
 
-  // 鑱氬悎缁熻
+  // 聚合统计
   const totalRevenue = shopBookings.reduce((sum, b) => sum + (b.price || 0), 0);
   const totalServices = shopBookings.length;
   const avgOrderValue = totalServices > 0 ? Math.round(totalRevenue / totalServices) : 0;
   
-  // 鎸夊ぉ鑱氬悎
+  // 按天聚合
   const dailyData: Record<string, { revenue: number; count: number }> = {};
   
   shopBookings.forEach((b) => {
@@ -82,7 +82,7 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
     dailyData[dateKey].count += 1;
   });
 
-  // 杞崲涓烘暟缁勫苟鎺掑簭
+  // 转换为数组并排序
   const trend = Object.entries(dailyData)
     .map(([date, data]) => ({
       date,
@@ -112,14 +112,14 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇搴楅摵鏈堝害瀵规瘮鎶ヨ〃
+// 获取店铺月度对比报表
 router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { compareType = 'month' } = req.query;
 
   const now = new Date();
   
-  // 褰撳墠鍛ㄦ湡
+  // 当前周期
   const currentRange = getDateRange(compareType as TimeRange);
   const currentBookings = mockBookings.filter((b) => {
     const bookingDate = new Date(b.scheduledTime);
@@ -131,7 +131,7 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
     );
   });
 
-  // 涓婁竴涓懆鏈?  const prevDate = new Date(now);
+  // 上一个周�?  const prevDate = new Date(now);
   if (compareType === 'month') {
     prevDate.setMonth(prevDate.getMonth() - 1);
   } else if (compareType === 'week') {
@@ -185,14 +185,14 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鎶€甯堜笟缁╂姤琛?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
+// 获取技师业绩报�?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
   const { stylistId } = req.params;
   const { range = 'month', date } = req.query;
 
   const timeRange = range as TimeRange;
   const { start, end } = getDateRange(timeRange, date as string);
 
-  // 绛涢€夎鎶€甯堝凡瀹屾垚鐨勯绾?  const stylistBookings = mockBookings.filter((b) => {
+  // 筛选该技师已完成的预�?  const stylistBookings = mockBookings.filter((b) => {
     const bookingDate = new Date(b.scheduledTime);
     return (
       b.stylistId === stylistId &&
@@ -223,7 +223,7 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇搴楅摵鏃ユ眹鎬绘姤琛?router.get('/shop/:shopId/daily', (req: Request, res: Response) => {
+// 获取店铺日汇总报�?router.get('/shop/:shopId/daily', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { days = '7' } = req.query;
 
@@ -234,17 +234,17 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   start.setDate(start.getDate() - daysNum + 1);
   start.setHours(0, 0, 0, 0);
 
-  // 鎸夊ぉ鍒嗙粍缁熻
+  // 按天分组统计
   const dailyStats: Record<string, { revenue: number; count: number; avgValue: number }> = {};
   
-  // 鍒濆鍖栨墍鏈夋棩鏈?  for (let i = 0; i < daysNum; i++) {
+  // 初始化所有日�?  for (let i = 0; i < daysNum; i++) {
     const date = new Date(start);
     date.setDate(date.getDate() + i);
     const dateKey = date.toISOString().split('T')[0];
     dailyStats[dateKey] = { revenue: 0, count: 0, avgValue: 0 };
   }
 
-  // 缁熻宸插畬鎴愮殑棰勭害
+  // 统计已完成的预约
   mockBookings.forEach((b) => {
     const bookingDate = new Date(b.scheduledTime);
     if (b.shopId === shopId && b.status === 'completed' && bookingDate >= start && bookingDate <= end) {
@@ -256,7 +256,7 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
     }
   });
 
-  // 璁＄畻瀹㈠崟浠峰苟杞崲涓烘暟缁?  const result = Object.entries(dailyStats)
+  // 计算客单价并转换为数�?  const result = Object.entries(dailyStats)
     .map(([date, stats]) => ({
       date,
       ...stats,
@@ -282,4 +282,3 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
 });
 
 export default router;
-

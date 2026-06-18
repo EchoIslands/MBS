@@ -1,19 +1,19 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockCustomers, mockReferrals } from '../_internal/mockData.js';
 
 const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 浼氬憳绛夌骇閰嶇疆
+// 会员等级配置
 const MEMBER_LEVELS = {
-  normal: { name: '鏅€氫細鍛?, discount: 1.0, pointsRate: 1, benefits: ['鍩虹鏈嶅姟'] },
-  silver: { name: '閾跺崱浼氬憳', discount: 0.95, pointsRate: 1.2, benefits: ['鍩虹鏈嶅姟', '鐢熸棩浼樻儬', '浼樺厛棰勭害'] },
-  gold: { name: '閲戝崱浼氬憳', discount: 0.9, pointsRate: 1.5, benefits: ['鍩虹鏈嶅姟', '鐢熸棩浼樻儬', '浼樺厛棰勭害', '涓撳睘鎶樻墸', '鍏嶈垂鎶ょ悊'] },
-  platinum: { name: '閾傞噾浼氬憳', discount: 0.85, pointsRate: 2.0, benefits: ['鍩虹鏈嶅姟', '鐢熸棩浼樻儬', '浼樺厛棰勭害', '涓撳睘鎶樻墸', '鍏嶈垂鎶ょ悊', '绉佷汉椤鹃棶', '骞村害绀煎寘'] },
+  normal: { name: '普通会�?, discount: 1.0, pointsRate: 1, benefits: ['基础服务'] },
+  silver: { name: '银卡会员', discount: 0.95, pointsRate: 1.2, benefits: ['基础服务', '生日优惠', '优先预约'] },
+  gold: { name: '金卡会员', discount: 0.9, pointsRate: 1.5, benefits: ['基础服务', '生日优惠', '优先预约', '专属折扣', '免费护理'] },
+  platinum: { name: '铂金会员', discount: 0.85, pointsRate: 2.0, benefits: ['基础服务', '生日优惠', '优先预约', '专属折扣', '免费护理', '私人顾问', '年度礼包'] },
 };
 
-// 鍗囩骇鎵€闇€娑堣垂閲戦
+// 升级所需消费金额
 const UPGRADE_THRESHOLDS = {
   normal: 0,
   silver: 1000,
@@ -21,21 +21,21 @@ const UPGRADE_THRESHOLDS = {
   platinum: 15000,
 };
 
-// ==================== 浼氬憳绠＄悊 API ====================
+// ==================== 会员管理 API ====================
 
-// 鑾峰彇浼氬憳鏉冪泭淇℃伅
+// 获取会员权益信息
 router.get('/:customerId/benefits', (req: Request, res: Response) => {
   const { customerId } = req.params;
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   const level = (customer.membershipLevel || 'normal') as keyof typeof MEMBER_LEVELS;
   const levelConfig = MEMBER_LEVELS[level] || MEMBER_LEVELS.normal;
 
-  // 璁＄畻鍗囩骇杩涘害
+  // 计算升级进度
   const totalSpent = customer.totalSpent || 0;
   let nextLevel: keyof typeof MEMBER_LEVELS | null = null;
   let progress = 100;
@@ -74,40 +74,40 @@ router.get('/:customerId/benefits', (req: Request, res: Response) => {
   });
 });
 
-// 浼氬憳鍗囩骇
+// 会员升级
 router.post('/:customerId/upgrade', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { targetLevel, reason } = req.body;
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   const currentLevel = (customer.membershipLevel || 'normal') as keyof typeof MEMBER_LEVELS;
   const target = targetLevel as keyof typeof MEMBER_LEVELS;
 
   if (!MEMBER_LEVELS[target]) {
-    return res.status(400).json({ success: false, error: '鏃犳晥鐨勭洰鏍囩瓑绾? });
+    return res.status(400).json({ success: false, error: '无效的目标等�? });
   }
 
-  // 妫€鏌ユ槸鍚﹀彲浠ュ崌绾э紙涓嶈兘闄嶇骇锛?  const levelOrder = ['normal', 'silver', 'gold', 'platinum'];
+  // 检查是否可以升级（不能降级�?  const levelOrder = ['normal', 'silver', 'gold', 'platinum'];
   const currentIndex = levelOrder.indexOf(currentLevel);
   const targetIndex = levelOrder.indexOf(target);
 
   if (targetIndex <= currentIndex) {
-    return res.status(400).json({ success: false, error: '鍙兘鍗囩骇鍒版洿楂樼骇鍒? });
+    return res.status(400).json({ success: false, error: '只能升级到更高级�? });
   }
 
-  // 妫€鏌ユ秷璐归噾棰濇槸鍚﹁揪鏍?  const totalSpent = customer.totalSpent || 0;
+  // 检查消费金额是否达�?  const totalSpent = customer.totalSpent || 0;
   if (totalSpent < UPGRADE_THRESHOLDS[target]) {
     return res.status(400).json({ 
       success: false, 
-      error: `娑堣垂閲戦鏈揪鏍囷紝闇€瑕佺疮璁℃秷璐?${UPGRADE_THRESHOLDS[target]} 鍏僠 
+      error: `消费金额未达标，需要累计消�?${UPGRADE_THRESHOLDS[target]} 元` 
     });
   }
 
-  // 鎵ц鍗囩骇
+  // 执行升级
   customer.membershipLevel = target;
   const levelConfig = MEMBER_LEVELS[target];
 
@@ -128,24 +128,24 @@ router.post('/:customerId/upgrade', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鎺ㄨ崘璁板綍
+// 获取推荐记录
 router.get('/:customerId/referrals', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { page = '1', pageSize = '20' } = req.query;
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
-  // 鑾峰彇璇ュ鎴风殑鎺ㄨ崘璁板綍
+  // 获取该客户的推荐记录
   const referrals = mockReferrals.filter((r) => r.referrerId === customerId);
 
-  // 璁＄畻鎬绘彁鎴?  const totalCommission = referrals
+  // 计算总提�?  const totalCommission = referrals
     .filter((r) => r.status === 'paid')
     .reduce((sum, r) => sum + (r.bonusAmount || 0), 0);
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = referrals.length;
@@ -170,18 +170,18 @@ router.get('/:customerId/referrals', (req: Request, res: Response) => {
   });
 });
 
-// 鍒涘缓鎺ㄨ崘璁板綍
+// 创建推荐记录
 router.post('/:customerId/referrals', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { referredName, referredPhone, note } = req.body;
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '鎺ㄨ崘浜轰笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '推荐人不存在' });
   }
 
   if (!referredName || !referredPhone) {
-    return res.status(400).json({ success: false, error: '琚帹鑽愪汉濮撳悕鍜屾墜鏈哄彿涓哄繀濉」' });
+    return res.status(400).json({ success: false, error: '被推荐人姓名和手机号为必填项' });
   }
 
   const referral = {
@@ -204,24 +204,24 @@ router.post('/:customerId/referrals', (req: Request, res: Response) => {
   });
 });
 
-// 纭鎺ㄨ崘锛堣鎺ㄨ崘浜哄埌搴楁秷璐瑰悗锛?router.post('/referrals/:referralId/confirm', (req: Request, res: Response) => {
+// 确认推荐（被推荐人到店消费后�?router.post('/referrals/:referralId/confirm', (req: Request, res: Response) => {
   const { referralId } = req.params;
   const { commission = 50 } = req.body;
 
   const referral = mockReferrals.find((r) => r.id === referralId);
   if (!referral) {
-    return res.status(404).json({ success: false, error: '鎺ㄨ崘璁板綍涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '推荐记录不存�? });
   }
 
   if (referral.status === 'paid') {
-    return res.status(400).json({ success: false, error: '璇ユ帹鑽愬凡瀹屾垚' });
+    return res.status(400).json({ success: false, error: '该推荐已完成' });
   }
 
   referral.status = 'paid';
   referral.bonusAmount = commission;
   (referral as any).completedAt = new Date();
 
-  // 缁欐帹鑽愪汉澧炲姞绉垎
+  // 给推荐人增加积分
   const referrer = mockCustomers.find((c) => c.id === referral.referrerId);
   if (referrer) {
     referrer.points = (referrer.points || 0) + Math.floor(commission);
@@ -233,25 +233,25 @@ router.post('/:customerId/referrals', (req: Request, res: Response) => {
   });
 });
 
-// 绉垎鍏戞崲
+// 积分兑换
 router.post('/:customerId/points/redeem', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { points, rewardType } = req.body;
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   if (!points || points <= 0) {
-    return res.status(400).json({ success: false, error: '绉垎鏁伴噺蹇呴』澶т簬0' });
+    return res.status(400).json({ success: false, error: '积分数量必须大于0' });
   }
 
   if ((customer.points || 0) < points) {
-    return res.status(400).json({ success: false, error: '绉垎涓嶈冻' });
+    return res.status(400).json({ success: false, error: '积分不足' });
   }
 
-  // 鎵ｅ噺绉垎
+  // 扣减积分
   customer.points = (customer.points || 0) - points;
 
   res.json({
@@ -267,7 +267,7 @@ router.post('/:customerId/points/redeem', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇浼氬憳绛夌骇閰嶇疆
+// 获取会员等级配置
 router.get('/levels', (req: Request, res: Response) => {
   res.json({
     success: true,
@@ -280,4 +280,3 @@ router.get('/levels', (req: Request, res: Response) => {
 });
 
 export default router;
-

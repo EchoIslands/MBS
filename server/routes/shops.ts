@@ -1,10 +1,10 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockShops, mockBookings, mockReviews, mockQueues } from '../_internal/mockData.js';
 import { shopQueries, bookingQueries, reviewQueries, queueQueries } from '../db/index.js';
 
 const router = Router();
 
-// 璁＄畻涓ょ偣涔嬮棿鐨勮窛绂伙紙鍏噷锛?const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+// 计算两点之间的距离（公里�?const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -16,7 +16,7 @@ const router = Router();
   return R * c;
 };
 
-// 灏?snake_case 鏁版嵁杞负 camelCase 渚涘墠绔娇鐢?const shopFromDb = (row: any): any => ({
+// �?snake_case 数据转为 camelCase 供前端使�?const shopFromDb = (row: any): any => ({
   id: row.id,
   name: row.name,
   description: row.description,
@@ -32,7 +32,7 @@ const router = Router();
   createdAt: row.created_at,
 });
 
-// 鑾峰彇闄勮繎鐨勫簵閾?router.get('/', async (req: Request, res: Response) => {
+// 获取附近的店�?router.get('/', async (req: Request, res: Response) => {
   const { lat = 39.9042, lon = 116.4074, level } = req.query;
 
   const dbShops = await shopQueries.list();
@@ -64,7 +64,7 @@ const router = Router();
   res.json(shops);
 });
 
-// 鑾峰彇鍗曚釜搴楅摵璇︽儏
+// 获取单个店铺详情
 router.get('/:id', async (req: Request, res: Response) => {
   const dbShop = await shopQueries.get(req.params.id);
   if (dbShop) {
@@ -73,16 +73,16 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
   const shop = mockShops.find((s: any) => s.id === req.params.id);
   if (!shop) {
-    return res.status(404).json({ message: '搴楅摵涓嶅瓨鍦? });
+    return res.status(404).json({ message: '店铺不存�? });
   }
   res.json(shop);
 });
 
-// 鏇存柊搴楅摵淇℃伅
+// 更新店铺信息
 router.put('/:id', async (req: Request, res: Response) => {
   const { name, description, phone, address, services, employees, openingHours } = req.body;
 
-  // 鍏堝皾璇曚粠鏁版嵁搴撴洿鏂?  const shop = await shopQueries.get(req.params.id);
+  // 先尝试从数据库更�?  const shop = await shopQueries.get(req.params.id);
   if (shop) {
     const updateData: any = {
       name: name || shop.name,
@@ -97,15 +97,15 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const updated = await (shopQueries as any).update(req.params.id, updateData);
     if (updated) {
-      res.json({ success: true, message: '搴楅摵淇℃伅宸叉洿鏂? });
+      res.json({ success: true, message: '店铺信息已更�? });
       return;
     }
   }
 
-  // fallback 鍒?mockShops
+  // fallback �?mockShops
   const shopIndex = mockShops.findIndex((s: any) => s.id === req.params.id);
   if (shopIndex === -1) {
-    return res.status(404).json({ message: '搴楅摵涓嶅瓨鍦? });
+    return res.status(404).json({ message: '店铺不存�? });
   }
   const existing = mockShops[shopIndex];
   mockShops[shopIndex] = {
@@ -119,15 +119,15 @@ router.put('/:id', async (req: Request, res: Response) => {
     openingHours: openingHours !== undefined ? openingHours : existing.openingHours,
     updatedAt: new Date(),
   };
-  res.json({ success: true, message: '搴楅摵淇℃伅宸叉洿鏂? });
+  res.json({ success: true, message: '店铺信息已更�? });
 });
 
-// 鍒涘缓搴楅摵
+// 创建店铺
 router.post('/', async (req: Request, res: Response) => {
   const { name, description, phone, address, services = [], employees = [], openingHours } = req.body;
 
   if (!name) {
-    return res.status(400).json({ message: '搴楅摵鍚嶇О涓嶈兘涓虹┖' });
+    return res.status(400).json({ message: '店铺名称不能为空' });
   }
 
   const newId = 'shop_' + Math.random().toString(36).substr(2, 9);
@@ -178,12 +178,12 @@ router.post('/', async (req: Request, res: Response) => {
     updatedAt: new Date(),
   };
 
-  // 鍚屾椂鏇存柊 mockShops
+  // 同时更新 mockShops
   mockShops.push(newShop);
-  res.status(201).json({ success: true, data: newShop, message: '搴楅摵鍒涘缓鎴愬姛' });
+  res.status(201).json({ success: true, data: newShop, message: '店铺创建成功' });
 });
 
-// 鑾峰彇搴楅摵鐨勯绾?router.get('/:id/bookings', async (req: Request, res: Response) => {
+// 获取店铺的预�?router.get('/:id/bookings', async (req: Request, res: Response) => {
   const dbBookings = await bookingQueries.listByShop(req.params.id);
   if (dbBookings.length > 0) {
     const camel = dbBookings.map((b: any) => ({
@@ -210,7 +210,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.json(bookings);
 });
 
-// 鑾峰彇搴楅摵鐨勮瘎浠?router.get('/:id/reviews', async (req: Request, res: Response) => {
+// 获取店铺的评�?router.get('/:id/reviews', async (req: Request, res: Response) => {
   const dbReviews = await reviewQueries.listByShop(req.params.id);
   if (dbReviews.length > 0) {
     const camel = dbReviews.map((r: any) => ({
@@ -244,7 +244,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.json(reviews);
 });
 
-// 鑾峰彇搴楅摵鐨勬帓闃熼槦鍒?router.get('/:id/queue', async (req: Request, res: Response) => {
+// 获取店铺的排队队�?router.get('/:id/queue', async (req: Request, res: Response) => {
   const dbQueue = await queueQueries.getByShop(req.params.id);
   if (dbQueue) {
     const bookings = await bookingQueries.listByShop(req.params.id);
@@ -279,7 +279,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   const queue = mockQueues.find((q: any) => q.shopId === req.params.id);
   if (!queue) {
-    return res.status(404).json({ message: '闃熷垪涓嶅瓨鍦? });
+    return res.status(404).json({ message: '队列不存�? });
   }
   queue.bookings = mockBookings.filter(
     (b: any) => b.shopId === req.params.id && (b.status === 'pending' || b.status === 'confirmed'),
@@ -288,4 +288,3 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 export default router;
-

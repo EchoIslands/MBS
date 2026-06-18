@@ -1,9 +1,9 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockBookings, mockShops, mockCustomers } from '../_internal/mockData.js';
 
 const router = Router();
 
-// 浣跨敤 global 瀵硅薄纭繚 bookingsDb 鍦ㄦā鍧楀娆″姞杞芥椂淇濇寔鍗曚緥
+// 使用 global 对象确保 bookingsDb 在模块多次加载时保持单例
 declare global {
   var __bookingsDb: Map<string, any> | undefined;
 }
@@ -28,11 +28,11 @@ const bookingFromDb = (b: any): any => ({
   createdAt: b.created_at,
 });
 
-// 鍒涘缓棰勭害
+// 创建预约
 router.post('/', async (req: Request, res: Response) => {
   console.log('=== POST /api/bookings called ===');
   console.log('req.body:', req.body);
-  // 鍏煎鍓嶇鍙兘浼犲叆鐨勫瓧娈靛悕锛坆arberId/stylistId 绛夛級
+  // 兼容前端可能传入的字段名（barberId/stylistId 等）
   const { shopId, customerId, serviceId, scheduledTime, notes } = req.body;
   const barberId = req.body.barberId || req.body.stylistId;
   const barberName = req.body.barberName || req.body.stylistName;
@@ -41,15 +41,15 @@ router.post('/', async (req: Request, res: Response) => {
   const shop = mockShops.find((s: any) => s.id === shopId);
   const service = shop?.services?.find((s: any) => s.id === serviceId);
 
-  // 浠庢湰鍦板瓨鍌ㄨ幏鍙栬搴楅摵鐨勯绾︽暟閲?  let countFromDb = 0;
+  // 从本地存储获取该店铺的预约数�?  let countFromDb = 0;
   bookingsDb.forEach((b) => {
     if (b.shop_id === shopId) countFromDb++;
   });
 
-  // 澶勭悊 scheduledTime锛氶獙璇佹椂闂存槸鍚︽湁鏁堜笖鏈潵鏃堕棿
+  // 处理 scheduledTime：验证时间是否有效且未来时间
   if (!scheduledTime) {
-    console.error('鉂?scheduledTime 涓虹┖');
-    return res.status(400).json({ message: '棰勭害鏃堕棿涓嶈兘涓虹┖' });
+    console.error('�?scheduledTime 为空');
+    return res.status(400).json({ message: '预约时间不能为空' });
   }
   
   let scheduledTimeDate: Date;
@@ -57,32 +57,32 @@ router.post('/', async (req: Request, res: Response) => {
     scheduledTimeDate = scheduledTime instanceof Date
       ? scheduledTime
       : new Date(scheduledTime);
-    // 妫€鏌ユ槸鍚︽湁鏁堟棩鏈?    if (isNaN(scheduledTimeDate.getTime())) {
-      console.error('鉂?scheduledTime 鏃犳晥:', scheduledTime);
-      return res.status(400).json({ message: '棰勭害鏃堕棿鏍煎紡鏃犳晥' });
+    // 检查是否有效日�?    if (isNaN(scheduledTimeDate.getTime())) {
+      console.error('�?scheduledTime 无效:', scheduledTime);
+      return res.status(400).json({ message: '预约时间格式无效' });
     }
   } catch (e) {
-    console.error('鉂?scheduledTime 瑙ｆ瀽澶辫触:', scheduledTime, e);
-    return res.status(400).json({ message: '棰勭害鏃堕棿瑙ｆ瀽澶辫触' });
+    console.error('�?scheduledTime 解析失败:', scheduledTime, e);
+    return res.status(400).json({ message: '预约时间解析失败' });
   }
   
-  // 妫€鏌ユ椂闂存槸鍚︽槸鏈潵鏃堕棿锛堝厑璁稿綋鍓嶆椂闂翠箣鍚庣殑棰勭害锛?  const now = new Date();
+  // 检查时间是否是未来时间（允许当前时间之后的预约�?  const now = new Date();
   if (scheduledTimeDate < now) {
-    console.error('鉂?scheduledTime 宸叉槸杩囧幓鏃堕棿:', scheduledTimeDate.toISOString(), 'now:', now.toISOString());
-    return res.status(400).json({ message: '棰勭害鏃堕棿涓嶈兘鏄繃鍘绘椂闂? });
+    console.error('�?scheduledTime 已是过去时间:', scheduledTimeDate.toISOString(), 'now:', now.toISOString());
+    return res.status(400).json({ message: '预约时间不能是过去时�? });
   }
   
-  console.log('鉁?Parsed scheduledTime:', scheduledTimeDate.toISOString());
+  console.log('�?Parsed scheduledTime:', scheduledTimeDate.toISOString());
 
   const newBooking = {
     id: generateId(),
     shop_id: shopId,
     customer_id: customerId,
-    customer_name: customerName || '椤惧',
+    customer_name: customerName || '顾客',
     stylist_id: barberId,
-    stylist_name: barberName || service?.name || '鍙戝瀷甯?,
+    stylist_name: barberName || service?.name || '发型�?,
     service_id: serviceId,
-    service_name: service?.name || '鏈嶅姟',
+    service_name: service?.name || '服务',
     price: service?.price || 0,
     scheduled_time: scheduledTimeDate.toISOString(),
     queue_number: countFromDb + 1,
@@ -91,15 +91,15 @@ router.post('/', async (req: Request, res: Response) => {
     created_at: new Date().toISOString(),
   };
 
-  // 鐩存帴瀛樺偍鍒版湰鍦?Map
+  // 直接存储到本�?Map
   bookingsDb.set(newBooking.id, newBooking);
   console.log('bookingsDb.set:', newBooking.id, 'total:', bookingsDb.size);
-  console.log('杩斿洖棰勭害 scheduledTime:', newBooking.scheduled_time);
+  console.log('返回预约 scheduledTime:', newBooking.scheduled_time);
 
   res.status(201).json(bookingFromDb(newBooking));
 });
 
-// 棰勭害鍒楄〃绛涢€?API
+// 预约列表筛�?API
 router.get('/', async (req: Request, res: Response) => {
   try {
     const shopId = String(req.query.shopId || 'shop1');
@@ -113,7 +113,7 @@ router.get('/', async (req: Request, res: Response) => {
     const sortBy = String(req.query.sortBy || 'scheduledTime');
     const sortOrder = String(req.query.sortOrder || 'desc');
 
-    // 浠庢湰鍦?Map 鑾峰彇璇ュ簵閾虹殑棰勭害
+    // 从本�?Map 获取该店铺的预约
     let dbBookings: any[] = [];
     bookingsDb.forEach((b) => {
       if (b.shop_id === shopId) {
@@ -184,19 +184,19 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: '鑾峰彇棰勭害鍒楄〃澶辫触',
+      error: '获取预约列表失败',
     });
   }
 });
 
-// 鑾峰彇棰勭害璇︽儏
+// 获取预约详情
 router.get('/:id', async (req: Request, res: Response) => {
   console.log('=== GET /api/bookings/:id called ===');
   console.log('req.params.id:', req.params.id, 'type:', typeof req.params.id);
   console.log('bookingsDb.size:', bookingsDb.size);
   console.log('bookingsDb keys:', Array.from(bookingsDb.keys()));
 
-  // 鐩存帴浠庢湰鍦?Map 鑾峰彇
+  // 直接从本�?Map 获取
   const dbBooking = bookingsDb.get(req.params.id) || null;
   console.log('dbBooking from Map:', dbBooking);
   if (dbBooking) {
@@ -206,12 +206,12 @@ router.get('/:id', async (req: Request, res: Response) => {
   const booking = mockBookings.find((b: any) => b.id === req.params.id);
   console.log('mock booking:', booking);
   if (!booking) {
-    return res.status(404).json({ message: '棰勭害涓嶅瓨鍦? });
+    return res.status(404).json({ message: '预约不存�? });
   }
   res.json(booking);
 });
 
-// 鏇存柊棰勭害鐘舵€?router.put('/:id', async (req: Request, res: Response) => {
+// 更新预约状�?router.put('/:id', async (req: Request, res: Response) => {
   const { status } = req.body;
 
   const existing = bookingsDb.get(req.params.id);
@@ -224,13 +224,13 @@ router.get('/:id', async (req: Request, res: Response) => {
 
   const idx = mockBookings.findIndex((b: any) => b.id === req.params.id);
   if (idx === -1) {
-    return res.status(404).json({ message: '棰勭害涓嶅瓨鍦? });
+    return res.status(404).json({ message: '预约不存�? });
   }
   mockBookings[idx] = { ...mockBookings[idx], status };
   res.json(mockBookings[idx]);
 });
 
-// 鑾峰彇椤惧鐨勯绾?router.get('/customer/:customerId', async (req: Request, res: Response) => {
+// 获取顾客的预�?router.get('/customer/:customerId', async (req: Request, res: Response) => {
   const dbBookings: any[] = [];
   bookingsDb.forEach((b) => {
     if (b.customer_id === req.params.customerId) {
@@ -246,4 +246,3 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 export default router;
-

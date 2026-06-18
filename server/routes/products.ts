@@ -1,10 +1,10 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 
 const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 鍟嗗搧鏁版嵁瀛樺偍锛堝唴瀛樺瓨鍌紝瀹為檯椤圭洰涓簲璇ョ敤鏁版嵁搴擄級
+// 商品数据存储（内存存储，实际项目中应该用数据库）
 interface Product {
   id: string;
   shopId: string;
@@ -28,14 +28,14 @@ const products: Product[] = [
   {
     id: 'prod1',
     shopId: 'shop1',
-    name: '娲楀彂姘?,
-    category: '娲楁姢鐢ㄥ搧',
+    name: '洗发�?,
+    category: '洗护用品',
     price: 68,
     costPrice: 35,
     stock: 100,
     minStock: 20,
     maxStock: 200,
-    unit: '鐡?,
+    unit: '�?,
     status: 'active',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -43,21 +43,21 @@ const products: Product[] = [
   {
     id: 'prod2',
     shopId: 'shop1',
-    name: '鎶ゅ彂绱?,
-    category: '娲楁姢鐢ㄥ搧',
+    name: '护发�?,
+    category: '洗护用品',
     price: 58,
     costPrice: 28,
     stock: 80,
     minStock: 15,
     maxStock: 150,
-    unit: '鐡?,
+    unit: '�?,
     status: 'active',
     createdAt: new Date(),
     updatedAt: new Date(),
   },
 ];
 
-// 搴撳瓨鍙樺姩璁板綍
+// 库存变动记录
 interface StockRecord {
   id: string;
   productId: string;
@@ -74,9 +74,9 @@ interface StockRecord {
 
 const stockRecords: StockRecord[] = [];
 
-// ==================== 鍟嗗搧 CRUD API ====================
+// ==================== 商品 CRUD API ====================
 
-// 鑾峰彇鍟嗗搧鍒楄〃
+// 获取商品列表
 router.get('/', (req: Request, res: Response) => {
   const { 
     shopId, 
@@ -90,19 +90,19 @@ router.get('/', (req: Request, res: Response) => {
 
   let result = [...products];
 
-  // 搴楅摵绛涢€?  if (shopId) {
+  // 店铺筛�?  if (shopId) {
     result = result.filter((p) => p.shopId === shopId);
   }
 
-  // 鍒嗙被绛涢€?  if (category) {
+  // 分类筛�?  if (category) {
     result = result.filter((p) => p.category === category);
   }
 
-  // 鐘舵€佺瓫閫?  if (status) {
+  // 状态筛�?  if (status) {
     result = result.filter((p) => p.status === status);
   }
 
-  // 鍏抽敭璇嶆悳绱?  if (keyword) {
+  // 关键词搜�?  if (keyword) {
     const kw = (keyword as string).toLowerCase();
     result = result.filter((p) => 
       p.name.toLowerCase().includes(kw) || 
@@ -110,14 +110,14 @@ router.get('/', (req: Request, res: Response) => {
     );
   }
 
-  // 浣庡簱瀛樼瓫閫?  if (lowStock === 'true') {
+  // 低库存筛�?  if (lowStock === 'true') {
     result = result.filter((p) => p.minStock && p.stock <= p.minStock);
   }
 
-  // 鎸夋洿鏂版椂闂村€掑簭
+  // 按更新时间倒序
   result.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = result.length;
@@ -136,19 +136,19 @@ router.get('/', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鍗曚釜鍟嗗搧璇︽儏
+// 获取单个商品详情
 router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const product = products.find((p) => p.id === id);
 
   if (!product) {
-    return res.status(404).json({ success: false, error: '鍟嗗搧涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '商品不存�? });
   }
 
   res.json({ success: true, data: product });
 });
 
-// 鍒涘缓鍟嗗搧
+// 创建商品
 router.post('/', (req: Request, res: Response) => {
   const { 
     shopId, 
@@ -165,18 +165,18 @@ router.post('/', (req: Request, res: Response) => {
     images 
   } = req.body;
 
-  // 楠岃瘉蹇呭～瀛楁
+  // 验证必填字段
   if (!shopId || !name || !category || price === undefined) {
     return res.status(400).json({ 
       success: false, 
-      error: '搴楅摵ID銆佸晢鍝佸悕绉般€佸垎绫诲拰浠锋牸涓哄繀濉」' 
+      error: '店铺ID、商品名称、分类和价格为必填项' 
     });
   }
 
-  // 妫€鏌ユ潯鐮佹槸鍚﹂噸澶?  if (barcode) {
+  // 检查条码是否重�?  if (barcode) {
     const existing = products.find((p) => p.barcode === barcode);
     if (existing) {
-      return res.status(400).json({ success: false, error: '鏉＄爜宸插瓨鍦? });
+      return res.status(400).json({ success: false, error: '条码已存�? });
     }
   }
 
@@ -190,7 +190,7 @@ router.post('/', (req: Request, res: Response) => {
     stock,
     minStock,
     maxStock,
-    unit: unit || '浠?,
+    unit: unit || '�?,
     barcode,
     description,
     images,
@@ -204,7 +204,7 @@ router.post('/', (req: Request, res: Response) => {
   res.status(201).json({ success: true, data: product });
 });
 
-// 鏇存柊鍟嗗搧
+// 更新商品
 router.put('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const { 
@@ -223,17 +223,17 @@ router.put('/:id', (req: Request, res: Response) => {
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '鍟嗗搧涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '商品不存�? });
   }
 
-  // 妫€鏌ユ潯鐮佹槸鍚﹂噸澶?  if (barcode && barcode !== product.barcode) {
+  // 检查条码是否重�?  if (barcode && barcode !== product.barcode) {
     const existing = products.find((p) => p.barcode === barcode && p.id !== id);
     if (existing) {
-      return res.status(400).json({ success: false, error: '鏉＄爜宸插瓨鍦? });
+      return res.status(400).json({ success: false, error: '条码已存�? });
     }
   }
 
-  // 鏇存柊瀛楁
+  // 更新字段
   if (name !== undefined) product.name = name;
   if (category !== undefined) product.category = category;
   if (price !== undefined) product.price = price;
@@ -250,13 +250,13 @@ router.put('/:id', (req: Request, res: Response) => {
   res.json({ success: true, data: product });
 });
 
-// 鍒犻櫎鍟嗗搧
+// 删除商品
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const index = products.findIndex((p) => p.id === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '鍟嗗搧涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '商品不存�? });
   }
 
   const deleted = products.splice(index, 1)[0];
@@ -266,20 +266,20 @@ router.delete('/:id', (req: Request, res: Response) => {
     data: { 
       id: deleted.id, 
       name: deleted.name,
-      message: '鍟嗗搧宸插垹闄? 
+      message: '商品已删�? 
     } 
   });
 });
 
-// ==================== 搴撳瓨绠＄悊 API ====================
+// ==================== 库存管理 API ====================
 
-// 鑾峰彇搴撳瓨鍒楄〃
+// 获取库存列表
 router.get('/inventory/list', (req: Request, res: Response) => {
   const { shopId, lowStock } = req.query;
 
   let result = products.filter((p) => p.shopId === shopId);
 
-  // 浣庡簱瀛樼瓫閫?  if (lowStock === 'true') {
+  // 低库存筛�?  if (lowStock === 'true') {
     result = result.filter((p) => p.minStock && p.stock <= p.minStock);
   }
 
@@ -297,25 +297,25 @@ router.get('/inventory/list', (req: Request, res: Response) => {
   res.json({ success: true, data: inventory });
 });
 
-// 搴撳瓨鍏ュ簱
+// 库存入库
 router.post('/:id/stock/in', (req: Request, res: Response) => {
   const { id } = req.params;
   const { quantity, reason, operatorId, operatorName } = req.body;
 
   if (!quantity || quantity <= 0) {
-    return res.status(400).json({ success: false, error: '鍏ュ簱鏁伴噺蹇呴』澶т簬0' });
+    return res.status(400).json({ success: false, error: '入库数量必须大于0' });
   }
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '鍟嗗搧涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '商品不存�? });
   }
 
   const beforeStock = product.stock;
   product.stock += quantity;
   product.updatedAt = new Date();
 
-  // 璁板綍搴撳瓨鍙樺姩
+  // 记录库存变动
   const record: StockRecord = {
     id: generateId(),
     productId: id,
@@ -344,29 +344,29 @@ router.post('/:id/stock/in', (req: Request, res: Response) => {
   });
 });
 
-// 搴撳瓨鍑哄簱
+// 库存出库
 router.post('/:id/stock/out', (req: Request, res: Response) => {
   const { id } = req.params;
   const { quantity, reason, operatorId, operatorName } = req.body;
 
   if (!quantity || quantity <= 0) {
-    return res.status(400).json({ success: false, error: '鍑哄簱鏁伴噺蹇呴』澶т簬0' });
+    return res.status(400).json({ success: false, error: '出库数量必须大于0' });
   }
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '鍟嗗搧涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '商品不存�? });
   }
 
   if (product.stock < quantity) {
-    return res.status(400).json({ success: false, error: '搴撳瓨涓嶈冻' });
+    return res.status(400).json({ success: false, error: '库存不足' });
   }
 
   const beforeStock = product.stock;
   product.stock -= quantity;
   product.updatedAt = new Date();
 
-  // 璁板綍搴撳瓨鍙樺姩
+  // 记录库存变动
   const record: StockRecord = {
     id: generateId(),
     productId: id,
@@ -395,29 +395,29 @@ router.post('/:id/stock/out', (req: Request, res: Response) => {
   });
 });
 
-// 搴撳瓨璋冩暣
+// 库存调整
 router.post('/:id/stock/adjust', (req: Request, res: Response) => {
   const { id } = req.params;
   const { quantity, reason, operatorId, operatorName } = req.body;
 
   if (quantity === undefined) {
-    return res.status(400).json({ success: false, error: '璋冩暣鍚庡簱瀛樻暟閲忓繀濉? });
+    return res.status(400).json({ success: false, error: '调整后库存数量必�? });
   }
 
   if (quantity < 0) {
-    return res.status(400).json({ success: false, error: '搴撳瓨涓嶈兘涓鸿礋鏁? });
+    return res.status(400).json({ success: false, error: '库存不能为负�? });
   }
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '鍟嗗搧涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '商品不存�? });
   }
 
   const beforeStock = product.stock;
   product.stock = quantity;
   product.updatedAt = new Date();
 
-  // 璁板綍搴撳瓨鍙樺姩
+  // 记录库存变动
   const record: StockRecord = {
     id: generateId(),
     productId: id,
@@ -426,7 +426,7 @@ router.post('/:id/stock/adjust', (req: Request, res: Response) => {
     quantity: Math.abs(quantity - beforeStock),
     beforeStock,
     afterStock: product.stock,
-    reason: reason || '搴撳瓨鐩樼偣璋冩暣',
+    reason: reason || '库存盘点调整',
     operatorId,
     operatorName,
     createdAt: new Date(),
@@ -445,7 +445,7 @@ router.post('/:id/stock/adjust', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇搴撳瓨鍙樺姩璁板綍
+// 获取库存变动记录
 router.get('/:id/stock/records', (req: Request, res: Response) => {
   const { id } = req.params;
   const { page = '1', pageSize = '20' } = req.query;
@@ -472,7 +472,7 @@ router.get('/:id/stock/records', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鍟嗗搧鍒嗙被鍒楄〃
+// 获取商品分类列表
 router.get('/categories/list', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
@@ -485,7 +485,7 @@ router.get('/categories/list', (req: Request, res: Response) => {
   res.json({ success: true, data: categories });
 });
 
-// 鑾峰彇搴撳瓨缁熻
+// 获取库存统计
 router.get('/inventory/stats', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
@@ -505,4 +505,3 @@ router.get('/inventory/stats', (req: Request, res: Response) => {
 });
 
 export default router;
-

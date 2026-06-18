@@ -1,22 +1,22 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockBookings, mockReviews } from '../_internal/mockData.js';
 
 const router = Router();
 
-// 浠庨绾︽暟鎹腑鎻愬彇鍙戝瀷甯堜俊鎭紙鍏煎 barberId/stylistId锛?const getStylistName = (stylistId: string): string => {
+// 从预约数据中提取发型师信息（兼容 barberId/stylistId�?const getStylistName = (stylistId: string): string => {
   const booking = mockBookings.find((b) => b.stylistId === stylistId || (b as any).barberId === stylistId);
-  return booking?.stylistName || (booking as any)?.barberName || '鏈煡鍙戝瀷甯?;
+  return booking?.stylistName || (booking as any)?.barberName || '未知发型�?;
 };
 
-// 妫€鏌ラ绾︽槸鍚﹀睘浜庢寚瀹氬彂鍨嬪笀锛堝吋瀹?barberId/stylistId锛?const isStylistBooking = (b: any, stylistId: string): boolean => {
+// 检查预约是否属于指定发型师（兼�?barberId/stylistId�?const isStylistBooking = (b: any, stylistId: string): boolean => {
   return b.stylistId === stylistId || b.barberId === stylistId;
 };
 
-// 鑾峰彇棰勭害鐨勫彂鍨嬪笀ID锛堝吋瀹?barberId/stylistId锛?const getBookingStylistId = (b: any): string | undefined => {
+// 获取预约的发型师ID（兼�?barberId/stylistId�?const getBookingStylistId = (b: any): string | undefined => {
   return b.stylistId || b.barberId;
 };
 
-// ==================== 鍙戝瀷甯堜笟缁?API ====================
+// ==================== 发型师业�?API ====================
 
 router.get('/:stylistId/performance', (req: Request, res: Response) => {
   const { stylistId } = req.params;
@@ -108,7 +108,7 @@ router.get('/:stylistId/services', (req: Request, res: Response) => {
   mockBookings
     .filter((b) => isStylistBooking(b, stylistId) && b.status === 'completed')
     .forEach((b) => {
-      const serviceName = b.serviceName || '鏈煡鏈嶅姟';
+      const serviceName = b.serviceName || '未知服务';
       if (!serviceStats[serviceName]) {
         serviceStats[serviceName] = { count: 0, revenue: 0 };
       }
@@ -324,4 +324,3 @@ router.get('/ranking', (req: Request, res: Response) => {
 });
 
 export default router;
-

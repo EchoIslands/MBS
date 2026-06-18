@@ -1,13 +1,13 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockReviews, mockShopReviews, mockStylistReviews } from '../_internal/mockData.js';
 
 const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// ==================== 璇勪环绠＄悊 API ====================
+// ==================== 评价管理 API ====================
 
-// 鑾峰彇璇勪环鍒楄〃锛堟敮鎸佸绉嶇瓫閫夛級
+// 获取评价列表（支持多种筛选）
 router.get('/', (req: Request, res: Response) => {
   const { 
     shopId, 
@@ -22,40 +22,40 @@ router.get('/', (req: Request, res: Response) => {
 
   let reviews = [...mockReviews];
 
-  // 搴楅摵绛涢€?  if (shopId) {
+  // 店铺筛�?  if (shopId) {
     reviews = reviews.filter((r) => r.shopId === shopId);
   }
 
-  // 鍙戝瀷甯堢瓫閫?  if (stylistId) {
+  // 发型师筛�?  if (stylistId) {
     reviews = reviews.filter((r) => r.stylistId === stylistId);
   }
 
-  // 瀹㈡埛绛涢€?  if (customerId) {
+  // 客户筛�?  if (customerId) {
     reviews = reviews.filter((r) => r.customerId === customerId);
   }
 
-  // 璇勫垎绛涢€?  if (rating) {
+  // 评分筛�?  if (rating) {
     const ratingNum = parseInt(rating as string, 10);
     reviews = reviews.filter((r) => Math.floor(r.overallScore) === ratingNum);
   }
 
-  // 鏄惁鏈夊洖澶?  if (hasReply === 'true') {
+  // 是否有回�?  if (hasReply === 'true') {
     reviews = reviews.filter((r) => (r as any).reply);
   } else if (hasReply === 'false') {
     reviews = reviews.filter((r) => !(r as any).reply);
   }
 
-  // 鏄惁闅愯棌
+  // 是否隐藏
   if (isHidden === 'true') {
     reviews = reviews.filter((r) => (r as any).isHidden);
   } else if (isHidden === 'false') {
     reviews = reviews.filter((r) => !(r as any).isHidden);
   }
 
-  // 鎸夊垱寤烘椂闂村€掑簭
+  // 按创建时间倒序
   reviews.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = reviews.length;
@@ -74,35 +74,35 @@ router.get('/', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鍗曟潯璇勪环璇︽儏
+// 获取单条评价详情
 router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const review = mockReviews.find((r) => r.id === id);
 
   if (!review) {
-    return res.status(404).json({ success: false, error: '璇勪环涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   res.json({ success: true, data: review });
 });
 
-// 鍥炲璇勪环
+// 回复评价
 router.post('/:id/reply', (req: Request, res: Response) => {
   const { id } = req.params;
   const { repliedBy, repliedByName, content } = req.body;
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '璇勪环涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!content || content.trim() === '') {
-    return res.status(400).json({ success: false, error: '鍥炲鍐呭涓嶈兘涓虹┖' });
+    return res.status(400).json({ success: false, error: '回复内容不能为空' });
   }
 
-  // 妫€鏌ユ槸鍚﹀凡鍥炲
+  // 检查是否已回复
   if ((review as any).reply) {
-    return res.status(400).json({ success: false, error: '璇ヨ瘎浠峰凡鍥炲' });
+    return res.status(400).json({ success: false, error: '该评价已回复' });
   }
 
   (review as any).reply = {
@@ -121,22 +121,22 @@ router.post('/:id/reply', (req: Request, res: Response) => {
   });
 });
 
-// 缂栬緫鍥炲
+// 编辑回复
 router.put('/:id/reply', (req: Request, res: Response) => {
   const { id } = req.params;
   const { content } = req.body;
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '璇勪环涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!(review as any).reply) {
-    return res.status(400).json({ success: false, error: '璇ヨ瘎浠峰皻鏈洖澶? });
+    return res.status(400).json({ success: false, error: '该评价尚未回�? });
   }
 
   if (!content || content.trim() === '') {
-    return res.status(400).json({ success: false, error: '鍥炲鍐呭涓嶈兘涓虹┖' });
+    return res.status(400).json({ success: false, error: '回复内容不能为空' });
   }
 
   (review as any).reply.content = content;
@@ -151,17 +151,17 @@ router.put('/:id/reply', (req: Request, res: Response) => {
   });
 });
 
-// 鍒犻櫎鍥炲
+// 删除回复
 router.delete('/:id/reply', (req: Request, res: Response) => {
   const { id } = req.params;
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '璇勪环涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!(review as any).reply) {
-    return res.status(400).json({ success: false, error: '璇ヨ瘎浠峰皻鏈洖澶? });
+    return res.status(400).json({ success: false, error: '该评价尚未回�? });
   }
 
   delete (review as any).reply;
@@ -170,23 +170,23 @@ router.delete('/:id/reply', (req: Request, res: Response) => {
     success: true,
     data: {
       id: review.id,
-      message: '鍥炲宸插垹闄?,
+      message: '回复已删�?,
     },
   });
 });
 
-// 闅愯棌璇勪环
+// 隐藏评价
 router.post('/:id/hide', (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason, hiddenBy, hiddenByName } = req.body;
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '璇勪环涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if ((review as any).isHidden) {
-    return res.status(400).json({ success: false, error: '璇ヨ瘎浠峰凡闅愯棌' });
+    return res.status(400).json({ success: false, error: '该评价已隐藏' });
   }
 
   (review as any).isHidden = true;
@@ -206,17 +206,17 @@ router.post('/:id/hide', (req: Request, res: Response) => {
   });
 });
 
-// 鏄剧ず璇勪环锛堝彇娑堥殣钘忥級
+// 显示评价（取消隐藏）
 router.post('/:id/show', (req: Request, res: Response) => {
   const { id } = req.params;
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '璇勪环涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '评价不存�? });
   }
 
   if (!(review as any).isHidden) {
-    return res.status(400).json({ success: false, error: '璇ヨ瘎浠锋湭闅愯棌' });
+    return res.status(400).json({ success: false, error: '该评价未隐藏' });
   }
 
   (review as any).isHidden = false;
@@ -230,12 +230,12 @@ router.post('/:id/show', (req: Request, res: Response) => {
     data: {
       id: review.id,
       isHidden: false,
-      message: '璇勪环宸叉樉绀?,
+      message: '评价已显�?,
     },
   });
 });
 
-// 鑾峰彇璇勪环缁熻
+// 获取评价统计
 router.get('/stats/summary', (req: Request, res: Response) => {
   const { shopId, stylistId } = req.query;
 
@@ -279,7 +279,7 @@ router.get('/stats/summary', (req: Request, res: Response) => {
   res.json({ success: true, data: stats });
 });
 
-// 鑾峰彇搴楅摵璇勪环鍒楄〃
+// 获取店铺评价列表
 router.get('/shop/:shopId', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { rating, page = '1', pageSize = '20' } = req.query;
@@ -311,7 +311,7 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鍙戝瀷甯堣瘎浠峰垪琛?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
+// 获取发型师评价列�?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
   const { stylistId } = req.params;
   const { rating, page = '1', pageSize = '20' } = req.query;
 
@@ -343,4 +343,3 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
 });
 
 export default router;
-

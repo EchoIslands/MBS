@@ -1,9 +1,9 @@
-﻿import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { reviewQueries } from '../db/index.js';
 
 const router = Router();
 
-// 鍒涘缓璇勪环
+// 创建评价
 router.post('/', async (req: Request, res: Response) => {
   const {
     shopId, customerId, bookingId, serviceScore, priceScore, skillScore, comment,
@@ -47,4 +47,3 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 export default router;
-

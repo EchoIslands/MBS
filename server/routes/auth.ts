@@ -1,8 +1,8 @@
-﻿/**
- * 璁よ瘉 API 璺敱
- * POST /api/auth/login - 鍛樺伐鐧诲綍
- * POST /api/auth/register - 鍛樺伐娉ㄥ唽锛堝彲閫夛級
- * GET /api/auth/me - 鑾峰彇褰撳墠鐢ㄦ埛淇℃伅
+/**
+ * 认证 API 路由
+ * POST /api/auth/login - 员工登录
+ * POST /api/auth/register - 员工注册（可选）
+ * GET /api/auth/me - 获取当前用户信息
  */
 import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
@@ -12,11 +12,11 @@ import { mockShops, stylistPasswords, managerPasswords, ceoPasswords, csPassword
 
 const router = Router()
 
-// JWT 瀵嗛挜锛堢敓浜х幆澧冨簲浠庣幆澧冨彉閲忚鍙栵級
+// JWT 密钥（生产环境应从环境变量读取）
 const JWT_SECRET = process.env.JWT_SECRET || 'mbs-secret-key-2024'
 const JWT_EXPIRES_IN = '7d'
 
-// 鏍规嵁瑙掕壊鑾峰彇瀵嗙爜鏄犲皠
+// 根据角色获取密码映射
 const getPasswordMap = (role?: string): Record<string, string> => {
   switch (role) {
     case 'ceo': return ceoPasswords
@@ -27,7 +27,7 @@ const getPasswordMap = (role?: string): Record<string, string> => {
   }
 }
 
-// 浠?mock 鏁版嵁涓煡鎵惧憳宸?const findMockEmployee = (phone: string) => {
+// �?mock 数据中查找员�?const findMockEmployee = (phone: string) => {
   for (const shop of mockShops) {
     const employee = shop.employees.find(e => (e as any).phone === phone)
     if (employee) {
@@ -37,31 +37,31 @@ const getPasswordMap = (role?: string): Record<string, string> => {
   return null
 }
 
-// 楠岃瘉 mock 瀵嗙爜
+// 验证 mock 密码
 const verifyMockPassword = (employeeId: string, password: string, role?: string): boolean => {
   if (password !== '123456') return false
   const passwords = getPasswordMap(role)
-  return passwords[employeeId] === '123456' || true // 榛樿 123456 閮藉彲浠ョ櫥褰?}
+  return passwords[employeeId] === '123456' || true // 默认 123456 都可以登�?}
 
-// 鐧诲綍
+// 登录
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { phone, password } = req.body
 
-    // 楠岃瘉蹇呭～瀛楁
+    // 验证必填字段
     if (!phone || !password) {
       return res.status(400).json({
         success: false,
-        error: '璇疯緭鍏ユ墜鏈哄彿鍜屽瘑鐮?,
+        error: '请输入手机号和密�?,
       })
     }
 
-    // 鍏堝皾璇曚粠鏁版嵁搴撴煡璇?    const dbEmployee = await employeeQueries.getByPhone(phone)
+    // 先尝试从数据库查�?    const dbEmployee = await employeeQueries.getByPhone(phone)
     
     let employee = dbEmployee
     let isFromDb = true
     
-    // 濡傛灉鏁版嵁搴撴病鏈夛紝灏濊瘯 mock 鏁版嵁
+    // 如果数据库没有，尝试 mock 数据
     if (!employee) {
       employee = findMockEmployee(phone) as any
       isFromDb = false
@@ -70,38 +70,38 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!employee) {
       return res.status(401).json({
         success: false,
-        error: '鎵嬫満鍙锋垨瀵嗙爜閿欒',
+        error: '手机号或密码错误',
       })
     }
 
-    // 楠岃瘉瀵嗙爜
+    // 验证密码
     let isValidPassword = false
     
     if (isFromDb) {
-      // 鏁版嵁搴撴ā寮忥細鏀寔 bcrypt 鍔犲瘑瀵嗙爜鎴栨槑鏂?123456
+      // 数据库模式：支持 bcrypt 加密密码或明�?123456
       isValidPassword = password === '123456' ||
         (employee as any).password_hash === password ||
         await bcrypt.compare(password, (employee as any).password_hash || '')
     } else {
-      // Mock 妯″紡锛氶粯璁ゅ瘑鐮?123456
+      // Mock 模式：默认密�?123456
       isValidPassword = verifyMockPassword(employee.id, password, (employee as any).role)
     }
 
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
-        error: '鎵嬫満鍙锋垨瀵嗙爜閿欒',
+        error: '手机号或密码错误',
       })
     }
 
-    // 妫€鏌ュ憳宸ユ槸鍚﹀湪鑱?    if ((employee as any).is_active === false) {
+    // 检查员工是否在�?    if ((employee as any).is_active === false) {
       return res.status(403).json({
         success: false,
-        error: '璇ヨ处鍙峰凡琚鐢?,
+        error: '该账号已被禁�?,
       })
     }
 
-    // 鐢熸垚 JWT token
+    // 生成 JWT token
     const token = jwt.sign(
       {
         id: employee.id,
@@ -113,7 +113,7 @@ router.post('/login', async (req: Request, res: Response) => {
       { expiresIn: JWT_EXPIRES_IN }
     )
 
-    // 杩斿洖鐧诲綍鎴愬姛淇℃伅
+    // 返回登录成功信息
     return res.json({
       success: true,
       data: {
@@ -133,38 +133,38 @@ router.post('/login', async (req: Request, res: Response) => {
       },
     })
   } catch (error) {
-    console.error('鐧诲綍澶辫触:', error)
+    console.error('登录失败:', error)
     return res.status(500).json({
       success: false,
-      error: '鐧诲綍澶辫触锛岃绋嶅悗閲嶈瘯',
+      error: '登录失败，请稍后重试',
     })
   }
 })
 
-// 鑾峰彇褰撳墠鐢ㄦ埛淇℃伅锛堥渶瑕?token锛?router.get('/me', async (req: Request, res: Response) => {
+// 获取当前用户信息（需�?token�?router.get('/me', async (req: Request, res: Response) => {
   try {
-    // 浠?header 鑾峰彇 token
+    // �?header 获取 token
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        error: '鏈櫥褰曪紝璇峰厛鐧诲綍',
+        error: '未登录，请先登录',
       })
     }
 
     const token = authHeader.substring(7)
 
-    // 楠岃瘉 token
+    // 验证 token
     const decoded = jwt.verify(token, JWT_SECRET) as any
     console.log('[auth/me] decoded:', decoded)
 
-    // 鍏堝皾璇曚粠鏁版嵁搴撴煡璇?    let employee = null
+    // 先尝试从数据库查�?    let employee = null
     if (decoded.shopId) {
       const employees = await employeeQueries.listByShop(decoded.shopId)
       employee = employees.find((e: any) => e.id === decoded.id)
     }
     
-    // 濡傛灉鏁版嵁搴撴病鏈夛紝灏濊瘯鏍规嵁鎵嬫満鍙锋煡鎵?mock 鏁版嵁
+    // 如果数据库没有，尝试根据手机号查�?mock 数据
     if (!employee && decoded.phone) {
       const mockEmployee = findMockEmployee(decoded.phone)
       if (mockEmployee && (mockEmployee as any).id === decoded.id) {
@@ -175,7 +175,7 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!employee) {
       return res.status(404).json({
         success: false,
-        error: '鐢ㄦ埛涓嶅瓨鍦?,
+        error: '用户不存�?,
       })
     }
 
@@ -197,56 +197,56 @@ router.post('/login', async (req: Request, res: Response) => {
     if ((error as any).name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
-        error: 'Token 鏃犳晥',
+        error: 'Token 无效',
       })
     }
     if ((error as any).name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        error: 'Token 宸茶繃鏈燂紝璇烽噸鏂扮櫥褰?,
+        error: 'Token 已过期，请重新登�?,
       })
     }
-    console.error('鑾峰彇鐢ㄦ埛淇℃伅澶辫触:', error)
+    console.error('获取用户信息失败:', error)
     return res.status(500).json({
       success: false,
-      error: '鑾峰彇鐢ㄦ埛淇℃伅澶辫触',
+      error: '获取用户信息失败',
     })
   }
 })
 
-// 娉ㄥ唽锛堟紨绀虹敤锛岀敓浜х幆澧冨簲鍏抽棴锛?router.post('/register', async (req: Request, res: Response) => {
+// 注册（演示用，生产环境应关闭�?router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, phone, password, role, shopId, title, specialty } = req.body
 
-    // 楠岃瘉蹇呭～瀛楁
+    // 验证必填字段
     if (!name || !phone || !password) {
       return res.status(400).json({
         success: false,
-        error: '璇峰～鍐欏畬鏁翠俊鎭?,
+        error: '请填写完整信�?,
       })
     }
 
-    // 妫€鏌ユ墜鏈哄彿鏄惁宸插瓨鍦?    const existingEmployee = await employeeQueries.getByPhone(phone)
+    // 检查手机号是否已存�?    const existingEmployee = await employeeQueries.getByPhone(phone)
     if (existingEmployee) {
       return res.status(400).json({
         success: false,
-        error: '璇ユ墜鏈哄彿宸叉敞鍐?,
+        error: '该手机号已注�?,
       })
     }
 
-    // 鐢熸垚 ID
+    // 生成 ID
     const id = `emp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-    // 鍔犲瘑瀵嗙爜
+    // 加密密码
     const passwordHash = await bcrypt.hash(password, 10)
 
-    // 鍒涘缓鍛樺伐锛堣繖閲岄渶瑕佺洿鎺ュ湪鏁版嵁搴撴彃鍏ワ級
+    // 创建员工（这里需要直接在数据库插入）
     const { default: getDb } = await import('../db.js');
     const db = getDb();
     if (!db) {
       return res.status(500).json({
         success: false,
-        error: '鏁版嵁搴撴湭杩炴帴',
+        error: '数据库未连接',
       })
     }
 
@@ -263,14 +263,14 @@ router.post('/login', async (req: Request, res: Response) => {
     }).select().single()
 
     if (error) {
-      console.error('娉ㄥ唽澶辫触:', error)
+      console.error('注册失败:', error)
       return res.status(500).json({
         success: false,
-        error: '娉ㄥ唽澶辫触',
+        error: '注册失败',
       })
     }
 
-    // 鐢熸垚 token
+    // 生成 token
     const token = jwt.sign(
       { id, phone, role: role || 'stylist', shopId },
       JWT_SECRET,
@@ -290,22 +290,22 @@ router.post('/login', async (req: Request, res: Response) => {
       },
     })
   } catch (error) {
-    console.error('娉ㄥ唽澶辫触:', error)
+    console.error('注册失败:', error)
     return res.status(500).json({
       success: false,
-      error: '娉ㄥ唽澶辫触锛岃绋嶅悗閲嶈瘯',
+      error: '注册失败，请稍后重试',
     })
   }
 })
 
-// 淇敼瀵嗙爜
+// 修改密码
 router.put('/password', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        error: '鏈櫥褰?,
+        error: '未登�?,
       })
     }
 
@@ -317,39 +317,39 @@ router.put('/password', async (req: Request, res: Response) => {
     if (!oldPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        error: '璇疯緭鍏ユ棫瀵嗙爜鍜屾柊瀵嗙爜',
+        error: '请输入旧密码和新密码',
       })
     }
 
-    // 鏌ヨ鍛樺伐
+    // 查询员工
     const employees = await employeeQueries.listByShop(decoded.shopId)
     const employee = employees.find((e: any) => e.id === decoded.id)
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        error: '鐢ㄦ埛涓嶅瓨鍦?,
+        error: '用户不存�?,
       })
     }
 
-    // 楠岃瘉鏃у瘑鐮?    const isValid = oldPassword === '123456' ||
+    // 验证旧密�?    const isValid = oldPassword === '123456' ||
       (employee as any).password_hash === oldPassword ||
       await bcrypt.compare(oldPassword, (employee as any).password_hash || '')
 
     if (!isValid) {
       return res.status(401).json({
         success: false,
-        error: '鏃у瘑鐮侀敊璇?,
+        error: '旧密码错�?,
       })
     }
 
-    // 鏇存柊瀵嗙爜
+    // 更新密码
     const { default: getDb } = await import('../db.js');
     const db = getDb();
     if (!db) {
       return res.status(500).json({
         success: false,
-        error: '鏁版嵁搴撴湭杩炴帴',
+        error: '数据库未连接',
       })
     }
 
@@ -362,24 +362,24 @@ router.put('/password', async (req: Request, res: Response) => {
     if (error) {
       return res.status(500).json({
         success: false,
-        error: '淇敼瀵嗙爜澶辫触',
+        error: '修改密码失败',
       })
     }
 
     return res.json({
       success: true,
-      message: '瀵嗙爜淇敼鎴愬姛',
+      message: '密码修改成功',
     })
   } catch (error) {
-    console.error('淇敼瀵嗙爜澶辫触:', error)
+    console.error('修改密码失败:', error)
     return res.status(500).json({
       success: false,
-      error: '淇敼瀵嗙爜澶辫触',
+      error: '修改密码失败',
     })
   }
 })
 
-// 楠岃瘉 token锛堢敤浜庡墠绔鏌ョ櫥褰曠姸鎬侊級
+// 验证 token（用于前端检查登录状态）
 router.post('/verify', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization
@@ -387,7 +387,7 @@ router.post('/verify', async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         valid: false,
-        error: '鏈櫥褰?,
+        error: '未登�?,
       })
     }
 
@@ -408,10 +408,9 @@ router.post('/verify', async (req: Request, res: Response) => {
     return res.status(401).json({
       success: false,
       valid: false,
-      error: 'Token 鏃犳晥鎴栧凡杩囨湡',
+      error: 'Token 无效或已过期',
     })
   }
 })
 
 export default router
-

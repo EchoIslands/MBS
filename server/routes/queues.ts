@@ -1,9 +1,9 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { queueQueries, bookingQueries } from '../db/index.js';
 
 const router = Router();
 
-// 鑾峰彇闃熷垪
+// 获取队列
 router.get('/:shopId', async (req: Request, res: Response) => {
   const shopId = req.params.shopId;
   const dbQueue = await queueQueries.getByShop(shopId);
@@ -39,10 +39,10 @@ router.get('/:shopId', async (req: Request, res: Response) => {
     });
     return;
   }
-  return res.status(404).json({ success: false, error: '闃熷垪涓嶅瓨鍦? });
+  return res.status(404).json({ success: false, error: '队列不存�? });
 });
 
-// 鏇存柊闃熷垪
+// 更新队列
 router.put('/:shopId', async (req: Request, res: Response) => {
   const { currentNumber, estimatedWaitTime } = req.body;
   const shopId = req.params.shopId;
@@ -65,25 +65,25 @@ router.put('/:shopId', async (req: Request, res: Response) => {
   });
 });
 
-// 鍙彿锛堜笅涓€浣嶏級
+// 叫号（下一位）
 router.post('/:shopId/next', async (req: Request, res: Response) => {
   const shopId = req.params.shopId;
   const dbQueue = await queueQueries.getByShop(shopId);
   
   if (!dbQueue) {
-    return res.status(404).json({ success: false, error: '闃熷垪涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '队列不存�? });
   }
 
-  // 鑾峰彇鎵€鏈夊緟澶勭悊鐨勯绾?  const bookings = await bookingQueries.listByShop(shopId);
+  // 获取所有待处理的预�?  const bookings = await bookingQueries.listByShop(shopId);
   const pendingBookings = bookings.filter(
     (b: any) => b.status === 'pending' || b.status === 'confirmed'
   );
 
-  // 鎵惧埌褰撳墠鍙风爜瀵瑰簲鐨勯绾?  const currentBooking = pendingBookings.find(
+  // 找到当前号码对应的预�?  const currentBooking = pendingBookings.find(
     (b: any) => b.queue_number === dbQueue.current_number
   );
 
-  // 鏇存柊褰撳墠鍙风爜
+  // 更新当前号码
   const newCurrentNumber = dbQueue.current_number + 1;
   const result = await queueQueries.upsert({
     shop_id: shopId,
@@ -92,7 +92,7 @@ router.post('/:shopId/next', async (req: Request, res: Response) => {
     updated_at: new Date().toISOString(),
   });
 
-  // 濡傛灉鏈夊綋鍓嶉绾︼紝鏇存柊鍏剁姸鎬佷负鏈嶅姟涓?  if (currentBooking) {
+  // 如果有当前预约，更新其状态为服务�?  if (currentBooking) {
     await bookingQueries.update(currentBooking.id, { status: 'serving' });
   }
 
@@ -113,26 +113,26 @@ router.post('/:shopId/next', async (req: Request, res: Response) => {
   });
 });
 
-// 璺宠繃褰撳墠鍙风爜
+// 跳过当前号码
 router.post('/:shopId/skip', async (req: Request, res: Response) => {
   const shopId = req.params.shopId;
   const dbQueue = await queueQueries.getByShop(shopId);
   
   if (!dbQueue) {
-    return res.status(404).json({ success: false, error: '闃熷垪涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '队列不存�? });
   }
 
-  // 鑾峰彇鎵€鏈夊緟澶勭悊鐨勯绾?  const bookings = await bookingQueries.listByShop(shopId);
+  // 获取所有待处理的预�?  const bookings = await bookingQueries.listByShop(shopId);
   const pendingBookings = bookings.filter(
     (b: any) => b.status === 'pending' || b.status === 'confirmed'
   );
 
-  // 鎵惧埌琚烦杩囩殑棰勭害
+  // 找到被跳过的预约
   const skippedBooking = pendingBookings.find(
     (b: any) => b.queue_number === dbQueue.current_number
   );
 
-  // 鏇存柊褰撳墠鍙风爜
+  // 更新当前号码
   const newCurrentNumber = dbQueue.current_number + 1;
   const result = await queueQueries.upsert({
     shop_id: shopId,
@@ -141,7 +141,7 @@ router.post('/:shopId/skip', async (req: Request, res: Response) => {
     updated_at: new Date().toISOString(),
   });
 
-  // 濡傛灉鏈夎璺宠繃鐨勯绾︼紝鏇存柊鍏剁姸鎬佷负璺宠繃
+  // 如果有被跳过的预约，更新其状态为跳过
   if (skippedBooking) {
     await bookingQueries.update(skippedBooking.id, { status: 'skipped' });
   }
@@ -163,7 +163,7 @@ router.post('/:shopId/skip', async (req: Request, res: Response) => {
   });
 });
 
-// 閲嶇疆闃熷垪
+// 重置队列
 router.post('/:shopId/reset', async (req: Request, res: Response) => {
   const shopId = req.params.shopId;
   
@@ -182,11 +182,11 @@ router.post('/:shopId/reset', async (req: Request, res: Response) => {
       estimatedWaitTime: result.estimated_wait_time,
       updatedAt: result.updated_at,
     },
-    message: '闃熷垪宸查噸缃?,
+    message: '队列已重�?,
   });
 });
 
-// 鑾峰彇闃熷垪缁熻
+// 获取队列统计
 router.get('/:shopId/stats', async (req: Request, res: Response) => {
   const shopId = req.params.shopId;
   
@@ -209,4 +209,3 @@ router.get('/:shopId/stats', async (req: Request, res: Response) => {
 });
 
 export default router;
-

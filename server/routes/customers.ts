@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockCustomers } from '../_internal/mockData.js';
 import { Customer, CustomerTag, MembershipLevel, CustomerProfile } from '../_internal/types.js';
 
@@ -6,13 +6,13 @@ const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 鑾峰彇瀹㈡埛鍒楄〃
+// 获取客户列表
 router.get('/', (req: Request, res: Response) => {
   const { search, tag, level, page = '1', pageSize = '20', shopId } = req.query;
 
   let result = [...mockCustomers];
 
-  // 鎼滅储绛涢€夛紙濮撳悕鎴栫數璇濓級
+  // 搜索筛选（姓名或电话）
   if (search && typeof search === 'string') {
     const keyword = search.toLowerCase();
     result = result.filter(
@@ -22,19 +22,19 @@ router.get('/', (req: Request, res: Response) => {
     );
   }
 
-  // 鏍囩绛涢€?  if (tag && typeof tag === 'string' && tag !== 'all') {
+  // 标签筛�?  if (tag && typeof tag === 'string' && tag !== 'all') {
     result = result.filter((c) => c.tags.includes(tag as CustomerTag));
   }
 
-  // 浼氬憳绛夌骇绛涢€?  if (level && typeof level === 'string' && level !== 'all') {
+  // 会员等级筛�?  if (level && typeof level === 'string' && level !== 'all') {
     result = result.filter((c) => c.membershipLevel === level);
   }
 
-  // 搴楅摵绛涢€夛紙鍙戝瀷甯堣鑹诧細鍙湅鏈嶅姟杩囩殑瀹㈡埛锛?  if (shopId && typeof shopId === 'string') {
+  // 店铺筛选（发型师角色：只看服务过的客户�?  if (shopId && typeof shopId === 'string') {
     result = result.filter((c) => c.servedByStylistIds?.includes(shopId));
   }
 
-  // 璁＄畻璺濈涓婃鍒板簵澶╂暟
+  // 计算距离上次到店天数
   result = result.map((c) => ({
     ...c,
     daysSinceLastVisit: c.lastVisitAt
@@ -42,7 +42,7 @@ router.get('/', (req: Request, res: Response) => {
       : undefined,
   }));
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = result.length;
@@ -62,16 +62,16 @@ router.get('/', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇鍗曚釜瀹㈡埛璇︽儏
+// 获取单个客户详情
 router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const customer = mockCustomers.find((c) => c.id === id);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
-  // 璁＄畻璺濈涓婃鍒板簵澶╂暟
+  // 计算距离上次到店天数
   const customerWithDays = {
     ...customer,
     daysSinceLastVisit: customer.lastVisitAt
@@ -82,7 +82,7 @@ router.get('/:id', (req: Request, res: Response) => {
   res.json({ success: true, data: customerWithDays });
 });
 
-// 鍒涘缓鏂板鎴?router.post('/', (req: Request, res: Response) => {
+// 创建新客�?router.post('/', (req: Request, res: Response) => {
   const {
     name,
     phone,
@@ -95,14 +95,14 @@ router.get('/:id', (req: Request, res: Response) => {
     shopId,
   } = req.body;
 
-  // 楠岃瘉蹇呭～瀛楁
+  // 验证必填字段
   if (!name || !phone) {
-    return res.status(400).json({ success: false, error: '濮撳悕鍜岀數璇濅负蹇呭～椤? });
+    return res.status(400).json({ success: false, error: '姓名和电话为必填�? });
   }
 
-  // 妫€鏌ユ墜鏈哄彿鏄惁宸插瓨鍦?  const existing = mockCustomers.find((c) => c.phone === phone);
+  // 检查手机号是否已存�?  const existing = mockCustomers.find((c) => c.phone === phone);
   if (existing) {
-    return res.status(400).json({ success: false, error: '璇ユ墜鏈哄彿宸叉敞鍐? });
+    return res.status(400).json({ success: false, error: '该手机号已注�? });
   }
 
   const newCustomer: Customer = {
@@ -127,19 +127,19 @@ router.get('/:id', (req: Request, res: Response) => {
     churnRisk: 'low',
   };
 
-  // 娣诲姞鍒?mockCustomers锛堝疄闄呴」鐩腑搴旇鍐欏叆鏁版嵁搴擄級
+  // 添加�?mockCustomers（实际项目中应该写入数据库）
   (mockCustomers as any[]).push(newCustomer);
 
   res.status(201).json({ success: true, data: newCustomer });
 });
 
-// 鏇存柊瀹㈡埛淇℃伅
+// 更新客户信息
 router.put('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const index = mockCustomers.findIndex((c) => c.id === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   const {
@@ -162,11 +162,11 @@ router.put('/:id', (req: Request, res: Response) => {
 
   const existing = mockCustomers[index];
 
-  // 濡傛灉鏇存柊鎵嬫満鍙凤紝妫€鏌ユ槸鍚︿笌鍏朵粬瀹㈡埛鍐茬獊
+  // 如果更新手机号，检查是否与其他客户冲突
   if (phone && phone !== existing.phone) {
     const phoneExists = mockCustomers.find((c) => c.phone === phone && c.id !== id);
     if (phoneExists) {
-      return res.status(400).json({ success: false, error: '璇ユ墜鏈哄彿宸茶鍏朵粬瀹㈡埛浣跨敤' });
+      return res.status(400).json({ success: false, error: '该手机号已被其他客户使用' });
     }
   }
 
@@ -194,29 +194,29 @@ router.put('/:id', (req: Request, res: Response) => {
   res.json({ success: true, data: updated });
 });
 
-// 鍒犻櫎瀹㈡埛
+// 删除客户
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const index = mockCustomers.findIndex((c) => c.id === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   (mockCustomers as any[]).splice(index, 1);
 
-  res.json({ success: true, message: '瀹㈡埛宸插垹闄? });
+  res.json({ success: true, message: '客户已删�? });
 });
 
-// ==================== 瀹㈡埛鐢诲儚 API ====================
+// ==================== 客户画像 API ====================
 
-// 鑾峰彇瀹㈡埛鐢诲儚
+// 获取客户画像
 router.get('/:customerId/profile', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   res.json({
@@ -225,17 +225,17 @@ router.get('/:customerId/profile', (req: Request, res: Response) => {
   });
 });
 
-// 鍒涘缓瀹㈡埛鐢诲儚
+// 创建客户画像
 router.post('/:customerId/profile', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   if (customer.profile) {
-    return res.status(400).json({ success: false, error: '璇ュ鎴峰凡鏈夌敾鍍忥紝璇蜂娇鐢ㄦ洿鏂版帴鍙? });
+    return res.status(400).json({ success: false, error: '该客户已有画像，请使用更新接�? });
   }
 
   const {
@@ -253,7 +253,7 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
     extraServices = [],
     visitTimes = [],
     notes = '',
-    allergies = '鏃?,
+    allergies = '�?,
     productsUsed = [],
   } = req.body;
 
@@ -261,7 +261,7 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
     id: generateId(),
     customerId,
     updatedBy: updatedBy || '',
-    updatedByName: updatedByName || '鎶€甯?,
+    updatedByName: updatedByName || '技�?,
     updatedAt: new Date(),
     haircutStyles,
     hairColors,
@@ -285,13 +285,13 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
   res.status(201).json({ success: true, data: profile });
 });
 
-// 鏇存柊瀹㈡埛鐢诲儚
+// 更新客户画像
 router.put('/:customerId/profile', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   const existing = customer.profile;
@@ -320,7 +320,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
     id: existing?.id || generateId(),
     customerId,
     updatedBy: updatedBy || existing?.updatedBy || '',
-    updatedByName: updatedByName || existing?.updatedByName || '鎶€甯?,
+    updatedByName: updatedByName || existing?.updatedByName || '技�?,
     updatedAt: now,
     haircutStyles: haircutStyles !== undefined ? haircutStyles : existing?.haircutStyles || [],
     hairColors: hairColors !== undefined ? hairColors : existing?.hairColors || [],
@@ -334,7 +334,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
     extraServices: extraServices !== undefined ? extraServices : existing?.extraServices || [],
     visitTimes: visitTimes !== undefined ? visitTimes : existing?.visitTimes || [],
     notes: notes !== undefined ? notes : existing?.notes || '',
-    allergies: allergies !== undefined ? allergies : existing?.allergies || '鏃?,
+    allergies: allergies !== undefined ? allergies : existing?.allergies || '�?,
     productsUsed: productsUsed !== undefined ? productsUsed : existing?.productsUsed || [],
     createdAt: existing?.createdAt || now,
   };
@@ -345,4 +345,3 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
 });
 
 export default router;
-

@@ -1,11 +1,11 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockCustomers } from '../_internal/mockData.js';
 
 const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// ==================== 鏁版嵁妯″瀷 ====================
+// ==================== 数据模型 ====================
 
 interface CartItem {
   productId: string;
@@ -41,18 +41,18 @@ interface Order {
   updatedAt: Date;
 }
 
-// 璐墿杞﹀瓨鍌?const carts: Cart[] = [];
+// 购物车存�?const carts: Cart[] = [];
 
-// 璁㈠崟瀛樺偍
+// 订单存储
 const orders: Order[] = [
   {
     id: 'order1',
     orderNo: 'ORD20260616001',
     customerId: 'cust1',
-    customerName: '寮犱笁',
+    customerName: '张三',
     shopId: 'shop1',
     items: [
-      { productId: 'prod1', productName: '娲楀彂姘?, price: 68, quantity: 2 },
+      { productId: 'prod1', productName: '洗发�?, price: 68, quantity: 2 },
     ],
     totalAmount: 136,
     discountAmount: 0,
@@ -65,16 +65,16 @@ const orders: Order[] = [
   },
 ];
 
-// ==================== 璐墿杞?API ====================
+// ==================== 购物�?API ====================
 
-// 鑾峰彇璐墿杞?router.get('/cart/:customerId', (req: Request, res: Response) => {
+// 获取购物�?router.get('/cart/:customerId', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { shopId } = req.query;
 
   let cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
 
   if (!cart) {
-    // 杩斿洖绌鸿喘鐗╄溅
+    // 返回空购物车
     cart = {
       id: generateId(),
       customerId,
@@ -98,7 +98,7 @@ const orders: Order[] = [
   });
 });
 
-// 娣诲姞鍟嗗搧鍒拌喘鐗╄溅
+// 添加商品到购物车
 router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { shopId, productId, productName, price, quantity = 1 } = req.body;
@@ -106,7 +106,7 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   if (!shopId || !productId || !productName || price === undefined) {
     return res.status(400).json({ 
       success: false, 
-      error: '搴楅摵ID銆佸晢鍝両D銆佸晢鍝佸悕绉板拰浠锋牸涓哄繀濉」' 
+      error: '店铺ID、商品ID、商品名称和价格为必填项' 
     });
   }
 
@@ -124,7 +124,7 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
     carts.push(cart);
   }
 
-  // 妫€鏌ユ槸鍚﹀凡瀛樺湪璇ュ晢鍝?  const existingItem = cart.items.find((item) => item.productId === productId);
+  // 检查是否已存在该商�?  const existingItem = cart.items.find((item) => item.productId === productId);
   if (existingItem) {
     existingItem.quantity += quantity;
   } else {
@@ -144,26 +144,26 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   });
 });
 
-// 鏇存柊璐墿杞﹀晢鍝佹暟閲?router.put('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
+// 更新购物车商品数�?router.put('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
   const { customerId, productId } = req.params;
   const { shopId, quantity } = req.body;
 
   if (quantity === undefined || quantity < 0) {
-    return res.status(400).json({ success: false, error: '鏁伴噺蹇呴』澶т簬绛変簬0' });
+    return res.status(400).json({ success: false, error: '数量必须大于等于0' });
   }
 
   const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
   if (!cart) {
-    return res.status(404).json({ success: false, error: '璐墿杞︿笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '购物车不存在' });
   }
 
   const item = cart.items.find((i) => i.productId === productId);
   if (!item) {
-    return res.status(404).json({ success: false, error: '璐墿杞︿腑鏃犳鍟嗗搧' });
+    return res.status(404).json({ success: false, error: '购物车中无此商品' });
   }
 
   if (quantity === 0) {
-    // 鏁伴噺涓?鏃跺垹闄ゅ晢鍝?    cart.items = cart.items.filter((i) => i.productId !== productId);
+    // 数量�?时删除商�?    cart.items = cart.items.filter((i) => i.productId !== productId);
   } else {
     item.quantity = quantity;
   }
@@ -180,20 +180,20 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   });
 });
 
-// 鍒犻櫎璐墿杞﹀晢鍝?router.delete('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
+// 删除购物车商�?router.delete('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
   const { customerId, productId } = req.params;
   const { shopId } = req.query;
 
   const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
   if (!cart) {
-    return res.status(404).json({ success: false, error: '璐墿杞︿笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '购物车不存在' });
   }
 
   const beforeCount = cart.items.length;
   cart.items = cart.items.filter((i) => i.productId !== productId);
 
   if (cart.items.length === beforeCount) {
-    return res.status(404).json({ success: false, error: '璐墿杞︿腑鏃犳鍟嗗搧' });
+    return res.status(404).json({ success: false, error: '购物车中无此商品' });
   }
 
   cart.updatedAt = new Date();
@@ -204,18 +204,18 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
     data: {
       ...cart,
       totalAmount,
-      message: '鍟嗗搧宸蹭粠璐墿杞︾Щ闄?,
+      message: '商品已从购物车移�?,
     },
   });
 });
 
-// 娓呯┖璐墿杞?router.delete('/cart/:customerId', (req: Request, res: Response) => {
+// 清空购物�?router.delete('/cart/:customerId', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { shopId } = req.query;
 
   const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
   if (!cart) {
-    return res.status(404).json({ success: false, error: '璐墿杞︿笉瀛樺湪' });
+    return res.status(404).json({ success: false, error: '购物车不存在' });
   }
 
   cart.items = [];
@@ -224,14 +224,14 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   res.json({
     success: true,
     data: {
-      message: '璐墿杞﹀凡娓呯┖',
+      message: '购物车已清空',
     },
   });
 });
 
-// ==================== 璁㈠崟 API ====================
+// ==================== 订单 API ====================
 
-// 鑾峰彇璁㈠崟鍒楄〃
+// 获取订单列表
 router.get('/orders', (req: Request, res: Response) => {
   const { shopId, customerId, status, page = '1', pageSize = '20' } = req.query;
 
@@ -267,37 +267,37 @@ router.get('/orders', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇璁㈠崟璇︽儏
+// 获取订单详情
 router.get('/orders/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const order = orders.find((o) => o.id === id);
 
   if (!order) {
-    return res.status(404).json({ success: false, error: '璁㈠崟涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '订单不存�? });
   }
 
   res.json({ success: true, data: order });
 });
 
-// 鍒涘缓璁㈠崟锛堜粠璐墿杞︼級
+// 创建订单（从购物车）
 router.post('/orders', (req: Request, res: Response) => {
   const { customerId, shopId, note, discountAmount = 0 } = req.body;
 
-  // 楠岃瘉瀹㈡埛
+  // 验证客户
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
-  // 鑾峰彇璐墿杞?  const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
+  // 获取购物�?  const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
   if (!cart || cart.items.length === 0) {
-    return res.status(400).json({ success: false, error: '璐墿杞︿负绌? });
+    return res.status(400).json({ success: false, error: '购物车为�? });
   }
 
   const totalAmount = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const payAmount = totalAmount - discountAmount;
 
-  // 鐢熸垚璁㈠崟鍙?  const orderNo = `ORD${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${String(orders.length + 1).padStart(3, '0')}`;
+  // 生成订单�?  const orderNo = `ORD${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${String(orders.length + 1).padStart(3, '0')}`;
 
   const order: Order = {
     id: generateId(),
@@ -317,24 +317,24 @@ router.post('/orders', (req: Request, res: Response) => {
 
   orders.push(order);
 
-  // 娓呯┖璐墿杞?  cart.items = [];
+  // 清空购物�?  cart.items = [];
   cart.updatedAt = new Date();
 
   res.status(201).json({ success: true, data: order });
 });
 
-// 鏀粯璁㈠崟
+// 支付订单
 router.post('/orders/:id/pay', (req: Request, res: Response) => {
   const { id } = req.params;
   const { paymentMethod } = req.body;
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '璁㈠崟涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '订单不存�? });
   }
 
   if (order.status !== 'pending') {
-    return res.status(400).json({ success: false, error: '鍙兘鏀粯寰呬粯娆捐鍗? });
+    return res.status(400).json({ success: false, error: '只能支付待付款订�? });
   }
 
   order.status = 'paid';
@@ -342,7 +342,7 @@ router.post('/orders/:id/pay', (req: Request, res: Response) => {
   order.paymentTime = new Date();
   order.updatedAt = new Date();
 
-  // 鏇存柊瀹㈡埛绱娑堣垂
+  // 更新客户累计消费
   const customer = mockCustomers.find((c) => c.id === order.customerId);
   if (customer) {
     customer.totalSpent = (customer.totalSpent || 0) + order.payAmount;
@@ -361,17 +361,17 @@ router.post('/orders/:id/pay', (req: Request, res: Response) => {
   });
 });
 
-// 瀹屾垚璁㈠崟
+// 完成订单
 router.post('/orders/:id/complete', (req: Request, res: Response) => {
   const { id } = req.params;
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '璁㈠崟涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '订单不存�? });
   }
 
   if (order.status !== 'paid') {
-    return res.status(400).json({ success: false, error: '鍙兘瀹屾垚宸叉敮浠樿鍗? });
+    return res.status(400).json({ success: false, error: '只能完成已支付订�? });
   }
 
   order.status = 'completed';
@@ -387,21 +387,21 @@ router.post('/orders/:id/complete', (req: Request, res: Response) => {
   });
 });
 
-// 鍙栨秷璁㈠崟
+// 取消订单
 router.post('/orders/:id/cancel', (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason } = req.body;
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '璁㈠崟涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '订单不存�? });
   }
 
   if (!['pending', 'paid'].includes(order.status)) {
-    return res.status(400).json({ success: false, error: '鍙兘鍙栨秷寰呬粯娆炬垨宸叉敮浠樿鍗? });
+    return res.status(400).json({ success: false, error: '只能取消待付款或已支付订�? });
   }
 
-  // 濡傛灉宸叉敮浠橈紝閫€娆?  if (order.status === 'paid') {
+  // 如果已支付，退�?  if (order.status === 'paid') {
     const customer = mockCustomers.find((c) => c.id === order.customerId);
     if (customer) {
       customer.totalSpent = Math.max(0, (customer.totalSpent || 0) - order.payAmount);
@@ -424,17 +424,17 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
   });
 });
 
-// 鐢宠閫€娆?router.post('/orders/:id/refund', (req: Request, res: Response) => {
+// 申请退�?router.post('/orders/:id/refund', (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason } = req.body;
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '璁㈠崟涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '订单不存�? });
   }
 
   if (order.status !== 'completed') {
-    return res.status(400).json({ success: false, error: '鍙兘瀵瑰凡瀹屾垚璁㈠崟鐢宠閫€娆? });
+    return res.status(400).json({ success: false, error: '只能对已完成订单申请退�? });
   }
 
   order.status = 'refunded';
@@ -442,7 +442,7 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
   (order as any).refundedAt = new Date();
   order.updatedAt = new Date();
 
-  // 閫€娆剧粰瀹㈡埛
+  // 退款给客户
   const customer = mockCustomers.find((c) => c.id === order.customerId);
   if (customer) {
     customer.totalSpent = Math.max(0, (customer.totalSpent || 0) - order.payAmount);
@@ -460,7 +460,7 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
   });
 });
 
-// 鑾峰彇璁㈠崟缁熻
+// 获取订单统计
 router.get('/orders/stats/summary', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
@@ -484,4 +484,3 @@ router.get('/orders/stats/summary', (req: Request, res: Response) => {
 });
 
 export default router;
-

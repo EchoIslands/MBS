@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { mockCustomers, mockShops, mockBookings } from '../_internal/mockData.js';
 import { CustomerVisitRecord } from '../_internal/types.js';
 
@@ -6,39 +6,39 @@ const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// 瀛樺偍鍒板簵璁板綍锛堝唴瀛樺瓨鍌紝瀹為檯椤圭洰涓簲璇ョ敤鏁版嵁搴擄級
+// 存储到店记录（内存存储，实际项目中应该用数据库）
 const visitRecords: CustomerVisitRecord[] = [];
 
-// ==================== 鍒板簵璁板綍 API ====================
+// ==================== 到店记录 API ====================
 
-// 瀹㈡埛鍒板簵鎵撳崱锛坈heck-in锛?router.post('/checkin', (req: Request, res: Response) => {
+// 客户到店打卡（check-in�?router.post('/checkin', (req: Request, res: Response) => {
   const { customerId, shopId, bookingId, stylistId, stylistName } = req.body;
 
-  // 楠岃瘉蹇呭～瀛楁
+  // 验证必填字段
   if (!customerId || !shopId) {
-    return res.status(400).json({ success: false, error: '瀹㈡埛ID鍜屽簵閾篒D涓哄繀濉」' });
+    return res.status(400).json({ success: false, error: '客户ID和店铺ID为必填项' });
   }
 
-  // 楠岃瘉瀹㈡埛瀛樺湪
+  // 验证客户存在
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
-  // 楠岃瘉搴楅摵瀛樺湪
+  // 验证店铺存在
   const shop = mockShops.find((s) => s.id === shopId);
   if (!shop) {
-    return res.status(404).json({ success: false, error: '搴楅摵涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '店铺不存�? });
   }
 
-  // 濡傛灉鏈夐绾D锛岄獙璇侀绾﹀瓨鍦?  if (bookingId) {
+  // 如果有预约ID，验证预约存�?  if (bookingId) {
     const booking = mockBookings.find((b) => b.id === bookingId);
     if (!booking) {
-      return res.status(404).json({ success: false, error: '棰勭害涓嶅瓨鍦? });
+      return res.status(404).json({ success: false, error: '预约不存�? });
     }
-    // 妫€鏌ラ绾︽槸鍚﹀睘浜庤瀹㈡埛
+    // 检查预约是否属于该客户
     if (booking.customerId !== customerId) {
-      return res.status(400).json({ success: false, error: '棰勭害涓嶅睘浜庤瀹㈡埛' });
+      return res.status(400).json({ success: false, error: '预约不属于该客户' });
     }
   }
 
@@ -61,27 +61,27 @@ const visitRecords: CustomerVisitRecord[] = [];
   res.status(201).json({ success: true, data: visitRecord });
 });
 
-// 瀹㈡埛绂诲簵缁撶畻锛坈heck-out锛?router.post('/checkout', (req: Request, res: Response) => {
+// 客户离店结算（check-out�?router.post('/checkout', (req: Request, res: Response) => {
   const { visitId, serviceIds, serviceNames, products, totalAmount, paymentMethod, notes } = req.body;
 
-  // 楠岃瘉蹇呭～瀛楁
+  // 验证必填字段
   if (!visitId) {
-    return res.status(400).json({ success: false, error: '鍒板簵璁板綍ID涓哄繀濉」' });
+    return res.status(400).json({ success: false, error: '到店记录ID为必填项' });
   }
 
-  // 鏌ユ壘鍒板簵璁板綍
+  // 查找到店记录
   const index = visitRecords.findIndex((v) => v.id === visitId);
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '鍒板簵璁板綍涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '到店记录不存�? });
   }
 
   const record = visitRecords[index];
 
-  // 妫€鏌ユ槸鍚﹀凡缁忕搴?  if (record.checkOutTime) {
-    return res.status(400).json({ success: false, error: '璇ヨ褰曞凡瀹屾垚绂诲簵缁撶畻' });
+  // 检查是否已经离�?  if (record.checkOutTime) {
+    return res.status(400).json({ success: false, error: '该记录已完成离店结算' });
   }
 
-  // 鏇存柊璁板綍
+  // 更新记录
   const updated: CustomerVisitRecord = {
     ...record,
     serviceIds: serviceIds || record.serviceIds,
@@ -95,7 +95,7 @@ const visitRecords: CustomerVisitRecord[] = [];
 
   visitRecords[index] = updated;
 
-  // 鏇存柊瀹㈡埛缁熻淇℃伅
+  // 更新客户统计信息
   const customer = mockCustomers.find((c) => c.id === record.customerId);
   if (customer) {
     customer.visitCount = (customer.visitCount || 0) + 1;
@@ -106,22 +106,22 @@ const visitRecords: CustomerVisitRecord[] = [];
   res.json({ success: true, data: updated });
 });
 
-// 鑾峰彇瀹㈡埛鐨勫埌搴楄褰?router.get('/customer/:customerId', (req: Request, res: Response) => {
+// 获取客户的到店记�?router.get('/customer/:customerId', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { page = '1', pageSize = '20' } = req.query;
 
-  // 楠岃瘉瀹㈡埛瀛樺湪
+  // 验证客户存在
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '瀹㈡埛涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '客户不存�? });
   }
 
   let records = visitRecords.filter((v) => v.customerId === customerId);
 
-  // 鎸夊埌搴楁椂闂村€掑簭鎺掑垪
+  // 按到店时间倒序排列
   records = records.sort((a, b) => new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime());
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = records.length;
@@ -141,29 +141,29 @@ const visitRecords: CustomerVisitRecord[] = [];
   });
 });
 
-// 鑾峰彇搴楅摵鐨勫埌搴楄褰?router.get('/shop/:shopId', (req: Request, res: Response) => {
+// 获取店铺的到店记�?router.get('/shop/:shopId', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { page = '1', pageSize = '20', dateStart, dateEnd } = req.query;
 
-  // 楠岃瘉搴楅摵瀛樺湪
+  // 验证店铺存在
   const shop = mockShops.find((s) => s.id === shopId);
   if (!shop) {
-    return res.status(404).json({ success: false, error: '搴楅摵涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '店铺不存�? });
   }
 
   let records = visitRecords.filter((v) => v.shopId === shopId);
 
-  // 鏃ユ湡绛涢€?  if (dateStart) {
+  // 日期筛�?  if (dateStart) {
     records = records.filter((v) => new Date(v.checkInTime) >= new Date(dateStart as string));
   }
   if (dateEnd) {
     records = records.filter((v) => new Date(v.checkInTime) <= new Date(dateEnd as string));
   }
 
-  // 鎸夊埌搴楁椂闂村€掑簭鎺掑垪
+  // 按到店时间倒序排列
   records = records.sort((a, b) => new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime());
 
-  // 鍒嗛〉
+  // 分页
   const pageNum = parseInt(page as string, 10);
   const pageSizeNum = parseInt(pageSize as string, 10);
   const total = records.length;
@@ -183,26 +183,26 @@ const visitRecords: CustomerVisitRecord[] = [];
   });
 });
 
-// 鑾峰彇鍗曟潯鍒板簵璁板綍璇︽儏
+// 获取单条到店记录详情
 router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const record = visitRecords.find((v) => v.id === id);
 
   if (!record) {
-    return res.status(404).json({ success: false, error: '鍒板簵璁板綍涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '到店记录不存�? });
   }
 
   res.json({ success: true, data: record });
 });
 
-// 鑾峰彇搴楅摵浠婃棩鍒板簵缁熻
+// 获取店铺今日到店统计
 router.get('/shop/:shopId/today', (req: Request, res: Response) => {
   const { shopId } = req.params;
 
-  // 楠岃瘉搴楅摵瀛樺湪
+  // 验证店铺存在
   const shop = mockShops.find((s) => s.id === shopId);
   if (!shop) {
-    return res.status(404).json({ success: false, error: '搴楅摵涓嶅瓨鍦? });
+    return res.status(404).json({ success: false, error: '店铺不存�? });
   }
 
   const today = new Date();
@@ -234,4 +234,3 @@ router.get('/shop/:shopId/today', (req: Request, res: Response) => {
 });
 
 export default router;
-
