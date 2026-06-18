@@ -1,5 +1,5 @@
 import { Shop, Booking, Review, Queue } from '../shared/types';
-import { mockShops, mockBookings, mockReviews, mockQueues } from '../shared/mockData';
+import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers } from '../shared/mockData';
 
 // ====== 开关：是否使用真实后端 API ======
 // 方式 1：通过环境变量配置  VITE_USE_REAL_API=true
@@ -307,6 +307,54 @@ export const bookingApi = {
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockBookings.filter((b) => b.customerId === customerId);
+  },
+};
+
+// 客户相关 API
+export const customerApi = {
+  create: async (data: any): Promise<any> => {
+    if (USE_REAL_API) {
+      const result = await http<any>(`${API_BASE}/customers`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      if (result?.success) return result.data;
+    }
+    // Mock fallback
+    const newCustomer = { id: `cust${Date.now()}`, ...data, joinedAt: new Date() };
+    mockCustomers.push(newCustomer);
+    return newCustomer;
+  },
+
+  update: async (id: string, data: any): Promise<any> => {
+    if (USE_REAL_API) {
+      const result = await http<any>(`${API_BASE}/customers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      if (result?.success) return result.data;
+    }
+    const idx = mockCustomers.findIndex((c: any) => c.id === id);
+    if (idx !== -1) {
+      mockCustomers[idx] = { ...mockCustomers[idx], ...data };
+      return mockCustomers[idx];
+    }
+    return null;
+  },
+
+  delete: async (id: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      const result = await http<any>(`${API_BASE}/customers/${id}`, {
+        method: 'DELETE',
+      });
+      if (result?.success) return true;
+    }
+    const idx = mockCustomers.findIndex((c: any) => c.id === id);
+    if (idx !== -1) {
+      mockCustomers.splice(idx, 1);
+      return true;
+    }
+    return false;
   },
 };
 

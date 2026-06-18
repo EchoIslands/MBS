@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Customer, MembershipLevel, CustomerTag } from '../../../shared/types';
 import { mockCustomers } from '../../../shared/mockData';
+import { customerApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 // 扩展客户数据，添加表格需要的字段
@@ -194,8 +195,8 @@ const CustomerTableManagement: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // 添加新客户
-  const handleAddCustomer = (newCustomer: Partial<Customer>) => {
+  // 添加新客户（调用 API 持久化）
+  const handleAddCustomer = async (newCustomer: Partial<Customer>) => {
     const customer: Customer = {
       id: `cust${Date.now()}`,
       name: newCustomer.name || '',
@@ -230,21 +231,25 @@ const CustomerTableManagement: React.FC = () => {
       joinedAt: new Date(),
       isStockholder: false,
     };
+    // 调用 API 保存
+    await customerApi.create(customer);
     setCustomers([customer, ...customers]);
     setShowAdd(false);
   };
 
-  // 更新客户
-  const handleUpdateCustomer = (updatedCustomer: Customer) => {
+  // 更新客户（调用 API 持久化）
+  const handleUpdateCustomer = async (updatedCustomer: Customer) => {
+    await customerApi.update(updatedCustomer.id, updatedCustomer);
     setCustomers(customers.map(c => 
       c.id === updatedCustomer.id ? updatedCustomer : c
     ));
     setShowEdit(null);
   };
 
-  // 删除客户
-  const handleDeleteCustomer = (id: string) => {
+  // 删除客户（调用 API 持久化）
+  const handleDeleteCustomer = async (id: string) => {
     if (window.confirm('确定要删除该客户吗？')) {
+      await customerApi.delete(id);
       setCustomers(customers.filter(c => c.id !== id));
     }
   };
