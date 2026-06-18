@@ -48,6 +48,7 @@ import {
   VisitTimePreference,
 } from '../../../shared/types';
 import { mockCustomers, membershipBenefits } from '../../../shared/mockData';
+import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
@@ -61,6 +62,8 @@ const CustomerManagement: React.FC = () => {
   const [activeTag, setActiveTag] = useState<CustomerTag | 'all'>('all');
   const [activeLevel, setActiveLevel] = useState<MembershipLevel | 'all'>('all');
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState<Customer | null>(null);
   const navigate = useNavigate();
   const { currentEmployee, userRole } = useAppStore();
 
@@ -95,6 +98,38 @@ const CustomerManagement: React.FC = () => {
   React.useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
+
+  // 添加客户
+  const handleAddCustomer = async (data: Partial<Customer>) => {
+    const newCustomer = {
+      name: data.name || '',
+      phone: data.phone || '',
+      gender: data.gender || 'other',
+      age: data.age,
+      birthday: data.birthday,
+      tags: [],
+      membershipLevel: MembershipLevel.REGULAR,
+      source: data.source || '',
+    };
+    await customerApi.create(newCustomer);
+    setShowAdd(false);
+    fetchCustomers();
+  };
+
+  // 更新客户
+  const handleUpdateCustomer = async (updated: Customer) => {
+    await customerApi.update(updated.id, updated);
+    setShowEdit(null);
+    fetchCustomers();
+  };
+
+  // 删除客户
+  const handleDeleteCustomer = async (id: string) => {
+    if (window.confirm('确定要删除该客户吗？')) {
+      await customerApi.delete(id);
+      fetchCustomers();
+    }
+  };
 
   // 标签名称映射
   const tagLabels: Record<CustomerTag, string> = {
@@ -403,6 +438,13 @@ const CustomerManagement: React.FC = () => {
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             {loading ? '刷新中...' : '刷新'}
+          </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+          >
+            <Plus size={16} />
+            添加客户
           </button>
           {(activeTag !== 'all' || activeLevel !== 'all' || searchTerm !== '') && (
             <button
@@ -1017,6 +1059,105 @@ const CustomerManagement: React.FC = () => {
               >
                 <UserCircle size={16} />
                 {viewingCustomer.profile ? '编辑画像' : '新建画像'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 添加/编辑客户表单弹窗 */}
+      {(showAdd || showEdit) && (
+        <div className="fixed inset-0 bg-black/50 flex items-start md:items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg my-8 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <User size={24} className="text-orange-500" />
+                {showAdd ? '添加新客户' : '编辑客户信息'}
+              </h3>
+              <button
+                onClick={() => { showEdit ? setShowEdit(null) : setShowAdd(false); }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">客户称呼 *</label>
+                  <input id="cm-name" defaultValue={showEdit?.name || ''} placeholder="请输入姓名" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">联系方式 *</label>
+                  <input id="cm-phone" defaultValue={showEdit?.phone || ''} placeholder="请输入手机号" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">性别</label>
+                  <select id="cm-gender" defaultValue={showEdit?.gender || 'other'} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-white">
+                    <option value="male">男</option>
+                    <option value="female">女</option>
+                    <option value="other">其他</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">年龄</label>
+                  <input id="cm-age" type="number" defaultValue={showEdit?.age || ''} placeholder="请输入年龄" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">生日</label>
+                  <input id="cm-birthday" type="date" defaultValue={showEdit?.birthday ? new Date(showEdit.birthday).toISOString().split('T')[0] : ''} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">会员级别</label>
+                  <select id="cm-membership" defaultValue={showEdit?.membershipLevel || MembershipLevel.REGULAR} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-white">
+                    <option value={MembershipLevel.REGULAR}>普通客户</option>
+                    <option value={MembershipLevel.PREMIUM}>高级会员</option>
+                    <option value={MembershipLevel.STOCKHOLDER}>股东会员</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">客户来源</label>
+                <input id="cm-source" defaultValue={showEdit?.source || ''} placeholder="如：朋友推荐、线上推广、路过等" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <button
+                onClick={() => { showEdit ? setShowEdit(null) : setShowAdd(false); }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors text-sm font-medium"
+              >
+                取消
+              </button>
+              <button
+                onClick={async () => {
+                  const name = (document.getElementById('cm-name') as HTMLInputElement)?.value;
+                  const phone = (document.getElementById('cm-phone') as HTMLInputElement)?.value;
+                  if (!name || !phone) { alert('请填写客户姓名和电话！'); return; }
+                  const data: any = {
+                    name,
+                    phone,
+                    gender: (document.getElementById('cm-gender') as HTMLSelectElement)?.value,
+                    age: parseInt((document.getElementById('cm-age') as HTMLInputElement)?.value) || undefined,
+                    birthday: (document.getElementById('cm-birthday') as HTMLInputElement)?.value ? new Date((document.getElementById('cm-birthday') as HTMLInputElement).value) : undefined,
+                    membershipLevel: (document.getElementById('cm-membership') as HTMLSelectElement)?.value,
+                    source: (document.getElementById('cm-source') as HTMLInputElement)?.value,
+                  };
+                  if (showEdit) {
+                    await handleUpdateCustomer({ ...showEdit, ...data });
+                  } else {
+                    await handleAddCustomer(data);
+                  }
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+              >
+                <Plus size={16} />
+                保存
               </button>
             </div>
           </div>
