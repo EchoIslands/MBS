@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { mockRefundRequests, mockCustomers, mockBookings } from '../../shared/mockData.js';
-import { RefundStatus } from '../../shared/types.js';
+import { mockRefundRequests, mockCustomers, mockBookings } from '../shared/mockData.js';
+import { RefundStatus } from '../shared/types.js';
 
 const router = Router();
 
