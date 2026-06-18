@@ -8,7 +8,7 @@ import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { employeeQueries } from '../db/index.js'
-import { mockShops, stylistPasswords, managerPasswords, ceoPasswords, csPasswords, shopPasswords } from '../shared/mockData.js'
+import { mockShops, stylistPasswords, managerPasswords, ceoPasswords, csPasswords, shopPasswords } from '../../shared/mockData.js'
 
 const router = Router()
 
