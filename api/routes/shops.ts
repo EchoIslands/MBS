@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { mockShops } from '../../shared/mockData.js';
+import { mockShops, mockBookings, mockReviews, mockQueues } from '../../shared/mockData.js';
 import { shopQueries, bookingQueries, reviewQueries, queueQueries } from '../db/index.js';
 
 const router = Router();
@@ -211,7 +211,6 @@ router.get('/:id/bookings', async (req: Request, res: Response) => {
     return;
   }
 
-  const { mockBookings } = require('../../shared/mockData');
   const bookings = mockBookings.filter((b: any) => b.shopId === req.params.id);
   res.json(bookings);
 });
@@ -247,7 +246,6 @@ router.get('/:id/reviews', async (req: Request, res: Response) => {
     return;
   }
 
-  const { mockReviews } = require('../../shared/mockData');
   const reviews = mockReviews.filter((r: any) => r.shopId === req.params.id);
   res.json(reviews);
 });
@@ -286,7 +284,6 @@ router.get('/:id/queue', async (req: Request, res: Response) => {
     return;
   }
 
-  const { mockQueues, mockBookings } = require('../../shared/mockData');
   const queue = mockQueues.find((q: any) => q.shopId === req.params.id);
   if (!queue) {
     return res.status(404).json({ message: '队列不存在' });

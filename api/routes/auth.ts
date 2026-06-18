@@ -7,7 +7,7 @@
 import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
-import { employeeQueries } from '../db.js'
+import { employeeQueries } from '../db/index.js'
 import { mockShops, stylistPasswords, managerPasswords, ceoPasswords, csPasswords, shopPasswords } from '../../shared/mockData.js'
 
 const router = Router()
@@ -249,7 +249,8 @@ router.post('/register', async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 10)
 
     // 创建员工（这里需要直接在数据库插入）
-    const db = require('../db.js').default
+    const dbModule = await import('../db.js');
+    const db = dbModule.default;
     if (!db) {
       return res.status(500).json({
         success: false,
@@ -352,7 +353,8 @@ router.put('/password', async (req: Request, res: Response) => {
     }
 
     // 更新密码
-    const db = require('../db.js').default
+    const dbModule = await import('../db.js');
+    const db = dbModule.default;
     if (!db) {
       return res.status(500).json({
         success: false,

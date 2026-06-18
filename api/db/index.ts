@@ -150,6 +150,7 @@ declare global {
   var __shops: Map<string, ShopRow> | undefined;
   var __reviews: Map<string, any> | undefined;
   var __queues: Map<string, any> | undefined;
+  var __employees: Map<string, any> | undefined;
 }
 
 if (!global.__shops) {
@@ -160,6 +161,9 @@ if (!global.__reviews) {
 }
 if (!global.__queues) {
   global.__queues = new Map();
+}
+if (!global.__employees) {
+  global.__employees = new Map();
 }
 
 export const shopQueries = {
@@ -218,4 +222,19 @@ export const queueQueries = {
   },
 };
 
-export default { bookingQueries, shopQueries, reviewQueries, queueQueries };
+export const employeeQueries = {
+  async getByPhone(phone: string): Promise<any | null> {
+    for (const [, emp] of global.__employees!) {
+      if (emp.phone === phone) return emp;
+    }
+    return null;
+  },
+
+  async listByShop(shopId: string): Promise<any[]> {
+    return Array.from(global.__employees!.values()).filter(
+      (e: any) => e.shop_id === shopId
+    );
+  },
+};
+
+export default { bookingQueries, shopQueries, reviewQueries, queueQueries, employeeQueries };
