@@ -99,7 +99,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (openingHours !== undefined) updateData.opening_hours = JSON.stringify(openingHours);
     updateData.updated_at = new Date().toISOString();
 
-    const updated = await shopQueries.update(req.params.id, updateData);
+    const updated = await (shopQueries as any).update(req.params.id, updateData);
     if (updated) {
       res.json({ success: true, message: '店铺信息已更新' });
       return;
