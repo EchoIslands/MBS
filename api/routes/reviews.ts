@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { reviewQueries } from '../db';
+import { reviewQueries } from '../db/index.js';
 
 const router = Router();
 
