@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { mockRefundRequests, mockCustomers, mockBookings } from '../../shared/mockData';
+import { RefundStatus } from '../../shared/types';
 
 const router = Router();
 
@@ -121,7 +122,7 @@ router.post('/:id/approve', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '只能审批待处理的退款申请' });
   }
 
-  refund.status = 'approved';
+  refund.status = RefundStatus.APPROVED;
   (refund as any).approvedBy = approvedBy;
   (refund as any).approvedByName = approvedByName;
   (refund as any).approvedAt = new Date();
@@ -157,7 +158,7 @@ router.post('/:id/reject', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '拒绝原因必填' });
   }
 
-  refund.status = 'rejected';
+  refund.status = RefundStatus.REJECTED;
   (refund as any).rejectedBy = rejectedBy;
   (refund as any).rejectedByName = rejectedByName;
   (refund as any).rejectedAt = new Date();
@@ -190,7 +191,7 @@ router.post('/:id/process', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '只能处理已审批的退款申请' });
   }
 
-  refund.status = 'completed';
+  refund.status = RefundStatus.COMPLETED;
   (refund as any).processedBy = processedBy;
   (refund as any).processedByName = processedByName;
   (refund as any).processedAt = new Date();
@@ -231,7 +232,7 @@ router.post('/:id/cancel', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '只能取消待处理或已审批的退款申请' });
   }
 
-  refund.status = 'cancelled';
+  refund.status = RefundStatus.CANCELLED;
   (refund as any).cancelledBy = cancelledBy;
   (refund as any).cancelledAt = new Date();
   (refund as any).cancelReason = reason;
@@ -263,7 +264,7 @@ router.get('/stats/summary', (req: Request, res: Response) => {
     approved: refunds.filter((r) => r.status === 'approved').length,
     rejected: refunds.filter((r) => r.status === 'rejected').length,
     completed: refunds.filter((r) => r.status === 'completed').length,
-    cancelled: refunds.filter((r) => r.status === 'cancelled').length,
+    cancelled: refunds.filter((r) => r.status === RefundStatus.CANCELLED).length,
     totalAmount: refunds
       .filter((r) => r.status === 'completed')
       .reduce((sum, r) => sum + r.amount, 0),

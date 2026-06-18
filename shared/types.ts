@@ -229,6 +229,7 @@ export interface Review {
   shopId: string;
   customerId: string;
   bookingId: string;
+  stylistId?: string;           // 发型师ID
   serviceScore: number;
   priceScore: number;
   skillScore: number;
@@ -421,6 +422,7 @@ export enum RefundStatus {
   APPROVED = 'approved',     // 已批准
   REJECTED = 'rejected',     // 已拒绝
   COMPLETED = 'completed',   // 已完成
+  CANCELLED = 'cancelled',   // 已取消
 }
 
 // 退款申请

@@ -32,7 +32,7 @@ router.get('/:customerId/benefits', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
-  const level = (customer.memberLevel || 'normal') as keyof typeof MEMBER_LEVELS;
+  const level = (customer.membershipLevel || 'normal') as keyof typeof MEMBER_LEVELS;
   const levelConfig = MEMBER_LEVELS[level] || MEMBER_LEVELS.normal;
 
   // 计算升级进度
@@ -56,8 +56,8 @@ router.get('/:customerId/benefits', (req: Request, res: Response) => {
     data: {
       customerId,
       customerName: customer.name,
-      memberLevel: level,
-      memberLevelName: levelConfig.name,
+      membershipLevel: level,
+      membershipLevelName: levelConfig.name,
       discount: levelConfig.discount,
       pointsRate: levelConfig.pointsRate,
       benefits: levelConfig.benefits,
@@ -84,7 +84,7 @@ router.post('/:customerId/upgrade', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
-  const currentLevel = (customer.memberLevel || 'normal') as keyof typeof MEMBER_LEVELS;
+  const currentLevel = (customer.membershipLevel || 'normal') as keyof typeof MEMBER_LEVELS;
   const target = targetLevel as keyof typeof MEMBER_LEVELS;
 
   if (!MEMBER_LEVELS[target]) {
@@ -110,7 +110,7 @@ router.post('/:customerId/upgrade', (req: Request, res: Response) => {
   }
 
   // 执行升级
-  customer.memberLevel = target;
+  customer.membershipLevel = target;
   const levelConfig = MEMBER_LEVELS[target];
 
   res.json({
@@ -145,8 +145,8 @@ router.get('/:customerId/referrals', (req: Request, res: Response) => {
 
   // 计算总提成
   const totalCommission = referrals
-    .filter((r) => r.status === 'completed')
-    .reduce((sum, r) => sum + (r.commission || 0), 0);
+    .filter((r) => r.status === 'paid')
+    .reduce((sum, r) => sum + (r.bonusAmount || 0), 0);
 
   // 分页
   const pageNum = parseInt(page as string, 10);
@@ -160,7 +160,7 @@ router.get('/:customerId/referrals', (req: Request, res: Response) => {
     data: paginatedResult,
     summary: {
       totalReferrals: total,
-      completedReferrals: referrals.filter((r) => r.status === 'completed').length,
+      completedReferrals: referrals.filter((r) => r.status === 'paid').length,
       pendingReferrals: referrals.filter((r) => r.status === 'pending').length,
       totalCommission,
     },
@@ -217,12 +217,12 @@ router.post('/referrals/:referralId/confirm', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, error: '推荐记录不存在' });
   }
 
-  if (referral.status === 'completed') {
+  if (referral.status === 'paid') {
     return res.status(400).json({ success: false, error: '该推荐已完成' });
   }
 
-  referral.status = 'completed';
-  referral.commission = commission;
+  referral.status = 'paid';
+  referral.bonusAmount = commission;
   (referral as any).completedAt = new Date();
 
   // 给推荐人增加积分

@@ -43,7 +43,7 @@ export const errorHandler = (
 ) => {
   console.error('[Error]', err)
   
-  if (err instanceof SyntaxError && err.status === 400) {
+  if (err instanceof SyntaxError && 'body' in err) {
     return errorResponse(res, '请求体格式错误', 400)
   }
   

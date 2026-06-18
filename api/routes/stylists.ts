@@ -64,15 +64,15 @@ router.get('/:stylistId/performance', (req: Request, res: Response) => {
 
   const stylistReviews = mockReviews.filter((r) => r.stylistId === stylistId);
   const avgRating = stylistReviews.length > 0
-    ? parseFloat((stylistReviews.reduce((sum, r) => sum + r.rating, 0) / stylistReviews.length).toFixed(1))
+    ? parseFloat((stylistReviews.reduce((sum, r) => sum + r.overallScore, 0) / stylistReviews.length).toFixed(1))
     : 0;
 
   const serviceRating = stylistReviews.length > 0
-    ? parseFloat((stylistReviews.reduce((sum, r) => sum + r.serviceRating, 0) / stylistReviews.length).toFixed(1))
+    ? parseFloat((stylistReviews.reduce((sum, r) => sum + r.serviceScore, 0) / stylistReviews.length).toFixed(1))
     : 0;
 
   const skillRating = stylistReviews.length > 0
-    ? parseFloat((stylistReviews.reduce((sum, r) => sum + r.skillRating, 0) / stylistReviews.length).toFixed(1))
+    ? parseFloat((stylistReviews.reduce((sum, r) => sum + r.skillScore, 0) / stylistReviews.length).toFixed(1))
     : 0;
 
   const totalRevenue = stylistBookings.reduce((sum, b) => sum + (b.price || 0), 0);
@@ -289,7 +289,7 @@ router.get('/ranking', (req: Request, res: Response) => {
       if (!stylistRatings[r.stylistId]) {
         stylistRatings[r.stylistId] = { rating: 0, count: 0 };
       }
-      stylistRatings[r.stylistId].rating += r.rating;
+      stylistRatings[r.stylistId].rating += r.overallScore;
       stylistRatings[r.stylistId].count += 1;
     }
   });
