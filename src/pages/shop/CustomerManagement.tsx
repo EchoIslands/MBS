@@ -136,13 +136,13 @@ const CustomerManagement: React.FC = () => {
     [CustomerTag.STOCKHOLDER]: 'bg-purple-500 text-white ring-2 ring-purple-200',
   };
 
-  const levelLabels: Record<MembershipLevel, string> = {
+  const levelLabels: Partial<Record<MembershipLevel, string>> = {
     [MembershipLevel.REGULAR]: '普通用户',
     [MembershipLevel.PREMIUM]: '高级会员',
     [MembershipLevel.STOCKHOLDER]: '股东会员',
   };
 
-  const levelColors: Record<MembershipLevel, string> = {
+  const levelColors: Partial<Record<MembershipLevel, string>> = {
     [MembershipLevel.REGULAR]: 'bg-gray-100 text-gray-700',
     [MembershipLevel.PREMIUM]: 'bg-blue-100 text-blue-700',
     [MembershipLevel.STOCKHOLDER]: 'bg-purple-100 text-purple-700',

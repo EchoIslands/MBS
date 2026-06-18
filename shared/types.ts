@@ -125,11 +125,17 @@ export enum CustomerTag {
 export type Gender = 'male' | 'female' | 'other';
 
 // 会员等级
-export enum MembershipLevel {
-  REGULAR = 'regular',           // 普通用户
-  PREMIUM = 'premium',           // 高级会员（购买制）
-  STOCKHOLDER = 'stockholder',   // 股东会员
-}
+export const MembershipLevel = {
+  REGULAR: 'regular',
+  PREMIUM: 'premium',
+  STOCKHOLDER: 'stockholder',
+  NORMAL: 'normal',
+  SILVER: 'silver',
+  GOLD: 'gold',
+  PLATINUM: 'platinum',
+} as const;
+
+export type MembershipLevel = typeof MembershipLevel[keyof typeof MembershipLevel];
 
 // 扩展客户信息 - 完整定义见文件末尾（CustomerProfile、Reviews等已加入
 // 占位（稍后删除 - 保留以保证结构）

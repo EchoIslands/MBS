@@ -36,19 +36,19 @@ const MembershipManagement: React.FC = () => {
   const navigate = useNavigate();
   const { currentShop } = useAppStore();
 
-  const levelLabels: Record<MembershipLevel, string> = {
+  const levelLabels: Partial<Record<MembershipLevel, string>> = {
     [MembershipLevel.REGULAR]: '普通用户',
     [MembershipLevel.PREMIUM]: '高级会员',
     [MembershipLevel.STOCKHOLDER]: '股东会员',
   };
 
-  const levelColors: Record<MembershipLevel, string> = {
+  const levelColors: Partial<Record<MembershipLevel, string>> = {
     [MembershipLevel.REGULAR]: 'bg-gray-100 text-gray-700',
     [MembershipLevel.PREMIUM]: 'bg-blue-100 text-blue-700',
     [MembershipLevel.STOCKHOLDER]: 'bg-purple-100 text-purple-700',
   };
 
-  const levelIcons: Record<MembershipLevel, typeof User> = {
+  const levelIcons: Partial<Record<MembershipLevel, typeof User>> = {
     [MembershipLevel.REGULAR]: User,
     [MembershipLevel.PREMIUM]: Star,
     [MembershipLevel.STOCKHOLDER]: Crown,
