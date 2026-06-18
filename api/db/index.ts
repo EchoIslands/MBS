@@ -209,7 +209,13 @@ export const queueQueries = {
     global.__queues!.set(shopId, data);
     return data;
   },
+
+  async upsert(data: any): Promise<any> {
+    if (data.shop_id) {
+      global.__queues!.set(data.shop_id, data);
+    }
+    return data;
+  },
 };
 
 export default { bookingQueries, shopQueries, reviewQueries, queueQueries };
-
