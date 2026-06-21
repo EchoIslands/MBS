@@ -1,11 +1,12 @@
 {
-  "builds": [
-    { "src": "api/index.ts", "use": "@vercel/node" },
-    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ]
+  "functions": {
+    "api/index.ts": {
+      "memory": 256,
+      "maxDuration": 10
+    }
+  }
 }
