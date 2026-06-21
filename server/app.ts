@@ -103,19 +103,19 @@ app.put('/api/kanban', (req: Request, res: Response) => {
       res.status(400).json({ error: '缺少 taskId 或 status' })
       return
     }
-
+    
     let state = { lastUpdated: new Date().toISOString(), tasks: [] as any[] }
     if (fs.existsSync(KANBAN_STATE_FILE)) {
       const data = fs.readFileSync(KANBAN_STATE_FILE, 'utf-8')
       state = JSON.parse(data)
     }
-
+    
     const taskIndex = state.tasks.findIndex((t: any) => t.id === taskId)
     if (taskIndex >= 0) {
       state.tasks[taskIndex].status = status
     }
     state.lastUpdated = new Date().toISOString()
-
+    
     fs.writeFileSync(KANBAN_STATE_FILE, JSON.stringify(state, null, 2))
     res.json({ success: true, task: state.tasks[taskIndex] })
   } catch (err) {
@@ -134,13 +134,13 @@ app.put('/api/kanban/batch', (req: Request, res: Response) => {
       res.status(400).json({ error: '缺少 tasks 数组' })
       return
     }
-
+    
     let state = { lastUpdated: new Date().toISOString(), tasks: [] as any[] }
     if (fs.existsSync(KANBAN_STATE_FILE)) {
       const data = fs.readFileSync(KANBAN_STATE_FILE, 'utf-8')
       state = JSON.parse(data)
     }
-
+    
     tasks.forEach((update: any) => {
       const taskIndex = state.tasks.findIndex((t: any) => t.id === update.taskId)
       if (taskIndex >= 0) {
@@ -148,7 +148,7 @@ app.put('/api/kanban/batch', (req: Request, res: Response) => {
       }
     })
     state.lastUpdated = new Date().toISOString()
-
+    
     fs.writeFileSync(KANBAN_STATE_FILE, JSON.stringify(state, null, 2))
     res.json({ success: true, tasks: state.tasks })
   } catch (err) {
