@@ -69,18 +69,13 @@ export const authenticate = (
   next: NextFunction
 ) => {
   try {
-    // 从 header 获取 token
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return errorResponse(res, '未登录，请先登录', 401)
     }
-
     const token = authHeader.substring(7)
     const decoded = jwt.verify(token, JWT_SECRET) as any
-
-    // 将用户信息存入请求对象
     (req as any).user = decoded
-
     next()
   } catch (err) {
     if ((err as any).name === 'JsonWebTokenError') {
@@ -97,14 +92,8 @@ export const authenticate = (
 export const requireRole = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user
-    if (!user) {
-      return errorResponse(res, '未登录', 401)
-    }
-    
-    if (!roles.includes(user.role)) {
-      return errorResponse(res, '权限不足', 403)
-    }
-    
+    if (!user) return errorResponse(res, '未登录', 401)
+    if (!roles.includes(user.role)) return errorResponse(res, '权限不足', 403)
     next()
   }
 }
@@ -116,16 +105,11 @@ export const logger = (
   next: NextFunction
 ) => {
   const startTime = Date.now()
-  
-  // 记录请求信息
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`)
-  
-  // 记录响应信息
   res.on('finish', () => {
     const duration = Date.now() - startTime
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} ${res.statusCode} (${duration}ms)`)
   })
-  
   next()
 }
 
@@ -138,44 +122,8 @@ export const cors = (
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
-  
+  if (req.method === 'OPTIONS') return res.status(200).end()
   next()
 }
 
-// 请求体解析中间件（简单版本，实际项目中使用 express.json()）
-export const jsonParser = () => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH') {
-      return next()
-    }
-    
-    let body = ''
-    req.on('data', (chunk) => {
-      body += chunk.toString()
-    })
-    
-    req.on('end', () => {
-      try {
-        (req as any).body = body ? JSON.parse(body) : {}
-        next()
-      } catch (err) {
-        return errorResponse(res, 'JSON 解析失败', 400)
-      }
-    })
-  }
-}
-
-export default {
-  successResponse,
-  errorResponse,
-  errorHandler,
-  authenticate,
-  requireRole,
-  logger,
-  cors,
-  jsonParser
-}
+export default { successResponse, errorResponse, errorHandler, authenticate, requireRole, logger, cors }
