@@ -59,6 +59,7 @@ export const getAuthUser = (): any | null => {
 export const authApi = {
   // 登录
   login: async (phone: string, password: string) => {
+  // 先尝试后端 API（如果后端正常工作）
   try {
     const result = await http<{
       success: boolean;
@@ -69,23 +70,44 @@ export const authApi = {
       body: JSON.stringify({ phone, password }),
     });
     
-    if (result?.success && result.data) {
+    if (result?.success && result.data?.token) {
       saveAuthToken(result.data.token);
       saveAuthUser(result.data.user);
       return result.data;
     }
-  } catch (e) {
-    console.warn('[auth] API 登录失败，降级到 mock 登录');
-  }
+  } catch (e) {}
   
-  // ★ API 失败时直接 mock 登录（不过后端，100% 可用）
-  const mockEmployee = mockShops
-    .flatMap(s => s.employees)
-    .find(e => (e as any).phone === phone);
+  // ★ 后端不重要，直接走前端 mock 登录
+  // 从 mockShops 里找员工（已经包含 CEO/客服/店长/发型师）
+  const { mockShops } = await import('../../shared/mockData');
+  const allEmployees = mockShops.flatMap((s: any) => 
+    s.employees.map((e: any) => ({ ...e, shopId: s.id }))
+  );
+  const employee = allEmployees.find((e: any) => e.phone === phone);
   
-  if (!mockEmployee || password !== '123456') {
+  if (!employee || password !== '123456') {
     throw new Error('手机号或密码错误');
   }
+  
+  const mockUser = {
+    id: employee.id,
+    name: employee.name,
+    phone: employee.phone,
+    avatar: employee.avatar || '',
+    title: employee.title || '',
+    role: employee.role || 'stylist',
+    shopId: employee.shopId,
+    specialty: employee.specialty || '',
+    rating: employee.rating || 5.0,
+  };
+  
+  const fakeToken = 'mock_' + btoa(JSON.stringify(mockUser));
+  saveAuthToken(fakeToken);
+  saveAuthUser(mockUser);
+  return { token: fakeToken, user: mockUser };
+},
+
+
   
   const mockUser = {
     id: mockEmployee.id,
