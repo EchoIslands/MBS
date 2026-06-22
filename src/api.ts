@@ -79,7 +79,6 @@ export const authApi = {
   
   // ★ 后端不重要，直接走前端 mock 登录
   // 从 mockShops 里找员工（已经包含 CEO/客服/店长/发型师）
-  const { mockShops } = await import('../../shared/mockData');
   const allEmployees = mockShops.flatMap((s: any) => 
     s.employees.map((e: any) => ({ ...e, shopId: s.id }))
   );
@@ -106,23 +105,7 @@ export const authApi = {
   saveAuthUser(mockUser);
   return { token: fakeToken, user: mockUser };
 },
-
-
-  
-  const mockUser = {
-    id: mockEmployee.id,
-    name: mockEmployee.name,
-    phone: (mockEmployee as any).phone,
-    role: (mockEmployee as any).role || 'stylist',
-    shopId: 'shop1',
-  };
-  
-  const fakeToken = 'mock_' + btoa(JSON.stringify(mockUser));
-  saveAuthToken(fakeToken);
-  saveAuthUser(mockUser);
-  return { token: fakeToken, user: mockUser };
-},
-  
+ 
   // 获取当前用户
     getCurrentUser: async () => {
     const token = getAuthToken();
