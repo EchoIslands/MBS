@@ -1052,6 +1052,16 @@ const CustomerManagement: React.FC = () => {
               </button>
               <button
                 onClick={() => {
+                  setShowEdit(viewingCustomer);
+                  setViewingCustomer(null);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-colors text-sm font-medium"
+              >
+                <Edit size={16} />
+                编辑信息
+              </button>
+              <button
+                onClick={() => {
                   navigate(`/shop/customer-profile/${viewingCustomer.id}`);
                   setViewingCustomer(null);
                 }}

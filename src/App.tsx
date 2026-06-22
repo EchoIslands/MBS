@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
+import { useEffect } from 'react';
 
 // 角色选择
 import SelectRole from "./pages/SelectRole";
@@ -41,7 +42,11 @@ const DEFAULT_SHOP_ID = "shop1";
 // 店铺专属入口重定向组件
 const ShopRedirect = () => {
   const { shopId } = useParams<{ shopId: string }>();
-  return <Navigate to={`/customer/shop/${shopId || DEFAULT_SHOP_ID}`} replace />;
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate(`/customer/shop/${shopId || DEFAULT_SHOP_ID}`, { replace: true });
+  }, [shopId, navigate]);
+  return null;
 };
 
 export default function App() {

@@ -11,6 +11,22 @@ const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env
 // 认证 Token 存储
 const AUTH_TOKEN_KEY = 'mbs_auth_token';
 const AUTH_USER_KEY = 'mbs_auth_user';
+const CUSTOMERS_CACHE_KEY = 'mbs_customers_cache';
+
+// 启动时从 localStorage 恢复客户数据
+try {
+  const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
+  if (cached) {
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      mockCustomers.length = 0;
+      mockCustomers.push(...parsed);
+      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条客户数据`);
+    }
+  }
+} catch (e) {
+  console.warn('[cache] 恢复客户数据失败:', e);
+}
 
 // 保存 Token
 export const saveAuthToken = (token: string) => {
@@ -323,6 +339,7 @@ export const customerApi = {
     // Mock fallback
     const newCustomer = { id: `cust${Date.now()}`, ...data, joinedAt: new Date() };
     mockCustomers.push(newCustomer);
+    try { localStorage.setItem(CUSTOMERS_CACHE_KEY, JSON.stringify(mockCustomers)); } catch(e) {}
     return newCustomer;
   },
 
@@ -337,6 +354,7 @@ export const customerApi = {
     const idx = mockCustomers.findIndex((c: any) => c.id === id);
     if (idx !== -1) {
       mockCustomers[idx] = { ...mockCustomers[idx], ...data };
+      try { localStorage.setItem(CUSTOMERS_CACHE_KEY, JSON.stringify(mockCustomers)); } catch(e) {}
       return mockCustomers[idx];
     }
     return null;
@@ -352,6 +370,7 @@ export const customerApi = {
     const idx = mockCustomers.findIndex((c: any) => c.id === id);
     if (idx !== -1) {
       mockCustomers.splice(idx, 1);
+      try { localStorage.setItem(CUSTOMERS_CACHE_KEY, JSON.stringify(mockCustomers)); } catch(e) {}
       return true;
     }
     return false;
