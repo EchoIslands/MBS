@@ -20,16 +20,15 @@ import ShopLayout from './ShopLayout';
 const Dashboard: React.FC = () => {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
   const navigate = useNavigate();
-  const { currentShop, userRole } = useAppStore();
+  const { currentShop, currentEmployee, userRole } = useAppStore();
 
   useEffect(() => {
     if (!currentShop) return;
-    // 模拟筛选今天的预约
     const bookings = mockBookings.filter((b) => b.shopId === currentShop.id);
     setTodayBookings(bookings);
   }, [currentShop]);
 
-  if (!currentShop) return null;
+  if (!currentShop && !currentEmployee) return null;
 
   // 角色显示名称
   const roleLabel: Record<string, string> = {

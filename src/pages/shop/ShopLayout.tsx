@@ -143,7 +143,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   const { currentShop, currentEmployee, userRole, logout } = useAppStore();
 
   // 未登录 → 回到登录页
-  if (!currentShop && !currentEmployee) {
+  if (!currentEmployee) {
     navigate('/shop/login');
     return null;
   }
