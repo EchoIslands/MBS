@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -150,13 +150,8 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   const { currentShop, currentEmployee, userRole, logout } = useAppStore();
 
   // 未登录 → 回到登录页
-  useEffect(() => {
-    if (!currentEmployee) {
-      navigate('/shop/login', { replace: true });
-    }
-  }, [currentEmployee, navigate]);
-
   if (!currentEmployee) {
+    navigate('/shop/login');
     return null;
   }
 
