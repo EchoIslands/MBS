@@ -7,6 +7,7 @@ import {
   BarChart3,
   MessageSquare,
   FileSpreadsheet,
+  FileText,
   CreditCard,
   Crown,
   LogOut,
@@ -54,6 +55,12 @@ const menuItems: MenuItem[] = [
     path: '/shop/customers',
     icon: <Users size={18} />,
     roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
+  },
+  {
+    label: '客户表格管理',
+    path: '/shop/customers-table',
+    icon: <FileText size={18} />,
+    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER],
   },
   {
     label: '客户智能召回',

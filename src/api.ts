@@ -59,65 +59,61 @@ export const getAuthUser = (): any | null => {
 export const authApi = {
   // 登录
   login: async (phone: string, password: string) => {
-  // 先尝试后端 API（如果后端正常工作）
-  try {
-    const result = await http<{
-      success: boolean;
-      data?: { token: string; user: any };
-      error?: string;
-    }>(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      body: JSON.stringify({ phone, password }),
-    });
+    // 直接走前端 mock 登录，不请求后端
+    const allEmployees = mockShops.flatMap((s: any) => 
+      s.employees.map((e: any) => ({ ...e, shopId: s.id }))
+    );
+    const employee = allEmployees.find((e: any) => e.phone === phone);
     
-    if (result?.success && result.data?.token) {
-      saveAuthToken(result.data.token);
-      saveAuthUser(result.data.user);
-      return result.data;
+    if (!employee || password !== '123456') {
+      throw new Error('手机号或密码错误');
     }
-  } catch (e) {}
+    
+    const mockUser = {
+      id: employee.id,
+      name: employee.name,
+      phone: employee.phone,
+      avatar: employee.avatar || '',
+      title: employee.title || '',
+      role: employee.role || 'stylist',
+      shopId: employee.shopId,
+      specialty: employee.specialty || '',
+      rating: employee.rating || 5.0,
+    };
+    
+    const fakeToken = 'mock_' + encodeURIComponent(JSON.stringify(mockUser));
+    saveAuthToken(fakeToken);
+    saveAuthUser(mockUser);
+    return { token: fakeToken, user: mockUser };
+  },
   
-  // ★ 后端不重要，直接走前端 mock 登录
-  // 从 mockShops 里找员工（已经包含 CEO/客服/店长/发型师）
-  const allEmployees = mockShops.flatMap((s: any) => 
-    s.employees.map((e: any) => ({ ...e, shopId: s.id }))
-  );
-  const employee = allEmployees.find((e: any) => e.phone === phone);
-  
-  if (!employee || password !== '123456') {
-    throw new Error('手机号或密码错误');
-  }
-  
-  const mockUser = {
-    id: employee.id,
-    name: employee.name,
-    phone: employee.phone,
-    avatar: employee.avatar || '',
-    title: employee.title || '',
-    role: employee.role || 'stylist',
-    shopId: employee.shopId,
-    specialty: employee.specialty || '',
-    rating: employee.rating || 5.0,
-  };
-  
-  const fakeToken = 'mock_' + encodeURIComponent(JSON.stringify(mockUser));
-  saveAuthToken(fakeToken);
-  saveAuthUser(mockUser);
-  return { token: fakeToken, user: mockUser };
-},
- 
   // 获取当前用户
-    getCurrentUser: async () => {
+  getCurrentUser: async () => {
     const token = getAuthToken();
     if (!token) return null;
+    
+    // mock token 直接解析
     if (token.startsWith('mock_')) {
-      try { const user = JSON.parse(decodeURIComponent(token.replace('mock_', '')));saveAuthUser(user); return user; } catch { return null; }
+      try {
+        const user = JSON.parse(decodeURIComponent(token.replace('mock_', '')));
+        saveAuthUser(user);
+        return user;
+      } catch { return null; }
     }
+    
     try {
-      const result = await http<{ success: boolean; data?: any }>(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-      if (result?.success && result.data) { saveAuthUser(result.data); return result.data; }
+      const result = await http<{ success: boolean; data?: any }>(
+        `${API_BASE}/auth/me`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.success && result.data) {
+        saveAuthUser(result.data);
+        return result.data;
+      }
       return null;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   },
   
   // 登出

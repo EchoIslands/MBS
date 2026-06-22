@@ -70,7 +70,8 @@ const ShopLogin: React.FC = () => {
         setCurrentEmployee({
           ...result.user,
           role: result.user.role || UserRole.STYLIST,
-        });
+          isActive: true,
+        } as any);
         
         navigate('/shop');
         return;
