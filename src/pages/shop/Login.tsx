@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Lock, Eye, EyeOff, Phone, Crown, Headphones, UserCheck, User } from 'lucide-react';
-import { loginAsShop, loginAsEmployee } from '../../store';
+import { loginAsShop, loginAsEmployee, useAppStore } from '../../store';
 import { mockShops } from '../../../shared/mockData';
 import { UserRole } from '../../../shared/types';
 import { authApi } from '../../api';
@@ -61,8 +61,17 @@ const ShopLogin: React.FC = () => {
       const result = await authApi.login(phone, password);
       
       if (result?.user) {
-        // 真实 API 登录成功
+        // 登录成功，需要把用户同步设置到 zustand store
         console.log('[Login] API 登录成功:', result.user);
+        
+        const { setCurrentShop, setCurrentEmployee } = useAppStore.getState();
+        const shop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
+        if (shop) setCurrentShop(shop);
+        setCurrentEmployee({
+          ...result.user,
+          role: result.user.role || UserRole.STYLIST,
+        });
+        
         navigate('/shop');
         return;
       }
