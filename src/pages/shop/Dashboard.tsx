@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Booking, UserRole } from '../../../shared/types';
 import { useAppStore } from '../../store';
-import { mockBookings, mockCustomers } from '../../../shared/mockData';
+import { mockBookings, mockCustomers, mockShops } from '../../../shared/mockData';
 import ShopLayout from './ShopLayout';
 
 const Dashboard: React.FC = () => {
@@ -117,7 +117,7 @@ const Dashboard: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold mb-1">你好，{welcomeRole}</h2>
             <p className="text-orange-100 text-sm">
-              {currentShop.name} · {new Date().toLocaleDateString('zh-CN')}
+              {currentShop?.name || mockShops[0]?.name || '皓诗形象设计'} · {new Date().toLocaleDateString('zh-CN')}
             </p>
           </div>
           <div className="hidden md:block text-right text-sm">
