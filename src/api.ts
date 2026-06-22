@@ -100,7 +100,7 @@ export const authApi = {
     rating: employee.rating || 5.0,
   };
   
-  const fakeToken = 'mock_' + btoa(JSON.stringify(mockUser));
+  const fakeToken = 'mock_' + encodeURIComponent(JSON.stringify(mockUser));
   saveAuthToken(fakeToken);
   saveAuthUser(mockUser);
   return { token: fakeToken, user: mockUser };
@@ -111,7 +111,7 @@ export const authApi = {
     const token = getAuthToken();
     if (!token) return null;
     if (token.startsWith('mock_')) {
-      try { const user = JSON.parse(atob(token.replace('mock_', ''))); saveAuthUser(user); return user; } catch { return null; }
+      try { const user = JSON.parse(decodeURIComponent(token.replace('mock_', '')));saveAuthUser(user); return user; } catch { return null; }
     }
     try {
       const result = await http<{ success: boolean; data?: any }>(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
