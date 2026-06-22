@@ -52,8 +52,6 @@ import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
-const API_BASE = '/api';
-
 const CustomerManagement: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,32 +65,53 @@ const CustomerManagement: React.FC = () => {
   const navigate = useNavigate();
   const { currentEmployee, userRole } = useAppStore();
 
-  // 获取客户列表
+  // 获取客户列表 - 直接读本地 mockCustomers
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      params.set('page', '1');
-      params.set('pageSize', '100');
-      if (searchTerm) { params.set('search', searchTerm); }
-      if (activeTag !== 'all') { params.set('tag', activeTag); }
-      if (activeLevel !== 'all') { params.set('level', activeLevel); }
-      if (currentEmployee?.id) { params.set('shopId', currentEmployee.id); }
-
-      const res = await fetch(`${API_BASE}/customers?${params.toString()}`);
-      const data = await res.json();
-      if (data.success && data.data) {
-        setCustomers(data.data);
-      } else {
-        setError(data.error || '获取客户列表失败');
+       let result = [...mockCustomers];
+      
+      // 搜索筛选
+      if (searchTerm) {
+        const keyword = searchTerm.toLowerCase();
+        result = result.filter(
+          (c) => c.name.toLowerCase().includes(keyword) || c.phone.includes(keyword)
+        );
       }
+      
+      // 标签筛选
+      if (activeTag !== 'all') {
+        result = result.filter((c) => c.tags.includes(activeTag));
+      }
+      
+      // 会员等级筛选
+      if (activeLevel !== 'all') {
+        result = result.filter((c) => c.membershipLevel === activeLevel);
+      }
+      
+      // 发型师只看自己服务的客户
+      if (userRole === UserRole.STYLIST && currentEmployee) {
+        result = result.filter(
+          (c) => c.servedByStylistIds && c.servedByStylistIds.includes(currentEmployee.id)
+        );
+      }
+      
+      // 计算到店天数
+      result = result.map((c) => ({
+        ...c,
+        daysSinceLastVisit: c.lastVisitAt
+          ? Math.floor((Date.now() - new Date(c.lastVisitAt).getTime()) / 86400000)
+          : undefined,
+      }));
+      
+      setCustomers(result);
     } catch (err: any) {
-      setError(err.message || '网络错误');
+      setError(err.message || '获取客户列表失败');
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, activeTag, activeLevel, currentEmployee]);
+  }, [searchTerm, activeTag, activeLevel, currentEmployee, userRole]);
 
   // 初始加载和筛选变化时获取数据
   React.useEffect(() => {
