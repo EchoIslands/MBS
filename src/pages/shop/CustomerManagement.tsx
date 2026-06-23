@@ -47,7 +47,7 @@ import {
   ExtraServicePreference,
   VisitTimePreference,
 } from '../../../shared/types';
-import { mockCustomers, membershipBenefits } from '../../../shared/mockData';
+import { membershipBenefits } from '../../../shared/mockData';
 import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
@@ -65,12 +65,12 @@ const CustomerManagement: React.FC = () => {
   const navigate = useNavigate();
   const { currentEmployee, userRole } = useAppStore();
 
-  // 获取客户列表 - 直接读本地 mockCustomers
+  // 获取客户列表 - 通过 API 获取（带缓存回退）
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-       let result = [...mockCustomers];
+      let result = await customerApi.getAll();
       
       // 搜索筛选
       if (searchTerm) {

@@ -4,7 +4,7 @@ import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers } from 
 // ====== 开关：是否使用真实后端 API ======
 // 方式 1：通过环境变量配置  VITE_USE_REAL_API=true
 // 方式 2：直接把下面这行改为 true
-const USE_REAL_API = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_USE_REAL_API === 'true') || false;
+const USE_REAL_API = true;
 
 const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE) || '/api';
 
@@ -59,7 +59,23 @@ export const getAuthUser = (): any | null => {
 export const authApi = {
   // 登录
   login: async (phone: string, password: string) => {
-    // 直接走前端 mock 登录，不请求后端
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: { token: string; user: any } }>(
+        `${API_BASE}/auth/login`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ phone, password }),
+        }
+      );
+      if (result?.success && result.data?.token) {
+        saveAuthToken(result.data.token);
+        saveAuthUser(result.data.user);
+        return { token: result.data.token, user: result.data.user };
+      }
+      console.warn('[api] 真实 API 登录失败，回退到 mock');
+    }
+
+    // Mock 兜底
     const allEmployees = mockShops.flatMap((s: any) => 
       s.employees.map((e: any) => ({ ...e, shopId: s.id }))
     );
@@ -337,6 +353,29 @@ export const bookingApi = {
 
 // 客户相关 API
 export const customerApi = {
+  // 获取全部客户（带缓存回退）
+  getAll: async (): Promise<any[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: any[] }>(
+        `${API_BASE}/customers`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.success && Array.isArray(result.data)) {
+        // 更新本地缓存
+        try { localStorage.setItem(CUSTOMERS_CACHE_KEY, JSON.stringify(result.data)); } catch(e) {}
+        return result.data;
+      }
+      console.warn('[api] 获取客户列表失败，回退到本地缓存');
+    }
+    // 回退：先读 localStorage 缓存，再读 mock
+    const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
+    if (cached) {
+      try { return JSON.parse(cached); } catch(e) {}
+    }
+    return [...mockCustomers];
+  },
+
   create: async (data: any): Promise<any> => {
     if (USE_REAL_API) {
       const result = await http<any>(`${API_BASE}/customers`, {
