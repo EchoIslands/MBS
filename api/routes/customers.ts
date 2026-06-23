@@ -59,11 +59,20 @@ router.post('/', async (req: Request, res: Response) => {
     // 生成客户 ID
     const customerId = id || `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    const customerData = toSnakeCase({
+    // 转换字段名并过滤掉 undefined 值（Supabase 不接受 undefined）
+    const rawData = toSnakeCase({
       id: customerId,
       shop_id: shopId,
       ...rest,
     });
+    const customerData: Record<string, any> = {};
+    for (const [key, value] of Object.entries(rawData)) {
+      if (value !== undefined) {
+        customerData[key] = value;
+      }
+    }
+
+    console.log('[customers] 准备插入:', JSON.stringify(customerData));
 
     const { data, error } = await supabase
       .from('customers')
@@ -72,8 +81,8 @@ router.post('/', async (req: Request, res: Response) => {
       .single();
 
     if (error) {
-      console.error('[customers] 创建客户失败:', error.message);
-      res.status(500).json({ success: false, error: '创建客户失败' });
+      console.error('[customers] 创建客户失败:', error.message, error.details, error.hint);
+      res.status(500).json({ success: false, error: '创建客户失败: ' + error.message });
       return;
     }
 

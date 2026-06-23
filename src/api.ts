@@ -179,7 +179,10 @@ const http = async <T>(url: string, opts: RequestInit = {}): Promise<T | null> =
     });
     clearTimeout(timeoutId);
     if (!res.ok) {
-      console.warn(`[api] ${url} 返回 ${res.status}，将使用 mock 数据`);
+      // 404 是预期行为（该路由尚未实现），不打印警告
+      if (res.status !== 404) {
+        console.warn(`[api] ${url} 返回 ${res.status}，将使用 mock 数据`);
+      }
       return null;
     }
     return res.json() as T;
