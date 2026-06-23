@@ -181,13 +181,7 @@ const http = async <T>(url: string, opts: RequestInit = {}): Promise<T | null> =
     if (!res.ok) {
       // 404 是预期行为（该路由尚未实现），不打印警告
       if (res.status !== 404) {
-        // 尝试读取错误详情
-        let errorDetail = '';
-        try {
-          const errBody = await res.json();
-          errorDetail = errBody?.error || JSON.stringify(errBody);
-        } catch (_) {}
-        console.warn(`[api] ${url} 返回 ${res.status}${errorDetail ? ': ' + errorDetail : ''}，将使用 mock 数据`);
+        console.warn(`[api] ${url} 返回 ${res.status}，将使用 mock 数据`);
       }
       return null;
     }
