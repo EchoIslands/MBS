@@ -378,9 +378,11 @@ export const customerApi = {
 
   create: async (data: any): Promise<any> => {
     if (USE_REAL_API) {
+      const token = getAuthToken();
       const result = await http<any>(`${API_BASE}/customers`, {
         method: 'POST',
         body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return result.data;
     }
@@ -393,9 +395,11 @@ export const customerApi = {
 
   update: async (id: string, data: any): Promise<any> => {
     if (USE_REAL_API) {
+      const token = getAuthToken();
       const result = await http<any>(`${API_BASE}/customers/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return result.data;
     }
@@ -410,8 +414,10 @@ export const customerApi = {
 
   delete: async (id: string): Promise<boolean> => {
     if (USE_REAL_API) {
+      const token = getAuthToken();
       const result = await http<any>(`${API_BASE}/customers/${id}`, {
         method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return true;
     }
