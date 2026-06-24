@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   User,
   Search,
@@ -26,43 +26,60 @@ import {
   TrendingUp,
   AlertTriangle,
   Bell,
+  Loader2,
 } from 'lucide-react';
 import { Customer, MembershipLevel, CustomerTag } from '../../../shared/types';
-import { mockCustomers } from '../../../shared/mockData';
 import { customerApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
-// 扩展客户数据，添加表格需要的字段
-const customersWithExtendedFields: Customer[] = mockCustomers.map((c, index) => ({
-  ...c,
-  wechat: `wechat_${c.id}`,
-  idCardNumber: `110101${1990 + index}0101${1000 + index}`,
-  hobbies: index % 2 === 0 ? '喜欢时尚造型、关注发型趋势' : '偏好自然风格',
-  lastServiceItems: c.visitRecords?.[0]?.serviceNames || ['精剪'],
-  lastServiceAmount: c.visitRecords?.[0]?.totalAmount || 0,
-  hasBooking: index % 3 === 0,
-  lastStylist: c.visitRecords?.[0]?.stylistName || '李明',
-  isMember: c.membershipLevel !== MembershipLevel.REGULAR,
-  hasRecharged: c.balance > 0,
-  rechargeLevel: c.balance > 1000 ? '金卡' : c.balance > 0 ? '银卡' : '',
-  isReferred: !!c.source && c.source.includes('推荐'),
-  referrerName: index % 4 === 0 ? '王美丽' : '',
-  referrerPhone: index % 4 === 0 ? '13900001234' : '',
-  referralConsumption: index % 4 === 0 ? 2580 : 0,
-  sharedFund: c.isStockholder ? (c.totalSpent * 0.05) : 0,
-  totalSharedFund: c.isStockholder ? (c.totalSpent * 0.1) : 0,
-  withdrawableAmount: c.isStockholder ? (c.totalSpent * 0.08) : 0,
-}));
-
 const CustomerTableManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [customers, setCustomers] = useState<Customer[]>(customersWithExtendedFields);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showDetail, setShowDetail] = useState<Customer | null>(null);
   const [showEdit, setShowEdit] = useState<Customer | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [filterMember, setFilterMember] = useState<string>('all');
   const [filterBooking, setFilterBooking] = useState<string>('all');
+
+  // 通过 API 获取客户列表
+  const fetchCustomers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await customerApi.getAll();
+      // 添加扩展字段（兼容表格展示）
+      const extended = data.map((c: any, index: number) => ({
+        ...c,
+        wechat: c.wechat || `wechat_${c.id}`,
+        idCardNumber: c.idCardNumber || '',
+        hobbies: c.hobbies || '',
+        lastServiceItems: c.visitRecords?.[0]?.serviceNames || ['精剪'],
+        lastServiceAmount: c.visitRecords?.[0]?.totalAmount || 0,
+        hasBooking: c.hasBooking || false,
+        lastStylist: c.visitRecords?.[0]?.stylistName || '—',
+        isMember: c.membershipLevel !== MembershipLevel.REGULAR,
+        hasRecharged: (c.balance || 0) > 0,
+        rechargeLevel: (c.balance || 0) > 1000 ? '金卡' : (c.balance || 0) > 0 ? '银卡' : '',
+        isReferred: !!(c.source && c.source.includes('推荐')),
+        referrerName: c.referrerName || '',
+        referrerPhone: c.referrerPhone || '',
+        referralConsumption: c.referralConsumption || 0,
+        sharedFund: c.isStockholder ? ((c.totalSpent || 0) * 0.05) : 0,
+        totalSharedFund: c.isStockholder ? ((c.totalSpent || 0) * 0.1) : 0,
+        withdrawableAmount: c.isStockholder ? ((c.totalSpent || 0) * 0.08) : 0,
+      }));
+      setCustomers(extended);
+    } catch (err: any) {
+      console.error('[CustomerTable] 获取客户列表失败:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   // 计算统计数据
   const stats = useMemo(() => {
