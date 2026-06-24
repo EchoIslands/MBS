@@ -250,16 +250,14 @@ const CustomerTableManagement: React.FC = () => {
     };
     // 调用 API 保存
     await customerApi.create(customer);
-    setCustomers([customer, ...customers]);
+    fetchCustomers(); // 重新拉取数据，确保与后端同步
     setShowAdd(false);
   };
 
   // 更新客户（调用 API 持久化）
   const handleUpdateCustomer = async (updatedCustomer: Customer) => {
     await customerApi.update(updatedCustomer.id, updatedCustomer);
-    setCustomers(customers.map(c => 
-      c.id === updatedCustomer.id ? updatedCustomer : c
-    ));
+    fetchCustomers(); // 重新拉取数据，确保与后端同步
     setShowEdit(null);
   };
 
@@ -267,7 +265,7 @@ const CustomerTableManagement: React.FC = () => {
   const handleDeleteCustomer = async (id: string) => {
     if (window.confirm('确定要删除该客户吗？')) {
       await customerApi.delete(id);
-      setCustomers(customers.filter(c => c.id !== id));
+      fetchCustomers(); // 重新拉取数据，确保与后端同步
     }
   };
 
