@@ -54,48 +54,42 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const { id, ...rest } = req.body;
+    const body = req.body || {};
+    const customerId = body.id || `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    // 生成客户 ID
-    const customerId = id || `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-    // 转换字段名并过滤掉 undefined 值（Supabase 不接受 undefined）
-    const rawData = toSnakeCase({
+    const insertData: Record<string, any> = {
       id: customerId,
       shop_id: shopId,
-      ...rest,
-    });
-    const customerData: Record<string, any> = {};
-    for (const [key, value] of Object.entries(rawData)) {
-      if (value !== undefined) {
-        customerData[key] = value;
-      }
-    }
+      name: body.name || '未命名客户',
+      phone: body.phone || '',
+    };
 
-    const safeData: Record<string, any> = {};
-    for (const [key, value] of Object.entries(customerData)) {
-      if (isNaN(Number(key))) {
-        safeData[key] = value;
-      }
+    if (body.gender) insertData.gender = body.gender;
+    if (body.age !== undefined && body.age !== null) insertData.age = body.age;
+    if (body.birthday) {
+      const d = typeof body.birthday === 'string' ? body.birthday.split('T')[0] : body.birthday;
+      insertData.birthday = d;
     }
+    if (body.tags && Array.isArray(body.tags)) insertData.tags = body.tags;
+    if (body.membershipLevel) insertData.membership_level = body.membershipLevel;
+    if (body.source) insertData.source = body.source;
 
-    console.log('[customers] 准备插入:', JSON.stringify(safeData));
+    console.log('[customers] 准备插入:', JSON.stringify(insertData));
 
     const { data, error } = await supabase
       .from('customers')
-      .insert(safeData)
+      .insert(insertData)
       .select()
       .single();
 
     if (error) {
-      console.error('[customers] 创建客户失败:', error.message, error.details, error.hint);
+      console.error('[customers] 创建客户失败:', error.message);
       res.status(500).json({ success: false, error: '创建客户失败: ' + error.message });
       return;
     }
 
-    const customer = toCamelCase(data);
-    console.log(`[customers] 客户 ${customer.name} 创建成功`);
-    res.json({ success: true, data: customer });
+    console.log(`[customers] 客户创建成功 id=${data.id}`);
+    res.json({ success: true, data });
   } catch (err: any) {
     console.error('[customers] 创建客户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -111,10 +105,29 @@ router.put('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
 
-    const updateData = toSnakeCase(req.body);
-    // 不允许修改 shop_id
-    delete updateData.shop_id;
-    delete updateData.id;
+    const body = req.body || {};
+
+    const updateData: Record<string, any> = {};
+
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.gender !== undefined) updateData.gender = body.gender;
+    if (body.age !== undefined) updateData.age = body.age;
+    if (body.birthday !== undefined) {
+      updateData.birthday = typeof body.birthday === 'string' ? body.birthday.split('T')[0] : body.birthday;
+    }
+    if (body.membershipLevel !== undefined) updateData.membership_level = body.membershipLevel;
+    if (body.source !== undefined) updateData.source = body.source;
+    if (body.tags !== undefined && Array.isArray(body.tags)) updateData.tags = body.tags;
+    if (body.visitCount !== undefined) updateData.visit_count = body.visitCount;
+    if (body.totalSpent !== undefined) updateData.total_spent = body.totalSpent;
+    if (body.balance !== undefined) updateData.balance = body.balance;
+    if (body.points !== undefined) updateData.points = body.points;
+    if (body.isStockholder !== undefined) updateData.is_stockholder = body.isStockholder;
+    if (body.preferences !== undefined && Array.isArray(body.preferences)) updateData.preferences = body.preferences;
+    if (body.servedByStylistIds !== undefined && Array.isArray(body.servedByStylistIds)) updateData.served_by_stylist_ids = body.servedByStylistIds;
+
+    console.log('[customers] 准备更新:', id, JSON.stringify(updateData));
 
     const { data, error } = await supabase
       .from('customers')
@@ -126,7 +139,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[customers] 更新客户失败:', error.message);
-      res.status(500).json({ success: false, error: '更新客户失败' });
+      res.status(500).json({ success: false, error: '更新客户失败: ' + error.message });
       return;
     }
 
@@ -135,9 +148,8 @@ router.put('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    const customer = toCamelCase(data);
-    console.log(`[customers] 客户 ${customer.name} 更新成功`);
-    res.json({ success: true, data: customer });
+    console.log(`[customers] 客户 ${data.name} 更新成功`);
+    res.json({ success: true, data });
   } catch (err: any) {
     console.error('[customers] 更新客户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
