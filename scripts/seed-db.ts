@@ -3,6 +3,7 @@
 // 前置条件：在 .env 中配置 SUPABASE_URL 和 SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from '@supabase/supabase-js';
+import { createRequire } from 'module';
 import 'dotenv/config';
 
 import {
@@ -12,6 +13,8 @@ import {
   mockReviews,
 } from '../shared/mockData';
 
+const require = createRequire(import.meta.url);
+
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
@@ -20,24 +23,19 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1);
 }
 
-// 可选加载 ws 传输（Node 20 以下没有原生 WebSocket）
+// 加载 ws 传输（Node.js 20 需要）
 let wsTransport: any = undefined;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ws = require('ws');
-  wsTransport = ws as any;
+  wsTransport = require('ws');
 } catch (_e) {
-  // 忽略：不使用 realtime 时不会报错
+  console.warn('⚠️ 未安装 ws 包，请执行: npm install ws');
+  process.exit(1);
 }
 
-const opts: any = {
+const db = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
-};
-if (wsTransport) {
-  opts.realtime = { transport: wsTransport };
-}
-
-const db = createClient(SUPABASE_URL, SUPABASE_KEY, opts);
+  realtime: { transport: wsTransport },
+});
 
 const upsertMany = async (table: string, rows: any[], conflict = 'id') => {
   if (!rows.length) return;
@@ -71,7 +69,31 @@ const main = async () => {
   }));
   await upsertMany('shops', shops);
 
-  // 2. 客户
+  // 2. 员工（按 id 去重，避免多店铺共用 ID 导致 upsert 冲突）
+  const employeeMap = new Map<string, any>();
+  for (const s of mockShops) {
+    for (const e of (s as any).employees || []) {
+      if (!employeeMap.has(e.id)) {
+        employeeMap.set(e.id, {
+          id: e.id,
+          shop_id: s.id,
+          name: e.name,
+          phone: e.phone || '',
+          avatar: e.avatar || null,
+          title: e.title || '',
+          rating: e.rating || 5.0,
+          specialty: e.specialty || '',
+          role: e.role || 'stylist',
+          password_hash: '123456',
+          is_active: true,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+  }
+  await upsertMany('employees', Array.from(employeeMap.values()));
+
+  // 3. 客户
   const customers = mockCustomers.map((c: any) => ({
     id: c.id,
     shop_id: c.shopId || 'shop1',
@@ -99,7 +121,7 @@ const main = async () => {
   }));
   await upsertMany('customers', customers);
 
-  // 3. 预约
+  // 4. 预约
   const bookings = mockBookings.map((b: any) => ({
     id: b.id,
     shop_id: b.shopId,
@@ -120,7 +142,7 @@ const main = async () => {
   }));
   await upsertMany('bookings', bookings);
 
-  // 4. 评价
+  // 5. 评价
   const reviews = mockReviews.map((r: any) => ({
     id: r.id,
     shop_id: r.shopId,
@@ -146,7 +168,7 @@ const main = async () => {
   }));
   await upsertMany('reviews', reviews);
 
-  // 5. 队列（每个店一行）
+  // 6. 队列（每个店一行）
   const queues = shops.map((s: any) => ({
     shop_id: s.id,
     current_number: 0,

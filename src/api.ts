@@ -173,9 +173,12 @@ const http = async <T>(url: string, opts: RequestInit = {}): Promise<T | null> =
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-      signal: controller.signal,
       ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
+      signal: controller.signal,
     });
     clearTimeout(timeoutId);
     if (!res.ok) {
