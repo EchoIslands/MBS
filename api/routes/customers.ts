@@ -55,6 +55,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const body = req.body || {};
+    console.log('[customers] 收到请求体:', JSON.stringify(body));
+
     const customerId = body.id || `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     const insertData: Record<string, any> = {

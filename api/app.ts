@@ -8,6 +8,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Vercel 环境下 express.json() 可能不生效，加一个兜底 body parser
+app.use((req: any, _res: any, next: any) => {
+  if (!req.body || Object.keys(req.body).length === 0) {
+    let raw = '';
+    req.on('data', (chunk: any) => { raw += chunk; });
+    req.on('end', () => {
+      try { req.body = JSON.parse(raw || '{}'); } catch { req.body = {}; }
+      next();
+    });
+  } else {
+    next();
+  }
+});
+
 // 健康检查
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'ok' });
