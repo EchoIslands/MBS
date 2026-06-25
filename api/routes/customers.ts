@@ -72,11 +72,18 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    console.log('[customers] 准备插入:', JSON.stringify(customerData));
+    const safeData: Record<string, any> = {};
+    for (const [key, value] of Object.entries(customerData)) {
+      if (isNaN(Number(key))) {
+        safeData[key] = value;
+      }
+    }
+
+    console.log('[customers] 准备插入:', JSON.stringify(safeData));
 
     const { data, error } = await supabase
       .from('customers')
-      .insert(customerData)
+      .insert(safeData)
       .select()
       .single();
 
