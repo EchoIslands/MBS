@@ -203,8 +203,8 @@ export const shopApi = {
       if (lat !== undefined) params.set('lat', String(lat));
       if (lon !== undefined) params.set('lon', String(lon));
       if (level) params.set('level', level);
-      const result = await http<Shop[]>(`${API_BASE}/shops?${params.toString()}`);
-      if (result && result.length > 0) return result;
+      const result = await http<{ success: boolean; data: Shop[] }>(`${API_BASE}/shops?${params.toString()}`);
+      if (result?.data && result.data.length > 0) return result.data;
       console.warn('[api] /api/shops 返回空或失败，回退到 mock 数据');
       return mockShops;
     }
@@ -214,8 +214,8 @@ export const shopApi = {
 
   getShop: async (id: string): Promise<Shop> => {
     if (USE_REAL_API) {
-      const result = await http<Shop>(`${API_BASE}/shops/${id}`);
-      if (result) return result;
+      const result = await http<{ success: boolean; data: Shop }>(`${API_BASE}/shops/${id}`);
+      if (result?.data) return result.data;
       const fallback = mockShops.find((s) => s.id === id);
       if (fallback) return fallback;
     }
@@ -227,8 +227,8 @@ export const shopApi = {
 
   getShopBookings: async (id: string): Promise<Booking[]> => {
     if (USE_REAL_API) {
-      const result = await http<Booking[]>(`${API_BASE}/shops/${id}/bookings`);
-      if (result) return result;
+      const result = await http<{ success: boolean; data: Booking[] }>(`${API_BASE}/shops/${id}/bookings`);
+      if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockBookings.filter((b) => b.shopId === id);
@@ -236,8 +236,8 @@ export const shopApi = {
 
   getShopReviews: async (id: string): Promise<Review[]> => {
     if (USE_REAL_API) {
-      const result = await http<Review[]>(`${API_BASE}/shops/${id}/reviews`);
-      if (result) return result;
+      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/shops/${id}/reviews`);
+      if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockReviews.filter((r) => r.shopId === id);
@@ -245,8 +245,8 @@ export const shopApi = {
 
   getShopQueue: async (id: string): Promise<Queue> => {
     if (USE_REAL_API) {
-      const result = await http<Queue>(`${API_BASE}/shops/${id}/queue`);
-      if (result) return result;
+      const result = await http<{ success: boolean; data: Queue }>(`${API_BASE}/shops/${id}/queue`);
+      if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
     const queue = mockQueues.find((q) => q.shopId === id);
@@ -284,13 +284,13 @@ export const bookingApi = {
     data: Omit<Booking, 'id' | 'queueNumber' | 'serviceName' | 'price' | 'customerName' | 'shopName'>,
   ): Promise<Booking> => {
     if (USE_REAL_API) {
-      const result = await http<Booking>(`${API_BASE}/bookings`, {
+      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings`, {
         method: 'POST',
         body: JSON.stringify(data),
       });
-      if (result && result.id) {
-        console.log('[api] createBooking 返回真实数据:', result);
-        return normalizeBooking(result);
+      if (result?.data && result.data.id) {
+        console.log('[api] createBooking 返回真实数据:', result.data);
+        return normalizeBooking(result.data);
       }
       console.warn('[api] /api/bookings 创建失败，使用本地模拟');
     }
@@ -316,10 +316,10 @@ export const bookingApi = {
 
   getBooking: async (id: string): Promise<Booking> => {
     if (USE_REAL_API) {
-      const result = await http<Booking>(`${API_BASE}/bookings/${id}`);
-      if (result && result.id) {
-        console.log('[api] getBooking 返回真实数据:', result);
-        return normalizeBooking(result);
+      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`);
+      if (result?.data && result.data.id) {
+        console.log('[api] getBooking 返回真实数据:', result.data);
+        return normalizeBooking(result.data);
       }
     }
     await new Promise((r) => setTimeout(r, 200));
@@ -331,11 +331,11 @@ export const bookingApi = {
 
   updateBookingStatus: async (id: string, status: Booking['status']): Promise<Booking> => {
     if (USE_REAL_API) {
-      const result = await http<Booking>(`${API_BASE}/bookings/${id}`, {
+      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ status }),
       });
-      if (result && result.id) return result;
+      if (result?.data && result.data.id) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
     const idx = mockBookings.findIndex((b) => b.id === id);
@@ -349,8 +349,8 @@ export const bookingApi = {
 
   getCustomerBookings: async (customerId: string): Promise<Booking[]> => {
     if (USE_REAL_API) {
-      const result = await http<Booking[]>(`${API_BASE}/bookings/customer/${customerId}`);
-      if (result) return result;
+      const result = await http<{ success: boolean; data: Booking[] }>(`${API_BASE}/bookings/customer/${customerId}`);
+      if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockBookings.filter((b) => b.customerId === customerId);
