@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import authRouter from './routes/auth.js';
 import customersRouter from './routes/customers.js';
+import bookingsRouter from './routes/bookings.js';
 
 const app = express();
 
@@ -66,6 +67,7 @@ app.get('/api/health', (req, res) => {
 // 挂载路由
 app.use('/api/auth', authRouter);
 app.use('/api/customers', customersRouter);
+app.use('/api/bookings', bookingsRouter);
 
 // 未匹配的 /api/* 返回 404
 app.all('/api/*', (req, res) => {
