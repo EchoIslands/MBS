@@ -27,7 +27,7 @@ const BookingManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<Booking['status'] | 'all'>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('');
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
 
   // 从 API 获取预约列表
@@ -42,7 +42,7 @@ const BookingManagement: React.FC = () => {
       if (statusFilter !== 'all') {
         params.set('status', statusFilter);
       }
-      if (dateFilter !== 'all') {
+      if (dateFilter) {
         params.set('dateStart', dateFilter);
       }
 
@@ -154,7 +154,7 @@ const BookingManagement: React.FC = () => {
       const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
 
       const matchesDate =
-        dateFilter === 'all' ||
+        !dateFilter ||
         new Date(b.scheduledTime).toDateString() === new Date(dateFilter).toDateString();
 
       return matchesSearch && matchesStatus && matchesDate;
@@ -180,7 +180,7 @@ const BookingManagement: React.FC = () => {
   const resetFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
-    setDateFilter('all');
+    setDateFilter('');
   };
 
   return (
@@ -234,7 +234,7 @@ const BookingManagement: React.FC = () => {
             className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
           />
 
-          {(searchTerm || statusFilter !== 'all' || dateFilter !== 'all') && (
+          {(searchTerm || statusFilter !== 'all' || dateFilter) && (
             <button
               onClick={resetFilters}
               className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
