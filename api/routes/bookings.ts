@@ -87,6 +87,45 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// 获取单条预约
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      console.error('[bookings] 查询预约失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '查询预约失败',
+      });
+    }
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        error: '预约不存在',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: bookingFromDb(data),
+    });
+  } catch (error) {
+    console.error('[bookings] 获取预约失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取预约失败',
+    });
+  }
+});
+
 // 创建预约
 router.post('/', async (req: Request, res: Response) => {
   try {
