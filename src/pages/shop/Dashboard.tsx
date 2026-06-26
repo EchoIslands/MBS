@@ -14,18 +14,48 @@ import {
 } from 'lucide-react';
 import { Booking, UserRole } from '../../../shared/types';
 import { useAppStore } from '../../store';
-import { mockBookings, mockCustomers, mockShops } from '../../../shared/mockData';
+import { mockCustomers, mockShops } from '../../../shared/mockData';
 import ShopLayout from './ShopLayout';
+
+const API_BASE = '/api';
 
 const Dashboard: React.FC = () => {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { currentShop, currentEmployee, userRole } = useAppStore();
 
   useEffect(() => {
     if (!currentShop) return;
-    const bookings = mockBookings.filter((b) => b.shopId === currentShop.id);
-    setTodayBookings(bookings);
+
+    const fetchTodayBookings = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const params = new URLSearchParams();
+        params.set('shopId', currentShop.id);
+        params.set('page', '1');
+        params.set('pageSize', '50');
+        params.set('dateStart', today);
+
+        const res = await fetch(`${API_BASE}/bookings?${params.toString()}`);
+        const data = await res.json();
+
+        if (data.success && data.data) {
+          setTodayBookings(data.data);
+        } else {
+          setError(data.error || '获取预约列表失败');
+        }
+      } catch (err: any) {
+        setError(err.message || '网络错误');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTodayBookings();
   }, [currentShop]);
 
   if (!currentShop && !currentEmployee) return null;
@@ -174,7 +204,7 @@ const Dashboard: React.FC = () => {
                         {booking.customerName || '顾客'}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {booking.serviceName} · {booking.barberName || '待分配'}
+                        {booking.serviceName} · {(booking as any).stylistName || booking.barberName || '待分配'}
                       </div>
                     </div>
                   </div>
