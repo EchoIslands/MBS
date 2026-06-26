@@ -1,14 +1,9 @@
 import { Router, Request, Response } from 'express';
+import { supabase } from '../db/index.js';
 
 const router = Router();
 
-// 内存存储（Vercel Serverless 冷启动会清空，后续应迁移到 Supabase）
-declare global {
-  var __apiBookingsDb: Map<string, any> | undefined;
-}
-const bookingsDb: Map<string, any> = globalThis.__apiBookingsDb || (globalThis.__apiBookingsDb = new Map<string, any>());
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
 const bookingFromDb = (b: any): any => ({
   id: b.id,
@@ -27,61 +22,55 @@ const bookingFromDb = (b: any): any => ({
   createdAt: b.created_at,
 });
 
-// 演示数据（与 server/_internal/mockData.ts 保持一致）
-const mockBookings: any[] = [
-  {
-    id: 'book1',
-    shopId: 'shop1',
-    customerId: 'cust1',
-    serviceId: 's1',
-    barberId: 'e1',
-    barberName: '李明',
-    scheduledTime: new Date(Date.now() + 3600000).toISOString(),
-    status: 'confirmed',
-    queueNumber: 3,
-    serviceName: '精剪',
-    price: 68,
-    customerName: '张三',
-    shopName: '风格美发沙龙',
-  },
-];
-
 // 获取预约列表
 router.get('/', async (req: Request, res: Response) => {
   try {
     const shopId = String(req.query.shopId || 'shop1');
     const status = req.query.status as string | undefined;
+    const dateStart = req.query.dateStart as string | undefined;
     const page = String(req.query.page || '1');
     const pageSize = String(req.query.pageSize || '20');
 
-    let dbBookings: any[] = [];
-    bookingsDb.forEach((b) => {
-      if (b.shop_id === shopId) {
-        dbBookings.push(b);
-      }
-    });
-
-    let bookings = dbBookings.map(bookingFromDb);
-
-    // 没有真实数据时返回演示数据
-    if (bookings.length === 0) {
-      bookings = mockBookings.filter((b: any) => b.shopId === shopId);
-    }
+    let query = supabase
+      .from('bookings')
+      .select('*', { count: 'exact' })
+      .eq('shop_id', shopId)
+      .order('scheduled_time', { ascending: true });
 
     if (status && status !== 'all') {
-      bookings = bookings.filter((b: any) => b.status === status);
+      query = query.eq('status', status);
+    }
+
+    if (dateStart) {
+      const start = new Date(dateStart);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      query = query.gte('scheduled_time', start.toISOString()).lt('scheduled_time', end.toISOString());
     }
 
     const pageNum = parseInt(page, 10);
     const size = parseInt(pageSize, 10);
-    const total = bookings.length;
-    const totalPages = Math.ceil(total / size);
     const offset = (pageNum - 1) * size;
-    const paginatedBookings = bookings.slice(offset, offset + size);
+
+    query = query.range(offset, offset + size - 1);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('[bookings] 查询预约列表失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '获取预约列表失败',
+      });
+    }
+
+    const bookings = (data || []).map(bookingFromDb);
+    const total = count || 0;
+    const totalPages = Math.ceil(total / size);
 
     res.json({
       success: true,
-      data: paginatedBookings,
+      data: bookings,
       pagination: {
         page: pageNum,
         pageSize: size,
@@ -123,33 +112,50 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    let countFromDb = 0;
-    bookingsDb.forEach((b) => {
-      if (b.shop_id === shopId) countFromDb++;
-    });
+    // 查询当前店铺已有预约数，用于生成排队号
+    const { count, error: countError } = await supabase
+      .from('bookings')
+      .select('*', { count: 'exact', head: true })
+      .eq('shop_id', shopId);
+
+    if (countError) {
+      console.error('[bookings] 查询预约数失败:', countError.message);
+    }
 
     const newBooking = {
       id: generateId(),
       shop_id: shopId,
       customer_id: customerId,
       customer_name: customerName || '顾客',
-      stylist_id: stylistId,
+      stylist_id: stylistId || null,
       stylist_name: stylistName || '',
       service_id: serviceId,
       service_name: serviceName || '服务',
       price: price || 0,
       scheduled_time: scheduledTimeDate.toISOString(),
-      queue_number: countFromDb + 1,
+      queue_number: (count || 0) + 1,
       status: 'confirmed',
       notes: notes || '',
       created_at: new Date().toISOString(),
     };
 
-    bookingsDb.set(newBooking.id, newBooking);
+    const { data, error } = await supabase
+      .from('bookings')
+      .insert(newBooking)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 创建预约失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '创建预约失败: ' + error.message,
+      });
+    }
 
     res.status(201).json({
       success: true,
-      data: bookingFromDb(newBooking),
+      data: bookingFromDb(data),
     });
   } catch (error) {
     console.error('[bookings] 创建预约失败:', error);
