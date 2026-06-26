@@ -1,5 +1,6 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useEffect } from 'react';
+import { useAppStore } from "./store";
 
 // 角色选择
 import SelectRole from "./pages/SelectRole";
@@ -39,6 +40,16 @@ import BookingManagement from "./pages/shop/BookingManagement";
 // 默认店铺ID
 const DEFAULT_SHOP_ID = "shop1";
 
+// 理发店端路由守卫：未登录时重定向到 /shop/login
+const ShopRouteGuard = () => {
+  const { currentShop, currentEmployee } = useAppStore();
+  const location = useLocation();
+  if (!currentShop && !currentEmployee && location.pathname !== "/shop/login") {
+    return <Navigate to="/shop/login" replace />;
+  }
+  return <Outlet />;
+};
+
 // 店铺专属入口重定向组件
 const ShopRedirect = () => {
   const { shopId } = useParams<{ shopId: string }>();
@@ -73,24 +84,26 @@ export default function App() {
 
         {/* 理发店端路由 */}
         <Route path="/shop/login" element={<ShopLogin />} />
-        <Route path="/shop" element={<Dashboard />} />
-        <Route path="/shop/manage" element={<ShopManage />} />
-        <Route path="/shop/products" element={<ProductManagement />} />
-        <Route path="/shop/reviews" element={<ReviewManagement />} />
-        <Route path="/shop/stylist" element={<StylistDashboard />} />
-        <Route path="/shop/financial" element={<FinancialReport />} />
-        <Route path="/shop/owner" element={<OwnerDashboard />} />
-        <Route path="/shop/refunds" element={<RefundManagement />} />
-        <Route path="/shop/customers" element={<CustomerManagement />} />
-        <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
-        <Route path="/shop/bookings" element={<BookingManagement />} />
-        <Route path="/shop/settlement" element={<SettlementManagement />} />
-        <Route path="/shop/membership" element={<MembershipManagement />} />
-        <Route path="/shop/survey" element={<SatisfactionSurveyManagement />} />
-        <Route path="/shop/review-management" element={<ReviewManagement />} />
-        <Route path="/shop/customer-profile" element={<CustomerManagement />} />
-        <Route path="/shop/customer-profile/:customerId" element={<CustomerProfileForm />} />
-        <Route path="/shop/customer-recall" element={<CustomerRecall />} />
+        <Route element={<ShopRouteGuard />}>
+          <Route path="/shop" element={<Dashboard />} />
+          <Route path="/shop/manage" element={<ShopManage />} />
+          <Route path="/shop/products" element={<ProductManagement />} />
+          <Route path="/shop/reviews" element={<ReviewManagement />} />
+          <Route path="/shop/stylist" element={<StylistDashboard />} />
+          <Route path="/shop/financial" element={<FinancialReport />} />
+          <Route path="/shop/owner" element={<OwnerDashboard />} />
+          <Route path="/shop/refunds" element={<RefundManagement />} />
+          <Route path="/shop/customers" element={<CustomerManagement />} />
+          <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
+          <Route path="/shop/bookings" element={<BookingManagement />} />
+          <Route path="/shop/settlement" element={<SettlementManagement />} />
+          <Route path="/shop/membership" element={<MembershipManagement />} />
+          <Route path="/shop/survey" element={<SatisfactionSurveyManagement />} />
+          <Route path="/shop/review-management" element={<ReviewManagement />} />
+          <Route path="/shop/customer-profile" element={<CustomerManagement />} />
+          <Route path="/shop/customer-profile/:customerId" element={<CustomerProfileForm />} />
+          <Route path="/shop/customer-recall" element={<CustomerRecall />} />
+        </Route>
 
         {/* 店铺专属入口（保留短链，但移除 /shop/:shopId 通配，避免误匹配管理端路径） */}
         <Route path="/s/:shopId" element={<ShopRedirect />} />
