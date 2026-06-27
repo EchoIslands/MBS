@@ -7,6 +7,7 @@ import {
   Clock,
   Settings,
   ShoppingBag,
+  User,
 } from 'lucide-react';
 import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
@@ -61,13 +62,22 @@ const ShopDetail: React.FC = () => {
       <header className="sticky top-0 bg-white shadow-sm z-50">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="font-bold text-xl text-gray-800">{shop.name}</h1>
-          <button
-            onClick={() => navigate('/shop/login')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            title="店铺管理"
-          >
-            <Settings size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => navigate('/customer/profile')}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="个人中心"
+            >
+              <User size={20} />
+            </button>
+            <button
+              onClick={() => navigate('/shop/login')}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="店铺管理"
+            >
+              <Settings size={20} />
+            </button>
+          </div>
         </div>
       </header>
 
