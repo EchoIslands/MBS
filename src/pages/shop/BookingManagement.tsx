@@ -394,6 +394,14 @@ const BookingManagement: React.FC = () => {
                   </span>
                   <span className="font-medium text-gray-800">{viewingBooking.customerName}</span>
                 </div>
+                {(viewingBooking as any).customerPhone && (
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Phone size={16} /> 手机号
+                    </span>
+                    <span className="font-medium text-gray-800">{(viewingBooking as any).customerPhone}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500 flex items-center gap-2">
                     <Scissors size={16} /> 服务项目

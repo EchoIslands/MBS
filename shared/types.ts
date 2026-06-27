@@ -218,6 +218,7 @@ export interface Booking {
   serviceName?: string;
   price?: number;
   customerName?: string;
+  customerPhone?: string;
   shopName?: string;
   createdAt?: Date;
 }

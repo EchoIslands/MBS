@@ -10,6 +10,7 @@ const bookingFromDb = (b: any): any => ({
   shopId: b.shop_id,
   customerId: b.customer_id,
   customerName: b.customer_name,
+  customerPhone: b.customer_phone,
   stylistId: b.stylist_id,
   stylistName: b.stylist_name,
   serviceId: b.service_id,
@@ -151,6 +152,53 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    // 自动补全客户信息：查 customers 表获取姓名和手机号
+    let finalCustomerName = customerName;
+    let finalCustomerPhone = '';
+    if (!finalCustomerName || finalCustomerName === '顾客') {
+      const { data: custData } = await supabase
+        .from('customers')
+        .select('name, phone')
+        .eq('id', customerId)
+        .maybeSingle();
+      if (custData) {
+        finalCustomerName = custData.name || finalCustomerName;
+        finalCustomerPhone = custData.phone || '';
+      }
+    }
+
+    // 自动补全服务信息：查 shops 表获取服务名称和价格
+    let finalServiceName = serviceName;
+    let finalPrice = price;
+    if (!finalServiceName || finalServiceName === '服务' || !finalPrice) {
+      const { data: shopData } = await supabase
+        .from('shops')
+        .select('services')
+        .eq('id', shopId)
+        .maybeSingle();
+      if (shopData?.services) {
+        const services = shopData.services as any[];
+        const svc = services.find((s: any) => s.id === serviceId);
+        if (svc) {
+          finalServiceName = svc.name || finalServiceName;
+          finalPrice = svc.price || finalPrice;
+        }
+      }
+    }
+
+    // 自动补全发型师姓名
+    let finalStylistName = stylistName;
+    if (stylistId && (!finalStylistName || finalStylistName === '')) {
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('name')
+        .eq('id', stylistId)
+        .maybeSingle();
+      if (empData?.name) {
+        finalStylistName = empData.name;
+      }
+    }
+
     // 查询当前店铺已有预约数，用于生成排队号
     const { count, error: countError } = await supabase
       .from('bookings')
@@ -165,12 +213,13 @@ router.post('/', async (req: Request, res: Response) => {
       id: generateId(),
       shop_id: shopId,
       customer_id: customerId,
-      customer_name: customerName || '顾客',
+      customer_name: finalCustomerName || '顾客',
+      customer_phone: finalCustomerPhone || '',
       stylist_id: stylistId || null,
-      stylist_name: stylistName || '',
+      stylist_name: finalStylistName || '',
       service_id: serviceId,
-      service_name: serviceName || '服务',
-      price: price || 0,
+      service_name: finalServiceName || '服务',
+      price: finalPrice || 0,
       scheduled_time: scheduledTimeDate.toISOString(),
       queue_number: (count || 0) + 1,
       status: 'confirmed',
