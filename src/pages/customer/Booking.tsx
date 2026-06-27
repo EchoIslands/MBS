@@ -154,6 +154,7 @@ const Booking: React.FC = () => {
         scheduledTime: scheduledTime.toISOString(), // 明确转换为 ISO 字符串
         barberId: target.id,
         barberName: target.name,
+        notes,
       } as any);
       
       // 使用真实的预约ID跳转

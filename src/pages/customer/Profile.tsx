@@ -7,6 +7,7 @@ import {
 import { Booking, MembershipLevel } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
+import { bookingApi } from '../../api';
 
 // 会员等级标签与颜色
 const levelConfig = {
@@ -54,8 +55,21 @@ const Profile: React.FC = () => {
       navigate('/customer/login');
       return;
     }
-    setBookings([]);
-    setLoading(false);
+
+    const loadBookings = async () => {
+      setLoading(true);
+      try {
+        const data = await bookingApi.getCustomerBookings(currentCustomer.id);
+        setBookings(data);
+      } catch (error) {
+        console.error('加载预约列表失败:', error);
+        setBookings([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadBookings();
   }, [currentCustomer]);
 
   const handleLogout = () => {

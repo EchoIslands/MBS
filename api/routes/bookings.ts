@@ -88,6 +88,55 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// 获取某个客户的所有预约
+router.get('/customer/:customerId', async (req: Request, res: Response) => {
+  try {
+    const { customerId } = req.params;
+    const page = String(req.query.page || '1');
+    const pageSize = String(req.query.pageSize || '50');
+
+    const pageNum = parseInt(page, 10);
+    const size = parseInt(pageSize, 10);
+    const offset = (pageNum - 1) * size;
+
+    const { data, error, count } = await supabase
+      .from('bookings')
+      .select('*', { count: 'exact' })
+      .eq('customer_id', customerId)
+      .order('scheduled_time', { ascending: true })
+      .range(offset, offset + size - 1);
+
+    if (error) {
+      console.error('[bookings] 查询客户预约失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '查询客户预约失败',
+      });
+    }
+
+    const bookings = (data || []).map(bookingFromDb);
+    const total = count || 0;
+    const totalPages = Math.ceil(total / size);
+
+    res.json({
+      success: true,
+      data: bookings,
+      pagination: {
+        page: pageNum,
+        pageSize: size,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    console.error('[bookings] 获取客户预约失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取客户预约失败',
+    });
+  }
+});
+
 // 获取单条预约
 router.get('/:id', async (req: Request, res: Response) => {
   try {
