@@ -176,6 +176,115 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// 更新预约状态
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['pending', 'confirmed', 'completed', 'cancelled'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: '无效的状态值',
+      });
+    }
+
+    // 获取原预约信息
+    const { data: originalBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      console.error('[bookings] 查询预约失败:', fetchError.message);
+      return res.status(500).json({
+        success: false,
+        error: '查询预约失败',
+      });
+    }
+
+    if (!originalBooking) {
+      return res.status(404).json({
+        success: false,
+        error: '预约不存在',
+      });
+    }
+
+    // 更新状态
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 更新预约状态失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '更新预约状态失败',
+      });
+    }
+
+    // 如果是完成服务，生成到店记录并更新客户消费数据
+    if (status === 'completed') {
+      const visitRecord = {
+        id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        customer_id: originalBooking.customer_id,
+        shop_id: originalBooking.shop_id,
+        booking_id: originalBooking.id,
+        stylist_id: originalBooking.stylist_id,
+        stylist_name: originalBooking.stylist_name,
+        service_ids: originalBooking.service_id ? [originalBooking.service_id] : [],
+        service_names: originalBooking.service_name ? [originalBooking.service_name] : [],
+        total_amount: originalBooking.price || 0,
+        check_in_time: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
+
+      const { error: visitError } = await supabase
+        .from('customer_visit_records')
+        .insert(visitRecord);
+
+      if (visitError) {
+        console.error('[bookings] 创建到店记录失败:', visitError.message);
+      }
+
+      // 更新客户消费统计
+      if (originalBooking.customer_id) {
+        const { data: customer, error: custError } = await supabase
+          .from('customers')
+          .select('visit_count, total_spent')
+          .eq('id', originalBooking.customer_id)
+          .single();
+
+        if (!custError && customer) {
+          await supabase
+            .from('customers')
+            .update({
+              visit_count: (customer.visit_count || 0) + 1,
+              total_spent: (customer.total_spent || 0) + (originalBooking.price || 0),
+              last_visit_at: new Date().toISOString(),
+            })
+            .eq('id', originalBooking.customer_id);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: bookingFromDb(data),
+    });
+  } catch (error) {
+    console.error('[bookings] 更新预约状态失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '更新预约状态失败',
+    });
+  }
+});
+
 // 创建预约
 router.post('/', async (req: Request, res: Response) => {
   try {

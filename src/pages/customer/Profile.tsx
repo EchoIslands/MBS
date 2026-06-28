@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   User, Calendar, Star, LogOut, Clock, CheckCircle, AlertCircle, MessageSquare,
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
+  X, Phone, Scissors, MapPin, Loader2,
 } from 'lucide-react';
 import { Booking, MembershipLevel } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
@@ -47,8 +48,24 @@ const membershipBenefits = [
 const Profile: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const navigate = useNavigate();
   const { currentCustomer, logout } = useAppStore();
+
+  const loadBookings = async () => {
+    if (!currentCustomer) return;
+    setLoading(true);
+    try {
+      const data = await bookingApi.getCustomerBookings(currentCustomer.id);
+      setBookings(data);
+    } catch (error) {
+      console.error('加载预约列表失败:', error);
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!currentCustomer) {
@@ -56,21 +73,25 @@ const Profile: React.FC = () => {
       return;
     }
 
-    const loadBookings = async () => {
-      setLoading(true);
-      try {
-        const data = await bookingApi.getCustomerBookings(currentCustomer.id);
-        setBookings(data);
-      } catch (error) {
-        console.error('加载预约列表失败:', error);
-        setBookings([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadBookings();
-  }, [currentCustomer]);
+  }, [currentCustomer, navigate]);
+
+  const handleCancelBooking = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确定要取消这次预约吗？')) return;
+
+    setCancelling(true);
+    try {
+      await bookingApi.updateBookingStatus(viewingBooking.id, 'cancelled');
+      setViewingBooking(null);
+      await loadBookings();
+    } catch (error) {
+      console.error('取消预约失败:', error);
+      alert('取消预约失败，请重试');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -286,7 +307,8 @@ const Profile: React.FC = () => {
               {bookings.map((booking) => (
                 <div
                   key={booking.id}
-                  className="border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-md transition-shadow"
+                  onClick={() => setViewingBooking(booking)}
+                  className="border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-md transition-shadow cursor-pointer"
                 >
                   <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2">
                     <div className="min-w-0 flex-1">
@@ -387,6 +409,114 @@ const Profile: React.FC = () => {
         </button>
 
       </div>
+
+      {/* 预约详情弹窗 */}
+      {viewingBooking && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 sm:mb-5">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800">预约详情</h3>
+              <button
+                onClick={() => setViewingBooking(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3 sm:space-y-4">
+              {/* 状态 */}
+              <div className={`flex items-center gap-3 p-3 sm:p-4 rounded-xl ${
+                viewingBooking.status === 'completed' ? 'bg-green-50' :
+                viewingBooking.status === 'confirmed' ? 'bg-blue-50' :
+                viewingBooking.status === 'pending' ? 'bg-yellow-50' : 'bg-gray-50'
+              }`}>
+                <span className={`font-medium text-sm ${
+                  viewingBooking.status === 'completed' ? 'text-green-700' :
+                  viewingBooking.status === 'confirmed' ? 'text-blue-700' :
+                  viewingBooking.status === 'pending' ? 'text-yellow-700' : 'text-gray-500'
+                }`}>
+                  {viewingBooking.status === 'pending' ? '待确认' :
+                   viewingBooking.status === 'confirmed' ? '已确认' :
+                   viewingBooking.status === 'completed' ? '已完成' : '已取消'}
+                </span>
+              </div>
+
+              {/* 基本信息 */}
+              <div className="space-y-2 sm:space-y-3 text-sm">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <MapPin size={16} /> 店铺
+                  </span>
+                  <span className="font-medium text-gray-800">{viewingBooking.shopName}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <Scissors size={16} /> 服务项目
+                  </span>
+                  <span className="font-medium text-gray-800">{viewingBooking.serviceName}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <Calendar size={16} /> 预约时间
+                  </span>
+                  <span className="font-medium text-gray-800">
+                    {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
+                  </span>
+                </div>
+                {(viewingBooking as any).customerPhone && (
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Phone size={16} /> 手机号
+                    </span>
+                    <span className="font-medium text-gray-800">{(viewingBooking as any).customerPhone}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    ¥ 服务价格
+                  </span>
+                  <span className="font-bold text-orange-500">¥{viewingBooking.price}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    # 排队号
+                  </span>
+                  <span className="font-medium text-gray-800">#{viewingBooking.queueNumber || '-'}</span>
+                </div>
+                {viewingBooking.notes && (
+                  <div className="py-2 border-b border-gray-100">
+                    <span className="text-gray-500 text-sm flex items-center gap-2 mb-1">
+                      <MessageSquare size={16} /> 备注
+                    </span>
+                    <p className="text-gray-700 mt-1">{viewingBooking.notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="flex gap-3 mt-5 sm:mt-6">
+              {viewingBooking.status === 'confirmed' && (
+                <button
+                  onClick={handleCancelBooking}
+                  disabled={cancelling}
+                  className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {cancelling ? <Loader2 size={18} className="animate-spin" /> : null}
+                  取消预约
+                </button>
+              )}
+              <button
+                onClick={() => setViewingBooking(null)}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

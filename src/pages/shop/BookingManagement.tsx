@@ -29,6 +29,7 @@ const BookingManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<Booking['status'] | 'all'>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   // 从 API 获取预约列表
   const fetchBookings = useCallback(async () => {
@@ -64,6 +65,33 @@ const BookingManagement: React.FC = () => {
   useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
+
+  // 完成服务
+  const handleCompleteBooking = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确认该预约已完成服务吗？')) return;
+
+    setCompleting(true);
+    try {
+      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setViewingBooking(null);
+        fetchBookings();
+      } else {
+        setError(data.error || '完成服务失败');
+      }
+    } catch (err: any) {
+      setError(err.message || '网络错误');
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   // 兼容 API 返回的 stylistName/stylistId 与 mock 使用的 barberName/barberId
   const getBarberName = (booking: Booking) =>
@@ -462,8 +490,13 @@ const BookingManagement: React.FC = () => {
                 </>
               )}
               {viewingBooking.status === 'confirmed' && (
-                <button className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors">
-                  开始服务
+                <button
+                  onClick={handleCompleteBooking}
+                  disabled={completing}
+                  className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {completing ? <Loader2 size={18} className="animate-spin" /> : null}
+                  完成服务
                 </button>
               )}
               <button
