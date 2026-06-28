@@ -357,11 +357,19 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // 查询当前店铺已有预约数，用于生成排队号
+    // 按店铺 + 预约日期 + 有效状态统计当天排队人数，用于生成更合理的排队号
+    const scheduledDateStart = new Date(scheduledTimeDate);
+    scheduledDateStart.setHours(0, 0, 0, 0);
+    const scheduledDateEnd = new Date(scheduledDateStart);
+    scheduledDateEnd.setDate(scheduledDateEnd.getDate() + 1);
+
     const { count, error: countError } = await supabase
       .from('bookings')
       .select('*', { count: 'exact', head: true })
-      .eq('shop_id', shopId);
+      .eq('shop_id', shopId)
+      .in('status', ['pending', 'confirmed'])
+      .gte('scheduled_time', scheduledDateStart.toISOString())
+      .lt('scheduled_time', scheduledDateEnd.toISOString());
 
     if (countError) {
       console.error('[bookings] 查询预约数失败:', countError.message);

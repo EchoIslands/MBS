@@ -98,10 +98,21 @@ const Booking: React.FC = () => {
     });
 
   // 计算技师可用性与预计等待时间
+  // 等待时间基于该技师在当天的已有预约数稳定计算，不再使用 Math.random()，
+  // 避免用户在备注栏输入时组件重渲染导致数字乱跳。
   const getBarberAvailability = (barber: Employee, date: string, time: string) => {
     if (isBarberBusy(barber.id, date, time)) return { isAvailable: false, waitTime: -1 };
-    const ratingBonus = ((barber.rating || 4.5) - 4) * 5;
-    const waitTime = Math.max(0, Math.floor(Math.random() * 20) - ratingBonus);
+
+    const sameDayBookings = mockBookings.filter((bk) => {
+      if (bk.barberId !== barber.id) return false;
+      if (bk.status === 'cancelled') return false;
+      const bkDate = new Date(bk.scheduledTime);
+      return bkDate.toISOString().split('T')[0] === date;
+    });
+
+    // 每位预约大致占用 30 分钟，评分高的技师效率略高，最多扣减 10 分钟
+    const ratingBonus = Math.min(10, ((barber.rating || 4.5) - 4) * 10);
+    const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
     return { isAvailable: true, waitTime };
   };
 

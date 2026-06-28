@@ -302,22 +302,18 @@ const Profile: React.FC = () => {
               我的预约
             </h2>
             <div className="flex bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setActiveTab('current')}
-                className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'current' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
-                }`}
-              >
-                当前
-              </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'history' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
-                }`}
-              >
-                历史
-              </button>
+              {(['current', 'history'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${
+                    activeTab === tab ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                  }`}
+                >
+                  {tab === 'current' ? '当前' : '历史'}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -387,7 +383,7 @@ const Profile: React.FC = () => {
                         </div>
                         <div className="font-medium text-orange-500">¥{booking.price}</div>
                       </div>
-                      {booking.status === 'pending' && activeTab === 'current' && (
+                      {(booking.status === 'pending' || booking.status === 'confirmed') && activeTab === 'current' && (
                         <div className="mt-3 sm:mt-4">
                           <button
                             onClick={(e) => {
@@ -396,7 +392,7 @@ const Profile: React.FC = () => {
                             }}
                             className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 sm:py-2 px-4 rounded-lg text-sm font-medium transition-colors"
                           >
-                            查看排队
+                            查看排队状态
                           </button>
                         </div>
                       )}
@@ -542,6 +538,17 @@ const Profile: React.FC = () => {
 
             {/* 操作按钮 */}
             <div className="flex gap-3 mt-5 sm:mt-6">
+              {(viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && (
+                <button
+                  onClick={() => {
+                    setViewingBooking(null);
+                    navigate(`/customer/queue/${viewingBooking.id}`);
+                  }}
+                  className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors"
+                >
+                  查看排队状态
+                </button>
+              )}
               {viewingBooking.status === 'confirmed' && (
                 <button
                   onClick={handleCancelBooking}

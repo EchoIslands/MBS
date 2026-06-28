@@ -4,9 +4,9 @@ import {
   ArrowLeft, Clock as ClockIcon, MapPin, Bell, Music, CheckCircle, User, Calendar,
   Scissors, Star, Sparkles, Award, ChevronRight, Zap, Users,
 } from 'lucide-react';
-import { Booking, Queue as QueueType, Employee } from '../../../shared/types';
+import { Booking, Queue as QueueType, Employee, Shop } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
-import { bookingApi } from '../../../src/api';
+import { bookingApi, queueApi, shopApi } from '../../../src/api';
 
 // 模拟服务步骤（用于可视化进度）
 const serviceSteps = [
@@ -20,11 +20,10 @@ const Queue: React.FC = () => {
   const { bookingId } = useParams<{ bookingId: string }>();
   const [booking, setBooking] = useState<Booking | null>(null);
   const [queue, setQueue] = useState<QueueType | null>(null);
+  const [shop, setShop] = useState<Shop | null>(null);
   const [loading, setLoading] = useState(true);
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [selectedSound] = useState('清脆铃声');
-  const [distance] = useState(1.2);
-  const [walkTime] = useState(15);
   const navigate = useNavigate();
 
   // 服务进度状态
@@ -68,6 +67,19 @@ const Queue: React.FC = () => {
           console.log('预约时间:', fetchedBooking.scheduledTime);
           console.log('是否已到达预约时间:', new Date() >= scheduledTimeDate);
           setBooking(fetchedBooking);
+
+          // 同时获取该店铺的排队信息与店铺详情
+          try {
+            const [queueResult, shopResult] = await Promise.all([
+              queueApi.getQueue(fetchedBooking.shopId),
+              shopApi.getShop(fetchedBooking.shopId),
+            ]);
+            if (queueResult) setQueue(queueResult);
+            if (shopResult) setShop(shopResult);
+          } catch (e) {
+            console.log('获取店铺/排队信息失败:', e);
+          }
+
           setLoading(false);
           return;
         }
@@ -101,6 +113,7 @@ const Queue: React.FC = () => {
         estimatedWaitTime: 15,
         bookings: [mockBooking],
       });
+      setShop(currentShop);
       setLoading(false);
     }
 
@@ -133,22 +146,9 @@ const Queue: React.FC = () => {
   }, [isAppointmentTimeReached, booking]);
 
   // 当前为您服务的发型师
-  const currentShop = mockShops[0];
+  const currentShop = shop || mockShops.find((s) => s.id === booking?.shopId) || mockShops[0];
   const barber: Employee | undefined = currentShop?.employees.find((e) => e.role === 'stylist' || !e.role);
   const stylist: Employee | undefined = barber || currentShop?.employees[0];
-
-  // 当前服务进度
-  const totalMinutes = serviceSteps.reduce((sum, s) => sum + s.duration, 0);
-  const currentStepDuration = serviceSteps[currentStep]?.duration || 0;
-  const completedMinutes = serviceSteps.slice(0, currentStep).reduce((sum, s) => sum + s.duration, 0) +
-    Math.floor((stepProgress / 100) * currentStepDuration);
-  const overallProgress = totalMinutes > 0 ? Math.min(100, Math.floor((completedMinutes / totalMinutes) * 100)) : 0;
-  const remainingMinutes = Math.max(0, totalMinutes - completedMinutes);
-
-  const position = booking?.queueNumber || 2;
-  // 如果服务已开始，显示剩余分钟；否则显示预计等待时间
-  const waitTime = serviceStarted ? remainingMinutes : (queue?.estimatedWaitTime || 15);
-  const shouldLeaveNow = !serviceStarted && waitTime <= walkTime + 5;
 
   // 获取预约时间信息
   const getTimeUntilAppointment = () => {
@@ -165,6 +165,37 @@ const Queue: React.FC = () => {
     return { totalMinutes, days, hours, minutes, isToday };
   };
   const appointmentInfo = getTimeUntilAppointment();
+
+  // 当前服务进度
+  const totalMinutes = serviceSteps.reduce((sum, s) => sum + s.duration, 0);
+  const currentStepDuration = serviceSteps[currentStep]?.duration || 0;
+  const completedMinutes = serviceSteps.slice(0, currentStep).reduce((sum, s) => sum + s.duration, 0) +
+    Math.floor((stepProgress / 100) * currentStepDuration);
+  const overallProgress = totalMinutes > 0 ? Math.min(100, Math.floor((completedMinutes / totalMinutes) * 100)) : 0;
+  const remainingMinutes = Math.max(0, totalMinutes - completedMinutes);
+
+  // 排队号与前方等待人数
+  const position = Math.max(1, booking?.queueNumber || 1);
+  const currentNumber = Math.max(1, queue?.currentNumber || 1);
+  const aheadCount = Math.max(0, position - currentNumber);
+
+  // 距离与步行时间：优先使用店铺数据，否则使用默认值
+  const distance = currentShop?.distance ?? 1.0;
+  // 按 5km/h 估算：1km ≈ 12 分钟，兜底至少 5 分钟
+  const walkTime = Math.max(5, Math.ceil(distance / 0.083));
+
+  // 如果服务已开始，显示剩余分钟；否则优先使用排队系统的预计等待时间，
+  // 没有则按前方人数 × 30 分钟估算，最后兜底 15 分钟
+  const waitTime = serviceStarted
+    ? remainingMinutes
+    : (queue?.estimatedWaitTime ?? (aheadCount > 0 ? aheadCount * 30 : 15));
+
+  // “该出发了”仅在预约当天、尚未开始服务、且距离预约时间较近时显示
+  const shouldLeaveNow =
+    !serviceStarted &&
+    appointmentInfo.isToday &&
+    appointmentInfo.totalMinutes > 0 &&
+    appointmentInfo.totalMinutes <= walkTime + 30;
 
   if (loading) {
     return (
@@ -394,7 +425,7 @@ const Queue: React.FC = () => {
             <div className="bg-blue-50 rounded-2xl p-4 text-center">
               <div className="text-xs text-blue-600 mb-1">您的排队号</div>
               <div className="text-4xl font-bold text-blue-700">#{position}</div>
-              <div className="text-xs text-blue-500 mt-1">前面还有 {position - 1} 位</div>
+              <div className="text-xs text-blue-500 mt-1">前面还有 {aheadCount} 位</div>
             </div>
             <div className="bg-orange-50 rounded-2xl p-4 text-center">
               <div className="text-xs text-orange-600 mb-1">预计等待</div>
@@ -405,28 +436,44 @@ const Queue: React.FC = () => {
 
           {/* 该出发了提醒 */}
           {shouldLeaveNow && (
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-3.5 flex items-center gap-3 animate-pulse">
+            <a
+              href={currentShop?.address
+                ? `https://uri.amap.com/search?keyword=${encodeURIComponent(currentShop.address)}`
+                : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-3.5 flex items-center gap-3 animate-pulse"
+            >
               <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white flex-shrink-0">
                 <MapPin size={18} />
               </div>
               <div className="flex-1">
                 <div className="font-bold text-green-800 text-sm">该出发了！</div>
-                <div className="text-xs text-green-600 mt-0.5">步行 {walkTime} 分钟到店，距离 {distance}km · 预计 {new Date(Date.now() + walkTime * 60 * 1000).toLocaleTimeString()} 到店</div>
+                <div className="text-xs text-green-600 mt-0.5">
+                  步行 {walkTime} 分钟到店，距离 {distance.toFixed(1)}km · 预计 {new Date(Date.now() + walkTime * 60 * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 到店
+                </div>
               </div>
               <ChevronRight size={18} className="text-green-500" />
-            </div>
+            </a>
           )}
         </div>
 
         {/* ===== 位置与提醒设置 ===== */}
         <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+          <a
+            href={currentShop?.address
+              ? `https://uri.amap.com/search?keyword=${encodeURIComponent(currentShop.address)}`
+              : '#'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 hover:shadow-md transition-shadow"
+          >
             <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-500">
               <MapPin size={14} className="text-blue-500" /> 到店距离
             </div>
             <div className="text-2xl font-bold text-gray-800 mb-1">{distance.toFixed(1)} <span className="text-sm text-gray-500">km</span></div>
-            <div className="text-xs text-gray-500">步行约 {walkTime} 分钟</div>
-          </div>
+            <div className="text-xs text-gray-500 line-clamp-2">{currentShop?.address || '地址未设置'} · 步行约 {walkTime} 分钟</div>
+          </a>
           <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
             <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-500">
               <Bell size={14} className="text-orange-500" /> 提醒
