@@ -214,7 +214,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // 更新状态
     const { data, error } = await supabase
       .from('bookings')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({ status })
       .eq('id', id)
       .select()
       .single();

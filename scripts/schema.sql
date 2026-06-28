@@ -103,7 +103,8 @@ create table if not exists bookings (
   queue_number integer,
   status text default 'pending',
   notes text,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- ---------- 到店记录 ----------
