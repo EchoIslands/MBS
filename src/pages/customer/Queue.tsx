@@ -388,7 +388,7 @@ const Queue: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-bold text-gray-800">预约尚未开始</h3>
-                <p className="text-sm text-gray-500">请在预约时间到达后刷新页面</p>
+                <p className="text-sm text-gray-500">当前为预计排队状态，到店后将自动切换为实时排队</p>
               </div>
             </div>
             <div className="bg-white rounded-xl p-4">
@@ -415,9 +415,13 @@ const Queue: React.FC = () => {
             <div>
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
                 <Calendar size={18} className="text-blue-500" />
-                排队状态
+                {isAppointmentTimeReached && serviceStarted ? '实时排队状态' : '预计排队状态'}
               </h3>
-              <p className="text-xs text-gray-500 mt-1">实时更新 · 最后更新于 {new Date().toLocaleTimeString()}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {isAppointmentTimeReached && serviceStarted
+                  ? '服务进行中 · 数据随门店操作实时变化'
+                  : '基于当前预约顺序估算 · 到店后将切换为实时状态'}
+              </p>
             </div>
           </div>
 

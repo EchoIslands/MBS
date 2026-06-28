@@ -4,6 +4,7 @@ import authRouter from './routes/auth.js';
 import customersRouter from './routes/customers.js';
 import bookingsRouter from './routes/bookings.js';
 import shopsRouter from './routes/shops.js';
+import queuesRouter from './routes/queues.js';
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/bookings', bookingsRouter);
 app.use('/api/shops', shopsRouter);
+app.use('/api/queues', queuesRouter);
 
 // 未匹配的 /api/* 返回 404
 app.all('/api/*', (req, res) => {
