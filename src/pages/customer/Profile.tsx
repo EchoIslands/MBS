@@ -50,6 +50,7 @@ const Profile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   const navigate = useNavigate();
   const { currentCustomer, logout } = useAppStore();
 
@@ -294,86 +295,130 @@ const Profile: React.FC = () => {
 
         {/* 我的预约列表 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
-          <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Calendar size={18} className="sm:hidden text-blue-500" />
-            <Calendar size={20} className="hidden sm:inline text-blue-500" />
-            我的预约
-          </h2>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className="text-sm sm:text-base font-bold text-gray-800 flex items-center gap-2">
+              <Calendar size={18} className="sm:hidden text-blue-500" />
+              <Calendar size={20} className="hidden sm:inline text-blue-500" />
+              我的预约
+            </h2>
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setActiveTab('current')}
+                className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'current' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                当前
+              </button>
+              <button
+                onClick={() => setActiveTab('history')}
+                className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'history' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                历史
+              </button>
+            </div>
+          </div>
 
           {loading ? (
             <div className="text-center text-gray-500 py-8">加载中...</div>
-          ) : bookings.length > 0 ? (
-            <div className="space-y-3">
-              {bookings.map((booking) => (
-                <div
-                  key={booking.id}
-                  onClick={() => setViewingBooking(booking)}
-                  className="border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-md transition-shadow cursor-pointer"
-                >
-                  <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-gray-800 text-sm sm:text-base truncate">{booking.shopName}</div>
-                      <div className="text-xs sm:text-sm text-gray-500">{booking.serviceName}</div>
-                    </div>
-                    <span
-                      className={`flex-shrink-0 px-2 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium ${
-                        booking.status === 'completed' ? 'text-green-600 bg-green-50' :
-                        booking.status === 'confirmed' ? 'text-blue-600 bg-blue-50' :
-                        booking.status === 'pending' ? 'text-yellow-600 bg-yellow-50' :
-                        'text-gray-600 bg-gray-100'
-                      }`}
-                    >
-                      {booking.status === 'pending' ? '待确认' :
-                       booking.status === 'confirmed' ? '已确认' :
-                       booking.status === 'completed' ? '已完成' : '已取消'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500">
-                    <div className="flex items-center gap-1">
-                      <Clock size={12} className="sm:hidden" />
-                      <Clock size={14} className="hidden sm:inline" />
-                      {new Date(booking.scheduledTime).toLocaleString()}
-                    </div>
-                    <div className="font-medium text-orange-500">¥{booking.price}</div>
-                  </div>
-                  {booking.status === 'pending' && (
-                    <div className="mt-3 sm:mt-4">
-                      <button
-                        onClick={() => navigate(`/customer/queue/${booking.id}`)}
-                        className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 sm:py-2 px-4 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        查看排队
-                      </button>
-                    </div>
-                  )}
-                  {booking.status === 'completed' && (
-                    <div className="mt-3 sm:mt-4">
-                      <button
-                        onClick={() => navigate(`/customer/review/${booking.id}`)}
-                        className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
-                      >
-                        <Star size={14} />
-                        去评价，分享得优惠券
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
           ) : (
-            <div className="text-center py-8 sm:py-10">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-2 sm:mb-3 bg-gray-50 rounded-full flex items-center justify-center">
-                <Calendar size={24} className="sm:hidden text-gray-300" />
-                <Calendar size={28} className="hidden sm:inline text-gray-300" />
-              </div>
-              <div className="text-gray-500 mb-3 text-sm">暂无预约记录</div>
-              <button
-                onClick={() => navigate(`/customer/shop/${shop?.id}`)}
-                className="text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white px-4 sm:px-5 py-2.5 rounded-lg transition-colors inline-flex items-center gap-1"
-              >
-                去预约 <ChevronRight size={14} />
-              </button>
-            </div>
+            (() => {
+              const filteredBookings = bookings.filter((b) =>
+                activeTab === 'current'
+                  ? b.status === 'pending' || b.status === 'confirmed'
+                  : b.status === 'completed' || b.status === 'cancelled'
+              );
+
+              if (filteredBookings.length === 0) {
+                return (
+                  <div className="text-center py-8 sm:py-10">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-2 sm:mb-3 bg-gray-50 rounded-full flex items-center justify-center">
+                      <Calendar size={24} className="sm:hidden text-gray-300" />
+                      <Calendar size={28} className="hidden sm:inline text-gray-300" />
+                    </div>
+                    <div className="text-gray-500 mb-3 text-sm">
+                      {activeTab === 'current' ? '暂无进行中的预约' : '暂无历史预约'}
+                    </div>
+                    {activeTab === 'current' && (
+                      <button
+                        onClick={() => navigate(`/customer/shop/${shop?.id}`)}
+                        className="text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white px-4 sm:px-5 py-2.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                      >
+                        去预约 <ChevronRight size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filteredBookings.map((booking) => (
+                    <div
+                      key={booking.id}
+                      onClick={() => setViewingBooking(booking)}
+                      className="border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-md transition-shadow cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between mb-2 sm:mb-3 gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-gray-800 text-sm sm:text-base truncate">{booking.shopName}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{booking.serviceName}</div>
+                        </div>
+                        <span
+                          className={`flex-shrink-0 px-2 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium ${
+                            booking.status === 'completed' ? 'text-green-600 bg-green-50' :
+                            booking.status === 'confirmed' ? 'text-blue-600 bg-blue-50' :
+                            booking.status === 'pending' ? 'text-yellow-600 bg-yellow-50' :
+                            'text-gray-600 bg-gray-100'
+                          }`}
+                        >
+                          {booking.status === 'pending' ? '待确认' :
+                           booking.status === 'confirmed' ? '已确认' :
+                           booking.status === 'completed' ? '已完成' : '已取消'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <Clock size={12} className="sm:hidden" />
+                          <Clock size={14} className="hidden sm:inline" />
+                          {new Date(booking.scheduledTime).toLocaleString()}
+                        </div>
+                        <div className="font-medium text-orange-500">¥{booking.price}</div>
+                      </div>
+                      {booking.status === 'pending' && activeTab === 'current' && (
+                        <div className="mt-3 sm:mt-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/customer/queue/${booking.id}`);
+                            }}
+                            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 sm:py-2 px-4 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            查看排队
+                          </button>
+                        </div>
+                      )}
+                      {booking.status === 'completed' && activeTab === 'history' && (
+                        <div className="mt-3 sm:mt-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/customer/review/${booking.id}`);
+                            }}
+                            className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+                          >
+                            <Star size={14} />
+                            去评价，分享得优惠券
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()
           )}
         </div>
 

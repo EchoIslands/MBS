@@ -93,11 +93,46 @@ const BookingManagement: React.FC = () => {
     }
   };
 
+  // 客户未到
+  const [noShowing, setNoShowing] = useState(false);
+  const handleNoShow = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确认标记该预约为"客户未到"吗？')) return;
+
+    setNoShowing(true);
+    try {
+      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setViewingBooking(null);
+        fetchBookings();
+      } else {
+        setError(data.error || '标记失败');
+      }
+    } catch (err: any) {
+      setError(err.message || '网络错误');
+    } finally {
+      setNoShowing(false);
+    }
+  };
+
   // 兼容 API 返回的 stylistName/stylistId 与 mock 使用的 barberName/barberId
   const getBarberName = (booking: Booking) =>
     (booking as any).stylistName || booking.barberName || '';
   const getBarberId = (booking: Booking) =>
     (booking as any).stylistId || booking.barberId || '';
+
+  // 判断预约是否已过期（confirmed 状态且预约时间已过）
+  const isExpired = (booking: Booking) => {
+    if (booking.status !== 'confirmed') return false;
+    const scheduled = new Date(booking.scheduledTime);
+    return scheduled.getTime() < Date.now();
+  };
 
   // 状态配置
   const statusConfig: Record<
@@ -330,16 +365,17 @@ const BookingManagement: React.FC = () => {
               <div className="divide-y divide-gray-50">
                 {dateBookings.map((booking) => {
                   const StatusIcon = statusConfig[booking.status].icon;
+                  const expired = isExpired(booking);
                   return (
                     <div
                       key={booking.id}
-                      className="px-5 py-4 hover:bg-orange-50/30 transition-colors cursor-pointer"
+                      className={`px-5 py-4 hover:bg-orange-50/30 transition-colors cursor-pointer ${expired ? 'bg-red-50/50' : ''}`}
                       onClick={() => setViewingBooking(booking)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                           {/* 排队号 */}
-                          <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-lg flex-shrink-0">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg flex-shrink-0 ${expired ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
                             {booking.queueNumber || '-'}
                           </div>
 
@@ -351,6 +387,11 @@ const BookingManagement: React.FC = () => {
                                 <StatusIcon size={12} />
                                 {statusConfig[booking.status].label}
                               </span>
+                              {expired && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
+                                  已过期
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
                               <span className="flex items-center gap-1">
@@ -490,14 +531,26 @@ const BookingManagement: React.FC = () => {
                 </>
               )}
               {viewingBooking.status === 'confirmed' && (
-                <button
-                  onClick={handleCompleteBooking}
-                  disabled={completing}
-                  className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {completing ? <Loader2 size={18} className="animate-spin" /> : null}
-                  完成服务
-                </button>
+                <>
+                  <button
+                    onClick={handleCompleteBooking}
+                    disabled={completing}
+                    className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {completing ? <Loader2 size={18} className="animate-spin" /> : null}
+                    完成服务
+                  </button>
+                  {isExpired(viewingBooking) && (
+                    <button
+                      onClick={handleNoShow}
+                      disabled={noShowing}
+                      className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {noShowing ? <Loader2 size={18} className="animate-spin" /> : null}
+                      客户未到
+                    </button>
+                  )}
+                </>
               )}
               <button
                 onClick={() => setViewingBooking(null)}
