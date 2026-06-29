@@ -29,6 +29,7 @@ const BookingManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<Booking['status'] | 'all'>('all');
+  const [barberFilter, setBarberFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('board');
@@ -208,7 +209,17 @@ const BookingManagement: React.FC = () => {
     ];
   }, [bookings]);
 
-  // 筛选（列表视图用：包含状态筛选）
+  // 从所有预约中提取发型师选项（用于下拉筛选）
+  const barberOptions = useMemo(() => {
+    const names = new Set<string>();
+    bookings.forEach((b) => {
+      const name = getBarberName(b);
+      if (name) names.add(name);
+    });
+    return Array.from(names).sort();
+  }, [bookings]);
+
+  // 筛选（列表视图用：包含状态和发型师筛选）
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
       const matchesSearch =
@@ -218,16 +229,17 @@ const BookingManagement: React.FC = () => {
         b.serviceName?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
+      const matchesBarber = barberFilter === 'all' || getBarberName(b) === barberFilter;
 
       const matchesDate =
         !dateFilter ||
         new Date(b.scheduledTime).toDateString() === new Date(dateFilter).toDateString();
 
-      return matchesSearch && matchesStatus && matchesDate;
+      return matchesSearch && matchesStatus && matchesBarber && matchesDate;
     });
-  }, [bookings, searchTerm, statusFilter, dateFilter]);
+  }, [bookings, searchTerm, statusFilter, barberFilter, dateFilter]);
 
-  // 看板视图用：仅按搜索和日期筛选，状态用于列内分组
+  // 看板视图用：仅按搜索、日期和发型师筛选，状态用于列内分组
   const boardBookings = useMemo(() => {
     return bookings.filter((b) => {
       const matchesSearch =
@@ -236,13 +248,14 @@ const BookingManagement: React.FC = () => {
         getBarberName(b)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         b.serviceName?.toLowerCase().includes(searchTerm.toLowerCase());
 
+      const matchesBarber = barberFilter === 'all' || getBarberName(b) === barberFilter;
       const matchesDate =
         !dateFilter ||
         new Date(b.scheduledTime).toDateString() === new Date(dateFilter).toDateString();
 
-      return matchesSearch && matchesDate;
+      return matchesSearch && matchesBarber && matchesDate;
     });
-  }, [bookings, searchTerm, dateFilter]);
+  }, [bookings, searchTerm, barberFilter, dateFilter]);
 
   // 按状态分组（看板视图用）
   const boardGroups = useMemo(() => {
@@ -277,6 +290,7 @@ const BookingManagement: React.FC = () => {
   const resetFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
+    setBarberFilter('all');
     setDateFilter('');
   };
 
@@ -324,6 +338,19 @@ const BookingManagement: React.FC = () => {
             <option value="cancelled">已取消</option>
           </select>
 
+          <select
+            value={barberFilter}
+            onChange={(e) => setBarberFilter(e.target.value)}
+            className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+          >
+            <option value="all">全部发型师</option>
+            {barberOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+
           <input
             type="date"
             value={dateFilter}
@@ -331,7 +358,7 @@ const BookingManagement: React.FC = () => {
             className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
           />
 
-          {(searchTerm || statusFilter !== 'all' || dateFilter) && (
+          {(searchTerm || statusFilter !== 'all' || barberFilter !== 'all' || dateFilter) && (
             <button
               onClick={resetFilters}
               className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
@@ -626,14 +653,12 @@ const BookingManagement: React.FC = () => {
                     {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
                   </span>
                 </div>
-                {getBarberName(viewingBooking) && (
-                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-500 flex items-center gap-2">
-                      <User size={16} /> 指定发型师
-                    </span>
-                    <span className="font-medium text-gray-800">{getBarberName(viewingBooking)}</span>
-                  </div>
-                )}
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <User size={16} /> 指定发型师
+                  </span>
+                  <span className="font-medium text-gray-800">{getBarberName(viewingBooking) || '未指定'}</span>
+                </div>
                 {viewingBooking.price && (
                   <div className="flex items-center justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500 flex items-center gap-2">

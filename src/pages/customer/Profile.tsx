@@ -383,19 +383,6 @@ const Profile: React.FC = () => {
                         </div>
                         <div className="font-medium text-orange-500">¥{booking.price}</div>
                       </div>
-                      {(booking.status === 'pending' || booking.status === 'confirmed') && activeTab === 'current' && (
-                        <div className="mt-3 sm:mt-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/customer/queue/${booking.id}`);
-                            }}
-                            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 sm:py-2 px-4 rounded-lg text-sm font-medium transition-colors"
-                          >
-                            查看排队状态
-                          </button>
-                        </div>
-                      )}
                       {booking.status === 'completed' && activeTab === 'history' && (
                         <div className="mt-3 sm:mt-4">
                           <button
