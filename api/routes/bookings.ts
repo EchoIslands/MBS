@@ -5,6 +5,18 @@ const router = Router();
 
 const generateId = () => `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
+// 时段长度（分钟），用于排队号分组
+const TIME_SLOT_MINUTES = 30;
+
+// 获取预约时间所在时段的起始时间
+const getTimeSlotStart = (date: Date, slotMinutes: number = TIME_SLOT_MINUTES) => {
+  const d = new Date(date);
+  const slotStart = Math.floor(d.getMinutes() / slotMinutes) * slotMinutes;
+  d.setMinutes(slotStart, 0, 0);
+  d.setMilliseconds(0);
+  return d;
+};
+
 const bookingFromDb = (b: any): any => ({
   id: b.id,
   shopId: b.shop_id,
@@ -357,19 +369,23 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // 按店铺 + 预约日期 + 有效状态统计当天排队人数，用于生成更合理的排队号
+    // 按店铺 + 预约日期 + 同一时段 + 有效状态统计排队人数，用于生成更合理的排队号
     const scheduledDateStart = new Date(scheduledTimeDate);
     scheduledDateStart.setHours(0, 0, 0, 0);
     const scheduledDateEnd = new Date(scheduledDateStart);
     scheduledDateEnd.setDate(scheduledDateEnd.getDate() + 1);
+
+    const slotStart = getTimeSlotStart(scheduledTimeDate);
+    const slotEnd = new Date(slotStart);
+    slotEnd.setMinutes(slotEnd.getMinutes() + TIME_SLOT_MINUTES);
 
     const { count, error: countError } = await supabase
       .from('bookings')
       .select('*', { count: 'exact', head: true })
       .eq('shop_id', shopId)
       .in('status', ['pending', 'confirmed'])
-      .gte('scheduled_time', scheduledDateStart.toISOString())
-      .lt('scheduled_time', scheduledDateEnd.toISOString());
+      .gte('scheduled_time', slotStart.toISOString())
+      .lt('scheduled_time', slotEnd.toISOString());
 
     if (countError) {
       console.error('[bookings] 查询预约数失败:', countError.message);

@@ -8,6 +8,25 @@ import { Booking, Queue as QueueType, Employee, Shop } from '../../../shared/typ
 import { mockShops } from '../../../shared/mockData';
 import { bookingApi, queueApi, shopApi } from '../../../src/api';
 
+// 时段长度（分钟），需要与后端 queues.ts 保持一致
+const TIME_SLOT_MINUTES = 30;
+
+const getTimeSlotStart = (date: Date, slotMinutes: number = TIME_SLOT_MINUTES) => {
+  const d = new Date(date);
+  const slotStart = Math.floor(d.getMinutes() / slotMinutes) * slotMinutes;
+  d.setMinutes(slotStart, 0, 0);
+  d.setMilliseconds(0);
+  return d;
+};
+
+const formatTimeSlot = (date: Date) => {
+  const start = getTimeSlotStart(date);
+  const end = new Date(start.getTime() + TIME_SLOT_MINUTES * 60 * 1000);
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return `${fmt(start)} - ${fmt(end)}`;
+};
+
 // 模拟服务步骤（用于可视化进度）
 const serviceSteps = [
   { key: 'checkin', label: '到店确认', icon: CheckCircle, duration: 5 },
@@ -189,6 +208,9 @@ const Queue: React.FC = () => {
   const waitTime = serviceStarted
     ? remainingMinutes
     : (queue?.estimatedWaitTime ?? (aheadCount > 0 ? aheadCount * 30 : 15));
+
+  // 预约时段标签
+  const timeSlotLabel = booking ? formatTimeSlot(new Date(booking.scheduledTime)) : '';
 
   // “该出发了”仅在预约当天、尚未开始服务、且距离预约时间较近时显示
   const shouldLeaveNow =
@@ -424,6 +446,13 @@ const Queue: React.FC = () => {
               </p>
             </div>
           </div>
+
+          {timeSlotLabel && (
+            <div className="mb-3 px-3 py-1.5 bg-gray-50 rounded-xl inline-flex items-center gap-1.5 text-xs text-gray-600">
+              <ClockIcon size={13} className="text-blue-500" />
+              预约时段：{timeSlotLabel}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div className="bg-blue-50 rounded-2xl p-4 text-center">
