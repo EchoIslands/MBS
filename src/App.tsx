@@ -14,6 +14,7 @@ import Queue from "./pages/customer/Queue";
 import Profile from "./pages/customer/Profile";
 import ReviewPage from "./pages/customer/Review";
 import RefundPage from "./pages/customer/Refund";
+import Feedback from "./pages/customer/Feedback";
 import ProductList from "./pages/customer/ProductList";
 import Cart from "./pages/customer/Cart";
 
@@ -81,6 +82,7 @@ export default function App() {
         <Route path="/customer/profile" element={<Profile />} />
         <Route path="/customer/review/:bookingId" element={<ReviewPage />} />
         <Route path="/customer/refund" element={<RefundPage />} />
+        <Route path="/customer/feedback" element={<Feedback />} />
 
         {/* 理发店端路由 */}
         <Route path="/shop/login" element={<ShopLogin />} />

@@ -417,7 +417,7 @@ const Profile: React.FC = () => {
             <div className="text-xs text-gray-500 mt-0.5">申请退款查看进度</div>
           </button>
           <button
-            onClick={() => navigate(`/customer/shop/${shop?.id}`)}
+            onClick={() => navigate('/customer/feedback')}
             className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"
           >
             <MessageSquare size={20} className="sm:hidden text-blue-500 mb-1" />

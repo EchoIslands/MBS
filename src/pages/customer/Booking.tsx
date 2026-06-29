@@ -5,8 +5,8 @@ import {
   Scissors, Sparkles, ChevronRight, Award, ThumbsUp
 } from 'lucide-react';
 import { mockShops, mockBookings } from '../../../shared/mockData';
-import { Employee } from '../../../shared/types';
-import { bookingApi } from '../../../src/api';
+import { Employee, Shop } from '../../../shared/types';
+import { bookingApi, shopApi } from '../../../src/api';
 
 type SelectionMode = 'specific' | 'fastest';
 
