@@ -105,6 +105,7 @@ export interface Shop {
   distance?: number; // 计算的距离（公里）
   rating?: number; // 店铺评分
   reviewCount?: number; // 店铺评价数量
+  bookingConfirmMode?: 'auto' | 'manual'; // 预约确认方式：auto 自动确认（默认），manual 手动确认
 }
 
 // 客户标签类型

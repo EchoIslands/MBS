@@ -337,13 +337,14 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // 自动补全服务信息：查 shops 表获取服务名称和价格
+    // 自动补全服务信息：查 shops 表获取服务名称和价格，同时读取预约确认方式
     let finalServiceName = serviceName;
     let finalPrice = price;
+    let bookingConfirmMode = 'auto';
     if (!finalServiceName || finalServiceName === '服务' || !finalPrice) {
       const { data: shopData } = await supabase
         .from('shops')
-        .select('services')
+        .select('services, booking_confirm_mode')
         .eq('id', shopId)
         .maybeSingle();
       if (shopData?.services) {
@@ -353,6 +354,9 @@ router.post('/', async (req: Request, res: Response) => {
           finalServiceName = svc.name || finalServiceName;
           finalPrice = svc.price || finalPrice;
         }
+      }
+      if (shopData?.booking_confirm_mode) {
+        bookingConfirmMode = shopData.booking_confirm_mode;
       }
     }
 
@@ -404,7 +408,7 @@ router.post('/', async (req: Request, res: Response) => {
       price: finalPrice || 0,
       scheduled_time: scheduledTimeDate.toISOString(),
       queue_number: (count || 0) + 1,
-      status: 'confirmed',
+      status: bookingConfirmMode === 'manual' ? 'pending' : 'confirmed',
       notes: notes || '',
       created_at: new Date().toISOString(),
     };

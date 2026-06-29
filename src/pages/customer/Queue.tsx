@@ -443,12 +443,18 @@ const Queue: React.FC = () => {
             <div>
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
                 <Calendar size={18} className="text-blue-500" />
-                {isAppointmentTimeReached && serviceStarted ? '实时排队状态' : '预计排队状态'}
+                {booking?.status === 'pending'
+                  ? '待店铺确认'
+                  : isAppointmentTimeReached && serviceStarted
+                    ? '实时排队状态'
+                    : '预计排队状态'}
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                {isAppointmentTimeReached && serviceStarted
-                  ? '服务进行中 · 数据随门店操作实时变化'
-                  : '基于当前预约顺序估算 · 到店后将切换为实时状态'}
+                {booking?.status === 'pending'
+                  ? '店铺确认后将生成排队号，请耐心等待'
+                  : isAppointmentTimeReached && serviceStarted
+                    ? '服务进行中 · 数据随门店操作实时变化'
+                    : '基于当前预约顺序估算 · 到店后将切换为实时状态'}
               </p>
             </div>
           </div>

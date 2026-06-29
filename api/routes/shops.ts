@@ -16,6 +16,7 @@ const shopFromDb = (s: any): any => ({
   avatar: s.avatar || '',
   images: s.images || [],
   services: s.services || [],
+  bookingConfirmMode: s.booking_confirm_mode || 'auto',
   createdAt: s.created_at,
 });
 
@@ -108,6 +109,66 @@ router.get('/:id', async (req: Request, res: Response) => {
       success: false,
       error: '获取店铺失败',
     });
+  }
+});
+
+// 更新店铺信息
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      description,
+      address,
+      phone,
+      latitude,
+      longitude,
+      avatar,
+      images,
+      services,
+      employees,
+      openingHours,
+      bookingConfirmMode,
+      isActive,
+    } = req.body || {};
+
+    const updatePayload: any = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (name !== undefined) updatePayload.name = name;
+    if (description !== undefined) updatePayload.description = description;
+    if (address !== undefined) updatePayload.address = address;
+    if (phone !== undefined) updatePayload.phone = phone;
+    if (latitude !== undefined) updatePayload.latitude = latitude;
+    if (longitude !== undefined) updatePayload.longitude = longitude;
+    if (avatar !== undefined) updatePayload.avatar = avatar;
+    if (images !== undefined) updatePayload.images = images;
+    if (services !== undefined) updatePayload.services = services;
+    if (employees !== undefined) updatePayload.employees = employees;
+    if (openingHours !== undefined) updatePayload.opening_hours = openingHours;
+    if (bookingConfirmMode !== undefined) updatePayload.booking_confirm_mode = bookingConfirmMode;
+    if (isActive !== undefined) updatePayload.is_active = isActive;
+
+    const { data, error } = await supabase
+      .from('shops')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[shops] 更新店铺失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新店铺失败' });
+    }
+
+    res.json({
+      success: true,
+      data: shopFromDb(data),
+    });
+  } catch (error) {
+    console.error('[shops] 更新店铺失败:', error);
+    res.status(500).json({ success: false, error: '更新店铺失败' });
   }
 });
 

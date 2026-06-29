@@ -370,7 +370,7 @@ const Profile: React.FC = () => {
                             'text-gray-600 bg-gray-100'
                           }`}
                         >
-                          {booking.status === 'pending' ? '待确认' :
+                          {booking.status === 'pending' ? '待店铺确认' :
                            booking.status === 'confirmed' ? '已确认' :
                            booking.status === 'completed' ? '已完成' : '已取消'}
                         </span>
@@ -464,7 +464,7 @@ const Profile: React.FC = () => {
                   viewingBooking.status === 'confirmed' ? 'text-blue-700' :
                   viewingBooking.status === 'pending' ? 'text-yellow-700' : 'text-gray-500'
                 }`}>
-                  {viewingBooking.status === 'pending' ? '待确认' :
+                  {viewingBooking.status === 'pending' ? '待店铺确认' :
                    viewingBooking.status === 'confirmed' ? '已确认' :
                    viewingBooking.status === 'completed' ? '已完成' : '已取消'}
                 </span>
@@ -525,7 +525,7 @@ const Profile: React.FC = () => {
 
             {/* 操作按钮 */}
             <div className="flex gap-3 mt-5 sm:mt-6">
-              {(viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && (
+              {viewingBooking.status === 'confirmed' && (
                 <button
                   onClick={() => {
                     setViewingBooking(null);
@@ -536,7 +536,12 @@ const Profile: React.FC = () => {
                   查看排队状态
                 </button>
               )}
-              {viewingBooking.status === 'confirmed' && (
+              {viewingBooking.status === 'pending' && (
+                <div className="flex-1 py-3 bg-yellow-50 text-yellow-700 rounded-xl font-medium text-center text-sm flex items-center justify-center">
+                  店铺确认后生成排队信息
+                </div>
+              )}
+              {(viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && (
                 <button
                   onClick={handleCancelBooking}
                   disabled={cancelling}

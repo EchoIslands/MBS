@@ -43,6 +43,7 @@ const ShopManage: React.FC = () => {
     avatar: '' 
   });
   const [openingHours, setOpeningHours] = useState<OpeningHours>(currentShop?.openingHours || defaultOpeningHours);
+  const [bookingConfirmMode, setBookingConfirmMode] = useState<'auto' | 'manual'>(currentShop?.bookingConfirmMode || 'auto');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -99,6 +100,7 @@ const ShopManage: React.FC = () => {
         services,
         employees,
         openingHours,
+        bookingConfirmMode,
       };
       const response = await fetch(`/api/shops/${currentShop.id}`, {
         method: 'PUT',
@@ -116,6 +118,7 @@ const ShopManage: React.FC = () => {
           services,
           employees,
           openingHours,
+          bookingConfirmMode,
         });
         alert('保存成功！');
         navigate('/shop');
@@ -449,6 +452,51 @@ const ShopManage: React.FC = () => {
                 暂无员工，添加您的第一位员工吧
               </div>
             )}
+          </div>
+        </div>
+
+        {/* 预约设置 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Calendar size={20} className="text-orange-500" />
+            预约设置
+          </h2>
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700 mb-2">预约确认方式</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setBookingConfirmMode('auto')}
+                className={`flex flex-col items-start p-4 rounded-xl border-2 transition-all text-left ${
+                  bookingConfirmMode === 'auto'
+                    ? 'border-orange-500 bg-orange-50'
+                    : 'border-gray-200 hover:border-orange-300'
+                }`}
+              >
+                <span className={`font-semibold ${bookingConfirmMode === 'auto' ? 'text-orange-700' : 'text-gray-800'}`}>
+                  自动确认
+                </span>
+                <span className="text-xs text-gray-500 mt-1">
+                  用户提交预约后直接显示“预约成功”，无需店铺手动确认。
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBookingConfirmMode('manual')}
+                className={`flex flex-col items-start p-4 rounded-xl border-2 transition-all text-left ${
+                  bookingConfirmMode === 'manual'
+                    ? 'border-orange-500 bg-orange-50'
+                    : 'border-gray-200 hover:border-orange-300'
+                }`}
+              >
+                <span className={`font-semibold ${bookingConfirmMode === 'manual' ? 'text-orange-700' : 'text-gray-800'}`}>
+                  手动确认
+                </span>
+                <span className="text-xs text-gray-500 mt-1">
+                  用户提交后需店铺在后台点击“确认预约”才生效。
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 

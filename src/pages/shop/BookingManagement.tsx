@@ -125,6 +125,62 @@ const BookingManagement: React.FC = () => {
     }
   };
 
+  // 确认预约（pending -> confirmed）
+  const [confirming, setConfirming] = useState(false);
+  const handleConfirmBooking = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确认接受该预约吗？')) return;
+
+    setConfirming(true);
+    try {
+      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'confirmed' }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setViewingBooking(null);
+        fetchBookings();
+      } else {
+        setError(data.error || '确认预约失败');
+      }
+    } catch (err: any) {
+      setError(err.message || '网络错误');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  // 取消预约（pending -> cancelled）
+  const [cancellingBooking, setCancellingBooking] = useState(false);
+  const handleCancelBooking = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确认取消该预约吗？取消后无法恢复。')) return;
+
+    setCancellingBooking(true);
+    try {
+      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setViewingBooking(null);
+        fetchBookings();
+      } else {
+        setError(data.error || '取消预约失败');
+      }
+    } catch (err: any) {
+      setError(err.message || '网络错误');
+    } finally {
+      setCancellingBooking(false);
+    }
+  };
+
   // 兼容 API 返回的 stylistName/stylistId 与 mock 使用的 barberName/barberId
   const getBarberName = (booking: Booking) =>
     (booking as any).stylistName || booking.barberName || '';
@@ -688,10 +744,20 @@ const BookingManagement: React.FC = () => {
             <div className="flex gap-3 mt-6">
               {viewingBooking.status === 'pending' && (
                 <>
-                  <button className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors">
+                  <button
+                    onClick={handleConfirmBooking}
+                    disabled={confirming}
+                    className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {confirming ? <Loader2 size={18} className="animate-spin" /> : null}
                     确认预约
                   </button>
-                  <button className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors">
+                  <button
+                    onClick={handleCancelBooking}
+                    disabled={cancellingBooking}
+                    className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {cancellingBooking ? <Loader2 size={18} className="animate-spin" /> : null}
                     取消预约
                   </button>
                 </>
