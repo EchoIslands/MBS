@@ -159,7 +159,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[shops] 更新店铺失败:', error.message);
-      return res.status(500).json({ success: false, error: '更新店铺失败' });
+      return res.status(500).json({ success: false, error: `更新店铺失败: ${error.message}` });
     }
 
     res.json({
