@@ -118,6 +118,31 @@ const ReviewPage: React.FC = () => {
     );
   }
 
+  // 评价只能在服务完成后进行
+  if (booking && booking.status !== 'completed') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm sticky top-0 z-50">
+          <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+            <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <ArrowLeft size={20} className="text-gray-600" />
+            </button>
+            <h1 className="font-semibold text-gray-800">发表评价</h1>
+          </div>
+        </header>
+        <div className="max-w-2xl mx-auto px-4 py-12 text-center">
+          <p className="text-gray-500 mb-6">服务完成后才能进行评价</p>
+          <button
+            onClick={() => navigate('/customer/profile')}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-medium"
+          >
+            返回个人中心
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ========== 提交前：评价表单 ==========
   if (!submitted) {
     return (
