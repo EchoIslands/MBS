@@ -203,11 +203,17 @@ const Queue: React.FC = () => {
   // 按 5km/h 估算：1km ≈ 12 分钟，兜底至少 5 分钟
   const walkTime = Math.max(5, Math.ceil(distance / 0.083));
 
-  // 如果服务已开始，显示剩余分钟；否则优先使用排队系统的预计等待时间，
-  // 没有则按前方人数 × 30 分钟估算，最后兜底 15 分钟
+  // 从排队数据中获取当前预约的服务时长（分钟）
+  const currentBookingQueueInfo = queue?.bookings?.find((b) => b.id === booking?.id);
+  const serviceMinutes = (currentBookingQueueInfo as any)?.duration || 30;
+
+  // 如果服务已开始，显示剩余分钟；
+  // 否则按“前方还有几人 × 当前服务时长”计算。已经排到第 1 位时等待时间为 0。
   const waitTime = serviceStarted
     ? remainingMinutes
-    : (queue?.estimatedWaitTime ?? (aheadCount > 0 ? aheadCount * 30 : 15));
+    : aheadCount === 0
+      ? 0
+      : aheadCount * serviceMinutes;
 
   // 预约时段标签
   const timeSlotLabel = booking ? formatTimeSlot(new Date(booking.scheduledTime)) : '';

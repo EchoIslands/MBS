@@ -129,13 +129,13 @@ router.get('/:shopId', async (req: Request, res: Response) => {
       currentNumber = maxCompleted + 1;
     }
 
-    // 预计等待时间：当前时段内，排在自己前面的未服务预约的服务时长之和
-    // 如果请求没有指定目标 booking，则按当前时段整体估算（取前 3 位未服务预约）
+    // 预计等待时间：当前时段内，排在当前叫号之后的未服务预约的服务时长之和
+    // （当前叫号本身即将开始服务，不应再计入等待）
     const currentSlotBookings = list.filter(
       (b) => getTimeSlotStart(new Date(b.scheduledTime)).getTime() === currentSlotStart.getTime(),
     );
     const aheadBookings = currentSlotBookings.filter(
-      (b) => b.queueNumber >= currentNumber && b.status !== 'serving',
+      (b) => b.queueNumber > currentNumber && b.status !== 'serving',
     );
     const estimatedWaitTime = aheadBookings
       .slice(0, 3)
