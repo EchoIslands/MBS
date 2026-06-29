@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Star, Send, CheckCircle, Share2, Gift, Sparkles, User, Heart, MessageCircle,
   Award
 } from 'lucide-react';
-import { mockShops } from '../../../shared/mockData';
+import { Booking } from '../../../shared/types';
+import { useAppStore } from '../../store';
+import { bookingApi, reviewApi } from '../../api';
 
 const ReviewPage: React.FC = () => {
   const { bookingId } = useParams<{ bookingId: string }>();
@@ -14,10 +16,53 @@ const ReviewPage: React.FC = () => {
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [shared, setShared] = useState(false);
+  const [booking, setBooking] = useState<Booking | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+  const { currentCustomer } = useAppStore();
 
-  // 获取店铺信息（用于分享卡片样式）
-  const shop = mockShops[0];
+  useEffect(() => {
+    async function fetchBooking() {
+      if (!bookingId) return;
+      try {
+        const data = await bookingApi.getBooking(bookingId);
+        setBooking(data);
+      } catch (error) {
+        console.error('加载预约信息失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchBooking();
+  }, [bookingId]);
+
+  const handleSubmit = async () => {
+    if (!booking || !currentCustomer) {
+      alert('无法提交评价，缺少预约或登录信息');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await reviewApi.createReview({
+        shopId: booking.shopId,
+        customerId: currentCustomer.id,
+        bookingId: booking.id,
+        stylistId: booking.barberId,
+        serviceScore,
+        priceScore,
+        skillScore,
+        comment,
+      });
+      setSubmitted(true);
+    } catch (error) {
+      console.error('提交评价失败:', error);
+      alert('提交评价失败，请重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // ========== 星级评价渲染 ==========
   const renderStarSelector = (
@@ -56,10 +101,6 @@ const ReviewPage: React.FC = () => {
     </div>
   );
 
-  const handleSubmit = () => {
-    setSubmitted(true);
-  };
-
   const handleShare = () => {
     setShared(true);
     // 模拟分享完成
@@ -67,6 +108,15 @@ const ReviewPage: React.FC = () => {
       alert('分享成功！您已获得 ¥10 优惠券，下次消费自动抵扣～');
     }, 400);
   };
+
+  // ========== 加载中 ==========
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500 text-sm">加载中...</div>
+      </div>
+    );
+  }
 
   // ========== 提交前：评价表单 ==========
   if (!submitted) {
@@ -93,8 +143,12 @@ const ReviewPage: React.FC = () => {
                 <User size={28} className="hidden sm:inline text-orange-500" />
               </div>
               <div className="min-w-0">
-                <div className="font-semibold text-gray-800 text-sm sm:text-base truncate">李明 · 首席发型师</div>
-                <div className="text-xs sm:text-sm text-gray-500 mt-0.5">精剪 · 30 分钟 · ¥68</div>
+                <div className="font-semibold text-gray-800 text-sm sm:text-base truncate">
+                  {booking?.barberName || '发型师'} · {booking?.shopName || '店铺'}
+                </div>
+                <div className="text-xs sm:text-sm text-gray-500 mt-0.5">
+                  {booking?.serviceName || '服务'} · ¥{booking?.price || 0}
+                </div>
               </div>
             </div>
             <div className="text-xs sm:text-sm text-gray-500 flex items-center gap-1">
@@ -126,11 +180,12 @@ const ReviewPage: React.FC = () => {
 
             <button
               onClick={handleSubmit}
-              className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 min-h-[52px]"
+              disabled={submitting}
+              className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 min-h-[52px]"
             >
               <Send size={18} className="sm:hidden" />
               <Send size={20} className="hidden sm:inline" />
-              提交评价
+              {submitting ? '提交中...' : '提交评价'}
             </button>
           </div>
         </div>
@@ -277,7 +332,7 @@ const ReviewPage: React.FC = () => {
             返回首页
           </button>
           <button
-            onClick={() => navigate(`/customer/shop/${shop?.id || 'shop1'}`)}
+            onClick={() => navigate(`/customer/shop/${booking?.shopId || 'shop1'}`)}
             className="py-3 sm:py-4 px-4 sm:px-6 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl font-bold transition-colors shadow-lg text-sm sm:text-base min-h-[52px]"
           >
             再次预约

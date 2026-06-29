@@ -2,16 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { Star, MessageSquare, User } from 'lucide-react';
 import { Review } from '../../../shared/types';
 import { useAppStore } from '../../store';
-import { mockReviews } from '../../../shared/mockData';
+import { shopApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const ReviewsManagement: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
   const { currentShop } = useAppStore();
 
   useEffect(() => {
-    setReviews(mockReviews);
-  }, []);
+    async function fetchReviews() {
+      if (!currentShop?.id) return;
+      setLoading(true);
+      try {
+        const data = await shopApi.getShopReviews(currentShop.id);
+        setReviews(data);
+      } catch (error) {
+        console.error('加载评价失败:', error);
+        setReviews([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchReviews();
+  }, [currentShop?.id]);
 
   const renderStars = (count: number) => {
     return (
@@ -38,7 +52,7 @@ const ReviewsManagement: React.FC = () => {
       average: '中',
       poor: '差',
     };
-    return levelMap[currentShop.level] || '';
+    return levelMap[currentShop?.level || ''] || '-';
   };
 
   const getLevelColor = () => {
@@ -48,7 +62,7 @@ const ReviewsManagement: React.FC = () => {
       average: 'bg-yellow-100 text-yellow-700',
       poor: 'bg-red-100 text-red-700',
     };
-    return colorMap[currentShop.level] || '';
+    return colorMap[currentShop?.level || ''] || 'bg-gray-100 text-gray-500';
   };
 
   return (
@@ -60,13 +74,13 @@ const ReviewsManagement: React.FC = () => {
             <div className="flex items-center gap-8">
               <div className="text-center">
                 <div className="text-5xl font-bold text-orange-600 mb-1">
-                  {currentShop.rating.toFixed(1)}
+                  {(currentShop.rating || 0).toFixed(1)}
                 </div>
                 <div className="flex items-center justify-center gap-1 mb-1">
-                  {renderStars(Math.round(currentShop.rating))}
+                  {renderStars(Math.round(currentShop.rating || 0))}
                 </div>
                 <div className="text-sm text-gray-500">
-                  {currentShop.reviewCount} 条评价
+                  {currentShop.reviewCount || 0} 条评价
                 </div>
               </div>
               <div className="flex-1">
@@ -123,7 +137,11 @@ const ReviewsManagement: React.FC = () => {
             顾客评价
           </h2>
 
-          {reviews.length > 0 ? (
+          {loading ? (
+            <div className="text-center text-gray-500 py-12">
+              <p>加载中...</p>
+            </div>
+          ) : reviews.length > 0 ? (
             <div className="space-y-4">
               {reviews.map((review) => (
                 <div

@@ -17,6 +17,8 @@ const shopFromDb = (s: any): any => ({
   images: s.images || [],
   services: s.services || [],
   bookingConfirmMode: s.booking_confirm_mode || 'auto',
+  rating: s.rating || 5,
+  reviewCount: s.review_count || 0,
   createdAt: s.created_at,
 });
 

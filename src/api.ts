@@ -236,7 +236,7 @@ export const shopApi = {
 
   getShopReviews: async (id: string): Promise<Review[]> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/shops/${id}/reviews`);
+      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/shop/${id}`);
       if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
