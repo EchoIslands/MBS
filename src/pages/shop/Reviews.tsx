@@ -8,22 +8,26 @@ import ShopLayout from './ShopLayout';
 const ReviewsManagement: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { currentShop } = useAppStore();
 
-  useEffect(() => {
-    async function fetchReviews() {
-      if (!currentShop?.id) return;
-      setLoading(true);
-      try {
-        const data = await shopApi.getShopReviews(currentShop.id);
-        setReviews(data);
-      } catch (error) {
-        console.error('加载评价失败:', error);
-        setReviews([]);
-      } finally {
-        setLoading(false);
-      }
+  const fetchReviews = async () => {
+    if (!currentShop?.id) return;
+    setLoading(true);
+    try {
+      setError(null);
+      const data = await shopApi.getShopReviews(currentShop.id);
+      setReviews(data);
+    } catch (err: any) {
+      console.error('加载评价失败:', err);
+      setReviews([]);
+      setError(err?.message || '加载评价失败，请检查网络或后端服务');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     fetchReviews();
   }, [currentShop?.id]);
 
@@ -140,6 +144,16 @@ const ReviewsManagement: React.FC = () => {
           {loading ? (
             <div className="text-center text-gray-500 py-12">
               <p>加载中...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <div className="text-red-500 text-sm mb-2">{error}</div>
+              <button
+                onClick={() => fetchReviews()}
+                className="text-orange-500 text-sm font-medium hover:text-orange-600"
+              >
+                重试
+              </button>
             </div>
           ) : reviews.length > 0 ? (
             <div className="space-y-4">

@@ -238,6 +238,8 @@ export const shopApi = {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/shop/${id}`);
       if (result?.data) return result.data;
+      // 真实 API 已启用但未返回数据，说明后端异常，直接抛错避免静默 fallback
+      throw new Error('后端评价接口异常，请检查数据库和部署状态');
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockReviews.filter((r) => r.shopId === id);
@@ -443,11 +445,13 @@ export const reviewApi = {
     data: Omit<Review, 'id' | 'overallScore' | 'customerName' | 'createdAt'>,
   ): Promise<Review> => {
     if (USE_REAL_API) {
-      const result = await http<Review>(`${API_BASE}/reviews`, {
+      const result = await http<{ success: boolean; data: Review }>(`${API_BASE}/reviews`, {
         method: 'POST',
         body: JSON.stringify(data),
       });
-      if (result && result.id) return result;
+      if (result?.data && result.data.id) return result.data;
+      // 真实 API 已启用但未返回数据，说明后端异常，直接抛错避免静默 fallback
+      throw new Error('提交评价失败，请检查后端接口和数据库');
     }
     await new Promise((r) => setTimeout(r, 300));
     const overallScore = Math.round(((data.serviceScore + data.priceScore + data.skillScore) / 3) * 10) / 10;
