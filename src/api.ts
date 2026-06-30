@@ -465,6 +465,40 @@ export const reviewApi = {
     mockReviews.push(newReview);
     return newReview;
   },
+
+  replyReview: async (id: string, reply: string, replyBy: string): Promise<Review> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: Review }>(`${API_BASE}/reviews/${id}/reply`, {
+        method: 'PUT',
+        body: JSON.stringify({ reply, replyBy }),
+      });
+      if (result?.data && result.data.id) return result.data;
+      throw new Error('回复评价失败，请检查后端接口');
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    const review = mockReviews.find((r) => r.id === id);
+    if (!review) throw new Error('评价不存在');
+    review.reply = reply;
+    review.replyBy = replyBy;
+    review.replyAt = new Date();
+    return review;
+  },
+
+  hideReview: async (id: string, isHidden: boolean): Promise<Review> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: Review }>(`${API_BASE}/reviews/${id}/hide`, {
+        method: 'PUT',
+        body: JSON.stringify({ isHidden }),
+      });
+      if (result?.data && result.data.id) return result.data;
+      throw new Error('更新评价显示状态失败');
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    const review = mockReviews.find((r) => r.id === id);
+    if (!review) throw new Error('评价不存在');
+    review.isHidden = isHidden;
+    return review;
+  },
 };
 
 // 队列相关 API

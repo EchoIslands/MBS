@@ -245,6 +245,11 @@ export interface Review {
   comment: string;
   customerName?: string;
   createdAt: Date;
+  // 店铺端回复与展示控制
+  reply?: string;
+  replyBy?: string;
+  replyAt?: Date;
+  isHidden?: boolean;
 }
 
 export interface Reminder {

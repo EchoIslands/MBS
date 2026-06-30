@@ -16,6 +16,10 @@ const reviewFromDb = (r: any): any => ({
   comment: r.comment || '',
   customerName: r.customer_name || '顾客',
   createdAt: r.created_at,
+  reply: r.reply,
+  replyBy: r.reply_by,
+  replyAt: r.reply_at,
+  isHidden: r.is_hidden,
 });
 
 // 创建评价
@@ -137,6 +141,85 @@ router.get('/shop/:shopId', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: '获取评价失败',
+    });
+  }
+});
+
+// 回复评价
+router.put('/:id/reply', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reply, replyBy } = req.body;
+
+    if (!reply || !replyBy) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少回复内容或回复人',
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('reviews')
+      .update({
+        reply,
+        reply_by: replyBy,
+        reply_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[reviews] 回复评价失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: `回复评价失败: ${error.message}`,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: reviewFromDb(data),
+    });
+  } catch (error) {
+    console.error('[reviews] 回复评价异常:', error);
+    res.status(500).json({
+      success: false,
+      error: '回复评价失败',
+    });
+  }
+});
+
+// 隐藏/显示评价
+router.put('/:id/hide', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isHidden } = req.body;
+
+    const { data, error } = await supabase
+      .from('reviews')
+      .update({ is_hidden: Boolean(isHidden) })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[reviews] 更新评价显示状态失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: `更新评价显示状态失败: ${error.message}`,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: reviewFromDb(data),
+    });
+  } catch (error) {
+    console.error('[reviews] 更新评价显示状态异常:', error);
+    res.status(500).json({
+      success: false,
+      error: '更新评价显示状态失败',
     });
   }
 });

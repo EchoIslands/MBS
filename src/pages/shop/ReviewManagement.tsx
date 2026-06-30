@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Star,
   MessageSquare,
@@ -12,10 +12,12 @@ import {
   Scissors,
   TrendingUp,
   BarChart2,
+  Loader2,
 } from 'lucide-react';
-import { ShopReview, StylistReview, UserRole } from '../../../shared/types';
+import { ShopReview, StylistReview, Review, UserRole } from '../../../shared/types';
 import { mockShopReviews, mockStylistReviews } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
+import { shopApi, reviewApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 type TabType = 'shop' | 'stylist';
@@ -43,8 +45,89 @@ const ReviewManagement: React.FC = () => {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [rawReviews, setRawReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [shopReviews, setShopReviews] = useState<ShopReview[]>(mockShopReviews);
   const [stylistReviews, setStylistReviews] = useState<StylistReview[]>(mockStylistReviews);
+
+  // 加载真实评价数据
+  const fetchReviews = async () => {
+    if (!currentShop?.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await shopApi.getShopReviews(currentShop.id);
+      setRawReviews(data);
+    } catch (err: any) {
+      console.error('加载评价失败:', err);
+      setError(err?.message || '加载评价失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReviews();
+  }, [currentShop?.id]);
+
+  // 将后端 Review 映射为前端 ShopReview / StylistReview 展示格式
+  const mapToShopReview = (r: Review): ShopReview => ({
+    id: r.id,
+    shopId: r.shopId,
+    customerId: r.customerId,
+    customerName: r.customerName || '顾客',
+    customerAvatar: undefined,
+    rating: Math.round(r.overallScore || 5),
+    serviceRating: r.serviceScore,
+    skillRating: r.skillScore,
+    environmentRating: Math.round(r.overallScore || 5),
+    priceRating: r.priceScore,
+    comment: r.comment || '',
+    tags: [],
+    reply: r.reply,
+    replyBy: r.replyBy,
+    replyAt: r.replyAt,
+    isHidden: r.isHidden || false,
+    createdAt: r.createdAt,
+  });
+
+  const mapToStylistReview = (r: Review): StylistReview => ({
+    id: r.id,
+    shopId: r.shopId,
+    stylistId: r.stylistId || '',
+    stylistName: '技师',
+    customerId: r.customerId,
+    customerName: r.customerName || '顾客',
+    customerAvatar: undefined,
+    serviceName: '',
+    rating: Math.round(r.overallScore || 5),
+    skillRating: r.skillScore,
+    serviceRating: r.serviceScore,
+    communicationRating: Math.round(r.overallScore || 5),
+    comment: r.comment || '',
+    tags: [],
+    reply: r.reply,
+    replyAt: r.replyAt,
+    isHidden: r.isHidden || false,
+    createdAt: r.createdAt,
+  });
+
+  useEffect(() => {
+    if (rawReviews.length === 0) {
+      setShopReviews(mockShopReviews);
+      setStylistReviews(mockStylistReviews);
+      return;
+    }
+    const shop = rawReviews
+      .filter((r) => !r.isHidden)
+      .map(mapToShopReview);
+    const stylist = rawReviews
+      .filter((r) => r.stylistId && !r.isHidden)
+      .map(mapToStylistReview);
+    setShopReviews(shop);
+    setStylistReviews(stylist.length > 0 ? stylist : mockStylistReviews);
+  }, [rawReviews]);
 
   const canReplyReview =
     !userRole ||
@@ -100,10 +183,11 @@ const ReviewManagement: React.FC = () => {
     return { total, avgRating, distribution };
   }, [activeTab, shopReviews, stylistReviews, currentShop.id]);
 
-  const handleReply = (reviewId: string) => {
+  const handleReply = async (reviewId: string) => {
     if (!replyText.trim()) return;
-    if (activeTab === 'shop') {
-      setShopReviews((prev) =>
+    try {
+      await reviewApi.replyReview(reviewId, replyText, currentEmployee?.name || '管理员');
+      setRawReviews((prev) =>
         prev.map((r) =>
           r.id === reviewId
             ? {
@@ -115,29 +199,40 @@ const ReviewManagement: React.FC = () => {
             : r
         )
       );
-    } else {
-      setStylistReviews((prev) =>
-        prev.map((r) =>
-          r.id === reviewId
-            ? { ...r, reply: replyText, replyAt: new Date() }
-            : r
-        )
-      );
+      setReplyText('');
+      setReplyingTo(null);
+    } catch (err: any) {
+      console.error('回复评价失败:', err);
+      alert(err?.message || '回复失败，请重试');
     }
-    setReplyText('');
-    setReplyingTo(null);
   };
 
-  const toggleHideShopReview = (reviewId: string) => {
-    setShopReviews((prev) =>
-      prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !r.isHidden } : r))
-    );
+  const toggleHideShopReview = async (reviewId: string) => {
+    const target = shopReviews.find((r) => r.id === reviewId);
+    if (!target) return;
+    try {
+      await reviewApi.hideReview(reviewId, !target.isHidden);
+      setRawReviews((prev) =>
+        prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden } : r))
+      );
+    } catch (err: any) {
+      console.error('隐藏评价失败:', err);
+      alert(err?.message || '操作失败，请重试');
+    }
   };
 
-  const toggleHideStylistReview = (reviewId: string) => {
-    setStylistReviews((prev) =>
-      prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !r.isHidden } : r))
-    );
+  const toggleHideStylistReview = async (reviewId: string) => {
+    const target = stylistReviews.find((r) => r.id === reviewId);
+    if (!target) return;
+    try {
+      await reviewApi.hideReview(reviewId, !target.isHidden);
+      setRawReviews((prev) =>
+        prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden } : r))
+      );
+    } catch (err: any) {
+      console.error('隐藏评价失败:', err);
+      alert(err?.message || '操作失败，请重试');
+    }
   };
 
   const ratingFilterOptions: { value: RatingFilter; label: string }[] = [
@@ -640,7 +735,22 @@ const ReviewManagement: React.FC = () => {
 
         {/* 评价列表 */}
         <div className="space-y-4">
-          {currentReviews.length > 0 ? (
+          {loading ? (
+            <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+              <Loader2 size={32} className="mx-auto mb-3 text-orange-500 animate-spin" />
+              <p className="text-gray-500">加载评价中...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+              <p className="text-red-500 mb-3">{error}</p>
+              <button
+                onClick={() => fetchReviews()}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm"
+              >
+                重试
+              </button>
+            </div>
+          ) : currentReviews.length > 0 ? (
             currentReviews.map((review) =>
               activeTab === 'shop'
                 ? renderShopReviewCard(review as ShopReview)
