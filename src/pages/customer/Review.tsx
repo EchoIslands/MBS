@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Star, Send, CheckCircle, Share2, Gift, Sparkles, User, Heart, MessageCircle,
-  Award
+  Award, Copy
 } from 'lucide-react';
 import { Booking, Review } from '../../../shared/types';
 import { useAppStore } from '../../store';
@@ -20,8 +20,16 @@ const ReviewPage: React.FC = () => {
   const [existingReview, setExistingReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [showWechatGuide, setShowWechatGuide] = useState<'friend' | 'moments' | null>(null);
   const navigate = useNavigate();
   const { currentCustomer } = useAppStore();
+
+  const shareUrl = useMemo(
+    () => `https://www.hfmbs.cn/s/${booking?.shopId || 'shop1'}`,
+    [booking]
+  );
+  const shareTitle = '我刚在这家店做了发型，服务超棒，推荐给你！';
+  const isWechatBrowser = useMemo(() => /MicroMessenger/i.test(navigator.userAgent), []);
 
   useEffect(() => {
     async function fetchBooking() {
@@ -106,38 +114,44 @@ const ReviewPage: React.FC = () => {
     </div>
   );
 
-  const handleShare = async (channel: 'wechat' | 'moments' | 'copy') => {
-    const shareUrl = `https://www.hfmbs.cn/s/${booking?.shopId || 'shop1'}`;
-    const shareTitle = '我刚在这家店做了发型，服务超棒，推荐给你！';
-
-    if (channel === 'copy') {
-      try {
-        await navigator.clipboard.writeText(`${shareTitle} ${shareUrl}`);
-        alert('链接已复制，快去分享给好友吧～');
-      } catch {
-        alert('复制失败，请手动复制链接');
-      }
-      return;
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${shareTitle} ${shareUrl}`);
+      setShared(true);
+      alert('链接已复制，快去分享给好友吧～');
+    } catch {
+      alert('复制失败，请手动复制链接');
     }
+  };
 
-    // 微信好友 / 朋友圈：优先使用系统分享 API
+  const handleSystemShare = async () => {
     if (navigator.share) {
       try {
         await navigator.share({ title: shareTitle, text: shareTitle, url: shareUrl });
-        alert('分享成功！');
+        setShared(true);
       } catch {
-        // 用户取消分享，不处理
+        // 用户取消或分享失败，不处理
       }
       return;
     }
+    // 不支持系统分享时降级复制
+    await handleCopyLink();
+  };
 
-    // 浏览器不支持系统分享，降级为复制链接
-    try {
-      await navigator.clipboard.writeText(`${shareTitle} ${shareUrl}`);
-      alert('微信分享需在微信内打开，已为您复制链接');
-    } catch {
-      alert('请手动复制链接分享给好友');
+  const handleShareButton = (channel: 'wechat' | 'moments' | 'copy') => {
+    if (channel === 'copy') {
+      handleCopyLink();
+      return;
     }
+
+    if (isWechatBrowser) {
+      // 微信内：展开对应的菜单引导（wechat 映射为 friend）
+      setShowWechatGuide(channel === 'wechat' ? 'friend' : channel);
+      return;
+    }
+
+    // 非微信环境：优先调起系统分享，否则复制链接
+    handleSystemShare();
   };
 
   // ========== 加载中 ==========
@@ -352,38 +366,101 @@ const ReviewPage: React.FC = () => {
           {/* 分享按钮组 */}
           <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
             <button
-              onClick={() => handleShare('wechat')}
+              onClick={() => handleShareButton('wechat')}
               className="flex flex-col items-center gap-1 sm:gap-2 p-3 sm:p-4 bg-green-50 hover:bg-green-100 rounded-2xl transition-colors border border-green-100"
             >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-green-500 flex items-center justify-center text-white flex-shrink-0">
                 <MessageCircle size={16} className="sm:hidden" />
                 <MessageCircle size={20} className="hidden sm:inline" />
               </div>
-              <span className="text-[11px] sm:text-xs font-medium text-green-700 text-center">微信好友</span>
+              <span className="text-[11px] sm:text-xs font-medium text-green-700 text-center">
+                {isWechatBrowser ? '微信好友' : '系统分享'}
+              </span>
             </button>
 
             <button
-              onClick={() => handleShare('moments')}
+              onClick={() => handleShareButton('moments')}
               className="flex flex-col items-center gap-1 sm:gap-2 p-3 sm:p-4 bg-orange-50 hover:bg-orange-100 rounded-2xl transition-colors border border-orange-100"
             >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-orange-500 flex items-center justify-center text-white flex-shrink-0">
                 <Share2 size={16} className="sm:hidden" />
                 <Share2 size={20} className="hidden sm:inline" />
               </div>
-              <span className="text-[11px] sm:text-xs font-medium text-orange-700 text-center">朋友圈</span>
+              <span className="text-[11px] sm:text-xs font-medium text-orange-700 text-center">
+                {isWechatBrowser ? '朋友圈' : '复制链接'}
+              </span>
             </button>
 
             <button
-              onClick={() => handleShare('copy')}
+              onClick={() => handleShareButton('copy')}
               className="flex flex-col items-center gap-1 sm:gap-2 p-3 sm:p-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-colors border border-gray-200"
             >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-500 flex items-center justify-center text-white flex-shrink-0">
-                <Share2 size={16} className="sm:hidden" />
-                <Share2 size={20} className="hidden sm:inline" />
+                <Copy size={16} className="sm:hidden" />
+                <Copy size={20} className="hidden sm:inline" />
               </div>
               <span className="text-[11px] sm:text-xs font-medium text-gray-700 text-center">复制链接</span>
             </button>
           </div>
+
+          {/* 微信内：右上角菜单引导 */}
+          {isWechatBrowser && (
+            <div className="space-y-3 mb-3 sm:mb-4">
+              <div className="bg-green-50 border border-green-100 rounded-xl p-3 sm:p-4 text-center">
+                <div className="text-green-700 font-medium mb-1 text-sm sm:text-base">微信内分享</div>
+                <p className="text-xs sm:text-sm text-green-600">
+                  点击右上角 <span className="font-bold">···</span> 菜单，选择分享方式
+                </p>
+              </div>
+
+              {showWechatGuide === 'friend' && (
+                <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
+                  <div className="font-medium text-gray-800 mb-2 text-sm sm:text-base">分享给微信好友步骤</div>
+                  <ol className="text-xs sm:text-sm text-gray-600 space-y-1.5 list-decimal list-inside">
+                    <li>点击右上角 <span className="font-bold">···</span> 打开菜单</li>
+                    <li>选择「发送给朋友」</li>
+                    <li>选择微信好友并发送</li>
+                  </ol>
+                </div>
+              )}
+
+              {showWechatGuide === 'moments' && (
+                <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
+                  <div className="font-medium text-gray-800 mb-2 text-sm sm:text-base">分享到朋友圈步骤</div>
+                  <ol className="text-xs sm:text-sm text-gray-600 space-y-1.5 list-decimal list-inside">
+                    <li>点击右上角 <span className="font-bold">···</span> 打开菜单</li>
+                    <li>选择「分享到朋友圈」</li>
+                    <li>编辑文案并发表</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 非微信环境：二维码 + 复制链接 */}
+          {!isWechatBrowser && (
+            <div className="space-y-3 mb-3 sm:mb-4">
+              <div className="bg-white rounded-xl p-4 text-center border border-gray-100">
+                <div className="text-gray-700 font-medium mb-2 text-sm sm:text-base">微信扫码打开店铺</div>
+                <div className="w-36 h-36 sm:w-44 sm:h-44 mx-auto bg-white p-2 rounded-lg shadow-sm">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(shareUrl)}&size=200x200`}
+                    alt="店铺二维码"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <p className="text-[11px] sm:text-xs text-gray-500 mt-2">截图保存二维码，微信扫码即可打开</p>
+              </div>
+
+              <button
+                onClick={handleCopyLink}
+                className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 rounded-xl transition-colors text-sm sm:text-base"
+              >
+                <Copy size={18} />
+                <span>复制店铺链接</span>
+              </button>
+            </div>
+          )}
 
           {shared ? (
             <div className="bg-green-50 border border-green-200 rounded-xl p-3 sm:p-4 flex items-start gap-2 sm:gap-3">
