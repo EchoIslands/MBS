@@ -441,6 +441,16 @@ export const customerApi = {
 
 // 评价相关 API
 export const reviewApi = {
+  getReviewByBookingId: async (bookingId: string): Promise<Review | null> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: Review | null }>(`${API_BASE}/reviews/booking/${bookingId}`);
+      if (result && 'data' in result) return result.data;
+      throw new Error('查询评价状态失败');
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    return mockReviews.find((r) => r.bookingId === bookingId) || null;
+  },
+
   createReview: async (
     data: Omit<Review, 'id' | 'overallScore' | 'customerName' | 'createdAt'>,
   ): Promise<Review> => {

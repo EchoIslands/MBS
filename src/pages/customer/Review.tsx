@@ -4,7 +4,7 @@ import {
   ArrowLeft, Star, Send, CheckCircle, Share2, Gift, Sparkles, User, Heart, MessageCircle,
   Award
 } from 'lucide-react';
-import { Booking } from '../../../shared/types';
+import { Booking, Review } from '../../../shared/types';
 import { useAppStore } from '../../store';
 import { bookingApi, reviewApi } from '../../api';
 
@@ -17,6 +17,7 @@ const ReviewPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [shared, setShared] = useState(false);
   const [booking, setBooking] = useState<Booking | null>(null);
+  const [existingReview, setExistingReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -26,8 +27,12 @@ const ReviewPage: React.FC = () => {
     async function fetchBooking() {
       if (!bookingId) return;
       try {
-        const data = await bookingApi.getBooking(bookingId);
+        const [data, review] = await Promise.all([
+          bookingApi.getBooking(bookingId),
+          reviewApi.getReviewByBookingId(bookingId).catch(() => null),
+        ]);
         setBooking(data);
+        setExistingReview(review);
       } catch (error) {
         console.error('加载预约信息失败:', error);
       } finally {
@@ -158,6 +163,35 @@ const ReviewPage: React.FC = () => {
         </header>
         <div className="max-w-2xl mx-auto px-4 py-12 text-center">
           <p className="text-gray-500 mb-6">服务完成后才能进行评价</p>
+          <button
+            onClick={() => navigate('/customer/profile')}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-medium"
+          >
+            返回个人中心
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 已经评价过，不能再评价
+  if (existingReview) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm sticky top-0 z-50">
+          <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+            <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <ArrowLeft size={20} className="text-gray-600" />
+            </button>
+            <h1 className="font-semibold text-gray-800">发表评价</h1>
+          </div>
+        </header>
+        <div className="max-w-2xl mx-auto px-4 py-12 text-center">
+          <CheckCircle size={48} className="mx-auto mb-4 text-green-500" />
+          <p className="text-gray-800 font-medium mb-2">您已经评价过这次服务了</p>
+          <p className="text-sm text-gray-500 mb-6">
+            综合评分 {existingReview.overallScore} 分 · {new Date(existingReview.createdAt).toLocaleDateString()}
+          </p>
           <button
             onClick={() => navigate('/customer/profile')}
             className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-medium"

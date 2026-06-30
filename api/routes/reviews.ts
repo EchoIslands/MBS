@@ -115,6 +115,37 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// 根据预约ID查询评价
+router.get('/booking/:bookingId', async (req: Request, res: Response) => {
+  try {
+    const { bookingId } = req.params;
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[reviews] 查询预约评价失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '查询预约评价失败',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: data ? reviewFromDb(data) : null,
+    });
+  } catch (error) {
+    console.error('[reviews] 查询预约评价异常:', error);
+    res.status(500).json({
+      success: false,
+      error: '查询预约评价失败',
+    });
+  }
+});
+
 // 获取店铺评价列表
 router.get('/shop/:shopId', async (req: Request, res: Response) => {
   try {
