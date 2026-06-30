@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { supabase } from '../db/index.js';
 
 const router = Router();
@@ -61,6 +62,7 @@ router.post('/', async (req: Request, res: Response) => {
     const { data, error } = await supabase
       .from('reviews')
       .insert({
+        id: randomUUID(),
         shop_id: shopId,
         customer_id: customerId,
         booking_id: bookingId,
