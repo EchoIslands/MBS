@@ -101,12 +101,38 @@ const ReviewPage: React.FC = () => {
     </div>
   );
 
-  const handleShare = () => {
-    setShared(true);
-    // 模拟分享完成
-    setTimeout(() => {
-      alert('分享成功！您已获得 ¥10 优惠券，下次消费自动抵扣～');
-    }, 400);
+  const handleShare = async (channel: 'wechat' | 'moments' | 'copy') => {
+    const shareUrl = `https://www.hfmbs.cn/s/${booking?.shopId || 'shop1'}`;
+    const shareTitle = '我刚在这家店做了发型，服务超棒，推荐给你！';
+
+    if (channel === 'copy') {
+      try {
+        await navigator.clipboard.writeText(`${shareTitle} ${shareUrl}`);
+        alert('链接已复制，快去分享给好友吧～');
+      } catch {
+        alert('复制失败，请手动复制链接');
+      }
+      return;
+    }
+
+    // 微信好友 / 朋友圈：优先使用系统分享 API
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shareTitle, text: shareTitle, url: shareUrl });
+        alert('分享成功！');
+      } catch {
+        // 用户取消分享，不处理
+      }
+      return;
+    }
+
+    // 浏览器不支持系统分享，降级为复制链接
+    try {
+      await navigator.clipboard.writeText(`${shareTitle} ${shareUrl}`);
+      alert('微信分享需在微信内打开，已为您复制链接');
+    } catch {
+      alert('请手动复制链接分享给好友');
+    }
   };
 
   // ========== 加载中 ==========
@@ -292,7 +318,7 @@ const ReviewPage: React.FC = () => {
           {/* 分享按钮组 */}
           <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
             <button
-              onClick={handleShare}
+              onClick={() => handleShare('wechat')}
               className="flex flex-col items-center gap-1 sm:gap-2 p-3 sm:p-4 bg-green-50 hover:bg-green-100 rounded-2xl transition-colors border border-green-100"
             >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-green-500 flex items-center justify-center text-white flex-shrink-0">
@@ -303,7 +329,7 @@ const ReviewPage: React.FC = () => {
             </button>
 
             <button
-              onClick={handleShare}
+              onClick={() => handleShare('moments')}
               className="flex flex-col items-center gap-1 sm:gap-2 p-3 sm:p-4 bg-orange-50 hover:bg-orange-100 rounded-2xl transition-colors border border-orange-100"
             >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-orange-500 flex items-center justify-center text-white flex-shrink-0">
@@ -314,7 +340,7 @@ const ReviewPage: React.FC = () => {
             </button>
 
             <button
-              onClick={handleShare}
+              onClick={() => handleShare('copy')}
               className="flex flex-col items-center gap-1 sm:gap-2 p-3 sm:p-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-colors border border-gray-200"
             >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-500 flex items-center justify-center text-white flex-shrink-0">
