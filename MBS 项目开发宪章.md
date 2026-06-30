@@ -1372,6 +1372,109 @@ npm run server:api
 - **相关文件**：`api/app.ts`。
 - **相关坑**：3.7 坑 24.5 Vercel + Express 请求体解析失败。
 
+### 3.14.9 评价系统实战踩坑：代码改了线上不生效、表结构不一致、重复数据
+
+> 本小节记录 2026-06-29 至 2026-06-30 评价系统打通真实数据链路过程中反复踩到的坑。这些问题看似分散，实则围绕同一个主题：**本地代码、GitHub、Vercel、Supabase 四个环境没有同步，且前端 fallback 掩盖了后端真实错误**。
+
+#### 1. Trae `/workspace` 修改不会自动同步到 GitHub
+
+- **场景**：在 Trae 里改好文件后，以为已经 push 到 GitHub，用户本地直接 `git pull` 即可。
+- **现象**：用户本地 `git pull` 后没有更新，或线上功能仍显示旧行为。
+- **根因**：Trae 的 `/workspace` 是独立沙盒，修改默认只保存在工作区，不会自动 commit/push。
+- **解决**：本项目已约定工作流为
+  1. Trae 在 `/workspace` 修改代码；
+  2. 用户把改动的文件下载到本地 `E:\MBS` 覆盖；
+  3. 用户在本地执行 `git add . && git commit -m "..." && git push origin main`；
+  4. Vercel 自动从 GitHub 部署。
+- **教训**：不要让用户直接 `git pull` 拿 Trae 的修改；每次改完必须明确告诉用户要下载哪些文件。
+
+#### 2. 只改后端文件时 Vercel 前端可能不重新构建
+
+- **场景**：修改了 `api/routes/reviews.ts` 等后端文件，push 后 Vercel 部署状态显示 Ready，但浏览器里运行的还是旧版前端 JS。
+- **现象**：Network 里看不到新的 `/api/reviews/...` 请求，JS 文件名（如 `index-Dmdg739j.js`）和上次部署相同。
+- **根因**：Vite 给 JS 文件加 content hash，前端源码没变化时 hash 不变；Vercel 可能复用上次构建产物。
+- **解决**：
+  - 方法 A：在 Vercel Dashboard 找到对应部署，点 **Redeploy** 强制重建；
+  - 方法 B：在任意前端文件（如 `src/pages/customer/Review.tsx`）里加一个空行/空格，保存后重新 push，强制 Vite 重新构建。
+- **教训**：部署完成后不能只看 Vercel 状态，必须实测浏览器 Network；只改后端也要确认前端构建产物 hash 是否变化。
+
+#### 3. 文件名大小写导致 Git 识别异常
+
+- **场景**：用户说已经下载覆盖了 `review.tsx`，但功能没更新。
+- **现象**：Windows 文件系统不区分大小写，Git 却区分；`review.tsx` 和 `Review.tsx` 可能被当成同一文件，导致替换没生效或 Git 状态混乱。
+- **解决**：下载覆盖时严格使用仓库中的真实文件名：`src/pages/customer/Review.tsx`（R 大写）。
+- **教训**：口头提醒文件名时要强调大小写；Windows 用户特别容易忽略这一点。
+
+#### 4. 前端 fallback 到 mock 数据掩盖后端错误
+
+- **场景**：顾客端提交评价后提示成功，但店铺端看不到；或者页面正常显示，但 Network 里 API 返回 500。
+- **现象**：功能看起来正常，实际没有走真实 API，数据没进数据库。
+- **根因**：`src/api.ts` 里很多接口在真实 API 失败时会 fallback 到 `mockBookings` / `mockReviews`。
+- **解决**：
+  - 测试时打开 F12 Network，确认请求真实发生了；
+  - 关键接口（如创建评价、查询评价状态）取消静默 fallback，失败时显式提示用户；
+  - 后端接口返回具体错误信息，不要只返回 `"操作失败"`。
+- **教训**："页面能打开"不等于"功能正常"；线上问题排查必须看 Network 的 Payload、Response、Status。
+
+#### 5. Supabase 表结构和代码预期不一致
+
+- **场景**：顾客端提交评价报 `null value in column "id" of relation "reviews" violates not-null constraint`，后来又报 `null value in column "type"`。
+- **现象**：同样的 `reviews` 表，不同字段报错，SQL 执行成功但运行时仍失败。
+- **根因**：
+  - 实际 `reviews` 表的 `id` 列是 `text` 类型且没有默认值；
+  - 表中还存在代码里未声明的 `type` 列，且为 `NOT NULL`；
+  - 建表 SQL 被执行了多次，不同来源的 SQL 导致字段差异。
+- **解决**：
+  - 在 Supabase SQL Editor 执行修复：
+    ```sql
+    alter table reviews alter column id set default gen_random_uuid()::text;
+    alter table reviews alter column type drop not null;
+    ```
+  - 后端 `INSERT` 时显式生成 `id: randomUUID()`，不依赖数据库默认值；
+  - 用 `information_schema.columns` 查看实际表结构，不要只凭代码假设。
+- **教训**：数据库 Schema 是真相源，改字段前先查 `information_schema.columns`；多条增量 SQL 叠加执行不会互相破坏，但要确认每条都执行成功。
+
+#### 6. 重复数据导致 `.maybeSingle()` 报错
+
+- **场景**：顾客端重复提交评价多次后，再次进入评价页面，调用 `GET /api/reviews/booking/:bookingId` 返回 500。
+- **现象**：错误信息为 `JSON object requested, multiple (or no) rows returned`。
+- **根因**：同一个 `booking_id` 在 `reviews` 表中有多条记录，Supabase `.maybeSingle()` 要求最多返回一行。
+- **解决**：
+  - 后端查询改为取最新一条：
+    ```typescript
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    ```
+  - 前端在列表页预先判断已评价状态，避免用户重复点击"去评价"；
+  - 后端 `POST` 接口在插入前检查 `booking_id` 是否已存在，存在则返回 409。
+- **教训**：任何用 `.single()` / `.maybeSingle()` 的地方都要考虑数据是否可能重复；防重不仅靠前端，后端必须有唯一性校验。
+
+#### 7. 个人中心缺少"已评价"状态，导致重复点击
+
+- **场景**：用户完成一次服务后评价完，返回个人中心，该预约仍然显示"去评价"按钮。
+- **现象**：虽然评价详情页会拦截并提示"已经评价过"，但入口没有变化，用户会反复点击。
+- **根因**：`Profile.tsx` 只加载了预约列表，没有加载顾客的评价记录来判断每个预约是否已评价。
+- **解决**：
+  - 后端新增 `GET /api/reviews/customer/:customerId`；
+  - 前端 `Profile.tsx` 加载顾客评价列表，构建 `bookingId → Review` 映射；
+  - 已评价的 completed 预约显示"已评价，查看评价"，未评价的显示"去评价"。
+- **教训**：状态入口要和后端真实数据对齐，不能依赖下一级页面的拦截。
+
+#### 8. Network 请求名被截断，找不到对应接口
+
+- **场景**：让用户看 `/api/reviews/booking/:bookingId` 请求，用户找不到，只看到 `book_...`。
+- **现象**：Network 列表里请求名显示被截断，看起来像直接请求了 booking ID。
+- **根因**：请求 URL 较长时，Chrome DevTools 的 Name 列会截断显示，但实际路径是 `/api/reviews/booking/book_xxx`。
+- **解决**：点击请求后看 **Headers** 标签页的 `Request URL`，而不是只看 Name 列。
+- **教训**：教用户排查时，要说明具体看哪个面板、哪个字段，避免误解。
+
+---
+
 ### 3.14.8 Schema 与前端字段对齐：数据库 Schema 字段与前端 payload 不完全对齐
 
 - **参考坑**：坑 37

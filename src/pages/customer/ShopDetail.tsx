@@ -5,7 +5,6 @@ import {
   Phone,
   Star,
   Clock,
-  Settings,
   ShoppingBag,
   User,
   MessageSquare,
@@ -87,13 +86,6 @@ const ShopDetail: React.FC = () => {
               title="个人中心"
             >
               <User size={20} />
-            </button>
-            <button
-              onClick={() => navigate('/shop/login')}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="店铺管理"
-            >
-              <Settings size={20} />
             </button>
           </div>
         </div>
