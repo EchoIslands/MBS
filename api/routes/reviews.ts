@@ -44,6 +44,19 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    // 防止同一预约重复评价
+    const { data: existing } = await supabase
+      .from('reviews')
+      .select('id')
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        error: '该预约已经评价过，请勿重复提交',
+      });
+    }
+
     // 计算综合评分
     const overallScore =
       Math.round(((Number(serviceScore || 5) + Number(priceScore || 5) + Number(skillScore || 5)) / 3) * 10) / 10;
