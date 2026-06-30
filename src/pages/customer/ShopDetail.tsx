@@ -9,6 +9,7 @@ import {
   ShoppingBag,
   User,
   MessageSquare,
+  MessageCircle,
 } from 'lucide-react';
 import { Shop, Review } from '../../../shared/types';
 import { shopApi } from '../../api';
@@ -325,6 +326,19 @@ const ShopDetail: React.FC = () => {
                     </div>
                   </div>
                   <p className="text-sm text-gray-700">{review.comment || '用户未填写文字评价'}</p>
+
+                  {review.reply && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border-l-4 border-orange-400">
+                      <div className="flex items-center gap-2 mb-1">
+                        <MessageCircle size={14} className="text-orange-500" />
+                        <span className="text-sm font-medium text-gray-700">{review.replyBy || '店铺回复'}</span>
+                        <span className="text-xs text-gray-400">
+                          {review.replyAt && new Date(review.replyAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600">{review.reply}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
