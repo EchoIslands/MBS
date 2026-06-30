@@ -142,7 +142,7 @@ router.get('/booking/:bookingId', async (req: Request, res: Response) => {
       console.error('[reviews] 查询预约评价失败:', error.message);
       return res.status(500).json({
         success: false,
-        error: '查询预约评价失败',
+        error: `查询预约评价失败: ${error.message}`,
       });
     }
 
