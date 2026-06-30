@@ -136,6 +136,8 @@ router.get('/booking/:bookingId', async (req: Request, res: Response) => {
       .from('reviews')
       .select('*')
       .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) {
