@@ -451,6 +451,16 @@ export const reviewApi = {
     return mockReviews.find((r) => r.bookingId === bookingId) || null;
   },
 
+  getCustomerReviews: async (customerId: string): Promise<Review[]> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/customer/${customerId}`);
+      if (result?.data) return result.data;
+      return [];
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    return mockReviews.filter((r) => r.customerId === customerId);
+  },
+
   createReview: async (
     data: Omit<Review, 'id' | 'overallScore' | 'customerName' | 'createdAt'>,
   ): Promise<Review> => {

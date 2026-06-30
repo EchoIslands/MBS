@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   User, Calendar, Star, LogOut, Clock, CheckCircle, AlertCircle, MessageSquare,
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
   X, Phone, Scissors, MapPin, Loader2,
 } from 'lucide-react';
-import { Booking, MembershipLevel } from '../../../shared/types';
+import { Booking, MembershipLevel, Review } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
-import { bookingApi } from '../../api';
+import { bookingApi, reviewApi } from '../../api';
 
 // 会员等级标签与颜色
 const levelConfig = {
@@ -47,12 +47,19 @@ const membershipBenefits = [
 
 const Profile: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [customerReviews, setCustomerReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   const navigate = useNavigate();
   const { currentCustomer, logout } = useAppStore();
+
+  const bookingReviewMap = useMemo(() => {
+    const map = new Map<string, Review>();
+    customerReviews.forEach((r) => map.set(r.bookingId, r));
+    return map;
+  }, [customerReviews]);
 
   const loadBookings = async () => {
     if (!currentCustomer) return;
@@ -68,6 +75,17 @@ const Profile: React.FC = () => {
     }
   };
 
+  const loadCustomerReviews = async () => {
+    if (!currentCustomer) return;
+    try {
+      const data = await reviewApi.getCustomerReviews(currentCustomer.id);
+      setCustomerReviews(data);
+    } catch (error) {
+      console.error('加载顾客评价失败:', error);
+      setCustomerReviews([]);
+    }
+  };
+
   useEffect(() => {
     if (!currentCustomer) {
       navigate('/customer/login');
@@ -75,6 +93,7 @@ const Profile: React.FC = () => {
     }
 
     loadBookings();
+    loadCustomerReviews();
   }, [currentCustomer, navigate]);
 
   const handleCancelBooking = async () => {
@@ -385,16 +404,29 @@ const Profile: React.FC = () => {
                       </div>
                       {booking.status === 'completed' && activeTab === 'history' && (
                         <div className="mt-3 sm:mt-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/customer/review/${booking.id}`);
-                            }}
-                            className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
-                          >
-                            <Star size={14} />
-                            去评价，分享得优惠券
-                          </button>
+                          {bookingReviewMap.has(booking.id) ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/customer/shop/${booking.shopId}`);
+                              }}
+                              className="text-green-600 hover:text-green-700 text-sm font-medium flex items-center gap-1"
+                            >
+                              <CheckCircle size={14} />
+                              已评价，查看评价
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/customer/review/${booking.id}`);
+                              }}
+                              className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+                            >
+                              <Star size={14} />
+                              去评价，分享得优惠券
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

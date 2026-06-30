@@ -161,6 +161,38 @@ router.get('/booking/:bookingId', async (req: Request, res: Response) => {
   }
 });
 
+// 获取顾客评价列表
+router.get('/customer/:customerId', async (req: Request, res: Response) => {
+  try {
+    const { customerId } = req.params;
+
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[reviews] 查询顾客评价失败:', error.message);
+      return res.status(500).json({
+        success: false,
+        error: '查询顾客评价失败',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: (data || []).map(reviewFromDb),
+    });
+  } catch (error) {
+    console.error('[reviews] 获取顾客评价异常:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取顾客评价失败',
+    });
+  }
+});
+
 // 获取店铺评价列表
 router.get('/shop/:shopId', async (req: Request, res: Response) => {
   try {
