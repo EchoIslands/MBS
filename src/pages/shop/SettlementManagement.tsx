@@ -339,7 +339,14 @@ const SettlementManagement: React.FC = () => {
                         )}
                         {item.name} x{item.quantity}
                       </span>
-                      <span className="font-medium">¥{(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="font-medium">
+                        ¥{(item.discountedPrice * item.quantity).toFixed(2)}
+                        {item.discountedPrice < item.originalPrice && (
+                          <span className="text-xs text-gray-400 line-through ml-1">
+                            ¥{(item.originalPrice * item.quantity).toFixed(2)}
+                          </span>
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>

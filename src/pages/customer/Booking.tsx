@@ -7,6 +7,8 @@ import {
 import { mockShops, mockBookings } from '../../../shared/mockData';
 import { Employee, Shop } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
+import { useAppStore } from '../../store';
+import { calcDiscountedItemPrice } from '../../lib/membership';
 
 type SelectionMode = 'specific' | 'fastest';
 
@@ -16,6 +18,7 @@ const Booking: React.FC = () => {
     () => mockShops.find((s) => s.id === shopId) || mockShops[0],
     [shopId]
   );
+  const { currentCustomer } = useAppStore();
 
   const [selectedService, setSelectedService] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -232,33 +235,54 @@ const Booking: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
           <h3 className="font-bold text-gray-800 mb-3 sm:mb-4">选择服务</h3>
           <div className="space-y-2 sm:space-y-3">
-            {shop.services.map((service) => (
-              <label
-                key={service.id}
-                className={`flex items-center justify-between p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                  selectedService === service.id
-                    ? 'border-orange-500 bg-orange-50'
-                    : 'border-gray-200 hover:border-orange-200'
-                }`}
-              >
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                  <input
-                    type="radio"
-                    name="service"
-                    checked={selectedService === service.id}
-                    onChange={() => setSelectedService(service.id)}
-                    className="accent-orange-500 flex-shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-800 text-sm sm:text-base">{service.name}</div>
-                    <div className="text-xs sm:text-sm text-gray-500">约 {service.duration} 分钟</div>
+            {shop.services.map((service) => {
+              const memberPrice = calcDiscountedItemPrice(
+                service.price,
+                currentCustomer?.purchaseVIPLevel,
+                currentCustomer?.storedValueLevel,
+                'service'
+              );
+              const hasDiscount = memberPrice < service.price;
+              return (
+                <label
+                  key={service.id}
+                  className={`flex items-center justify-between p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                    selectedService === service.id
+                      ? 'border-orange-500 bg-orange-50'
+                      : 'border-gray-200 hover:border-orange-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <input
+                      type="radio"
+                      name="service"
+                      checked={selectedService === service.id}
+                      onChange={() => setSelectedService(service.id)}
+                      className="accent-orange-500 flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-800 text-sm sm:text-base">{service.name}</div>
+                      <div className="text-xs sm:text-sm text-gray-500">约 {service.duration} 分钟</div>
+                    </div>
                   </div>
-                </div>
-                <div className="text-orange-500 font-bold text-base sm:text-lg flex-shrink-0 ml-2">
-                  ¥{service.price}
-                </div>
-              </label>
-            ))}
+                  <div className="text-right flex-shrink-0 ml-2">
+                    {hasDiscount && (
+                      <div className="text-xs text-gray-400 line-through">¥{service.price}</div>
+                    )}
+                    <div className="flex items-center gap-1.5 justify-end">
+                      {hasDiscount && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded font-medium">
+                          会员价
+                        </span>
+                      )}
+                      <span className="text-orange-500 font-bold text-base sm:text-lg">
+                        ¥{memberPrice.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
           </div>
         </div>
 
@@ -531,7 +555,27 @@ const Booking: React.FC = () => {
               </div>
               <div className="flex justify-between pt-2 border-t border-orange-200 text-sm sm:text-base gap-4">
                 <span className="font-bold flex-shrink-0">预计费用</span>
-                <span className="font-bold text-orange-600 text-right">¥{selectedServiceData.price}</span>
+                <div className="text-right">
+                  {(() => {
+                    const memberPrice = calcDiscountedItemPrice(
+                      selectedServiceData.price,
+                      currentCustomer?.purchaseVIPLevel,
+                      currentCustomer?.storedValueLevel,
+                      'service'
+                    );
+                    const hasDiscount = memberPrice < selectedServiceData.price;
+                    return (
+                      <>
+                        {hasDiscount && (
+                          <span className="block text-xs text-gray-400 line-through">¥{selectedServiceData.price}</span>
+                        )}
+                        <span className={`font-bold ${hasDiscount ? 'text-orange-600' : 'text-gray-800'}`}>
+                          ¥{memberPrice.toFixed(2)}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           </div>

@@ -37,6 +37,7 @@ import ReviewManagement from "./pages/shop/ReviewManagement";
 import CustomerProfileForm from "./pages/shop/CustomerProfileForm";
 import CustomerRecall from "./pages/shop/CustomerRecall";
 import BookingManagement from "./pages/shop/BookingManagement";
+import Checkout from "./pages/shop/Checkout";
 
 // 默认店铺ID
 const DEFAULT_SHOP_ID = "shop1";
@@ -98,6 +99,7 @@ export default function App() {
           <Route path="/shop/customers" element={<CustomerManagement />} />
           <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
           <Route path="/shop/bookings" element={<BookingManagement />} />
+          <Route path="/shop/checkout" element={<Checkout />} />
           <Route path="/shop/settlement" element={<SettlementManagement />} />
           <Route path="/shop/membership" element={<MembershipManagement />} />
           <Route path="/shop/survey" element={<SatisfactionSurveyManagement />} />

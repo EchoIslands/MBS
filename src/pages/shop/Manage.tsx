@@ -123,11 +123,13 @@ const ShopManage: React.FC = () => {
         alert('保存成功！');
         navigate('/shop');
       } else {
-        alert('保存失败，请重试');
+        const errText = await response.text().catch(() => '');
+        console.error('保存失败:', response.status, errText);
+        alert(`保存失败：${response.status}${errText ? ' - ' + errText : ''}`);
       }
     } catch (error) {
       console.error('保存失败:', error);
-      alert('保存失败，请重试');
+      alert(`保存失败：${error instanceof Error ? error.message : '网络错误'}`);
     } finally {
       setSaving(false);
     }

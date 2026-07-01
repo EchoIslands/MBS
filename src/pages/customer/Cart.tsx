@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Plus, Minus, Check, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { ProductCategory } from '../../../shared/types';
+import { calcDiscountedItemPrice } from '../../lib/membership';
 
 const Cart: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
@@ -12,14 +14,23 @@ const Cart: React.FC = () => {
     removeFromCart, 
     toggleCartItemSelection, 
     selectAllCartItems,
-    clearCart 
+    clearCart,
+    currentCustomer
   } = useAppStore();
 
   const selectedItems = cart.filter(item => item.selected);
   
   const totalPrice = useMemo(() => {
-    return selectedItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  }, [selectedItems]);
+    return selectedItems.reduce((sum, item) => {
+      const memberPrice = calcDiscountedItemPrice(
+        item.product.price,
+        currentCustomer?.purchaseVIPLevel,
+        currentCustomer?.storedValueLevel,
+        item.product.category
+      );
+      return sum + memberPrice * item.quantity;
+    }, 0);
+  }, [selectedItems, currentCustomer]);
 
   const allSelected = cart.length > 0 && cart.every(item => item.selected);
 
@@ -85,73 +96,102 @@ const Cart: React.FC = () => {
 
               {/* 商品列表 */}
               <div className="space-y-3">
-                {cart.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-white rounded-xl p-4 shadow-sm"
-                  >
-                    <div className="flex gap-4">
-                      <input
-                        type="checkbox"
-                        checked={item.selected}
-                        onChange={() => toggleCartItemSelection(item.id)}
-                        className="w-5 h-5 text-orange-500 rounded mt-1"
-                      />
-                      <img
-                        src={item.product.images[0]}
-                        alt={item.product.name}
-                        className="w-24 h-24 rounded-lg object-cover"
-                      />
-                      <div className="flex-1 space-y-2">
-                        <h3 className="font-medium text-gray-800 line-clamp-2">
-                          {item.product.name}
-                        </h3>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-lg font-bold text-red-500">
-                              ¥{item.product.price}
-                            </span>
-                            {item.product.originalPrice && (
-                              <span className="text-xs text-gray-400 line-through">
-                                ¥{item.product.originalPrice}
+                {cart.map((item) => {
+                  const memberPrice = calcDiscountedItemPrice(
+                    item.product.price,
+                    currentCustomer?.purchaseVIPLevel,
+                    currentCustomer?.storedValueLevel,
+                    item.product.category
+                  );
+                  const hasDiscount = memberPrice < item.product.price;
+                  const isWig = item.product.category === ProductCategory.WIG;
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-white rounded-xl p-4 shadow-sm"
+                    >
+                      <div className="flex gap-4">
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          onChange={() => toggleCartItemSelection(item.id)}
+                          className="w-5 h-5 text-orange-500 rounded mt-1"
+                        />
+                        <img
+                          src={item.product.images[0]}
+                          alt={item.product.name}
+                          className="w-24 h-24 rounded-lg object-cover"
+                        />
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-medium text-gray-800 line-clamp-2">
+                              {item.product.name}
+                            </h3>
+                            {hasDiscount && (
+                              <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full font-medium">
+                                <Crown size={10} /> 会员价
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => updateCartItem(item.id, item.quantity - 1)}
-                              className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                            >
-                              <Minus size={16} />
-                            </button>
-                            <span className="w-8 text-center font-medium">
-                              {item.quantity}
+                          <div className="flex items-center justify-between">
+                            <div className="flex flex-col">
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-lg font-bold text-red-500">
+                                  ¥{memberPrice.toFixed(2)}
+                                </span>
+                                {hasDiscount && (
+                                  <span className="text-xs text-gray-400 line-through">
+                                    ¥{item.product.price}
+                                  </span>
+                                )}
+                              </div>
+                              {!hasDiscount && item.product.originalPrice && (
+                                <span className="text-xs text-gray-400 line-through">
+                                  ¥{item.product.originalPrice}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => updateCartItem(item.id, item.quantity - 1)}
+                                className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                              >
+                                <Minus size={16} />
+                              </button>
+                              <span className="w-8 text-center font-medium">
+                                {item.quantity}
+                              </span>
+                              <button
+                                onClick={() => updateCartItem(item.id, item.quantity + 1)}
+                                className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-500">
+                              小计: <span className="text-red-500 font-medium">
+                                ¥{(memberPrice * item.quantity).toFixed(2)}
+                              </span>
                             </span>
                             <button
-                              onClick={() => updateCartItem(item.id, item.quantity + 1)}
-                              className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                              onClick={() => removeFromCart(item.id)}
+                              className="p-2 text-gray-400 hover:text-red-500 transition-colors"
                             >
-                              <Plus size={16} />
+                              <Trash2 size={18} />
                             </button>
                           </div>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-500">
-                            小计: <span className="text-red-500 font-medium">
-                              ¥{item.product.price * item.quantity}
-                            </span>
-                          </span>
-                          <button
-                            onClick={() => removeFromCart(item.id)}
-                            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          {isWig && (
+                            <div className="text-[11px] text-gray-400">
+                              假发不参与会员折扣
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}

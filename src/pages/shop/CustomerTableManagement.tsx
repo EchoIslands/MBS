@@ -232,6 +232,12 @@ const CustomerTableManagement: React.FC = () => {
       lastServiceAmount: 0,
       hasBooking: false,
       lastStylist: '',
+      // 新版会员体系默认值
+      purchaseVIPLevel: 'regular',
+      storedValueLevel: 'none',
+      storedValueBalance: 0,
+      withdrawableReferralAmount: 0,
+      // 兼容旧字段
       membershipLevel: MembershipLevel.REGULAR,
       isMember: false,
       hasRecharged: false,

@@ -5,12 +5,18 @@ import {
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
   X, Phone, Scissors, MapPin, Loader2,
 } from 'lucide-react';
-import { Booking, MembershipLevel, Review } from '../../../shared/types';
-import { mockShops } from '../../../shared/mockData';
+import { Booking, MembershipLevel, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType } from '../../../shared/types';
+import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
 import { bookingApi, reviewApi } from '../../api';
+import {
+  getPurchaseVIPLabel,
+  getStoredValueLabel,
+  getCustomerEffectiveDiscount,
+  isVIPExpiringSoon,
+} from '../../lib/membership';
 
-// 会员等级标签与颜色
+// 旧的会员等级标签与颜色（兼容股东展示）
 const levelConfig = {
   [MembershipLevel.REGULAR]: {
     label: '普通会员',
@@ -35,14 +41,30 @@ const levelConfig = {
   },
 };
 
-// 权益对比表
-const membershipBenefits = [
-  { feature: '服务折扣', regular: '原价', premium: '9折', stockholder: '8折' },
-  { feature: '积分倍率', regular: '1倍', premium: '1.5倍', stockholder: '2倍' },
-  { feature: '生日福利', regular: '-', premium: '免费护理', stockholder: '免费烫染' },
-  { feature: '预约优先权', regular: '-', premium: '优先预约', stockholder: 'VIP通道' },
-  { feature: '推荐奖励', regular: '-', premium: '-', stockholder: '5%提成' },
-  { feature: '专属发型师', regular: '-', premium: '-', stockholder: '指定首席' },
+const purchaseVIPGradient: Record<PurchaseVIPLevel, string> = {
+  [PurchaseVIPLevel.REGULAR]: 'from-gray-400 to-gray-500',
+  [PurchaseVIPLevel.BRONZE]: 'from-orange-400 to-orange-500',
+  [PurchaseVIPLevel.SILVER]: 'from-blue-400 to-blue-600',
+  [PurchaseVIPLevel.GOLD]: 'from-yellow-400 to-yellow-600',
+  [PurchaseVIPLevel.DIAMOND]: 'from-purple-500 via-pink-500 to-orange-500',
+};
+
+// 购买 VIP 权益对比表
+const vipBenefits = [
+  { feature: '服务折扣', bronze: '8.8折', silver: '7.8折', gold: '6.8折', diamond: '5.8折' },
+  { feature: '购买价格', bronze: '¥29/年', silver: '¥59/年', gold: '¥79/年', diamond: '¥99/年' },
+  { feature: '积分倍率', bronze: '1.2倍', silver: '1.5倍', gold: '2倍', diamond: '3倍' },
+  { feature: '满59元赠洗护', bronze: '洗发水', silver: '洗发水+护发素', gold: '洗发水+护发素', diamond: '洗发水+护发素' },
+  { feature: '饮品权益', bronze: '-', silver: '每次消费送', gold: '每次消费送', diamond: '每次消费送' },
+  { feature: '不满意重做', bronze: '-', silver: '-', gold: '支持', diamond: '支持' },
+  { feature: '免费剪发', bronze: '-', silver: '-', gold: '-', diamond: '1次' },
+];
+
+// 储值会员权益对比表
+const storedBenefits = [
+  { feature: '储值金额', store500: '¥500', store1000: '¥1000', store2000: '¥2000', store5000: '¥5000' },
+  { feature: '折上折折扣', store500: '9折', store1000: '8.5折', store2000: '8折', store5000: '7折' },
+  { feature: '积分倍率', store500: '1.1倍', store1000: '1.3倍', store2000: '1.5倍', store5000: '2倍' },
 ];
 
 const Profile: React.FC = () => {
@@ -121,31 +143,35 @@ const Profile: React.FC = () => {
   // 会员等级
   const memberLevel = currentCustomer?.membershipLevel ?? MembershipLevel.REGULAR;
   const levelInfo = levelConfig[memberLevel];
+  const purchaseLevel = currentCustomer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
+  const storedLevel = currentCustomer?.storedValueLevel ?? StoredValueLevel.NONE;
+  const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel);
+  const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
+  const effectiveDiscount = currentCustomer ? getCustomerEffectiveDiscount(currentCustomer) : 1;
+  const expiringSoon = currentCustomer ? isVIPExpiringSoon(currentCustomer) : false;
   const totalSaved = currentCustomer?.totalSaved ?? 0;
-  const balance = currentCustomer?.balance ?? 0;
+  const balance = currentCustomer?.storedValueBalance ?? 0;
+  const withdrawable = currentCustomer?.withdrawableReferralAmount ?? 0;
   const points = currentCustomer?.points ?? 0;
   const visitCount = currentCustomer?.visitCount ?? 0;
   const totalSpent = currentCustomer?.totalSpent ?? 0;
 
-  // 下一级升级所需金额（简单估算：升级到高级会员需再消费500元，升级到股东会员需再消费2000元）
-  const nextLevelGoal =
-    memberLevel === MembershipLevel.REGULAR ? 500 :
-    memberLevel === MembershipLevel.PREMIUM ? 2000 : null;
-  const nextLevelProgress = nextLevelGoal ? Math.min(100, Math.floor((totalSpent / nextLevelGoal) * 100)) : 100;
-  const nextLevelInfo =
-    memberLevel === MembershipLevel.REGULAR ? { name: '高级会员', benefit: '9折 + 生日护理' } :
-    memberLevel === MembershipLevel.PREMIUM ? { name: '股东会员', benefit: '8折 + 推荐提成' } :
-    null;
-
   // 当前店铺信息（默认取第一个）
   const shop = mockShops[0];
+
+  // 我的可用权益
+  const myBenefits = currentCustomer
+    ? mockMemberBenefitRecords.filter(
+        (b) => b.customerId === currentCustomer.id && b.status === 'available'
+      )
+    : [];
 
   if (!currentCustomer) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
       {/* 顶部会员卡（视觉焦点区域 — 让会员一眼看到自己的权益价值） */}
-      <div className={`bg-gradient-to-br ${levelInfo.gradient} text-white relative overflow-hidden`}>
+      <div className={`bg-gradient-to-br ${purchaseVIPGradient[purchaseLevel]} text-white relative overflow-hidden`}>
         {/* 装饰性背景 */}
         <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full" />
         <div className="absolute -right-16 top-10 w-32 h-32 bg-white/5 rounded-full" />
@@ -163,32 +189,52 @@ const Profile: React.FC = () => {
                 <p className="text-white/80 text-sm">{currentCustomer.phone}</p>
               </div>
             </div>
-            <div className="flex items-center gap-1 px-3 py-1.5 bg-white/20 rounded-full backdrop-blur-sm">
-              <Crown size={14} />
-              <span className="text-sm font-medium">{levelInfo.label}</span>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-1 px-3 py-1.5 bg-white/20 rounded-full backdrop-blur-sm">
+                <Crown size={14} />
+                <span className="text-sm font-medium">{getPurchaseVIPLabel(purchaseLevel)}</span>
+              </div>
+              {storedLevel !== StoredValueLevel.NONE && (
+                <div className="flex items-center gap-1 px-3 py-1 bg-white/10 rounded-full backdrop-blur-sm">
+                  <Wallet size={12} />
+                  <span className="text-xs font-medium">{getStoredValueLabel(storedLevel)}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* 核心价值数字 — 手机端缩小，桌面端保持大气 */}
+          {/* 核心价值数字：当前综合折扣 */}
           <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 sm:p-5 mb-3 sm:mb-4">
             <div className="text-xs sm:text-sm text-white/80 mb-1 flex items-center gap-1.5">
               <Sparkles size={12} className="sm:hidden" />
               <Sparkles size={14} className="hidden sm:inline" />
-              您已累计节省
+              您当前的消费折扣
             </div>
-            <div className="text-3xl sm:text-5xl font-bold mb-1">¥{totalSaved}</div>
+            <div className="text-3xl sm:text-5xl font-bold mb-1">{(effectiveDiscount * 10).toFixed(2)} 折</div>
             <div className="text-xs sm:text-sm text-white/70">
-              到店 {visitCount} 次 · 累计消费 ¥{totalSpent}
+              {purchaseLevel !== PurchaseVIPLevel.REGULAR && storedLevel !== StoredValueLevel.NONE
+                ? `${getPurchaseVIPLabel(purchaseLevel)} × ${getStoredValueLabel(storedLevel)} 折上折`
+                : purchaseLevel !== PurchaseVIPLevel.REGULAR
+                ? `已开通 ${getPurchaseVIPLabel(purchaseLevel)}`
+                : storedLevel !== StoredValueLevel.NONE
+                ? `已开通 ${getStoredValueLabel(storedLevel)}`
+                : '开通会员享受专属折扣'}
             </div>
           </div>
 
-          {/* 数据速览 — 余额/积分/会员等级 */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          {/* 数据速览 — 余额/返现/积分/综合折扣 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3">
               <div className="text-[11px] sm:text-xs text-white/70 mb-1 flex items-center gap-1">
                 <Wallet size={12} /> 储值余额
               </div>
               <div className="text-lg sm:text-xl font-bold">¥{balance}</div>
+            </div>
+            <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3">
+              <div className="text-[11px] sm:text-xs text-white/70 mb-1 flex items-center gap-1">
+                <Gift size={12} /> 可提现返现
+              </div>
+              <div className="text-lg sm:text-xl font-bold">¥{withdrawable}</div>
             </div>
             <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3">
               <div className="text-[11px] sm:text-xs text-white/70 mb-1 flex items-center gap-1">
@@ -198,35 +244,25 @@ const Profile: React.FC = () => {
             </div>
             <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3">
               <div className="text-[11px] sm:text-xs text-white/70 mb-1 flex items-center gap-1">
-                <Award size={12} /> 等级
+                <Award size={12} /> 累计消费
               </div>
-              <div className="text-sm sm:text-xl font-bold text-white">{levelInfo.label}</div>
+              <div className="text-sm sm:text-xl font-bold text-white">¥{totalSpent}</div>
             </div>
           </div>
 
-          {/* 升级进度条 — 仅对非股东会员显示 */}
-          {nextLevelInfo && (
-            <div className="mt-4 bg-white/15 backdrop-blur-sm rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-white/90 font-medium flex items-center gap-1.5">
-                  <Sparkles size={14} /> 距离「{nextLevelInfo.name}」
-                </span>
-                <span className="text-sm text-white/80 font-medium">{nextLevelProgress}%</span>
-              </div>
-              <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-white rounded-full transition-all duration-500"
-                  style={{ width: `${nextLevelProgress}%` }}
-                />
-              </div>
-              <div className="text-xs text-white/70 mt-2">
-                再消费 ¥{Math.max(0, nextLevelGoal! - totalSpent)} 可升级，享受「{nextLevelInfo.benefit}」
+          {/* VIP 到期提醒 */}
+          {expiringSoon && currentCustomer.purchaseVIPExpiresAt && (
+            <div className="mt-4 bg-yellow-400/20 backdrop-blur-sm rounded-xl p-4 border border-yellow-200/30">
+              <div className="flex items-center gap-2 text-sm text-white font-medium">
+                <AlertCircle size={16} />
+                您的 {getPurchaseVIPLabel(purchaseLevel)} 将于{' '}
+                {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString()} 到期，请及时续费
               </div>
             </div>
           )}
 
           {/* 股东会员专属 — 推荐提成信息 */}
-          {memberLevel === MembershipLevel.STOCKHOLDER && (
+          {currentCustomer.isStockholder && (
             <div className="mt-4 bg-white/15 backdrop-blur-sm rounded-xl p-4">
               <div className="text-sm text-white/80 mb-1 flex items-center gap-1.5">
                 <Gift size={14} /> 股东推荐收益
@@ -248,12 +284,45 @@ const Profile: React.FC = () => {
       {/* 主内容区 —— 手机端减少 padding */}
       <div className="max-w-4xl mx-auto px-3 sm:px-4 -mt-2 sm:-mt-3 pb-6">
 
-        {/* 会员权益对比 */}
+        {/* 我的可用权益 */}
+        {myBenefits.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
+            <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+              <Gift size={18} className="sm:hidden text-pink-500" />
+              <Gift size={20} className="hidden sm:inline text-pink-500" />
+              我的可用权益
+            </h2>
+            <div className="space-y-2">
+              {myBenefits.map((benefit) => (
+                <div
+                  key={benefit.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+                >
+                  <div className="flex items-center gap-2">
+                    {benefit.type === BenefitType.SHAMPOO && <Sparkles size={16} className="text-blue-500" />}
+                    {benefit.type === BenefitType.CONDITIONER && <Sparkles size={16} className="text-pink-500" />}
+                    {benefit.type === BenefitType.FREE_HAIRCUT && <Scissors size={16} className="text-purple-500" />}
+                    {benefit.type === BenefitType.DRINK && <Star size={16} className="text-orange-500" />}
+                    {benefit.type === BenefitType.REDO && <AlertCircle size={16} className="text-red-500" />}
+                    <span className="text-sm font-medium text-gray-800">{benefit.name}</span>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {benefit.expiresAt
+                      ? `有效期至 ${new Date(benefit.expiresAt).toLocaleDateString()}`
+                      : '无固定期限'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 购买 VIP 权益对比 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
           <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Gift size={18} className="sm:hidden text-orange-500" />
-            <Gift size={20} className="hidden sm:inline text-orange-500" />
-            会员权益对比
+            <Crown size={18} className="sm:hidden text-orange-500" />
+            <Crown size={20} className="hidden sm:inline text-orange-500" />
+            购买 VIP 权益
           </h2>
 
           <div className="overflow-x-auto -mx-1">
@@ -261,52 +330,88 @@ const Profile: React.FC = () => {
               <thead>
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-2.5 sm:py-3 text-gray-600 font-medium pl-1">权益</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">普通</th>
-                  <th className={`text-center py-2.5 sm:py-3 font-medium ${memberLevel === MembershipLevel.PREMIUM ? 'text-blue-600' : 'text-gray-500'}`}>高级</th>
-                  <th className={`text-center py-2.5 sm:py-3 font-medium ${memberLevel === MembershipLevel.STOCKHOLDER ? 'text-purple-600' : 'text-gray-500'}`}>股东</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">普卡</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">银卡</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">金卡</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">钻石</th>
                 </tr>
               </thead>
               <tbody>
-                {membershipBenefits.map((b, i) => {
-                  const isCurrentRow =
-                    (memberLevel === MembershipLevel.REGULAR) ||
-                    (memberLevel === MembershipLevel.PREMIUM) ||
-                    (memberLevel === MembershipLevel.STOCKHOLDER);
-                  return (
-                    <tr key={i} className="border-b border-gray-100 last:border-0">
-                      <td className="py-2.5 sm:py-3 text-gray-700 font-medium pl-1">{b.feature}</td>
-                      <td className="py-2.5 sm:py-3 text-center text-gray-500">{b.regular}</td>
-                      <td className={`py-2.5 sm:py-3 text-center ${memberLevel === MembershipLevel.PREMIUM ? 'text-blue-600 font-bold bg-blue-50/50' : 'text-gray-500'}`}>
-                        {b.premium}
-                      </td>
-                      <td className={`py-2.5 sm:py-3 text-center ${memberLevel === MembershipLevel.STOCKHOLDER ? 'text-purple-600 font-bold bg-purple-50/50' : 'text-gray-500'}`}>
-                        {b.stockholder}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {vipBenefits.map((b, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-2.5 sm:py-3 text-gray-700 font-medium pl-1">{b.feature}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.BRONZE ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-gray-500'}`}>{b.bronze}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.SILVER ? 'text-blue-600 font-bold bg-blue-50/50' : 'text-gray-500'}`}>{b.silver}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.GOLD ? 'text-yellow-600 font-bold bg-yellow-50/50' : 'text-gray-500'}`}>{b.gold}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.DIAMOND ? 'text-purple-600 font-bold bg-purple-50/50' : 'text-gray-500'}`}>{b.diamond}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {/* 升级引导按钮 */}
-          {memberLevel !== MembershipLevel.STOCKHOLDER && (
+          {purchasePlan && (
             <div className="mt-3 sm:mt-4 p-3 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-xl border border-orange-100">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs sm:text-sm font-bold text-orange-700">升级享更多特权</div>
+                  <div className="text-xs sm:text-sm font-bold text-orange-700">当前：{purchasePlan.name}</div>
                   <div className="text-[11px] sm:text-xs text-orange-600/80 mt-0.5">
-                    {memberLevel === MembershipLevel.REGULAR
-                      ? '升级高级会员，享 9 折 + 生日免费护理'
-                      : '升级股东会员，享 8 折 + 客户推荐提成'}
+                    {purchasePlan.benefits.join(' · ')}
                   </div>
                 </div>
                 <button
                   onClick={() => navigate(`/customer/shop/${shop?.id}`)}
                   className="flex-shrink-0 text-xs sm:text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors"
                 >
-                  了解详情
+                  了解更多
                 </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 储值会员权益对比 */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
+          <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+            <Wallet size={18} className="sm:hidden text-green-500" />
+            <Wallet size={20} className="hidden sm:inline text-green-500" />
+            储值会员权益（折上折）
+          </h2>
+
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-xs sm:text-sm min-w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-2.5 sm:py-3 text-gray-600 font-medium pl-1">权益</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">储值卡</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">安心卡</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">顺心卡</th>
+                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">随心卡</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storedBenefits.map((b, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-2.5 sm:py-3 text-gray-700 font-medium pl-1">{b.feature}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_500 ? 'text-green-600 font-bold bg-green-50/50' : 'text-gray-500'}`}>{b.store500}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_1000 ? 'text-cyan-600 font-bold bg-cyan-50/50' : 'text-gray-500'}`}>{b.store1000}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_2000 ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-gray-500'}`}>{b.store2000}</td>
+                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_5000 ? 'text-red-600 font-bold bg-red-50/50' : 'text-gray-500'}`}>{b.store5000}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {storedPlan && (
+            <div className="mt-3 sm:mt-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs sm:text-sm font-bold text-green-700">当前：{storedPlan.name}</div>
+                  <div className="text-[11px] sm:text-xs text-green-600/80 mt-0.5">
+                    储值 {storedPlan.amount} 元，折上折再享 {(storedPlan.discount * 10).toFixed(storedPlan.discount === 0.7 ? 1 : 2)} 折
+                  </div>
+                </div>
               </div>
             </div>
           )}

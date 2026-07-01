@@ -125,7 +125,31 @@ export enum CustomerTag {
 // 客户性别
 export type Gender = 'male' | 'female' | 'other';
 
-// 会员等级
+// ==================== 会员体系类型 ====================
+
+// 购买型 VIP 会员等级（年卡制）
+export const PurchaseVIPLevel = {
+  REGULAR: 'regular',       // 普通用户（未购买）
+  BRONZE: 'bronze',         // 普卡 VIP
+  SILVER: 'silver',         // 银卡 VIP
+  GOLD: 'gold',             // 金卡 VIP
+  DIAMOND: 'diamond',       // 钻石 VIP
+} as const;
+
+export type PurchaseVIPLevel = typeof PurchaseVIPLevel[keyof typeof PurchaseVIPLevel];
+
+// 储值会员等级
+export const StoredValueLevel = {
+  NONE: 'none',             // 未储值
+  STORE_500: 'store_500',   // 储值卡 500
+  STORE_1000: 'store_1000', // 安心卡 1000
+  STORE_2000: 'store_2000', // 顺心卡 2000
+  STORE_5000: 'store_5000', // 随心卡 5000
+} as const;
+
+export type StoredValueLevel = typeof StoredValueLevel[keyof typeof StoredValueLevel];
+
+// 旧的会员等级（兼容保留，后续逐步替换为双体系）
 export const MembershipLevel = {
   REGULAR: 'regular',
   PREMIUM: 'premium',
@@ -138,9 +162,54 @@ export const MembershipLevel = {
 
 export type MembershipLevel = typeof MembershipLevel[keyof typeof MembershipLevel];
 
+// 权益类型
+export enum BenefitType {
+  SHAMPOO = 'shampoo',           // 洗发水
+  CONDITIONER = 'conditioner',   // 护发素（女士）
+  FREE_HAIRCUT = 'free_haircut', // 免费剪发（钻石 VIP）
+  DRINK = 'drink',               // 咖啡/饮料
+  REDO = 'redo',                 // 不满意重做
+}
+
+// 权益记录状态
+export type BenefitStatus = 'available' | 'used' | 'expired';
+
+// 储值流水类型
+export enum StoredValueTxType {
+  RECHARGE = 'recharge',           // 充值/购买储值卡
+  UPGRADE = 'upgrade',             // 储值卡升级补差价
+  CONSUME = 'consume',             // 消费扣款
+  REFUND = 'refund',               // 退款
+  REFERRAL_BONUS = 'referral_bonus', // 推荐返现
+  WITHDRAW = 'withdraw',           // 提现
+}
+
 // 扩展客户信息 - 完整定义见文件末尾（CustomerProfile、Reviews等已加入
 // 占位（稍后删除 - 保留以保证结构）
 // 客户信息详细定义见下方 Customer 接口
+
+// 结算项明细（含原价、折扣后价）
+export interface SettlementItem {
+  type: 'service' | 'product';
+  id: string;
+  name: string;
+  originalPrice: number;         // 原价
+  quantity: number;
+  discountedPrice: number;       // 折后单价
+  total: number;                 // 折后小计
+  category?: ProductCategory;    // 商品分类（用于假发等排除折扣）
+}
+
+// 结算折扣明细
+export interface SettlementDiscountDetail {
+  purchaseVIPDiscount: number;   // 购买 VIP 折扣率
+  storedValueDiscount: number;   // 储值折扣率
+  finalDiscount: number;         // 最终折扣率（折上折）
+  purchaseVIPDiscountAmount: number; // 购买 VIP 减免金额
+  storedValueDiscountAmount: number; // 储值减免金额
+  benefitDiscountAmount: number;     // 权益抵扣金额（如免费剪发）
+  discount: number;              // 总折扣金额
+}
 
 // 结算记录
 export interface Settlement {
@@ -149,19 +218,15 @@ export interface Settlement {
   customerId: string;
   customerName: string;
   bookingId?: string;
-  items: Array<{
-    type: 'service' | 'product';
-    id: string;
-    name: string;
-    price: number;
-    quantity: number;
-  }>;
-  subtotal: number;              // 小计
-  discount: number;              // 折扣金额
+  items: SettlementItem[];
+  subtotal: number;              // 原价小计
+  discountDetail: SettlementDiscountDetail;
+  discount: number;              // 总折扣金额
   tax: number;                   // 税费
-  total: number;                 // 总计
+  total: number;                 // 实付总计
   paymentMethod: 'cash' | 'wechat' | 'alipay' | 'card' | 'balance';
   paymentStatus: 'pending' | 'completed' | 'failed';
+  usedBenefitIds?: string[];     // 本次核销的权益 ID
   createdAt: Date;
   processedBy?: string;          // 操作员
 }
@@ -179,7 +244,7 @@ export interface SatisfactionSurvey {
   createdAt: Date;
 }
 
-// 会员权益
+// 会员权益（旧版兼容，后续替换）
 export interface MembershipBenefit {
   level: MembershipLevel;
   discount: number;              // 折扣比例（如0.9表示9折）
@@ -187,6 +252,60 @@ export interface MembershipBenefit {
   gifts: string[];               // 赠送礼物
   canBecomeStockholder: boolean; // 是否可成为股东
   referralBonusRate?: number;    // 推荐提成比例
+}
+
+// 购买型 VIP 会员计划
+export interface PurchaseVIPPlan {
+  level: PurchaseVIPLevel;
+  name: string;                  // 显示名称，如"普卡 VIP"
+  price: number;                 // 购买价格
+  period: string;                // 有效期，如"1年"
+  discount: number;              // 消费折扣（0.88 表示 8.8 折）
+  pointsRate: number;            // 积分倍率
+  benefits: string[];            // 权益说明
+  color: string;                 // UI 主题色
+}
+
+// 储值会员计划
+export interface StoredValuePlan {
+  level: StoredValueLevel;
+  name: string;                  // 显示名称，如"储值卡"
+  amount: number;                // 储值金额
+  discount: number;              // 消费折扣（0.90 表示 9 折）
+  pointsRate: number;            // 积分倍率
+  benefits: string[];            // 权益说明
+  color: string;                 // UI 主题色
+}
+
+// 会员权益记录（可核销）
+export interface MemberBenefitRecord {
+  id: string;
+  customerId: string;
+  type: BenefitType;
+  name: string;
+  description?: string;
+  status: BenefitStatus;
+  grantedAt: Date;
+  grantedBy?: string;            // 发放员工 ID
+  usedAt?: Date;
+  usedBy?: string;               // 核销员工 ID
+  usedOrderId?: string;          // 关联订单 ID
+  expiresAt?: Date;              // 过期时间
+}
+
+// 储值余额流水
+export interface StoredValueTransaction {
+  id: string;
+  customerId: string;
+  type: StoredValueTxType;
+  amount: number;                // 正数为增加，负数为扣减
+  balanceAfter: number;          // 变动后总余额
+  referralPortion: number;       // 本次变动中来自返现的部分
+  orderId?: string;              // 关联订单
+  relatedBenefitId?: string;     // 关联权益/返现记录
+  note?: string;
+  createdAt: Date;
+  createdBy?: string;            // 操作员工 ID
 }
 
 // 推荐记录
@@ -745,19 +864,30 @@ export interface Customer {
   lastServiceAmount?: number;    // 上次消费金额
   hasBooking?: boolean;          // 是否预约
   lastStylist?: string;          // 上次服务设计师
-  membershipLevel: MembershipLevel;
-  isMember?: boolean;             // 是否会员
-  hasRecharged?: boolean;        // 是否充值
-  rechargeLevel?: string;        // 充值级别
-  balance: number;
+  // ===== 新版会员体系（双轨并行）=====
+  purchaseVIPLevel: PurchaseVIPLevel;     // 购买型 VIP 等级
+  purchaseVIPExpiresAt?: Date;            // VIP 到期时间（1 年有效期）
+  storedValueLevel: StoredValueLevel;     // 储值会员等级
+  storedValueBalance: number;             // 储值总余额（本金 + 返现）
+  withdrawableReferralAmount: number;     // 可提现返现余额
+
+  // ===== 兼容旧字段（后续逐步替换）=====
+  membershipLevel?: MembershipLevel;      // 旧会员等级（兼容）
+  isMember?: boolean;                     // 是否会员（兼容）
+  hasRecharged?: boolean;                 // 是否充值（兼容）
+  rechargeLevel?: string;                 // 充值级别（兼容）
+  balance?: number;                       // 旧余额字段（兼容，请使用 storedValueBalance）
+
+  // ===== 股东/共享基金相关（保留旧机制）=====
+  sharedFund?: number;                    // 共享基金
+  totalSharedFund?: number;               // 合计共享基金
+  withdrawableAmount?: number;            // 可取现金额
+
   points: number;
-  isReferred?: boolean;          // 是否转介绍
-  referrerName?: string;         // 转介绍人员
-  referrerPhone?: string;        // 转介绍人员电话
-  referralConsumption?: number;  // 转介绍带来的消费金额
-  sharedFund?: number;           // 共享基金
-  totalSharedFund?: number;      // 合计共享基金
-  withdrawableAmount?: number;   // 可取现金额
+  isReferred?: boolean;                   // 是否转介绍
+  referrerName?: string;                  // 转介绍人员
+  referrerPhone?: string;                 // 转介绍人员电话
+  referralConsumption?: number;           // 转介绍带来的消费金额
   joinedAt: Date;
   lastVisitAt?: Date;
   preferences?: string[];

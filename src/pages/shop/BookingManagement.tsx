@@ -19,11 +19,13 @@ import {
   Columns,
 } from 'lucide-react';
 import { Booking, UserRole } from '../../../shared/types';
+import { useNavigate } from 'react-router-dom';
 import ShopLayout from './ShopLayout';
 
 const API_BASE = '/api';
 
 const BookingManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +89,10 @@ const BookingManagement: React.FC = () => {
       if (data.success) {
         setViewingBooking(null);
         fetchBookings();
+        // 预约完成后跳转到开单结算
+        if (viewingBooking?.customerId) {
+          navigate(`/shop/checkout?bookingId=${viewingBooking.id}&customerId=${viewingBooking.customerId}`);
+        }
       } else {
         setError(data.error || '完成服务失败');
       }

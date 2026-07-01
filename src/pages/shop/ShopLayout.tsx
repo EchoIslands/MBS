@@ -111,6 +111,12 @@ const menuItems: MenuItem[] = [
     roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
   },
   {
+    label: '开单结算',
+    path: '/shop/checkout',
+    icon: <CreditCard size={18} />,
+    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
+  },
+  {
     label: '结算管理',
     path: '/shop/settlement',
     icon: <CreditCard size={18} />,
