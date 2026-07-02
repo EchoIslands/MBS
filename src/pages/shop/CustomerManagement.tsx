@@ -365,8 +365,18 @@ const CustomerManagement: React.FC = () => {
     const base = userRole === UserRole.STYLIST && currentEmployee
       ? filteredCustomers
       : customers;
+    const totalMembers = base.filter(
+      (c) => c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || c.storedValueLevel !== StoredValueLevel.NONE
+    ).length;
+
     return [
       { label: '总客户', value: base.length, icon: User, color: 'text-orange-500' },
+      {
+        label: '会员总数',
+        value: totalMembers,
+        icon: Crown,
+        color: 'text-purple-500',
+      },
       {
         label: '购买型VIP',
         value: base.filter((c) => c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR).length,
@@ -378,12 +388,6 @@ const CustomerManagement: React.FC = () => {
         value: base.filter((c) => c.storedValueLevel !== StoredValueLevel.NONE).length,
         icon: Wallet,
         color: 'text-green-500',
-      },
-      {
-        label: '常客',
-        value: base.filter((c) => c.tags.includes(CustomerTag.FREQUENT)).length,
-        icon: Clock,
-        color: 'text-red-500',
       },
     ];
   }, [customers, filteredCustomers, userRole, currentEmployee]);

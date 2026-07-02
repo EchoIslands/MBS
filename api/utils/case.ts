@@ -6,7 +6,10 @@
 export function toCamelCase<T = Record<string, any>>(obj: Record<string, any>): T {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+    const camelKey = key
+      .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+      // 把 vip 统一转成 VIP，例如 purchase_vip_level -> purchaseVIPLevel
+      .replace(/Vip/g, 'VIP');
     result[camelKey] = value;
   }
   return result as T;
@@ -16,7 +19,10 @@ export function toCamelCase<T = Record<string, any>>(obj: Record<string, any>): 
 export function toSnakeCase(obj: Record<string, any>): Record<string, any> {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const snakeKey = key.replace(/[A-Z]/g, (c: string) => '_' + c.toLowerCase());
+    const snakeKey = key
+      // 先把 VIP 整体转成 Vip，避免 purchaseVIPLevel -> purchase_v_i_p_level
+      .replace(/VIP/g, 'Vip')
+      .replace(/[A-Z]/g, (c: string) => '_' + c.toLowerCase());
     result[snakeKey] = value;
   }
   return result;
