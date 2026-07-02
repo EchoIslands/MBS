@@ -173,7 +173,7 @@ export const authApi = {
 const http = async <T>(url: string, opts: RequestInit = {}): Promise<T | null> => {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(url, {
       ...opts,
       headers: {

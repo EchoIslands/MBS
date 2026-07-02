@@ -12,9 +12,18 @@ import {
   ExtraServicePreference, VisitTimePreference
 } from '../../../shared/types';
 import { useAppStore } from '../../store';
+import { getAuthToken } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const API_BASE = '/api';
+
+const authHeaders = (): Record<string, string> => {
+  const token = getAuthToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
 
 const CustomerProfileForm: React.FC = () => {
   const { customerId } = useParams<{ customerId: string }>();
@@ -53,7 +62,7 @@ const CustomerProfileForm: React.FC = () => {
     setLoading(true);
     try {
       // 先获取客户基本信息
-      const customerRes = await fetch(`${API_BASE}/customers/${customerId}`);
+      const customerRes = await fetch(`${API_BASE}/customers/${customerId}`, { headers: authHeaders() });
       const customerData = await customerRes.json();
       if (!customerData.success || !customerData.data) {
         setCustomer(null);
@@ -361,7 +370,7 @@ const CustomerProfileForm: React.FC = () => {
       const method = customer.profile ? 'PUT' : 'POST';
       const res = await fetch(`${API_BASE}/customers/${customerId}/profile`, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(profileData),
       });
 
@@ -376,9 +385,10 @@ const CustomerProfileForm: React.FC = () => {
         console.error('保存失败:', data.error);
         alert('保存失败: ' + (data.error || '未知错误'));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '未知错误';
       console.error('保存失败:', err);
-      alert('保存失败: ' + err.message);
+      alert('保存失败: ' + msg);
     } finally {
       setSaving(false);
     }

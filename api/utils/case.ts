@@ -22,7 +22,9 @@ export function toSnakeCase(obj: Record<string, any>): Record<string, any> {
     const snakeKey = key
       // 先把 VIP 整体转成 Vip，避免 purchaseVIPLevel -> purchase_v_i_p_level
       .replace(/VIP/g, 'Vip')
-      .replace(/[A-Z]/g, (c: string) => '_' + c.toLowerCase());
+      .replace(/[A-Z]/g, (c: string) => '_' + c.toLowerCase())
+      // 去除首字符下划线（例如 lastServiceItems -> _last_service_items）
+      .replace(/^_/, '');
     result[snakeKey] = value;
   }
   return result;

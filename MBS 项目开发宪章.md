@@ -2,7 +2,7 @@
 
 > 本文档是 MBS 项目的最高开发规范。它集开发任务书、问题避免清单、踩坑记录、沟通协议、范围管理、技术债务治理于一体。所有参与者（包括 AI 助手）在改动代码前，必须先阅读并遵守本章节的规范。
 >
-> **当前宪章版本：v2.1 | 生效日期：2026-06-26**
+> **当前宪章版本：v2.2 | 生效日期：2026-07-03**
 
 ---
 
@@ -54,6 +54,7 @@
 | 团队协作 / 发指令 / 报错格式 | 4.2 团队协作规范 |
 | 回滚 / 线上故障 | 4.3 回滚决策流程 |
 | 技术债务 / 重构 | 4.4 技术债务管理 |
+| 会员体系 / 客户管理筛选不一致 / VIP 大小写 | 3.14.10 |
 | 版本号 / 发布检查 | 4.5 版本与发布 |
 
 ### 坑号快速定位表
@@ -1490,6 +1491,80 @@ npm run server:api
   - 每次新增表单字段，先确认数据库有对应列，否则就是“假性保存”。
 - **相关文件**：`schema.sql`、`src/pages/shop/CustomerManagement.tsx`、`shared/types.ts`。
 - **相关坑**：3.11 坑 37 数据库 Schema 和前端类型不同步、2.3 常规迭代任务标准工作流示例。
+
+---
+
+### 3.14.10 会员体系与客户管理实战踩坑
+
+> 本小节记录 2026-07-01 至 2026-07-03 打通客户管理、会员管理真实数据链路过程中踩到的坑。核心主题是：**seed 数据/前端 fallback/mock 数据会掩盖真实错误，以及字段命名大小写不一致导致筛选失效**。
+
+#### 1. 员工表 seed 缺少 `password_hash`，登录报“手机号或密码错误”
+
+- **场景**：店铺端登录时，`/api/auth/login` 返回 `{"success":false,"error":"手机号或密码错误"}`，但前端却跳转进了首页。
+- **现象**：后续请求 `/api/customers` 返回 `登录已过期，请重新登录`，点其他菜单正常。
+- **根因**：
+  - `seed_basic.sql` 插入 `employees` 时漏了 `password_hash` 字段，Supabase 中该列为 `null`；
+  - 后端 `auth.ts` 用 `employee.password_hash !== password` 比对，`null !== '123456'` 为 `true`，返回 401；
+  - 前端 `src/api.ts` 在真实登录失败时降级生成 `mock_token`，导致后续真实 API 带上了无效 token，被 `authMiddleware` 拦截。
+- **解决**：
+  - `seed_basic.sql` 中补齐 `password_hash` 字段，默认值 `'123456'`；
+  - `src/api.ts` 取消真实 API 失败后的 mock token fallback，直接抛错；
+  - 在 Supabase SQL Editor 重新执行 seed 脚本（仅 push 不会自动更新数据库）。
+- **教训**：真实登录接口失败后必须直接失败，不能为了“页面不卡”而生成假 token；seed 数据变更后必须重新在数据库端执行。
+- **相关文件**：`seed_basic.sql`、`api/routes/auth.ts`、`src/api.ts`、`src/pages/shop/Login.tsx`。
+
+#### 2. 前端 fallback 到 mock 数据，导致“客户只有 3 个但会员很多”
+
+- **场景**：真实数据库里只有 3 个客户，但页面上会员/客户管理显示的会员数量远多于 3。
+- **现象**：筛选、统计和客户管理页看到的不是同一批人。
+- **根因**：`src/api.ts` 中 `customerApi.getAll()` 在真实 API 失败时会 fallback 到 `localStorage` 缓存或 `mockCustomers`；本地曾缓存过旧 mock 数据，导致页面展示的是历史 mock 数据。
+- **解决**：
+  - 清除浏览器 `localStorage` 中的 `mbs_auth_token` 和 `mbs_customers_cache`；
+  - 真实 API 失败时不静默 fallback（与坑 1 一起修复）；
+  - 重新登录后强制从 `/api/customers` 拉取真实数据。
+- **教训**：
+  - “页面能打开”不等于“数据是对的”；
+  - 缓存 fallback 必须有时效和来源标记，不能无限期使用旧缓存；
+  - 排查数据不一致问题时，优先清缓存、看 Network 的 Response。
+- **相关文件**：`src/api.ts`、浏览器 DevTools Application → Local Storage。
+
+#### 3. 客户管理页面会员等级标签未随双轨体系更新
+
+- **场景**：业务上已改为双轨会员体系（购买型 VIP + 储值型会员），但客户管理页的分类标签还是“普通用户 / 高级会员 / 股东会员”。
+- **现象**：筛选条件、统计卡片、CSV 导出都不符合当前会员体系；会员总数和客户总数口径不一致。
+- **根因**：`CustomerManagement.tsx` 仍使用旧的 `MembershipLevel`（`REGULAR / PREMIUM / STOCKHOLDER`），没有接入 `PurchaseVIPLevel` 和 `StoredValueLevel`。
+- **解决**：
+  - 客户管理页分类标签拆成两组：购买型 VIP（普通用户、普卡/银卡/金卡/钻石 VIP）和储值会员（未储值、储值卡/安心卡/顺心卡/随心卡）；
+  - 统计卡片增加“会员总数”并去重（购买型 VIP 或储值会员任一满足即算 1 人），避免分类卡片数字相加超过总客户数；
+  - 列表徽章、详情弹窗、CSV 导出同步更新。
+- **教训**：会员体系这种核心业务规则变更，必须同时更新所有展示入口和统计口径，不能只改一处。
+- **相关文件**：`src/pages/shop/CustomerManagement.tsx`、`shared/types.ts`。
+
+#### 4. 驼峰转换把 `purchase_vip_level` 转成 `purchaseVipLevel`，前端类型却是 `purchaseVIPLevel`
+
+- **场景**：客户管理页购买型 VIP 筛选里，“全部”显示 3 人，但后面每个具体等级（普通用户、普卡、银卡、金卡、钻石）全是 0 人。
+- **现象**：储值会员筛选正常，只有购买型 VIP 异常。
+- **根因**：`api/utils/case.ts` 的 `toCamelCase()` 把 `purchase_vip_level` 转成 `purchaseVipLevel`，而前端 `Customer` 类型属性是 `purchaseVIPLevel`（VIP 全大写），导致筛选时 `customer.purchaseVIPLevel` 是 `undefined`。
+- **解决**：
+  - 修复 `toCamelCase()`：转换后将 `Vip` 统一替换为 `VIP`；
+  - 同时修复 `toSnakeCase()`：把 `VIP` 先转成 `Vip`，避免 `purchaseVIPLevel` 被转成 `purchase_v_i_p_level`。
+- **教训**：
+  - 通用大小写转换工具必须处理团队约定的缩写（如 VIP、ID、URL）；
+  - 后端返回字段名和前端类型字段名必须完全一致，大小写敏感；
+  - 同一缩写在前端/后端命名规范要统一。
+- **相关文件**：`api/utils/case.ts`、`src/pages/shop/CustomerManagement.tsx`。
+
+#### 5. 会员管理页面仍用 `mockCustomers`，筛选结果和客户管理页不一致
+
+- **场景**：客户管理页数据已正确，但“会员管理”页面的筛选、统计还是不对。
+- **现象**：会员管理里看到的人、数量和客户管理页对不上。
+- **根因**：`MembershipManagement.tsx` 初始状态直接用了 `[...mockCustomers]`，没有从真实 API 拉取数据。
+- **解决**：
+  - 进入页面时调用 `customerApi.getAll()` 获取真实客户；
+  - 修正“总会员数”统计逻辑，从 `customers.length` 改为统计购买型 VIP 或储值会员任一满足的人数；
+  - 筛选下拉菜单选择后自动关闭，提升交互反馈。
+- **教训**：同一类数据（客户/会员）的所有页面必须走同一套数据源，不允许某个页面私自使用 mockData。
+- **相关文件**：`src/pages/shop/MembershipManagement.tsx`、`src/api.ts`。
 
 ---
 

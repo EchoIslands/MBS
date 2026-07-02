@@ -10,7 +10,7 @@ router.use(authMiddleware);
 
 /**
  * GET /api/customers
- * 获取当前店铺的客户列表
+ * 获取当前店铺的客户列表（含客户画像、到店记录）
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -34,7 +34,42 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const customers = toCamelCaseList(data || []);
-    res.json({ success: true, data: customers });
+
+    // 批量查询客户画像与到店记录，按 customer_id 聚合
+    const customerIds = customers.map((c) => c.id).filter(Boolean);
+    let profilesMap: Record<string, any> = {};
+    let visitsMap: Record<string, any[]> = {};
+
+    if (customerIds.length > 0) {
+      const [{ data: profiles }, { data: visits }] = await Promise.all([
+        supabase.from('customer_profiles').select('*').in('customer_id', customerIds),
+        supabase
+          .from('customer_visit_records')
+          .select('*')
+          .in('customer_id', customerIds)
+          .order('check_in_time', { ascending: false }),
+      ]);
+
+      profilesMap = (profiles || []).reduce((acc, p) => {
+        acc[p.customer_id] = toCamelCase(p);
+        return acc;
+      }, {} as Record<string, any>);
+
+      visitsMap = (visits || []).reduce((acc, v) => {
+        const camel = toCamelCase(v);
+        if (!acc[camel.customerId]) acc[camel.customerId] = [];
+        acc[camel.customerId].push(camel);
+        return acc;
+      }, {} as Record<string, any[]>);
+    }
+
+    const enriched = customers.map((c) => ({
+      ...c,
+      profile: profilesMap[c.id] || null,
+      visitRecords: visitsMap[c.id] || [],
+    }));
+
+    res.json({ success: true, data: enriched });
   } catch (err: any) {
     console.error('[customers] 获取客户列表异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -59,6 +94,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     const customerId = body.id || `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
+    // 使用统一的大小写转换，自动映射前端所有字段
+    const snakeBody = toSnakeCase(body);
     const insertData: Record<string, any> = {
       id: customerId,
       shop_id: shopId,
@@ -66,20 +103,17 @@ router.post('/', async (req: Request, res: Response) => {
       phone: body.phone || '',
     };
 
-    if (body.gender) insertData.gender = body.gender;
-    if (body.age !== undefined && body.age !== null) insertData.age = body.age;
-    if (body.birthday) {
-      const d = typeof body.birthday === 'string' ? body.birthday.split('T')[0] : body.birthday;
-      insertData.birthday = d;
+    // 拷贝除 id/shop_id 外的非 undefined 字段
+    for (const [key, value] of Object.entries(snakeBody)) {
+      if (key === 'id' || key === 'shop_id') continue;
+      if (value === undefined) continue;
+      insertData[key] = value;
     }
-    if (body.tags && Array.isArray(body.tags)) insertData.tags = body.tags;
-    if (body.membershipLevel) insertData.membership_level = body.membershipLevel;
-    if (body.purchaseVIPLevel) insertData.purchase_vip_level = body.purchaseVIPLevel;
-    if (body.purchaseVIPExpiresAt) insertData.purchase_vip_expires_at = body.purchaseVIPExpiresAt;
-    if (body.storedValueLevel) insertData.stored_value_level = body.storedValueLevel;
-    if (body.storedValueBalance !== undefined) insertData.stored_value_balance = body.storedValueBalance;
-    if (body.storedValueExpiresAt) insertData.stored_value_expires_at = body.storedValueExpiresAt;
-    if (body.source) insertData.source = body.source;
+
+    // 处理日期字符串截取
+    if (insertData.birthday && typeof insertData.birthday === 'string') {
+      insertData.birthday = insertData.birthday.split('T')[0];
+    }
 
     console.log('[customers] 准备插入:', JSON.stringify(insertData));
 
@@ -96,7 +130,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     console.log(`[customers] 客户创建成功 id=${data.id}`);
-    res.json({ success: true, data });
+    res.json({ success: true, data: toCamelCase(data) });
   } catch (err: any) {
     console.error('[customers] 创建客户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -114,30 +148,38 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const body = req.body || {};
 
+    // 统一转换并过滤 id/shop_id/undefined，确保前端编辑的所有字段都能持久化
+    const snakeBody = toSnakeCase(body);
     const updateData: Record<string, any> = {};
-
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.phone !== undefined) updateData.phone = body.phone;
-    if (body.gender !== undefined) updateData.gender = body.gender;
-    if (body.age !== undefined) updateData.age = body.age;
-    if (body.birthday !== undefined) {
-      updateData.birthday = typeof body.birthday === 'string' ? body.birthday.split('T')[0] : body.birthday;
+    for (const [key, value] of Object.entries(snakeBody)) {
+      if (key === 'id' || key === 'shop_id') continue;
+      if (value === undefined) continue;
+      updateData[key] = value;
     }
-    if (body.membershipLevel !== undefined) updateData.membership_level = body.membershipLevel;
-    if (body.purchaseVIPLevel !== undefined) updateData.purchase_vip_level = body.purchaseVIPLevel;
-    if (body.purchaseVIPExpiresAt !== undefined) updateData.purchase_vip_expires_at = body.purchaseVIPExpiresAt;
-    if (body.storedValueLevel !== undefined) updateData.stored_value_level = body.storedValueLevel;
-    if (body.storedValueBalance !== undefined) updateData.stored_value_balance = body.storedValueBalance;
-    if (body.storedValueExpiresAt !== undefined) updateData.stored_value_expires_at = body.storedValueExpiresAt;
-    if (body.source !== undefined) updateData.source = body.source;
-    if (body.tags !== undefined && Array.isArray(body.tags)) updateData.tags = body.tags;
-    if (body.visitCount !== undefined) updateData.visit_count = body.visitCount;
-    if (body.totalSpent !== undefined) updateData.total_spent = body.totalSpent;
-    if (body.balance !== undefined) updateData.balance = body.balance;
-    if (body.points !== undefined) updateData.points = body.points;
-    if (body.isStockholder !== undefined) updateData.is_stockholder = body.isStockholder;
-    if (body.preferences !== undefined && Array.isArray(body.preferences)) updateData.preferences = body.preferences;
-    if (body.servedByStylistIds !== undefined && Array.isArray(body.servedByStylistIds)) updateData.served_by_stylist_ids = body.servedByStylistIds;
+
+    // 处理日期字符串截取
+    if (updateData.birthday && typeof updateData.birthday === 'string') {
+      updateData.birthday = updateData.birthday.split('T')[0];
+    }
+    if (updateData.last_visit_at && typeof updateData.last_visit_at === 'string') {
+      updateData.last_visit_at = updateData.last_visit_at.split('T')[0];
+    }
+    if (updateData.purchase_vip_expires_at && typeof updateData.purchase_vip_expires_at === 'string') {
+      updateData.purchase_vip_expires_at = updateData.purchase_vip_expires_at.split('T')[0];
+    }
+    if (updateData.stored_value_expires_at && typeof updateData.stored_value_expires_at === 'string') {
+      updateData.stored_value_expires_at = updateData.stored_value_expires_at.split('T')[0];
+    }
+
+    // 数组字段做基本校验
+    if (updateData.tags !== undefined && !Array.isArray(updateData.tags)) delete updateData.tags;
+    if (updateData.preferences !== undefined && !Array.isArray(updateData.preferences)) delete updateData.preferences;
+    if (updateData.served_by_stylist_ids !== undefined && !Array.isArray(updateData.served_by_stylist_ids)) {
+      delete updateData.served_by_stylist_ids;
+    }
+    if (updateData.last_service_items !== undefined && !Array.isArray(updateData.last_service_items)) {
+      delete updateData.last_service_items;
+    }
 
     console.log('[customers] 准备更新:', id, JSON.stringify(updateData));
 
@@ -161,7 +203,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     console.log(`[customers] 客户 ${data.name} 更新成功`);
-    res.json({ success: true, data });
+    res.json({ success: true, data: toCamelCase(data) });
   } catch (err: any) {
     console.error('[customers] 更新客户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -193,6 +235,220 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (err: any) {
     console.error('[customers] 删除客户异常:', err.message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * GET /api/customers/:id
+ * 获取单个客户详情（含画像、到店记录）
+ */
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.employee!.shopId;
+
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (error) {
+      console.error('[customers] 查询客户详情失败:', error.message);
+      res.status(500).json({ success: false, error: '查询客户详情失败' });
+      return;
+    }
+
+    if (!customer) {
+      res.status(404).json({ success: false, error: '客户不存在' });
+      return;
+    }
+
+    const camelCustomer = toCamelCase(customer);
+
+    const [{ data: profiles }, { data: visits }] = await Promise.all([
+      supabase.from('customer_profiles').select('*').eq('customer_id', id),
+      supabase
+        .from('customer_visit_records')
+        .select('*')
+        .eq('customer_id', id)
+        .order('check_in_time', { ascending: false }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        ...camelCustomer,
+        profile: profiles && profiles.length > 0 ? toCamelCase(profiles[0]) : null,
+        visitRecords: (visits || []).map(toCamelCase),
+      },
+    });
+  } catch (err: any) {
+    console.error('[customers] 获取客户详情异常:', err.message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * GET /api/customers/:id/profile
+ * 获取客户画像
+ */
+router.get('/:id/profile', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.employee!.shopId;
+
+    // 校验客户归属
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (customerError || !customer) {
+      res.status(404).json({ success: false, error: '客户不存在或无权访问' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('customer_profiles')
+      .select('*')
+      .eq('customer_id', id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('[customers] 查询客户画像失败:', error.message);
+      res.status(500).json({ success: false, error: '查询客户画像失败' });
+      return;
+    }
+
+    res.json({ success: true, data: data ? toCamelCase(data) : null });
+  } catch (err: any) {
+    console.error('[customers] 获取客户画像异常:', err.message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * POST /api/customers/:id/profile
+ * 创建客户画像
+ */
+router.post('/:id/profile', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.employee!.shopId;
+
+    // 校验客户归属
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (customerError || !customer) {
+      res.status(404).json({ success: false, error: '客户不存在或无权访问' });
+      return;
+    }
+
+    const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const snakeBody = toSnakeCase(req.body || {});
+    const insertData: Record<string, any> = {
+      id: profileId,
+      customer_id: id,
+    };
+
+    for (const [key, value] of Object.entries(snakeBody)) {
+      if (key === 'id' || key === 'customer_id') continue;
+      if (value === undefined) continue;
+      insertData[key] = value;
+    }
+
+    const { data, error } = await supabase
+      .from('customer_profiles')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[customers] 创建客户画像失败:', error.message);
+      res.status(500).json({ success: false, error: '创建客户画像失败: ' + error.message });
+      return;
+    }
+
+    res.json({ success: true, data: toCamelCase(data) });
+  } catch (err: any) {
+    console.error('[customers] 创建客户画像异常:', err.message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * PUT /api/customers/:id/profile
+ * 更新客户画像（不存在则创建）
+ */
+router.put('/:id/profile', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.employee!.shopId;
+
+    // 校验客户归属
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (customerError || !customer) {
+      res.status(404).json({ success: false, error: '客户不存在或无权访问' });
+      return;
+    }
+
+    const snakeBody = toSnakeCase(req.body || {});
+    const upsertData: Record<string, any> = { customer_id: id };
+
+    for (const [key, value] of Object.entries(snakeBody)) {
+      if (key === 'id' || key === 'customer_id') continue;
+      if (value === undefined) continue;
+      upsertData[key] = value;
+    }
+
+    const { data: existing } = await supabase
+      .from('customer_profiles')
+      .select('id')
+      .eq('customer_id', id)
+      .maybeSingle();
+
+    let result;
+    if (existing) {
+      result = await supabase
+        .from('customer_profiles')
+        .update(upsertData)
+        .eq('customer_id', id)
+        .select()
+        .single();
+    } else {
+      const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      result = await supabase
+        .from('customer_profiles')
+        .insert({ id: profileId, ...upsertData })
+        .select()
+        .single();
+    }
+
+    if (result.error) {
+      console.error('[customers] 更新客户画像失败:', result.error.message);
+      res.status(500).json({ success: false, error: '更新客户画像失败: ' + result.error.message });
+      return;
+    }
+
+    res.json({ success: true, data: toCamelCase(result.data) });
+  } catch (err: any) {
+    console.error('[customers] 更新客户画像异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });

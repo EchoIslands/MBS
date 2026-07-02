@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Crown,
@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Package,
   Coffee,
+  Loader2,
 } from 'lucide-react';
 import {
   Customer,
@@ -31,7 +32,6 @@ import {
   MembershipLevel,
 } from '../../../shared/types';
 import {
-  mockCustomers,
   mockReferrals,
   purchaseVIPPlans,
   storedValuePlans,
@@ -44,12 +44,14 @@ import {
   isVIPExpiringSoon,
 } from '../../lib/membership';
 import { useAppStore } from '../../store';
+import { customerApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 type ModalMode = 'purchase' | 'storedValue' | null;
 
 const MembershipManagement: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>([...mockCustomers]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterVIP, setFilterVIP] = useState<PurchaseVIPLevel | 'all'>('all');
   const [filterStored, setFilterStored] = useState<StoredValueLevel | 'all'>('all');
@@ -64,6 +66,24 @@ const MembershipManagement: React.FC = () => {
   const navigate = useNavigate();
   const { currentShop } = useAppStore();
 
+  // 从真实 API 获取客户数据
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        setLoading(true);
+        const data = await customerApi.getAll();
+        if (Array.isArray(data)) {
+          setCustomers(data);
+        }
+      } catch (err: any) {
+        console.error('[MembershipManagement] 获取客户列表失败:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCustomers();
+  }, []);
+
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -76,7 +96,9 @@ const MembershipManagement: React.FC = () => {
   const stats = [
     {
       label: '总会员数',
-      value: customers.length,
+      value: customers.filter(
+        (c) => c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || c.storedValueLevel !== StoredValueLevel.NONE
+      ).length,
       icon: User,
       color: 'text-gray-600',
       bgColor: 'bg-gray-100',
@@ -156,26 +178,36 @@ const MembershipManagement: React.FC = () => {
     setModalMode('storedValue');
   };
 
-  const confirmPurchaseUpgrade = () => {
+  const confirmPurchaseUpgrade = async () => {
     if (!modalCustomer || !selectedPurchaseLevel) return;
 
-    const updated = customers.map((c) => {
-      if (c.id !== modalCustomer.id) return c;
-      return {
-        ...c,
-        purchaseVIPLevel: selectedPurchaseLevel,
-        purchaseVIPExpiresAt: new Date(Date.now() + 365 * 86400000),
-        membershipLevel: selectedPurchaseLevel as unknown as MembershipLevel,
-        isMember: selectedPurchaseLevel !== PurchaseVIPLevel.REGULAR,
-      };
-    });
+    const updated: Customer = {
+      ...modalCustomer,
+      purchaseVIPLevel: selectedPurchaseLevel,
+      purchaseVIPExpiresAt: new Date(Date.now() + 365 * 86400000),
+      membershipLevel: modalCustomer.isStockholder
+        ? MembershipLevel.STOCKHOLDER
+        : selectedPurchaseLevel !== PurchaseVIPLevel.REGULAR || modalCustomer.storedValueLevel !== StoredValueLevel.NONE
+        ? MembershipLevel.PREMIUM
+        : MembershipLevel.REGULAR,
+      isMember:
+        selectedPurchaseLevel !== PurchaseVIPLevel.REGULAR ||
+        modalCustomer.storedValueLevel !== StoredValueLevel.NONE,
+    };
 
-    setCustomers(updated);
-    setModalMode(null);
-    setModalCustomer(null);
+    try {
+      await customerApi.update(modalCustomer.id, updated);
+      setCustomers(customers.map((c) => (c.id === modalCustomer.id ? updated : c)));
+    } catch (err: any) {
+      console.error('[MembershipManagement] 更新 VIP 失败:', err.message);
+      alert('更新 VIP 失败：' + err.message);
+    } finally {
+      setModalMode(null);
+      setModalCustomer(null);
+    }
   };
 
-  const confirmStoredUpgrade = () => {
+  const confirmStoredUpgrade = async () => {
     if (!modalCustomer || !selectedStoredLevel) return;
 
     const newPlan = storedValuePlans.find((p) => p.level === selectedStoredLevel);
@@ -186,22 +218,35 @@ const MembershipManagement: React.FC = () => {
     const storedValueExpiresAt = new Date();
     storedValueExpiresAt.setFullYear(storedValueExpiresAt.getFullYear() + 2);
 
-    const updated = customers.map((c) => {
-      if (c.id !== modalCustomer.id) return c;
-      return {
-        ...c,
-        storedValueLevel: selectedStoredLevel,
-        storedValueBalance: c.storedValueBalance + addAmount,
-        storedValueExpiresAt,
-        balance: c.storedValueBalance + addAmount,
-        hasRecharged: selectedStoredLevel !== StoredValueLevel.NONE,
-        rechargeLevel: selectedStoredLevel,
-      };
-    });
+    const newBalance = modalCustomer.storedValueBalance + addAmount;
+    const updated: Customer = {
+      ...modalCustomer,
+      storedValueLevel: selectedStoredLevel,
+      storedValueBalance: newBalance,
+      storedValueExpiresAt,
+      balance: newBalance,
+      hasRecharged: selectedStoredLevel !== StoredValueLevel.NONE,
+      rechargeLevel: getStoredValueLabel(selectedStoredLevel),
+      membershipLevel: modalCustomer.isStockholder
+        ? MembershipLevel.STOCKHOLDER
+        : modalCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || selectedStoredLevel !== StoredValueLevel.NONE
+        ? MembershipLevel.PREMIUM
+        : MembershipLevel.REGULAR,
+      isMember:
+        modalCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ||
+        selectedStoredLevel !== StoredValueLevel.NONE,
+    };
 
-    setCustomers(updated);
-    setModalMode(null);
-    setModalCustomer(null);
+    try {
+      await customerApi.update(modalCustomer.id, updated);
+      setCustomers(customers.map((c) => (c.id === modalCustomer.id ? updated : c)));
+    } catch (err: any) {
+      console.error('[MembershipManagement] 更新储值失败:', err.message);
+      alert('更新储值失败：' + err.message);
+    } finally {
+      setModalMode(null);
+      setModalCustomer(null);
+    }
   };
 
   const renderPlanCards = () => (
@@ -283,7 +328,17 @@ const MembershipManagement: React.FC = () => {
     </div>
   );
 
-  const renderCustomerList = () => (
+  const renderCustomerList = () => {
+    if (loading) {
+      return (
+        <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 text-center text-gray-500 py-12">
+          <Loader2 size={48} className="mx-auto mb-2 opacity-50 animate-spin" />
+          <p>加载中...</p>
+        </div>
+      );
+    }
+
+    return (
     <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
       <div className="flex flex-col md:flex-row gap-4 mb-4">
         <div className="flex-1 relative">
@@ -312,7 +367,7 @@ const MembershipManagement: React.FC = () => {
               <div className="mb-4">
                 <span className="text-sm font-medium text-gray-700 block mb-2">VIP 等级</span>
                 <button
-                  onClick={() => setFilterVIP('all')}
+                  onClick={() => { setFilterVIP('all'); setShowFilterDropdown(false); }}
                   className={`w-full px-3 py-2 rounded-lg text-left text-sm transition-all mb-1 ${
                     filterVIP === 'all' ? 'bg-purple-500 text-white' : 'hover:bg-gray-100 text-gray-700'
                   }`}
@@ -324,7 +379,7 @@ const MembershipManagement: React.FC = () => {
                   .map((plan) => (
                     <button
                       key={plan.level}
-                      onClick={() => setFilterVIP(plan.level)}
+                      onClick={() => { setFilterVIP(plan.level); setShowFilterDropdown(false); }}
                       className={`w-full px-3 py-2 rounded-lg text-left text-sm transition-all mb-1 ${
                         filterVIP === plan.level ? 'bg-purple-500 text-white' : 'hover:bg-gray-100 text-gray-700'
                       }`}
@@ -336,7 +391,7 @@ const MembershipManagement: React.FC = () => {
               <div>
                 <span className="text-sm font-medium text-gray-700 block mb-2">储值等级</span>
                 <button
-                  onClick={() => setFilterStored('all')}
+                  onClick={() => { setFilterStored('all'); setShowFilterDropdown(false); }}
                   className={`w-full px-3 py-2 rounded-lg text-left text-sm transition-all mb-1 ${
                     filterStored === 'all' ? 'bg-green-500 text-white' : 'hover:bg-gray-100 text-gray-700'
                   }`}
@@ -348,7 +403,7 @@ const MembershipManagement: React.FC = () => {
                   .map((plan) => (
                     <button
                       key={plan.level}
-                      onClick={() => setFilterStored(plan.level)}
+                      onClick={() => { setFilterStored(plan.level); setShowFilterDropdown(false); }}
                       className={`w-full px-3 py-2 rounded-lg text-left text-sm transition-all mb-1 ${
                         filterStored === plan.level ? 'bg-green-500 text-white' : 'hover:bg-gray-100 text-gray-700'
                       }`}
@@ -455,6 +510,7 @@ const MembershipManagement: React.FC = () => {
       </div>
     </div>
   );
+  };
 
   const renderCustomerDetail = () => {
     if (!viewingCustomer) return null;

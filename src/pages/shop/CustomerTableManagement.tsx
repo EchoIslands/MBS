@@ -9,28 +9,33 @@ import {
   Download,
   Filter,
   RefreshCw,
-  ChevronDown,
-  ChevronRight,
   Calendar,
-  Phone,
-  MapPin,
   CreditCard,
   Crown,
-  Star,
   Wallet,
   Gift,
   Check,
   X,
   FileText,
   Users,
-  TrendingUp,
-  AlertTriangle,
-  Bell,
   Loader2,
 } from 'lucide-react';
-import { Customer, MembershipLevel, CustomerTag } from '../../../shared/types';
+import { Customer, MembershipLevel, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
+import { getPurchaseVIPLabel, getStoredValueLabel } from '../../lib/membership';
 import { customerApi } from '../../api';
 import ShopLayout from './ShopLayout';
+
+// 根据双轨会员体系生成统一的会员级别显示文本
+const getMembershipLevelLabel = (customer: Customer): string => {
+  if (customer.isStockholder) return '股东会员';
+  if (customer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR) {
+    return getPurchaseVIPLabel(customer.purchaseVIPLevel);
+  }
+  if (customer.storedValueLevel !== StoredValueLevel.NONE) {
+    return getStoredValueLabel(customer.storedValueLevel);
+  }
+  return '普通客户';
+};
 
 const CustomerTableManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,29 +54,29 @@ const CustomerTableManagement: React.FC = () => {
     try {
       const data = await customerApi.getAll();
       // 添加扩展字段（兼容表格展示）
-      const extended = data.map((c: any, index: number) => ({
+      const extended = data.map((c: Customer) => ({
         ...c,
         wechat: c.wechat || `wechat_${c.id}`,
         idCardNumber: c.idCardNumber || '',
         hobbies: c.hobbies || '',
-        lastServiceItems: c.visitRecords?.[0]?.serviceNames || ['精剪'],
-        lastServiceAmount: c.visitRecords?.[0]?.totalAmount || 0,
+        lastServiceItems: c.lastServiceItems || c.visitRecords?.[0]?.serviceNames || ['精剪'],
+        lastServiceAmount: c.lastServiceAmount || c.visitRecords?.[0]?.totalAmount || 0,
         hasBooking: c.hasBooking || false,
-        lastStylist: c.visitRecords?.[0]?.stylistName || '—',
-        isMember: c.membershipLevel !== MembershipLevel.REGULAR,
-        hasRecharged: (c.balance || 0) > 0,
-        rechargeLevel: (c.balance || 0) > 1000 ? '金卡' : (c.balance || 0) > 0 ? '银卡' : '',
-        isReferred: !!(c.source && c.source.includes('推荐')),
+        lastStylist: c.lastStylist || c.visitRecords?.[0]?.stylistName || '—',
+        isMember: c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || c.storedValueLevel !== StoredValueLevel.NONE,
+        hasRecharged: c.storedValueLevel !== StoredValueLevel.NONE,
+        rechargeLevel: getStoredValueLabel(c.storedValueLevel),
+        isReferred: c.isReferred || !!(c.source && c.source.includes('推荐')),
         referrerName: c.referrerName || '',
         referrerPhone: c.referrerPhone || '',
         referralConsumption: c.referralConsumption || 0,
-        sharedFund: c.isStockholder ? ((c.totalSpent || 0) * 0.05) : 0,
-        totalSharedFund: c.isStockholder ? ((c.totalSpent || 0) * 0.1) : 0,
-        withdrawableAmount: c.isStockholder ? ((c.totalSpent || 0) * 0.08) : 0,
+        sharedFund: c.sharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.05) : 0),
+        totalSharedFund: c.totalSharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.1) : 0),
+        withdrawableAmount: c.withdrawableAmount ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.08) : 0),
       }));
       setCustomers(extended);
-    } catch (err: any) {
-      console.error('[CustomerTable] 获取客户列表失败:', err.message);
+    } catch (err: unknown) {
+      console.error('[CustomerTable] 获取客户列表失败:', err instanceof Error ? err.message : err);
     } finally {
       setLoading(false);
     }
@@ -87,7 +92,7 @@ const CustomerTableManagement: React.FC = () => {
     const totalMembers = customers.filter(c => c.isMember).length;
     const totalStockholders = customers.filter(c => c.isStockholder).length;
     const totalRevenue = customers.reduce((sum, c) => sum + (c.totalSpent || 0), 0);
-    const totalBalance = customers.reduce((sum, c) => sum + (c.balance || 0), 0);
+    const totalBalance = customers.reduce((sum, c) => sum + (c.storedValueBalance || 0), 0);
     const totalSharedFund = customers.reduce((sum, c) => sum + (c.totalSharedFund || 0), 0);
     const totalWithdrawable = customers.reduce((sum, c) => sum + (c.withdrawableAmount || 0), 0);
     const withBooking = customers.filter(c => c.hasBooking).length;
@@ -122,8 +127,9 @@ const CustomerTableManagement: React.FC = () => {
       const matchesLevel = 
         filterLevel === 'all' || 
         (filterLevel === 'stockholder' && customer.isStockholder) ||
-        (filterLevel === 'premium' && customer.membershipLevel === MembershipLevel.PREMIUM) ||
-        (filterLevel === 'regular' && customer.membershipLevel === MembershipLevel.REGULAR);
+        (filterLevel === 'purchase-vip' && customer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR) ||
+        (filterLevel === 'stored-value' && customer.storedValueLevel !== StoredValueLevel.NONE) ||
+        (filterLevel === 'regular' && customer.purchaseVIPLevel === PurchaseVIPLevel.REGULAR && customer.storedValueLevel === StoredValueLevel.NONE);
 
       const matchesMember = 
         filterMember === 'all' ||
@@ -185,10 +191,10 @@ const CustomerTableManagement: React.FC = () => {
       c.hasBooking ? '是' : '否',                               // 12. 是否预约
       c.lastStylist || '',                                      // 13. 设计师
       c.isMember ? '是' : '否',                                 // 14. 是否会员
-      c.isStockholder ? '股东会员' : c.membershipLevel === MembershipLevel.PREMIUM ? '高级会员' : '普通',  // 15. 会员级别
+      getMembershipLevelLabel(c),                               // 15. 会员级别
       c.hasRecharged ? '是' : '否',                             // 16. 是否充值
-      c.rechargeLevel || '',                                    // 17. 充值级别
-      `¥${c.balance.toLocaleString()}`,                         // 18. 余额
+      getStoredValueLabel(c.storedValueLevel),                  // 17. 充值级别
+      `¥${c.storedValueBalance.toLocaleString()}`,              // 18. 余额
       c.isReferred ? '是' : '否',                               // 19. 是否转介绍
       c.referrerName || '',                                     // 20. 转介绍人员
       c.referralConsumption ? `¥${c.referralConsumption.toLocaleString()}` : '',  // 21. 转介绍消费
@@ -233,8 +239,8 @@ const CustomerTableManagement: React.FC = () => {
       hasBooking: false,
       lastStylist: '',
       // 新版会员体系默认值
-      purchaseVIPLevel: 'regular',
-      storedValueLevel: 'none',
+      purchaseVIPLevel: PurchaseVIPLevel.REGULAR,
+      storedValueLevel: StoredValueLevel.NONE,
       storedValueBalance: 0,
       withdrawableReferralAmount: 0,
       // 兼容旧字段
@@ -398,19 +404,28 @@ const CustomerTableManagement: React.FC = () => {
           {/* 会员级别筛选 */}
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-xs text-gray-400">会员级别：</span>
-            {['all', 'stockholder', 'premium', 'regular'].map((level) => (
-              <button
-                key={level}
-                onClick={() => setFilterLevel(level)}
-                className={`px-3 py-1 rounded-full text-xs transition-all ${
-                  filterLevel === level
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-600'
-                }`}
-              >
-                {level === 'all' ? '全部' : level === 'stockholder' ? '股东会员' : level === 'premium' ? '高级会员' : '普通客户'}
-              </button>
-            ))}
+            {['all', 'stockholder', 'purchase-vip', 'stored-value', 'regular'].map((level) => {
+              const levelLabel: Record<string, string> = {
+                all: '全部',
+                stockholder: '股东会员',
+                'purchase-vip': '购买型VIP',
+                'stored-value': '储值会员',
+                regular: '普通客户',
+              };
+              return (
+                <button
+                  key={level}
+                  onClick={() => setFilterLevel(level)}
+                  className={`px-3 py-1 rounded-full text-xs transition-all ${
+                    filterLevel === level
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-600'
+                  }`}
+                >
+                  {levelLabel[level]}
+                </button>
+              );
+            })}
           </div>
 
           {/* 会员状态筛选 */}
@@ -503,7 +518,15 @@ const CustomerTableManagement: React.FC = () => {
 
             {/* 表格内容 */}
             <tbody className="divide-y divide-gray-100">
-              {filteredCustomers.map((customer, idx) => (
+              {loading && (
+                <tr>
+                  <td colSpan={24} className="px-4 py-12 text-center">
+                    <Loader2 size={32} className="mx-auto text-orange-500 animate-spin mb-2" />
+                    <div className="text-sm text-gray-500">加载客户数据中...</div>
+                  </td>
+                </tr>
+              )}
+              {!loading && filteredCustomers.map((customer, idx) => (
                 <tr 
                   key={customer.id}
                   className={`hover:bg-orange-50 transition-colors ${
@@ -565,11 +588,11 @@ const CustomerTableManagement: React.FC = () => {
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       customer.isStockholder ? 'bg-purple-100 text-purple-700' :
-                      customer.membershipLevel === MembershipLevel.PREMIUM ? 'bg-blue-100 text-blue-700' :
+                      customer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ? 'bg-blue-100 text-blue-700' :
+                      customer.storedValueLevel !== StoredValueLevel.NONE ? 'bg-green-100 text-green-700' :
                       'bg-gray-100 text-gray-600'
                     }`}>
-                      {customer.isStockholder ? '股东会员' : 
-                       customer.membershipLevel === MembershipLevel.PREMIUM ? '高级会员' : '普通'}
+                      {getMembershipLevelLabel(customer)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -579,9 +602,9 @@ const CustomerTableManagement: React.FC = () => {
                       {customer.hasRecharged ? '是' : '否'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{customer.rechargeLevel || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{getStoredValueLabel(customer.storedValueLevel)}</td>
                   <td className="px-4 py-3">
-                    <span className="text-sm font-semibold text-green-600">¥{customer.balance.toLocaleString()}</span>
+                    <span className="text-sm font-semibold text-green-600">¥{customer.storedValueBalance.toLocaleString()}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -686,7 +709,12 @@ const CustomerTableManagement: React.FC = () => {
                   )}
                   {showDetail.isMember && !showDetail.isStockholder && (
                     <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
-                      高级会员
+                      {getPurchaseVIPLabel(showDetail.purchaseVIPLevel)}
+                    </span>
+                  )}
+                  {showDetail.storedValueLevel !== StoredValueLevel.NONE && (
+                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                      {getStoredValueLabel(showDetail.storedValueLevel)}
                     </span>
                   )}
                   {showDetail.hasBooking && (
@@ -792,23 +820,16 @@ const CustomerTableManagement: React.FC = () => {
                     <span className="text-blue-800 font-bold">{showDetail.isMember ? '是' : '否'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-blue-600">会员级别：</span>
-                    <span className="text-blue-800 font-bold">
-                      {showDetail.isStockholder ? '股东会员' : 
-                       showDetail.membershipLevel === MembershipLevel.PREMIUM ? '高级会员' : '普通客户'}
-                    </span>
+                    <span className="text-blue-600">购买型 VIP：</span>
+                    <span className="text-blue-800 font-bold">{getPurchaseVIPLabel(showDetail.purchaseVIPLevel)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-blue-600">是否充值：</span>
-                    <span className="text-blue-800 font-medium">{showDetail.hasRecharged ? '是' : '否'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-blue-600">充值级别：</span>
-                    <span className="text-blue-800 font-medium">{showDetail.rechargeLevel || '-'}</span>
+                    <span className="text-blue-600">储值会员：</span>
+                    <span className="text-blue-800 font-bold">{getStoredValueLabel(showDetail.storedValueLevel)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-blue-600">当前余额：</span>
-                    <span className="text-green-700 font-bold text-lg">¥{showDetail.balance.toLocaleString()}</span>
+                    <span className="text-green-700 font-bold text-lg">¥{showDetail.storedValueBalance.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-blue-600">积分：</span>
@@ -940,7 +961,8 @@ const CustomerTableManagement: React.FC = () => {
               </h3>
               <button
                 onClick={() => {
-                  showEdit ? setShowEdit(null) : setShowAdd(false);
+                  if (showEdit) setShowEdit(null);
+                  else setShowAdd(false);
                 }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
@@ -1046,25 +1068,43 @@ const CustomerTableManagement: React.FC = () => {
                   <Crown size={16} className="text-orange-500" />
                   会员及消费
                 </h4>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">会员级别</label>
-                  <select
-                    id="edit-membership"
-                    defaultValue={showEdit?.membershipLevel || MembershipLevel.REGULAR}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm bg-white"
-                  >
-                    <option value={MembershipLevel.REGULAR}>普通客户</option>
-                    <option value={MembershipLevel.PREMIUM}>高级会员</option>
-                    <option value={MembershipLevel.STOCKHOLDER}>股东会员</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">购买型 VIP 等级</label>
+                    <select
+                      id="edit-purchase-vip"
+                      defaultValue={showEdit?.purchaseVIPLevel || PurchaseVIPLevel.REGULAR}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm bg-white"
+                    >
+                      <option value={PurchaseVIPLevel.REGULAR}>普通用户</option>
+                      <option value={PurchaseVIPLevel.BRONZE}>普卡 VIP</option>
+                      <option value={PurchaseVIPLevel.SILVER}>银卡 VIP</option>
+                      <option value={PurchaseVIPLevel.GOLD}>金卡 VIP</option>
+                      <option value={PurchaseVIPLevel.DIAMOND}>钻石 VIP</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">储值会员等级</label>
+                    <select
+                      id="edit-stored-value"
+                      defaultValue={showEdit?.storedValueLevel || StoredValueLevel.NONE}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm bg-white"
+                    >
+                      <option value={StoredValueLevel.NONE}>未储值</option>
+                      <option value={StoredValueLevel.STORE_500}>储值卡 500</option>
+                      <option value={StoredValueLevel.STORE_1000}>安心卡 1000</option>
+                      <option value={StoredValueLevel.STORE_2000}>顺心卡 2000</option>
+                      <option value={StoredValueLevel.STORE_5000}>随心卡 5000</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">会员余额 (¥)</label>
+                    <label className="block text-sm text-gray-600 mb-1">储值余额 (¥)</label>
                     <input
                       type="number"
-                      defaultValue={showEdit?.balance || 0}
-                      id="edit-balance"
+                      defaultValue={showEdit?.storedValueBalance ?? 0}
+                      id="edit-stored-balance"
                       placeholder="请输入余额"
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
                     />
@@ -1118,19 +1158,6 @@ const CustomerTableManagement: React.FC = () => {
                     id="edit-visit-date"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">充值级别</label>
-                  <select
-                    id="edit-recharge-level"
-                    defaultValue={showEdit?.rechargeLevel || ''}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm bg-white"
-                  >
-                    <option value="">未设置</option>
-                    <option value="银卡">银卡</option>
-                    <option value="金卡">金卡</option>
-                    <option value="钻石卡">钻石卡</option>
-                  </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
@@ -1245,7 +1272,8 @@ const CustomerTableManagement: React.FC = () => {
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
               <button
                 onClick={() => {
-                  showEdit ? setShowEdit(null) : setShowAdd(false);
+                  if (showEdit) setShowEdit(null);
+                  else setShowAdd(false);
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors text-sm font-medium"
               >
@@ -1262,16 +1290,15 @@ const CustomerTableManagement: React.FC = () => {
                   const idCardInput = document.getElementById('edit-idcard') as HTMLInputElement;
                   const birthdayInput = document.getElementById('edit-birthday') as HTMLInputElement;
                   const hobbiesInput = document.getElementById('edit-hobbies') as HTMLTextAreaElement;
-                  const membershipInput = document.getElementById('edit-membership') as HTMLSelectElement;
-                  const balanceInput = document.getElementById('edit-balance') as HTMLInputElement;
+                  const purchaseVIPInput = document.getElementById('edit-purchase-vip') as HTMLSelectElement;
+                  const storedValueInput = document.getElementById('edit-stored-value') as HTMLSelectElement;
+                  const storedBalanceInput = document.getElementById('edit-stored-balance') as HTMLInputElement;
                   const pointsInput = document.getElementById('edit-points') as HTMLInputElement;
                   const stylistInput = document.getElementById('edit-stylist') as HTMLInputElement;
                   const serviceItemsInput = document.getElementById('edit-service-items') as HTMLInputElement;
                   const totalInput = document.getElementById('edit-total') as HTMLInputElement;
                   const visitDateInput = document.getElementById('edit-visit-date') as HTMLInputElement;
-                  const rechargeLevelInput = document.getElementById('edit-recharge-level') as HTMLSelectElement;
                   const bookingInput = document.getElementById('edit-booking') as HTMLInputElement;
-                  const rechargedInput = document.getElementById('edit-recharged') as HTMLInputElement;
                   const referredInput = document.getElementById('edit-is-referred') as HTMLSelectElement;
                   const referrerNameInput = document.getElementById('edit-referrer-name') as HTMLInputElement;
                   const referrerPhoneInput = document.getElementById('edit-referrer-phone') as HTMLInputElement;
@@ -1285,8 +1312,18 @@ const CustomerTableManagement: React.FC = () => {
                     return;
                   }
 
+                  const purchaseVIPLevel = purchaseVIPInput.value as PurchaseVIPLevel;
+                  const storedValueLevel = storedValueInput.value as StoredValueLevel;
+                  const storedValueBalance = parseFloat(storedBalanceInput.value) || 0;
+                  const isMember = purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || storedValueLevel !== StoredValueLevel.NONE;
+
                   if (showEdit) {
                     // 更新客户
+                    const membershipLevel = showEdit.isStockholder
+                      ? MembershipLevel.STOCKHOLDER
+                      : isMember
+                      ? MembershipLevel.PREMIUM
+                      : MembershipLevel.REGULAR;
                     const updated: Customer = {
                       ...showEdit,
                       name: nameInput.value,
@@ -1297,18 +1334,20 @@ const CustomerTableManagement: React.FC = () => {
                       idCardNumber: idCardInput.value,
                       birthday: birthdayInput.value ? new Date(birthdayInput.value) : undefined,
                       hobbies: hobbiesInput.value,
-                      membershipLevel: membershipInput.value as MembershipLevel,
-                      isMember: membershipInput.value !== MembershipLevel.REGULAR,
-                      isStockholder: membershipInput.value === MembershipLevel.STOCKHOLDER,
-                      balance: parseFloat(balanceInput.value) || 0,
+                      purchaseVIPLevel,
+                      storedValueLevel,
+                      storedValueBalance,
+                      balance: storedValueBalance,
+                      membershipLevel,
+                      isMember,
+                      hasRecharged: storedValueLevel !== StoredValueLevel.NONE,
+                      rechargeLevel: getStoredValueLabel(storedValueLevel),
                       points: parseInt(pointsInput.value) || 0,
                       lastStylist: stylistInput.value,
                       lastServiceItems: serviceItemsInput.value ? serviceItemsInput.value.split(/[、,，]/).map(s => s.trim()).filter(Boolean) : [],
                       totalSpent: parseFloat(totalInput.value) || 0,
                       lastVisitAt: visitDateInput.value ? new Date(visitDateInput.value) : undefined,
                       hasBooking: bookingInput.checked,
-                      hasRecharged: rechargedInput.checked,
-                      rechargeLevel: rechargeLevelInput.value || (parseFloat(balanceInput.value) > 1000 ? '金卡' : parseFloat(balanceInput.value) > 0 ? '银卡' : ''),
                       isReferred: referredInput.value === 'yes',
                       referrerName: referrerNameInput.value,
                       referrerPhone: referrerPhoneInput.value,
@@ -1329,16 +1368,20 @@ const CustomerTableManagement: React.FC = () => {
                       idCardNumber: idCardInput.value,
                       birthday: birthdayInput.value ? new Date(birthdayInput.value) : undefined,
                       hobbies: hobbiesInput.value,
-                      membershipLevel: membershipInput.value as MembershipLevel,
-                      balance: parseFloat(balanceInput.value) || 0,
+                      purchaseVIPLevel,
+                      storedValueLevel,
+                      storedValueBalance,
+                      balance: storedValueBalance,
+                      membershipLevel: isMember ? MembershipLevel.PREMIUM : MembershipLevel.REGULAR,
+                      isMember,
+                      hasRecharged: storedValueLevel !== StoredValueLevel.NONE,
+                      rechargeLevel: getStoredValueLabel(storedValueLevel),
                       points: parseInt(pointsInput.value) || 0,
                       lastStylist: stylistInput.value,
                       lastServiceItems: serviceItemsInput.value ? serviceItemsInput.value.split(/[、,，]/).map(s => s.trim()).filter(Boolean) : [],
                       totalSpent: parseFloat(totalInput.value) || 0,
                       lastVisitAt: visitDateInput.value ? new Date(visitDateInput.value) : undefined,
                       hasBooking: bookingInput.checked,
-                      hasRecharged: rechargedInput.checked,
-                      rechargeLevel: rechargeLevelInput.value || (parseFloat(balanceInput.value) > 1000 ? '金卡' : parseFloat(balanceInput.value) > 0 ? '银卡' : ''),
                       isReferred: referredInput.value === 'yes',
                       referrerName: referrerNameInput.value,
                       referrerPhone: referrerPhoneInput.value,

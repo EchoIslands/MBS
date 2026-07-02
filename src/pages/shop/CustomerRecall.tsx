@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Bell, AlertTriangle, CheckCircle, User, Phone, Calendar, ChevronRight,
-  Gift, Sparkles, Mail, MessageCircle, Filter
+  Gift, Sparkles, Mail, MessageCircle, Filter, Loader2
 } from 'lucide-react';
-import { mockCustomers, mockShops } from '../../../shared/mockData';
-import { Customer, MembershipLevel, CustomerTag } from '../../../shared/types';
+import { Customer, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
+import { getPurchaseVIPLabel, getStoredValueLabel } from '../../lib/membership';
+import { customerApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 // 根据客户的消费频率 & 距上次到店天数 计算流失风险与预计下次到店
@@ -25,29 +26,38 @@ const analyzeCustomer = (c: Customer): { risk: 'low' | 'medium' | 'high'; recomm
   return { risk, recommendedMessage, daysToNextVisit };
 };
 
-const levelName = (lv: MembershipLevel) => {
-  if (lv === MembershipLevel.STOCKHOLDER) return '股东会员';
-  if (lv === MembershipLevel.PREMIUM) return '高级会员';
-  return '普通客户';
-};
-
 const CustomerRecall: React.FC = () => {
   const [riskFilter, setRiskFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
-  const [levelFilter, setLevelFilter] = useState<'all' | MembershipLevel>('all');
+  const [levelFilter, setLevelFilter] = useState<'all' | 'stockholder' | 'member' | 'regular'>('all');
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string>('');
   const navigate = useNavigate();
 
-  // 拿当前店铺
-  const shop = mockShops.find((s) => s.id === 'shop1') || mockShops[0];
-  const stylists = shop?.employees.filter((e) => e.role === 'stylist') || [];
+  // 从真实 API 获取客户
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        setIsLoading(true);
+        const data = await customerApi.getAll();
+        if (Array.isArray(data)) setCustomers(data);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[CustomerRecall] 获取客户列表失败:', msg);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchCustomers();
+  }, []);
 
   // 丰富化客户：计算 daysSinceLastVisit、churnRisk 等
-  const enriched = useMemo(() => mockCustomers.map((c) => {
+  const enriched = useMemo(() => customers.map((c) => {
     let lastVisit = c.daysSinceLastVisit;
     if (lastVisit === undefined) {
-      if (c.lastVisitAt instanceof Date) {
-        lastVisit = Math.floor((Date.now() - c.lastVisitAt.getTime()) / 86400000);
+      if (c.lastVisitAt) {
+        lastVisit = Math.floor((Date.now() - new Date(c.lastVisitAt).getTime()) / 86400000);
       } else {
         lastVisit = 30;
       }
@@ -60,12 +70,18 @@ const CustomerRecall: React.FC = () => {
       recommendedMessage,
       daysToNextVisit,
     };
-  }), []);
+  }), [customers]);
 
   // 筛选
   const filtered = enriched.filter((c) => {
     if (riskFilter !== 'all' && c.churnRisk !== riskFilter) return false;
-    if (levelFilter !== 'all' && c.membershipLevel !== levelFilter) return false;
+    if (levelFilter !== 'all') {
+      const isStockholder = c.isStockholder;
+      const isMember = c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || c.storedValueLevel !== StoredValueLevel.NONE;
+      if (levelFilter === 'stockholder' && !isStockholder) return false;
+      if (levelFilter === 'member' && (!isMember || isStockholder)) return false;
+      if (levelFilter === 'regular' && isMember) return false;
+    }
     return true;
   });
 
@@ -85,10 +101,10 @@ const CustomerRecall: React.FC = () => {
     const total = enriched.length;
     const high = enriched.filter((c) => c.churnRisk === 'high').length;
     const medium = enriched.filter((c) => c.churnRisk === 'medium').length;
-    const premiumCustomers = enriched.filter((c) =>
-      c.membershipLevel === MembershipLevel.PREMIUM || c.membershipLevel === MembershipLevel.STOCKHOLDER
+    const memberCustomers = enriched.filter((c) =>
+      c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || c.storedValueLevel !== StoredValueLevel.NONE
     ).length;
-    return { total, high, medium, premiumCustomers };
+    return { total, high, medium, memberCustomers };
   }, [enriched]);
 
   const handleSend = (customer: Customer, channel: 'wechat' | 'sms' | 'phone') => {
@@ -142,7 +158,7 @@ const CustomerRecall: React.FC = () => {
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm border border-orange-100">
             <div className="text-xs text-gray-500 mb-1">高级/股东会员</div>
-            <div className="text-2xl font-bold text-orange-600">{stats.premiumCustomers}</div>
+            <div className="text-2xl font-bold text-orange-600">{stats.memberCustomers}</div>
             <div className="text-xs text-gray-400 mt-1">优先维护</div>
           </div>
         </div>
@@ -165,7 +181,7 @@ const CustomerRecall: React.FC = () => {
                 ].map((item) => (
                   <button
                     key={item.v}
-                    onClick={() => setRiskFilter(item.v as any)}
+                    onClick={() => setRiskFilter(item.v as typeof riskFilter)}
                     className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
                       riskFilter === item.v
                         ? 'bg-orange-500 text-white shadow'
@@ -183,13 +199,13 @@ const CustomerRecall: React.FC = () => {
               <div className="flex gap-2 flex-wrap">
                 {[
                   { v: 'all', label: '全部' },
-                  { v: MembershipLevel.STOCKHOLDER, label: '股东会员' },
-                  { v: MembershipLevel.PREMIUM, label: '高级会员' },
-                  { v: MembershipLevel.REGULAR, label: '普通客户' },
+                  { v: 'stockholder', label: '股东会员' },
+                  { v: 'member', label: '会员客户' },
+                  { v: 'regular', label: '普通客户' },
                 ].map((item) => (
                   <button
-                    key={item.v as string}
-                    onClick={() => setLevelFilter(item.v as any)}
+                    key={item.v}
+                    onClick={() => setLevelFilter(item.v as typeof levelFilter)}
                     className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
                       levelFilter === item.v
                         ? 'bg-orange-500 text-white shadow'
@@ -206,9 +222,13 @@ const CustomerRecall: React.FC = () => {
 
         {/* 客户列表 */}
         <div className="space-y-3">
-          {sorted.map((c) => {
-            const isSent = ['wechat', 'sms', 'phone'].some((ch) => sentIds.has(c.id + '-' + ch));
-            return (
+          {isLoading && (
+            <div className="bg-white rounded-xl p-8 text-center shadow-sm border border-gray-100">
+              <Loader2 size={32} className="mx-auto text-orange-500 animate-spin mb-2" />
+              <div className="text-sm text-gray-500">加载客户数据中...</div>
+            </div>
+          )}
+          {!isLoading && sorted.map((c) => (
               <div
                 key={c.id}
                 className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
@@ -223,8 +243,10 @@ const CustomerRecall: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-800">{c.name}</span>
-                      {riskBadge(c.churnRisk as any)}
-                      <span className="text-xs text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">{levelName(c.membershipLevel)}</span>
+                      {riskBadge(c.churnRisk)}
+                      <span className="text-xs text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
+                        {c.isStockholder ? '股东会员' : c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ? getPurchaseVIPLabel(c.purchaseVIPLevel) : c.storedValueLevel !== StoredValueLevel.NONE ? getStoredValueLabel(c.storedValueLevel) : '普通客户'}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-4 text-sm text-gray-500 mt-1.5 flex-wrap">
@@ -300,8 +322,7 @@ const CustomerRecall: React.FC = () => {
                   </button>
                 </div>
               </div>
-            );
-          })}
+          ))}
 
           {sorted.length === 0 && (
             <div className="bg-white rounded-xl p-8 text-center shadow-sm border border-gray-100">

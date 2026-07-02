@@ -118,8 +118,84 @@ const main = async () => {
     source: c.source || '',
     created_at: new Date().toISOString(),
     last_visit_at: c.lastVisitAt ? new Date(c.lastVisitAt).toISOString() : null,
+    purchase_vip_level: c.purchaseVIPLevel || 'regular',
+    purchase_vip_expires_at: c.purchaseVIPExpiresAt ? new Date(c.purchaseVIPExpiresAt).toISOString() : null,
+    stored_value_level: c.storedValueLevel || 'none',
+    stored_value_balance: c.storedValueBalance || 0,
+    stored_value_expires_at: c.storedValueExpiresAt ? new Date(c.storedValueExpiresAt).toISOString() : null,
+    withdrawable_referral_amount: c.withdrawableReferralAmount || 0,
+    total_saved: c.totalSaved || 0,
+    wechat: c.wechat || null,
+    id_card_number: c.idCardNumber || null,
+    hobbies: c.hobbies || null,
+    is_referred: !!c.isReferred,
+    referrer_name: c.referrerName || null,
+    referrer_phone: c.referrerPhone || null,
+    referral_consumption: c.referralConsumption || 0,
+    shared_fund: c.sharedFund || 0,
+    total_shared_fund: c.totalSharedFund || 0,
+    withdrawable_amount: c.withdrawableAmount || 0,
+    has_booking: !!c.hasBooking,
+    last_service_items: c.lastServiceItems || [],
+    is_member: c.purchaseVIPLevel !== 'regular' || c.storedValueLevel !== 'none',
+    has_recharged: c.storedValueLevel !== 'none',
+    recharge_level: c.rechargeLevel || '',
   }));
   await upsertMany('customers', customers);
+
+  // 3.1 客户画像
+  const profiles = mockCustomers
+    .filter((c: any) => c.profile)
+    .map((c: any) => {
+      const p = c.profile;
+      return {
+        id: p.id || `profile_${c.id}`,
+        customer_id: c.id,
+        updated_by: p.updatedBy || null,
+        updated_by_name: p.updatedByName || null,
+        haircut_styles: p.haircutStyles || [],
+        hair_colors: p.hairColors || [],
+        perm_colors: p.permColors || [],
+        treatments: p.treatments || [],
+        hair_type: p.hairType || null,
+        hair_length: p.hairLength || null,
+        visit_frequency: p.visitFrequency || null,
+        budget_range: p.budgetRange || null,
+        communication_style: p.communicationStyle || null,
+        extra_services: p.extraServices || [],
+        visit_times: p.visitTimes || [],
+        notes: p.notes || null,
+        allergies: p.allergies || null,
+        products_used: p.productsUsed || [],
+        created_at: p.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
+        updated_at: p.updatedAt ? new Date(p.updatedAt).toISOString() : new Date().toISOString(),
+      };
+    });
+  await upsertMany('customer_profiles', profiles);
+
+  // 3.2 客户到店记录
+  // 先收集 mockBookings 中存在的 booking id，避免外键约束失败
+  const validBookingIds = new Set((mockBookings || []).map((b: any) => b.id));
+  const visitRecords = mockCustomers
+    .flatMap((c: any) => (c.visitRecords || []).map((v: any) => ({ ...v, customerId: c.id, shopId: c.shopId || 'shop1' })))
+    .map((v: any) => ({
+      id: v.id || `vr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      customer_id: v.customerId,
+      shop_id: v.shopId,
+      booking_id: v.bookingId && validBookingIds.has(v.bookingId) ? v.bookingId : null,
+      stylist_id: v.stylistId || null,
+      stylist_name: v.stylistName || null,
+      service_ids: v.serviceIds || [],
+      service_names: v.serviceNames || [],
+      products: v.products || [],
+      total_amount: v.totalAmount || 0,
+      payment_method: v.paymentMethod || null,
+      check_in_time: v.checkInTime ? new Date(v.checkInTime).toISOString() : null,
+      check_out_time: v.checkOutTime ? new Date(v.checkOutTime).toISOString() : null,
+      notes: v.notes || null,
+      created_at: v.createdAt ? new Date(v.createdAt).toISOString() : new Date().toISOString(),
+    }));
+  await upsertMany('customer_visit_records', visitRecords);
 
   // 4. 预约
   const bookings = mockBookings.map((b: any) => ({
@@ -153,11 +229,11 @@ const main = async () => {
     stylist_id: r.stylistId || null,
     stylist_name: r.stylistName || '',
     service_name: r.serviceName || '',
-    rating: r.rating || r.overallScore || 5,
-    service_score: r.serviceScore || 5,
-    price_score: r.priceScore || 5,
-    skill_score: r.skillScore || 5,
-    overall_score: r.overallScore || 5,
+    rating: Math.round(r.rating || r.overallScore || 5),
+    service_score: Math.round(r.serviceScore || 5),
+    price_score: Math.round(r.priceScore || 5),
+    skill_score: Math.round(r.skillScore || 5),
+    overall_score: Math.round(r.overallScore || 5),
     comment: r.comment || '',
     tags: r.tags || [],
     reply: r.reply || null,

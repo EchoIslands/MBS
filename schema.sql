@@ -58,7 +58,31 @@ create table if not exists customers (
   served_by_stylist_ids text[] default '{}',
   source text,
   created_at timestamptz default now(),
-  last_visit_at timestamptz
+  last_visit_at timestamptz,
+  -- ===== 新增：双轨会员体系字段 =====
+  purchase_vip_level text default 'regular',      -- 购买型 VIP 等级: regular / bronze / silver / gold / diamond
+  purchase_vip_expires_at timestamptz,            -- VIP 到期时间（1 年有效期）
+  stored_value_level text default 'none',         -- 储值会员等级: none / store_500 / store_1000 / store_2000 / store_5000
+  stored_value_balance numeric default 0,         -- 储值总余额（本金 + 返现）
+  stored_value_expires_at timestamptz,            -- 储值到期时间（2 年有效期）
+  withdrawable_referral_amount numeric default 0, -- 可提现返现余额
+  total_saved numeric default 0,                  -- 累计节省金额
+  -- ===== 客户管理扩展字段 =====
+  wechat text,                                    -- 微信号
+  id_card_number text,                            -- 身份证号
+  hobbies text,                                   -- 爱好及其他
+  is_referred boolean default false,              -- 是否转介绍
+  referrer_name text,                             -- 转介绍人姓名
+  referrer_phone text,                            -- 转介绍人电话
+  referral_consumption numeric default 0,         -- 转介绍带来的消费
+  shared_fund numeric default 0,                  -- 共享基金
+  total_shared_fund numeric default 0,            -- 合计共享基金
+  withdrawable_amount numeric default 0,          -- 可取现金额
+  has_booking boolean default false,              -- 是否有预约
+  last_service_items text[] default '{}',         -- 上次消费项目
+  is_member boolean default false,                -- 是否会员（兼容旧字段）
+  has_recharged boolean default false,            -- 是否已充值（兼容旧字段）
+  recharge_level text                             -- 充值级别文本（兼容旧字段）
 );
 
 -- ========== 客户画像 ==========
