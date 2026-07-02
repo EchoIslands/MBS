@@ -33,7 +33,7 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { Customer, CustomerTag, MembershipLevel, UserRole } from '../../../shared/types';
+import { Customer, CustomerTag, MembershipLevel, UserRole, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
 import {
   HaircutStylePreference,
   HairColorPreference,
@@ -58,7 +58,8 @@ const CustomerManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTag, setActiveTag] = useState<CustomerTag | 'all'>('all');
-  const [activeLevel, setActiveLevel] = useState<MembershipLevel | 'all'>('all');
+  const [activePurchaseLevel, setActivePurchaseLevel] = useState<PurchaseVIPLevel | 'all'>('all');
+  const [activeStoredLevel, setActiveStoredLevel] = useState<StoredValueLevel | 'all'>('all');
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState<Customer | null>(null);
@@ -85,11 +86,16 @@ const CustomerManagement: React.FC = () => {
         result = result.filter((c) => c.tags.includes(activeTag));
       }
       
-      // 会员等级筛选
-      if (activeLevel !== 'all') {
-        result = result.filter((c) => c.membershipLevel === activeLevel);
+      // 购买型 VIP 等级筛选
+      if (activePurchaseLevel !== 'all') {
+        result = result.filter((c) => c.purchaseVIPLevel === activePurchaseLevel);
       }
-      
+
+      // 储值会员等级筛选
+      if (activeStoredLevel !== 'all') {
+        result = result.filter((c) => c.storedValueLevel === activeStoredLevel);
+      }
+
       // 发型师只看自己服务的客户
       if (userRole === UserRole.STYLIST && currentEmployee) {
         result = result.filter(
@@ -111,7 +117,7 @@ const CustomerManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, activeTag, activeLevel, currentEmployee, userRole]);
+  }, [searchTerm, activeTag, activePurchaseLevel, activeStoredLevel, currentEmployee, userRole]);
 
   // 初始加载和筛选变化时获取数据
   React.useEffect(() => {
@@ -128,6 +134,8 @@ const CustomerManagement: React.FC = () => {
       birthday: data.birthday,
       tags: [],
       membershipLevel: MembershipLevel.REGULAR,
+      purchaseVIPLevel: PurchaseVIPLevel.REGULAR,
+      storedValueLevel: StoredValueLevel.NONE,
       source: data.source || '',
     };
     await customerApi.create(newCustomer);
@@ -188,6 +196,40 @@ const CustomerManagement: React.FC = () => {
     [CustomerTag.NEW]: 'bg-gray-500 text-white ring-2 ring-gray-200',
     [CustomerTag.VIP]: 'bg-indigo-500 text-white ring-2 ring-indigo-200',
     [CustomerTag.STOCKHOLDER]: 'bg-purple-500 text-white ring-2 ring-purple-200',
+  };
+
+  // 新版双轨会员体系 - 购买型 VIP
+  const purchaseVIPLabels: Record<PurchaseVIPLevel, string> = {
+    [PurchaseVIPLevel.REGULAR]: '普通用户',
+    [PurchaseVIPLevel.BRONZE]: '普卡 VIP',
+    [PurchaseVIPLevel.SILVER]: '银卡 VIP',
+    [PurchaseVIPLevel.GOLD]: '金卡 VIP',
+    [PurchaseVIPLevel.DIAMOND]: '钻石 VIP',
+  };
+
+  const purchaseVIPColors: Record<PurchaseVIPLevel, string> = {
+    [PurchaseVIPLevel.REGULAR]: 'bg-gray-100 text-gray-700',
+    [PurchaseVIPLevel.BRONZE]: 'bg-amber-100 text-amber-700',
+    [PurchaseVIPLevel.SILVER]: 'bg-slate-100 text-slate-700',
+    [PurchaseVIPLevel.GOLD]: 'bg-yellow-100 text-yellow-700',
+    [PurchaseVIPLevel.DIAMOND]: 'bg-purple-100 text-purple-700',
+  };
+
+  // 新版双轨会员体系 - 储值会员
+  const storedValueLabels: Record<StoredValueLevel, string> = {
+    [StoredValueLevel.NONE]: '未储值',
+    [StoredValueLevel.STORE_500]: '储值卡',
+    [StoredValueLevel.STORE_1000]: '安心卡',
+    [StoredValueLevel.STORE_2000]: '顺心卡',
+    [StoredValueLevel.STORE_5000]: '随心卡',
+  };
+
+  const storedValueColors: Record<StoredValueLevel, string> = {
+    [StoredValueLevel.NONE]: 'bg-gray-100 text-gray-700',
+    [StoredValueLevel.STORE_500]: 'bg-blue-100 text-blue-700',
+    [StoredValueLevel.STORE_1000]: 'bg-green-100 text-green-700',
+    [StoredValueLevel.STORE_2000]: 'bg-indigo-100 text-indigo-700',
+    [StoredValueLevel.STORE_5000]: 'bg-rose-100 text-rose-700',
   };
 
   const levelLabels: Partial<Record<MembershipLevel, string>> = {
@@ -308,12 +350,15 @@ const CustomerManagement: React.FC = () => {
       const matchesTag =
         activeTag === 'all' || c.tags.includes(activeTag);
 
-      const matchesLevel =
-        activeLevel === 'all' || c.membershipLevel === activeLevel;
+      const matchesPurchase =
+        activePurchaseLevel === 'all' || c.purchaseVIPLevel === activePurchaseLevel;
 
-      return matchesSearch && matchesTag && matchesLevel;
+      const matchesStored =
+        activeStoredLevel === 'all' || c.storedValueLevel === activeStoredLevel;
+
+      return matchesSearch && matchesTag && matchesPurchase && matchesStored;
     });
-  }, [customers, searchTerm, activeTag, activeLevel, userRole, currentEmployee]);
+  }, [customers, searchTerm, activeTag, activePurchaseLevel, activeStoredLevel, userRole, currentEmployee]);
 
   // 统计（发型师只统计自己的客户）
   const stats = useMemo(() => {
@@ -323,16 +368,16 @@ const CustomerManagement: React.FC = () => {
     return [
       { label: '总客户', value: base.length, icon: User, color: 'text-orange-500' },
       {
-        label: '高级会员',
-        value: base.filter((c) => c.membershipLevel === MembershipLevel.PREMIUM).length,
+        label: '购买型VIP',
+        value: base.filter((c) => c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR).length,
         icon: Star,
         color: 'text-blue-500',
       },
       {
-        label: '股东会员',
-        value: base.filter((c) => c.isStockholder).length,
-        icon: Crown,
-        color: 'text-purple-500',
+        label: '储值会员',
+        value: base.filter((c) => c.storedValueLevel !== StoredValueLevel.NONE).length,
+        icon: Wallet,
+        color: 'text-green-500',
       },
       {
         label: '常客',
@@ -356,9 +401,9 @@ const CustomerManagement: React.FC = () => {
       c.phone,
       c.gender === 'male' ? '男' : c.gender === 'female' ? '女' : '其他',
       c.age || '',
-      levelLabels[c.membershipLevel],
+      `${purchaseVIPLabels[c.purchaseVIPLevel] || ''}${c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR && c.storedValueLevel !== StoredValueLevel.NONE ? ' / ' : ''}${c.storedValueLevel !== StoredValueLevel.NONE ? storedValueLabels[c.storedValueLevel] : ''}`,
       c.totalSpent,
-      c.balance,
+      c.storedValueBalance,
       c.points,
       c.visitCount,
       c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString('zh-CN') : '',
@@ -397,15 +442,21 @@ const CustomerManagement: React.FC = () => {
     setActiveTag(tag);
   };
 
-  // 点击会员等级
-  const handleLevelClick = (level: MembershipLevel | 'all') => {
-    setActiveLevel(level);
+  // 点击购买型 VIP 等级
+  const handlePurchaseLevelClick = (level: PurchaseVIPLevel | 'all') => {
+    setActivePurchaseLevel(level);
+  };
+
+  // 点击储值会员等级
+  const handleStoredLevelClick = (level: StoredValueLevel | 'all') => {
+    setActiveStoredLevel(level);
   };
 
   // 重置筛选
   const resetFilters = () => {
     setActiveTag('all');
-    setActiveLevel('all');
+    setActivePurchaseLevel('all');
+    setActiveStoredLevel('all');
     setSearchTerm('');
   };
 
@@ -465,7 +516,7 @@ const CustomerManagement: React.FC = () => {
             <Plus size={16} />
             添加客户
           </button>
-          {(activeTag !== 'all' || activeLevel !== 'all' || searchTerm !== '') && (
+          {(activeTag !== 'all' || activePurchaseLevel !== 'all' || activeStoredLevel !== 'all' || searchTerm !== '') && (
             <button
               onClick={resetFilters}
               className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
@@ -477,7 +528,7 @@ const CustomerManagement: React.FC = () => {
         </div>
 
         {/* 当前筛选条件提示 */}
-        {(activeTag !== 'all' || activeLevel !== 'all') && (
+        {(activeTag !== 'all' || activePurchaseLevel !== 'all' || activeStoredLevel !== 'all') && (
           <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
             <Filter size={14} />
             当前筛选：
@@ -486,9 +537,14 @@ const CustomerManagement: React.FC = () => {
                 {tagLabels[activeTag]}
               </span>
             )}
-            {activeLevel !== 'all' && (
+            {activePurchaseLevel !== 'all' && (
               <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full text-xs">
-                {levelLabels[activeLevel]}
+                {purchaseVIPLabels[activePurchaseLevel]}
+              </span>
+            )}
+            {activeStoredLevel !== 'all' && (
+              <span className="px-2 py-0.5 bg-green-100 text-green-600 rounded-full text-xs">
+                {storedValueLabels[activeStoredLevel]}
               </span>
             )}
             <span className="text-gray-400">共 {filteredCustomers.length} 位客户</span>
@@ -538,17 +594,17 @@ const CustomerManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* 会员等级分类 - 可点击筛选 */}
+      {/* 购买型 VIP 等级分类 - 可点击筛选 */}
       <div className="bg-white rounded-2xl shadow-sm p-4 md:p-5 mb-5 border border-gray-100">
         <h2 className="text-base md:text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <Crown size={18} className="text-orange-500" />
-          会员等级（点击筛选）
+          <Star size={18} className="text-orange-500" />
+          购买型 VIP 等级（点击筛选）
         </h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <button
-            onClick={() => handleLevelClick('all')}
+            onClick={() => handlePurchaseLevelClick('all')}
             className={`p-3 md:p-4 rounded-xl text-center transition-all ${
-              activeLevel === 'all'
+              activePurchaseLevel === 'all'
                 ? 'bg-orange-500 text-white shadow-md ring-2 ring-orange-200'
                 : 'bg-gray-50 text-gray-700 hover:bg-orange-50 hover:text-orange-600 border border-gray-100'
             }`}
@@ -556,16 +612,58 @@ const CustomerManagement: React.FC = () => {
             <div className="text-xl md:text-2xl font-bold">{filteredCustomers.length}</div>
             <div className="text-sm font-medium mt-1">全部</div>
           </button>
-          {Object.entries(levelLabels).map(([key, label]) => {
-            const count = filteredCustomers.filter((c) => c.membershipLevel === (key as MembershipLevel)).length;
-            const levelKey = key as MembershipLevel;
-            const isActive = activeLevel === levelKey;
+          {Object.entries(purchaseVIPLabels).map(([key, label]) => {
+            const count = filteredCustomers.filter((c) => c.purchaseVIPLevel === (key as PurchaseVIPLevel)).length;
+            const levelKey = key as PurchaseVIPLevel;
+            const isActive = activePurchaseLevel === levelKey;
             return (
               <button
                 key={key}
-                onClick={() => handleLevelClick(levelKey)}
+                onClick={() => handlePurchaseLevelClick(levelKey)}
                 className={`p-3 md:p-4 rounded-xl text-center transition-all ${
-                  isActive ? levelColors[levelKey] + ' shadow-md ring-2 ring-orange-200' : levelColors[levelKey] + ' hover:shadow-sm opacity-80 hover:opacity-100'
+                  isActive
+                    ? purchaseVIPColors[levelKey] + ' shadow-md ring-2 ring-orange-200'
+                    : purchaseVIPColors[levelKey] + ' hover:shadow-sm opacity-80 hover:opacity-100'
+                }`}
+              >
+                <div className="text-xl md:text-2xl font-bold">{count}</div>
+                <div className="text-sm font-medium mt-1">{label}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 储值会员等级分类 - 可点击筛选 */}
+      <div className="bg-white rounded-2xl shadow-sm p-4 md:p-5 mb-5 border border-gray-100">
+        <h2 className="text-base md:text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <Wallet size={18} className="text-orange-500" />
+          储值会员等级（点击筛选）
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <button
+            onClick={() => handleStoredLevelClick('all')}
+            className={`p-3 md:p-4 rounded-xl text-center transition-all ${
+              activeStoredLevel === 'all'
+                ? 'bg-orange-500 text-white shadow-md ring-2 ring-orange-200'
+                : 'bg-gray-50 text-gray-700 hover:bg-orange-50 hover:text-orange-600 border border-gray-100'
+            }`}
+          >
+            <div className="text-xl md:text-2xl font-bold">{filteredCustomers.length}</div>
+            <div className="text-sm font-medium mt-1">全部</div>
+          </button>
+          {Object.entries(storedValueLabels).map(([key, label]) => {
+            const count = filteredCustomers.filter((c) => c.storedValueLevel === (key as StoredValueLevel)).length;
+            const levelKey = key as StoredValueLevel;
+            const isActive = activeStoredLevel === levelKey;
+            return (
+              <button
+                key={key}
+                onClick={() => handleStoredLevelClick(levelKey)}
+                className={`p-3 md:p-4 rounded-xl text-center transition-all ${
+                  isActive
+                    ? storedValueColors[levelKey] + ' shadow-md ring-2 ring-orange-200'
+                    : storedValueColors[levelKey] + ' hover:shadow-sm opacity-80 hover:opacity-100'
                 }`}
               >
                 <div className="text-xl md:text-2xl font-bold">{count}</div>
@@ -581,7 +679,7 @@ const CustomerManagement: React.FC = () => {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h2 className="text-base md:text-lg font-bold text-gray-800 flex items-center gap-2">
             <User size={18} className="text-orange-500" />
-            {activeTag === 'all' && activeLevel === 'all' ? '所有客户' : '筛选结果'}
+            {activeTag === 'all' && activePurchaseLevel === 'all' && activeStoredLevel === 'all' ? '所有客户' : '筛选结果'}
             <span className="text-sm font-normal text-gray-500">({filteredCustomers.length})</span>
           </h2>
           {canExport && filteredCustomers.length > 0 && (
@@ -634,11 +732,20 @@ const CustomerManagement: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="font-bold text-gray-800 text-base">{customer.name}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${levelColors[customer.membershipLevel]}`}
-                        >
-                          {levelLabels[customer.membershipLevel]}
-                        </span>
+                        {customer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR && (
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${purchaseVIPColors[customer.purchaseVIPLevel]}`}
+                          >
+                            {purchaseVIPLabels[customer.purchaseVIPLevel]}
+                          </span>
+                        )}
+                        {customer.storedValueLevel !== StoredValueLevel.NONE && (
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${storedValueColors[customer.storedValueLevel]}`}
+                          >
+                            {storedValueLabels[customer.storedValueLevel]}
+                          </span>
+                        )}
                         {customer.isStockholder && (
                           <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium flex items-center gap-1">
                             <Crown size={10} />
@@ -741,9 +848,16 @@ const CustomerManagement: React.FC = () => {
               </div>
               <h4 className="text-xl font-bold text-gray-800">{viewingCustomer.name}</h4>
               <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${levelColors[viewingCustomer.membershipLevel]}`}>
-                  {levelLabels[viewingCustomer.membershipLevel]}
-                </span>
+                {viewingCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR && (
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${purchaseVIPColors[viewingCustomer.purchaseVIPLevel]}`}>
+                    {purchaseVIPLabels[viewingCustomer.purchaseVIPLevel]}
+                  </span>
+                )}
+                {viewingCustomer.storedValueLevel !== StoredValueLevel.NONE && (
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${storedValueColors[viewingCustomer.storedValueLevel]}`}>
+                    {storedValueLabels[viewingCustomer.storedValueLevel]}
+                  </span>
+                )}
                 {viewingCustomer.isStockholder && (
                   <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium flex items-center gap-1">
                     <Crown size={12} />
@@ -788,7 +902,7 @@ const CustomerManagement: React.FC = () => {
                   <Wallet size={16} />
                   储值余额
                 </span>
-                <span className="font-bold text-green-500">¥{viewingCustomer.balance}</span>
+                <span className="font-bold text-green-500">¥{viewingCustomer.storedValueBalance}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-gray-100">
                 <span className="text-gray-500 flex items-center gap-2 text-sm">
@@ -1136,12 +1250,30 @@ const CustomerManagement: React.FC = () => {
                   <input id="cm-birthday" type="date" defaultValue={showEdit?.birthday ? new Date(showEdit.birthday).toISOString().split('T')[0] : ''} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">会员级别</label>
-                  <select id="cm-membership" defaultValue={showEdit?.membershipLevel || MembershipLevel.REGULAR} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-white">
-                    <option value={MembershipLevel.REGULAR}>普通客户</option>
-                    <option value={MembershipLevel.PREMIUM}>高级会员</option>
-                    <option value={MembershipLevel.STOCKHOLDER}>股东会员</option>
+                  <label className="block text-sm text-gray-600 mb-1">购买型 VIP 等级</label>
+                  <select id="cm-purchase-vip" defaultValue={showEdit?.purchaseVIPLevel || PurchaseVIPLevel.REGULAR} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-white">
+                    <option value={PurchaseVIPLevel.REGULAR}>普通用户</option>
+                    <option value={PurchaseVIPLevel.BRONZE}>普卡 VIP</option>
+                    <option value={PurchaseVIPLevel.SILVER}>银卡 VIP</option>
+                    <option value={PurchaseVIPLevel.GOLD}>金卡 VIP</option>
+                    <option value={PurchaseVIPLevel.DIAMOND}>钻石 VIP</option>
                   </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">储值会员等级</label>
+                  <select id="cm-stored-value" defaultValue={showEdit?.storedValueLevel || StoredValueLevel.NONE} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-white">
+                    <option value={StoredValueLevel.NONE}>未储值</option>
+                    <option value={StoredValueLevel.STORE_500}>储值卡 500</option>
+                    <option value={StoredValueLevel.STORE_1000}>安心卡 1000</option>
+                    <option value={StoredValueLevel.STORE_2000}>顺心卡 2000</option>
+                    <option value={StoredValueLevel.STORE_5000}>随心卡 5000</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">储值余额</label>
+                  <input id="cm-stored-balance" type="number" defaultValue={showEdit?.storedValueBalance ?? ''} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
                 </div>
               </div>
               <div>
@@ -1168,7 +1300,9 @@ const CustomerManagement: React.FC = () => {
                     gender: (document.getElementById('cm-gender') as HTMLSelectElement)?.value,
                     age: parseInt((document.getElementById('cm-age') as HTMLInputElement)?.value) || undefined,
                     birthday: (document.getElementById('cm-birthday') as HTMLInputElement)?.value ? new Date((document.getElementById('cm-birthday') as HTMLInputElement).value) : undefined,
-                    membershipLevel: (document.getElementById('cm-membership') as HTMLSelectElement)?.value,
+                    purchaseVIPLevel: (document.getElementById('cm-purchase-vip') as HTMLSelectElement)?.value,
+                    storedValueLevel: (document.getElementById('cm-stored-value') as HTMLSelectElement)?.value,
+                    storedValueBalance: parseFloat((document.getElementById('cm-stored-balance') as HTMLInputElement)?.value) || 0,
                     source: (document.getElementById('cm-source') as HTMLInputElement)?.value,
                   };
                   if (showEdit) {

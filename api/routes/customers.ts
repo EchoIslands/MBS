@@ -74,6 +74,11 @@ router.post('/', async (req: Request, res: Response) => {
     }
     if (body.tags && Array.isArray(body.tags)) insertData.tags = body.tags;
     if (body.membershipLevel) insertData.membership_level = body.membershipLevel;
+    if (body.purchaseVIPLevel) insertData.purchase_vip_level = body.purchaseVIPLevel;
+    if (body.purchaseVIPExpiresAt) insertData.purchase_vip_expires_at = body.purchaseVIPExpiresAt;
+    if (body.storedValueLevel) insertData.stored_value_level = body.storedValueLevel;
+    if (body.storedValueBalance !== undefined) insertData.stored_value_balance = body.storedValueBalance;
+    if (body.storedValueExpiresAt) insertData.stored_value_expires_at = body.storedValueExpiresAt;
     if (body.source) insertData.source = body.source;
 
     console.log('[customers] 准备插入:', JSON.stringify(insertData));
@@ -119,6 +124,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       updateData.birthday = typeof body.birthday === 'string' ? body.birthday.split('T')[0] : body.birthday;
     }
     if (body.membershipLevel !== undefined) updateData.membership_level = body.membershipLevel;
+    if (body.purchaseVIPLevel !== undefined) updateData.purchase_vip_level = body.purchaseVIPLevel;
+    if (body.purchaseVIPExpiresAt !== undefined) updateData.purchase_vip_expires_at = body.purchaseVIPExpiresAt;
+    if (body.storedValueLevel !== undefined) updateData.stored_value_level = body.storedValueLevel;
+    if (body.storedValueBalance !== undefined) updateData.stored_value_balance = body.storedValueBalance;
+    if (body.storedValueExpiresAt !== undefined) updateData.stored_value_expires_at = body.storedValueExpiresAt;
     if (body.source !== undefined) updateData.source = body.source;
     if (body.tags !== undefined && Array.isArray(body.tags)) updateData.tags = body.tags;
     if (body.visitCount !== undefined) updateData.visit_count = body.visitCount;
