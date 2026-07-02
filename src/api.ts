@@ -60,7 +60,7 @@ export const authApi = {
   // 登录
   login: async (phone: string, password: string) => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: { token: string; user: any } }>(
+      const result = await http<{ success: boolean; error?: string; data: { token: string; user: any } }>(
         `${API_BASE}/auth/login`,
         {
           method: 'POST',
@@ -72,7 +72,9 @@ export const authApi = {
         saveAuthUser(result.data.user);
         return { token: result.data.token, user: result.data.user };
       }
-      console.warn('[api] 真实 API 登录失败，回退到 mock');
+      // 真实 API 明确返回失败时，直接抛错，不再降级到 mock token
+      // 否则 mock token 会和后续真实 API 混用，导致 401
+      throw new Error(result?.error || '手机号或密码错误');
     }
 
     // Mock 兜底

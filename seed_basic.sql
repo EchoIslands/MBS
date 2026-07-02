@@ -14,10 +14,10 @@ insert into shops (
   'shop1',
   '皓诗形象设计',
   '专业美发造型服务，提供剪发、烫染、护理等一站式美发体验',
-  '北京市朝阳区建国路88号',
+  '青岛市城阳区流亭街道城中城购物广场2号门',
   '13800138001',
-  39.9089,
-  116.4662,
+  36.2667,
+  120.4167,
   'good',
   true,
   'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=200',
@@ -49,11 +49,12 @@ on conflict (id) do update set
 insert into employees (
   id, shop_id, name, phone, avatar, title, rating, specialty, role, is_active, created_at
 ) values
-('e1', 'shop1', '李师傅', '13800138011', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200', '金牌设计师', 4.8, '精剪、短发造型', 'stylist', true, now()),
-('e2', 'shop1', '王总监', '13800138012', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200', '技术总监', 4.9, '烫染、潮流造型', 'stylist', true, now()),
-('e3', 'shop1', '张技师', '13800138013', 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200', '高级技师', 4.6, '护发、头皮护理', 'stylist', true, now()),
-('mgr1', 'shop1', '刘店长', '13800138020', null, '店长', 5.0, '店铺管理', 'manager', true, now()),
-('ceo1', 'shop1', '陈总', '13800138030', null, 'CEO', 5.0, '运营管理', 'ceo', true, now())
+('e1', 'shop1', '李师傅', '13900000011', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200', '金牌设计师', 4.8, '精剪、短发造型', 'stylist', true, now()),
+('e2', 'shop1', '王总监', '13900000012', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200', '技术总监', 4.9, '烫染、潮流造型', 'stylist', true, now()),
+('e3', 'shop1', '张技师', '13900000013', 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200', '高级技师', 4.6, '护发、头皮护理', 'stylist', true, now()),
+('cs1', 'shop1', '刘客服', '13900000101', null, '客服专员', 4.8, '客户回访/维护', 'cs', true, now()),
+('mgr1', 'shop1', '刘店长', '13900000102', null, '店长', 5.0, '店铺管理', 'manager', true, now()),
+('ceo1', 'shop1', '夏总', '13900000100', null, 'CEO', 5.0, '运营管理', 'ceo', true, now())
 on conflict (id) do update set
   name = excluded.name,
   title = excluded.title,
