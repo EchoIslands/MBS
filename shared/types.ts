@@ -869,6 +869,7 @@ export interface Customer {
   purchaseVIPExpiresAt?: Date;            // VIP 到期时间（1 年有效期）
   storedValueLevel: StoredValueLevel;     // 储值会员等级
   storedValueBalance: number;             // 储值总余额（本金 + 返现）
+  storedValueExpiresAt?: Date;            // 储值到期时间（2 年有效期）
   withdrawableReferralAmount: number;     // 可提现返现余额
 
   // ===== 兼容旧字段（后续逐步替换）=====

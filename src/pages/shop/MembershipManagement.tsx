@@ -182,12 +182,17 @@ const MembershipManagement: React.FC = () => {
     const currentPlan = storedValuePlans.find((p) => p.level === modalCustomer.storedValueLevel);
     const addAmount = (newPlan?.amount || 0) - (currentPlan?.amount || 0);
 
+    // 储值有效期 2 年（从办理/升级之日起算）
+    const storedValueExpiresAt = new Date();
+    storedValueExpiresAt.setFullYear(storedValueExpiresAt.getFullYear() + 2);
+
     const updated = customers.map((c) => {
       if (c.id !== modalCustomer.id) return c;
       return {
         ...c,
         storedValueLevel: selectedStoredLevel,
         storedValueBalance: c.storedValueBalance + addAmount,
+        storedValueExpiresAt,
         balance: c.storedValueBalance + addAmount,
         hasRecharged: selectedStoredLevel !== StoredValueLevel.NONE,
         rechargeLevel: selectedStoredLevel,

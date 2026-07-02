@@ -14,6 +14,7 @@ import {
   getStoredValueLabel,
   getCustomerEffectiveDiscount,
   isVIPExpiringSoon,
+  isStoredValueExpiringSoon,
 } from '../../lib/membership';
 
 // 旧的会员等级标签与颜色（兼容股东展示）
@@ -149,6 +150,7 @@ const Profile: React.FC = () => {
   const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
   const effectiveDiscount = currentCustomer ? getCustomerEffectiveDiscount(currentCustomer) : 1;
   const expiringSoon = currentCustomer ? isVIPExpiringSoon(currentCustomer) : false;
+  const storedExpiringSoon = currentCustomer ? isStoredValueExpiringSoon(currentCustomer) : false;
   const totalSaved = currentCustomer?.totalSaved ?? 0;
   const balance = currentCustomer?.storedValueBalance ?? 0;
   const withdrawable = currentCustomer?.withdrawableReferralAmount ?? 0;
@@ -257,6 +259,17 @@ const Profile: React.FC = () => {
                 <AlertCircle size={16} />
                 您的 {getPurchaseVIPLabel(purchaseLevel)} 将于{' '}
                 {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString()} 到期，请及时续费
+              </div>
+            </div>
+          )}
+
+          {/* 储值到期提醒 */}
+          {storedExpiringSoon && currentCustomer.storedValueExpiresAt && (
+            <div className="mt-4 bg-orange-400/20 backdrop-blur-sm rounded-xl p-4 border border-orange-200/30">
+              <div className="flex items-center gap-2 text-sm text-white font-medium">
+                <AlertCircle size={16} />
+                您的 {getStoredValueLabel(storedLevel)} 将于{' '}
+                {new Date(currentCustomer.storedValueExpiresAt).toLocaleDateString()} 到期。到期前充值满额可延续储值福利，到期未充值将不再享受储值折扣
               </div>
             </div>
           )}

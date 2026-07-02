@@ -334,7 +334,7 @@ const BookingManagement: React.FC = () => {
   }, [boardBookings]);
 
   // 按日期分组
-  const groupedBookings = useMemo(() => {
+  const groupedBookings = useMemo<Record<string, Booking[]>>(() => {
     const groups: Record<string, Booking[]> = {};
     filteredBookings.forEach((booking) => {
       const dateKey = new Date(booking.scheduledTime).toLocaleDateString('zh-CN', {

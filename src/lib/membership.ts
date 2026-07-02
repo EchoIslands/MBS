@@ -11,6 +11,35 @@ import {
 } from '../../shared/types';
 import { purchaseVIPPlans, storedValuePlans } from '../../shared/mockData';
 
+// ==================== 权益有效期 ====================
+
+/**
+ * 获取各类权益的有效期天数
+ */
+export function getBenefitExpiryDays(type: BenefitType): number | null {
+  switch (type) {
+    case BenefitType.SHAMPOO:
+    case BenefitType.CONDITIONER:
+      return 90; // 洗护用品 90 天
+    case BenefitType.FREE_HAIRCUT:
+      return 365; // 免费剪发 1 年
+    case BenefitType.REDO:
+      return 7; // 不满意重做 7 天
+    case BenefitType.DRINK:
+    default:
+      return null; // 饮品等无固定期限
+  }
+}
+
+/**
+ * 根据权益类型计算到期时间
+ */
+export function calcBenefitExpiryAt(type: BenefitType, grantedAt: Date = new Date()): Date | null {
+  const days = getBenefitExpiryDays(type);
+  if (days === null) return null;
+  return new Date(grantedAt.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
 // ==================== 折扣计算 ====================
 
 /**
@@ -170,9 +199,36 @@ export function getEffectivePurchaseVIPLevel(customer: Customer): PurchaseVIPLev
 }
 
 /**
+ * 判断储值会员是否已过期
+ */
+export function isStoredValueExpired(customer: Customer): boolean {
+  if (!customer.storedValueExpiresAt) return customer.storedValueLevel !== StoredValueLevel.NONE;
+  return new Date(customer.storedValueExpiresAt).getTime() < Date.now();
+}
+
+/**
+ * 判断储值会员是否在到期前 30 天内
+ */
+export function isStoredValueExpiringSoon(customer: Customer): boolean {
+  if (!customer.storedValueExpiresAt) return false;
+  const daysUntilExpiry =
+    (new Date(customer.storedValueExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+  return daysUntilExpiry > 0 && daysUntilExpiry <= 30;
+}
+
+/**
+ * 获取客户实际有效的储值等级（过期则降级为未储值）
+ */
+export function getEffectiveStoredValueLevel(customer: Customer): StoredValueLevel {
+  if (isStoredValueExpired(customer)) return StoredValueLevel.NONE;
+  return customer.storedValueLevel;
+}
+
+/**
  * 计算客户可用于消费的有效折扣
  */
 export function getCustomerEffectiveDiscount(customer: Customer): number {
   const purchaseLevel = getEffectivePurchaseVIPLevel(customer);
-  return getFinalDiscount(purchaseLevel, customer.storedValueLevel);
+  const storedLevel = getEffectiveStoredValueLevel(customer);
+  return getFinalDiscount(purchaseLevel, storedLevel);
 }

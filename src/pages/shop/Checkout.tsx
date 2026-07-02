@@ -37,6 +37,8 @@ import {
   getPurchaseVIPLabel,
   getStoredValueLabel,
   getCustomerEffectiveDiscount,
+  getEffectivePurchaseVIPLevel,
+  getEffectiveStoredValueLevel,
   isVIPExpiringSoon,
   calcSettlementDiscountDetail,
 } from '../../lib/membership';
@@ -146,8 +148,12 @@ const Checkout: React.FC = () => {
   }, [cart]);
 
   const discountResult = useMemo(() => {
-    const purchaseLevel = selectedCustomer?.purchaseVIPLevel || PurchaseVIPLevel.REGULAR;
-    const storedLevel = selectedCustomer?.storedValueLevel || StoredValueLevel.NONE;
+    const purchaseLevel = selectedCustomer
+      ? getEffectivePurchaseVIPLevel(selectedCustomer)
+      : PurchaseVIPLevel.REGULAR;
+    const storedLevel = selectedCustomer
+      ? getEffectiveStoredValueLevel(selectedCustomer)
+      : StoredValueLevel.NONE;
     const usedBenefits = availableBenefits.filter((b) => selectedBenefits.includes(b.id));
     return calcSettlementDiscountDetail(
       cartWithAdjustedPrices.map((i) => ({

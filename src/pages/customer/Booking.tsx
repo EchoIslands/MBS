@@ -14,11 +14,30 @@ type SelectionMode = 'specific' | 'fastest';
 
 const Booking: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
-  const shop = useMemo(
-    () => mockShops.find((s) => s.id === shopId) || mockShops[0],
-    [shopId]
-  );
   const { currentCustomer } = useAppStore();
+
+  const [shop, setShop] = useState<Shop | null>(null);
+  const [loadingShop, setLoadingShop] = useState(true);
+
+  useEffect(() => {
+    const loadShop = async () => {
+      if (!shopId) {
+        setShop(mockShops[0]);
+        setLoadingShop(false);
+        return;
+      }
+      try {
+        const shopData = await shopApi.getShop(shopId);
+        setShop(shopData);
+      } catch (error) {
+        console.error('加载店铺信息失败:', error);
+        setShop(mockShops.find((s) => s.id === shopId) || mockShops[0]);
+      } finally {
+        setLoadingShop(false);
+      }
+    };
+    loadShop();
+  }, [shopId]);
 
   const [selectedService, setSelectedService] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -182,7 +201,7 @@ const Booking: React.FC = () => {
 
   const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
 
-  if (!shop) {
+  if (loadingShop || !shop) {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">店铺加载中...</div>;
   }
 
