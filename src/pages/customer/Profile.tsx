@@ -54,9 +54,8 @@ const purchaseVIPGradient: Record<PurchaseVIPLevel, string> = {
 const vipBenefits = [
   { feature: '服务折扣', bronze: '8.8折', silver: '7.8折', gold: '6.8折', diamond: '5.8折' },
   { feature: '购买价格', bronze: '¥29/年', silver: '¥59/年', gold: '¥79/年', diamond: '¥99/年' },
-  { feature: '积分倍率', bronze: '1.2倍', silver: '1.5倍', gold: '2倍', diamond: '3倍' },
   { feature: '满59元赠洗护', bronze: '洗发水', silver: '洗发水+护发素', gold: '洗发水+护发素', diamond: '洗发水+护发素' },
-  { feature: '饮品权益', bronze: '-', silver: '每次消费送', gold: '每次消费送', diamond: '每次消费送' },
+  { feature: '饮品权益', bronze: '每次消费送', silver: '每次消费送', gold: '每次消费送', diamond: '每次消费送' },
   { feature: '不满意重做', bronze: '-', silver: '-', gold: '支持', diamond: '支持' },
   { feature: '免费剪发', bronze: '-', silver: '-', gold: '-', diamond: '1次' },
 ];
@@ -65,7 +64,6 @@ const vipBenefits = [
 const storedBenefits = [
   { feature: '储值金额', store500: '¥500', store1000: '¥1000', store2000: '¥2000', store5000: '¥5000' },
   { feature: '折上折折扣', store500: '9折', store1000: '8.5折', store2000: '8折', store5000: '7折' },
-  { feature: '积分倍率', store500: '1.1倍', store1000: '1.3倍', store2000: '1.5倍', store5000: '2倍' },
 ];
 
 const Profile: React.FC = () => {

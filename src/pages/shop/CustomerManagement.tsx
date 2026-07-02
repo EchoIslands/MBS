@@ -844,12 +844,6 @@ const CustomerManagement: React.FC = () => {
                       {(getMembershipBenefits(viewingCustomer.membershipLevel)?.discount || 1) * 100}折
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">积分倍率</span>
-                    <span className="font-bold text-orange-600">
-                      {getMembershipBenefits(viewingCustomer.membershipLevel)?.pointsRate}倍
-                    </span>
-                  </div>
                   {getMembershipBenefits(viewingCustomer.membershipLevel)?.gifts.length ? (
                     <div>
                       <span className="text-gray-600">赠送福利：</span>

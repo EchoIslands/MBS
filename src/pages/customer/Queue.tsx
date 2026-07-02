@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Clock as ClockIcon, MapPin, Bell, Music, CheckCircle, User, Calendar,
@@ -35,6 +35,80 @@ const serviceSteps = [
   { key: 'finish', label: '吹干整理', icon: Star, duration: 10 },
 ];
 
+/**
+ * 根据两点经纬度计算直线距离（单位：km）
+ */
+function calcDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // 地球半径 km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * 使用浏览器地理定位获取用户当前位置
+ */
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('浏览器不支持地理定位'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 60000,
+    });
+  });
+}
+
+/**
+ * 使用 Web Audio API 播放提醒音（不需要外部音频文件）
+ */
+function playReminderSound() {
+  try {
+    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + 0.3);
+  } catch (e) {
+    console.log('播放提醒音失败:', e);
+  }
+}
+
+/**
+ * 发送浏览器桌面通知
+ */
+function sendNotification(title: string, body: string) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/favicon.ico' });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then((permission) => {
+      if (permission === 'granted') {
+        new Notification(title, { body, icon: '/favicon.ico' });
+      }
+    });
+  }
+}
+
 const Queue: React.FC = () => {
   const { bookingId } = useParams<{ bookingId: string }>();
   const [booking, setBooking] = useState<Booking | null>(null);
@@ -43,6 +117,9 @@ const Queue: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [selectedSound] = useState('清脆铃声');
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const hasNotifiedRef = useRef(false);
   const navigate = useNavigate();
 
   // 服务进度状态
@@ -139,6 +216,22 @@ const Queue: React.FC = () => {
     fetchBooking();
   }, [bookingId]);
 
+  // 获取用户当前位置，用于计算到店距离
+  useEffect(() => {
+    getCurrentPosition()
+      .then((pos) => {
+        setUserLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setLocationError(null);
+      })
+      .catch((err) => {
+        console.log('获取位置失败:', err.message);
+        setLocationError('未获取到位置，使用店铺默认距离');
+      });
+  }, []);
+
   // 启动服务进度模拟
   useEffect(() => {
     if (!booking || !isAppointmentTimeReached) {
@@ -198,8 +291,13 @@ const Queue: React.FC = () => {
   const currentNumber = Math.max(1, queue?.currentNumber || 1);
   const aheadCount = Math.max(0, position - currentNumber);
 
-  // 距离与步行时间：优先使用店铺数据，否则使用默认值
-  const distance = currentShop?.distance ?? 1.0;
+  // 距离与步行时间：优先根据用户实际位置计算，其次使用店铺数据，兜底 1km
+  const distance = useMemo(() => {
+    if (userLocation && currentShop?.latitude && currentShop?.longitude) {
+      return calcDistance(userLocation.lat, userLocation.lng, currentShop.latitude, currentShop.longitude);
+    }
+    return currentShop?.distance ?? 1.0;
+  }, [userLocation, currentShop]);
   // 按 5km/h 估算：1km ≈ 12 分钟，兜底至少 5 分钟
   const walkTime = Math.max(5, Math.ceil(distance / 0.083));
 
@@ -224,6 +322,24 @@ const Queue: React.FC = () => {
     appointmentInfo.isToday &&
     appointmentInfo.totalMinutes > 0 &&
     appointmentInfo.totalMinutes <= walkTime + 30;
+
+  // 真正触发提醒：声音 + 浏览器通知，仅在 shouldLeaveNow 从 false 变为 true 时触发一次
+  const prevShouldLeaveNow = useRef(false);
+  useEffect(() => {
+    if (shouldLeaveNow && !prevShouldLeaveNow.current && reminderEnabled && !hasNotifiedRef.current) {
+      hasNotifiedRef.current = true;
+      playReminderSound();
+      sendNotification(
+        '该出发了！',
+        `步行 ${walkTime} 分钟到店，距离 ${distance.toFixed(1)}km，预计 ${new Date(Date.now() + walkTime * 60 * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 到店`
+      );
+    }
+    if (!shouldLeaveNow && prevShouldLeaveNow.current) {
+      // 离开提醒窗口后重置，下次再进入提醒窗口可再次提醒
+      hasNotifiedRef.current = false;
+    }
+    prevShouldLeaveNow.current = shouldLeaveNow;
+  }, [shouldLeaveNow, reminderEnabled, walkTime, distance]);
 
   if (loading) {
     return (
