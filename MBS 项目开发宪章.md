@@ -2,7 +2,7 @@
 
 > 本文档是 MBS 项目的最高开发规范。它集开发任务书、问题避免清单、踩坑记录、沟通协议、范围管理、技术债务治理于一体。所有参与者（包括 AI 助手）在改动代码前，必须先阅读并遵守本章节的规范。
 >
-> **当前宪章版本：v2.2 | 生效日期：2026-07-03**
+> **当前宪章版本：v2.3 | 生效日期：2026-07-03**
 
 ---
 
@@ -1554,17 +1554,61 @@ npm run server:api
   - 同一缩写在前端/后端命名规范要统一。
 - **相关文件**：`api/utils/case.ts`、`src/pages/shop/CustomerManagement.tsx`。
 
-#### 5. 会员管理页面仍用 `mockCustomers`，筛选结果和客户管理页不一致
+#### 5. 会员管理/客户表格/客户智能召回等页面仍用 `mockCustomers`
 
-- **场景**：客户管理页数据已正确，但“会员管理”页面的筛选、统计还是不对。
-- **现象**：会员管理里看到的人、数量和客户管理页对不上。
-- **根因**：`MembershipManagement.tsx` 初始状态直接用了 `[...mockCustomers]`，没有从真实 API 拉取数据。
+- **场景**：客户管理页数据已正确，但“会员管理”“客户表格管理”“客户智能召回”等页面看到的人、数量对不上。
+- **现象**：不同菜单统计口径不一致，筛选结果互相矛盾。
+- **根因**：这些页面初始状态直接用了 `[...mockCustomers]` 或本地旧缓存，没有从真实 API 拉取数据。
+- **解决**：所有客户相关页面统一调用 `customerApi.getAll()`；清除浏览器旧缓存；统一双轨会员体系统计逻辑。
+- **教训**：同一类数据的所有展示入口必须走同一套数据源，不允许某个页面私自使用 mockData 或历史缓存。
+- **相关文件**：`src/pages/shop/MembershipManagement.tsx`、`src/pages/shop/CustomerTableManagement.tsx`、`src/pages/shop/CustomerRecall.tsx`、`src/api.ts`。
+
+#### 6. 客户画像保存后刷新丢失 / 单客户详情接口缺失
+
+- **场景**：客户画像表单提交提示成功，但重新进入页面看不到已保存的画像内容。
+- **现象**：画像数据写不进数据库，或读取时返回空。
+- **根因**：
+  - 后端缺少 `GET /api/customers/:id` 单客户详情和 `/api/customers/:id/profile` 画像读写接口；
+  - `CustomerProfileForm.tsx` 使用原生 `fetch` 直接请求后端，未携带 `Authorization`，被 `authMiddleware` 拦截返回 401。
 - **解决**：
-  - 进入页面时调用 `customerApi.getAll()` 获取真实客户；
-  - 修正“总会员数”统计逻辑，从 `customers.length` 改为统计购买型 VIP 或储值会员任一满足的人数；
-  - 筛选下拉菜单选择后自动关闭，提升交互反馈。
-- **教训**：同一类数据（客户/会员）的所有页面必须走同一套数据源，不允许某个页面私自使用 mockData。
-- **相关文件**：`src/pages/shop/MembershipManagement.tsx`、`src/api.ts`。
+  - 后端补充单客户详情和画像 CRUD 接口，并校验店铺归属；
+  - 前端统一使用 `customerApi` 并带 token，不再直接写裸 `fetch`。
+- **教训**：表单提交和详情读取必须走同一套带认证的 API 抽象层，禁止组件内裸调后端 URL。
+- **相关文件**：`api/routes/customers.ts`、`src/pages/shop/CustomerProfileForm.tsx`、`src/api.ts`。
+
+#### 7. `seed-db` 导入失败的三类典型错误
+
+- **场景**：运行 `npm run seed-db` 时，部分表导入成功，部分表失败。
+- **现象与根因**：
+  1. `Could not find the 'has_booking' column`：Supabase schema 缓存未刷新，字段已存在但 SDK 缓存未更新；
+  2. `invalid input syntax for type integer: "4.7"`：`reviews.rating` 是整数，但 mock 数据里给了小数；
+  3. `violates foreign key constraint "customer_visit_records_booking_id_fkey"`：到店记录引用了 `bookings` 表中不存在的 `booking_id`。
+- **解决**：
+  1. 在 SQL Editor 手动执行 `alter table ... add column if not exists` 并 `NOTIFY pgbench, 'reload schema'` 刷新缓存；
+  2. `seed-db.ts` 中对评分字段用 `Math.round()` 取整；
+  3. 导入到店记录前校验 `booking_id` 是否存在于 `mockBookings` 中，不存在则置 `null`。
+- **教训**：seed 脚本失败必须逐条看错误信息，不能只 rerun；导入顺序和外键引用必须和 mock 数据对齐。
+- **相关文件**：`scripts/seed-db.ts`、`schema_complete.sql`。
+
+#### 8. Node.js 20 启动时报 `Node.js 20 detected without native WebSocket support`
+
+- **场景**：`npm run dev` 启动后端后立即报错退出。
+- **现象**：`api/server.ts` 启动失败，提示缺少原生 WebSocket 支持。
+- **根因**：`@supabase/supabase-js` 的 realtime 默认使用原生 `WebSocket`，Node.js 22 以下未内置该 API。
+- **解决**：在 `api/db/index.ts` 中动态引入 `ws` 包，并配置到 Supabase client 的 `realtime.transport` 选项。
+- **教训**：Node 版本与 SDK 默认行为要匹配；遇到启动期报错优先检查 transport/依赖注入配置。
+- **相关文件**：`api/db/index.ts`、`package.json`。
+
+#### 9. API 请求 5 秒超时导致静默 fallback 到 mock 数据
+
+- **场景**：页面看起来正常，但 F12 Console 出现黄色警告“`/api/customers` 请求失败（signal is aborted without reason），将使用 mock 数据”。
+- **现象**：Network 中 `/api/customers` 状态为 `(canceled)` 或没有真实请求，数据实际来自 mock。
+- **根因**：`src/api.ts` 的 `http` 函数设置了 5 秒超时，Supabase 网络慢时请求被 abort，触发 fallback。
+- **解决**：将超时时间延长到 15 秒；同时通过 Network 面板确认请求真实返回 200 且 Response 来自后端。
+- **教训**：
+  - “页面正常”必须配合 Network 确认数据来自真实 API；
+  - 超时 fallback 是双刃剑，既能提升容错也会掩盖真实错误，调试时应先关闭或延长超时。
+- **相关文件**：`src/api.ts`。
 
 ---
 
@@ -1852,6 +1896,117 @@ git push --force               # 强制推送（谨慎！）
 4. **日志检查**：Vercel Functions Logs 无 500 或异常堆栈；
 5. **通知相关方**：在团队频道同步版本号和变更摘要；
 6. **异常回滚**：如发现核心功能不可用，立即执行 4.3 回滚决策流程。
+
+## 4.6 给 AI 的协作提示词集（面向非技术项目主人）
+
+> 本章供项目主人复制使用。通过标准化指令，让 AI 快速理解你的角色、工作流和期望，减少沟通成本和重复踩坑。
+
+### 4.6.1 开场白/身份设定
+
+每次开启新的复杂任务，或 AI 似乎忘记上下文时，先粘贴下面这段：
+
+```
+我是 MBS 项目的主人，编程小白。我的工作流是：
+1. 你在 Trae 里生成/修改代码；
+2. 我下载到本地 Windows 电脑的 E:\MBS；
+3. 我本地运行 npm run dev 测试；
+4. 测试通过后我推送到 GitHub。
+
+请把我当非技术人员对待：
+- 每一步给出明确命令；
+- 告诉我命令在哪里运行（Trae 终端 / PowerShell / Supabase SQL Editor）；
+- 遇到报错先解释原因，再给可执行的解决方案。
+```
+
+### 4.6.2 通用任务模板
+
+```
+任务：[一句话说清楚要做什么]
+
+背景：[当前是什么现象？已经尝试过什么？有没有报错？]
+
+限制：[不要改哪些文件/功能？范围边界是什么？]
+
+验收标准：[怎么算完成？需要看到什么结果？]
+```
+
+**示例**：
+
+```
+任务：修复客户管理页面添加客户后姓名丢失的问题
+
+背景：点击添加客户，填了姓名和电话，提交后列表显示"未命名客户"，电话为空。
+已确认 Payload 里 name 和 phone 是正确的。
+
+限制：不要改数据库 Schema，不要改前端表单结构。
+
+验收标准：
+1. 添加客户后列表显示正确姓名和电话；
+2. 刷新页面后数据还在；
+3. Network 中 /api/customers POST 返回 success: true。
+```
+
+### 4.6.3 调试类提示词
+
+```
+我本地运行 [命令] 时报错，报错信息如下：
+[粘贴完整报错]
+
+请帮我：
+1. 用一句话解释这个错误是什么意思；
+2. 告诉我在哪个文件修复；
+3. 给出具体修复步骤；
+4. 修复后我需要执行什么命令验证。
+```
+
+### 4.6.4 数据库/字段变更类提示词
+
+```
+我需要[新增/修改]一个字段/表，叫 [字段名]。
+
+请告诉我：
+1. 需要改哪些文件；
+2. 数据库要执行什么 SQL；
+3. seed 数据是否需要更新；
+4. 前端哪里会受影响；
+5. 完整测试步骤。
+```
+
+### 4.6.5 拒绝范围蔓延
+
+```
+当前只修复 [具体问题]，不要顺手优化其他功能或重构无关代码。
+如果发现问题但不在本次任务范围，请单独列出，由我决定是否另开任务。
+```
+
+### 4.6.6 验收确认
+
+```
+改完后请告诉我：
+1. 具体改了哪些文件；
+2. 本地需要执行什么命令验证（按顺序）；
+3. 浏览器里需要检查哪些点；
+4. 是否需要更新数据库或重新运行 npm run seed-db。
+```
+
+### 4.6.7 高效报错格式
+
+当 AI 解释报错时，要求它按下面格式回复：
+
+```
+- 错误位置：哪个文件 / 哪一行 / 哪个接口
+- 错误原因：一句话解释
+- 解决方案：分步骤说明
+- 我需要执行的命令：直接可复制
+```
+
+### 4.6.8 使用建议
+
+- **复杂任务**先用「开场白」让 AI 了解上下文；
+- **调试时**优先用「调试类提示词」并粘贴完整报错；
+- **想控制范围**时一定加上「拒绝范围蔓延」；
+- **每次改完后**用「验收确认」要求 AI 给出测试清单；
+- **不要只发截图**：截图+文字描述一起给，AI 更容易定位。
 
 ---
 
