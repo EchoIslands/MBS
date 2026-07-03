@@ -1,11 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import authRouter from './routes/auth.js';
-import customersRouter from './routes/customers.js';
-import bookingsRouter from './routes/bookings.js';
-import shopsRouter from './routes/shops.js';
-import queuesRouter from './routes/queues.js';
-import reviewsRouter from './routes/reviews.js';
+import apiRouter from './routes/index.js';
 
 const app = express();
 
@@ -68,12 +63,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // 挂载路由
-app.use('/api/auth', authRouter);
-app.use('/api/customers', customersRouter);
-app.use('/api/bookings', bookingsRouter);
-app.use('/api/shops', shopsRouter);
-app.use('/api/queues', queuesRouter);
-app.use('/api/reviews', reviewsRouter);
+app.use('/api', apiRouter);
 
 // 未匹配的 /api/* 返回 404
 app.all('/api/*', (req, res) => {
