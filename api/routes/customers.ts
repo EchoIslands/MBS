@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../db/index.js';
 import { authMiddleware } from '../middleware/index.js';
-import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
+import { toCamelCase, toCamelCaseList } from '../utils/case.js';
+import { mapCustomerBodyToDB, validateCustomerData } from '../utils/customerMapper.js';
 
 const router = Router();
 
@@ -92,34 +93,22 @@ router.post('/', async (req: Request, res: Response) => {
     const body = req.body || {};
     console.log('[customers] 收到请求体:', JSON.stringify(body));
 
+    const insertData = mapCustomerBodyToDB(body);
+    const validation = validateCustomerData(insertData);
+    if (!validation.valid) {
+      res.status(400).json({ success: false, error: validation.error });
+      return;
+    }
+
     const customerId = body.id || `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-    // 使用统一的大小写转换，自动映射前端所有字段
-    const snakeBody = toSnakeCase(body);
-    const insertData: Record<string, any> = {
-      id: customerId,
-      shop_id: shopId,
-      name: body.name || '未命名客户',
-      phone: body.phone || '',
-    };
-
-    // 拷贝除 id/shop_id 外的非 undefined 字段
-    for (const [key, value] of Object.entries(snakeBody)) {
-      if (key === 'id' || key === 'shop_id') continue;
-      if (value === undefined) continue;
-      insertData[key] = value;
-    }
-
-    // 处理日期字符串截取
-    if (insertData.birthday && typeof insertData.birthday === 'string') {
-      insertData.birthday = insertData.birthday.split('T')[0];
-    }
-
-    console.log('[customers] 准备插入:', JSON.stringify(insertData));
 
     const { data, error } = await supabase
       .from('customers')
-      .insert(insertData)
+      .insert({
+        id: customerId,
+        shop_id: shopId,
+        ...insertData,
+      })
       .select()
       .single();
 
@@ -148,37 +137,20 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const body = req.body || {};
 
-    // 统一转换并过滤 id/shop_id/undefined，确保前端编辑的所有字段都能持久化
-    const snakeBody = toSnakeCase(body);
-    const updateData: Record<string, any> = {};
-    for (const [key, value] of Object.entries(snakeBody)) {
-      if (key === 'id' || key === 'shop_id') continue;
-      if (value === undefined) continue;
-      updateData[key] = value;
+    // 使用字段白名单映射工具，统一过滤非法 key、处理日期/数组字段
+    const updateData = mapCustomerBodyToDB(body);
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ success: false, error: '请求体为空或无有效字段' });
+      return;
     }
 
-    // 处理日期字符串截取
-    if (updateData.birthday && typeof updateData.birthday === 'string') {
-      updateData.birthday = updateData.birthday.split('T')[0];
-    }
-    if (updateData.last_visit_at && typeof updateData.last_visit_at === 'string') {
-      updateData.last_visit_at = updateData.last_visit_at.split('T')[0];
-    }
-    if (updateData.purchase_vip_expires_at && typeof updateData.purchase_vip_expires_at === 'string') {
-      updateData.purchase_vip_expires_at = updateData.purchase_vip_expires_at.split('T')[0];
-    }
-    if (updateData.stored_value_expires_at && typeof updateData.stored_value_expires_at === 'string') {
-      updateData.stored_value_expires_at = updateData.stored_value_expires_at.split('T')[0];
-    }
-
-    // 数组字段做基本校验
-    if (updateData.tags !== undefined && !Array.isArray(updateData.tags)) delete updateData.tags;
-    if (updateData.preferences !== undefined && !Array.isArray(updateData.preferences)) delete updateData.preferences;
-    if (updateData.served_by_stylist_ids !== undefined && !Array.isArray(updateData.served_by_stylist_ids)) {
-      delete updateData.served_by_stylist_ids;
-    }
-    if (updateData.last_service_items !== undefined && !Array.isArray(updateData.last_service_items)) {
-      delete updateData.last_service_items;
+    // 如果前端传了 name/phone，则必须非空
+    if (updateData.name !== undefined) {
+      const validation = validateCustomerData(updateData);
+      if (!validation.valid) {
+        res.status(400).json({ success: false, error: validation.error });
+        return;
+      }
     }
 
     console.log('[customers] 准备更新:', id, JSON.stringify(updateData));

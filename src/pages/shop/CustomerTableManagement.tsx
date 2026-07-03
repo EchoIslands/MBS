@@ -1159,7 +1159,7 @@ const CustomerTableManagement: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="pt-2">
                   <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
                     <input
                       type="checkbox"
@@ -1168,15 +1168,6 @@ const CustomerTableManagement: React.FC = () => {
                       className="w-4 h-4 text-orange-500 rounded focus:ring-orange-500"
                     />
                     <span className="text-sm text-gray-700">是否有预约</span>
-                  </label>
-                  <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
-                    <input
-                      type="checkbox"
-                      defaultChecked={showEdit?.hasRecharged || false}
-                      id="edit-recharged"
-                      className="w-4 h-4 text-orange-500 rounded focus:ring-orange-500"
-                    />
-                    <span className="text-sm text-gray-700">是否已充值</span>
                   </label>
                 </div>
               </div>

@@ -1788,37 +1788,33 @@ git push --force               # 强制推送（谨慎！）
 
 ### 4.4.1 当前技术债务清单
 
-| 债务项 | 位置 | 临时方案 | 风险 | 计划偿还版本 |
+| 债务项 | 位置 | 临时方案 | 风险 | 状态 / 计划 |
 |--------|------|---------|------|------------|
-| 自定义 JSON body parser 替代 `express.json()` | `api/app.ts` | 手动读流解析 | 其他 JSON 路由可能受影响；依赖 Vercel Runtime 细节 | v2.1 验证稳定后，或等 Vercel 修复后回退 |
-| 客户字段手动映射 | `api/routes/customers.ts` | 每个字段单独 if 判断 | 新增字段容易漏；代码冗长 | v2.1 引入安全的字段白名单映射工具 |
-| `name` / `phone` 兜底值 | `api/routes/customers.ts` | `body.name \|\| '未命名客户'` | 掩盖 body 解析失败的真相 | v2.1 去掉兜底，改为严格校验并返回 400 |
-| 前端表单字段与 DB Schema 不同步 | `CustomerManagement.tsx` / `schema.sql` | `wechat`、`idCardNumber` 等字段未持久化 | 用户以为存了，实际没存 | v2.2 扩展 customers 表或拆出扩展表 |
-| 大量 API 路由被删除后未恢复 | `api/routes/` | 只保留 `auth.ts` / `customers.ts` | 预约、店铺、技师等功能不可用 | v3.0 按需逐步恢复 |
-| 无自动化测试 | 整个项目 | 全靠手动验证 | 改一处坏十处 | v3.0 引入 Vitest + 核心 API 测试 |
-| localStorage 与 Zustand 两层缓存 | `src/api.ts` / `store.ts` | API 失败时回退到缓存 | 可能显示过期数据 | v2.2 统一缓存策略 |
-| `USE_REAL_API` 硬编码为 `true` | `src/api.ts` | 无法在生产环境快速切回 mock | Supabase 故障或网络异常时系统完全不可用 | ✅ 已偿还（代码层，2026-06-26）：改为读取 `VITE_USE_REAL_API` 环境变量 |
-| 查询端仍用 `toCamelCaseList` 自动转换 | `api/routes/customers.ts` GET 路由 | 查询结果批量 camelCase 转换 | 与写入端手动映射不对称；未来字段名冲突时难排查 | ✅ 已偿还（代码层，2026-06-26）：使用 `mapCustomerFromDB` 显式字段映射 |
+| 自定义 JSON body parser 替代 `express.json()` | `api/app.ts` | 手动读流解析 | 其他 JSON 路由可能受影响；依赖 Vercel Runtime 细节 | 🟡 待验证：本地和 Vercel 上暂时稳定，长期建议回退到标准 body parser |
+| 客户字段手动映射 | `api/routes/customers.ts` | 每个字段单独 if 判断 | 新增字段容易漏；代码冗长 | ✅ 已偿还（2026-07-03）：引入 `api/utils/customerMapper.ts` 字段白名单映射工具 |
+| `name` / `phone` 兜底值 | `api/routes/customers.ts` | `body.name \|\| '未命名客户'` | 掩盖 body 解析失败的真相 | ✅ 已偿还（2026-07-03）：改为 `validateCustomerData` 校验，缺失时返回 400 |
+| 前端表单字段与 DB Schema 不同步 | `CustomerManagement.tsx` / `schema.sql` | `wechat`、`idCardNumber` 等字段未持久化 | 用户以为存了，实际没存 | ✅ 已偿还（2026-07-03）：扩展 customers 表并同步 seed-db；新增 customer_profiles / customer_visit_records |
+| 大量 API 路由被删除后未恢复 | `api/routes/` | 只保留 `auth.ts` / `customers.ts` | 预约、店铺、技师等功能不可用 | 🔴 v3.0 按需逐步恢复 |
+| 无自动化测试 | 整个项目 | 全靠手动验证 | 改一处坏十处 | 🔴 v3.0 引入 Vitest + 核心 API 测试 |
+| localStorage 与 Zustand 两层缓存 | `src/api.ts` / `store.ts` | API 失败时回退到缓存 | 可能显示过期数据 | 🟡 部分偿还（2026-07-03）：登录和关键查询失败不再静默 fallback 到 mock；仍保留少量缓存兜底 |
+| `USE_REAL_API` 硬编码为 `true` | `src/api.ts` | 无法在生产环境快速切回 mock | Supabase 故障或网络异常时系统完全不可用 | ✅ 已偿还（2026-06-26）：改为读取 `VITE_USE_REAL_API` 环境变量 |
+| 查询端仍用 `toCamelCaseList` 自动转换 | `api/routes/customers.ts` GET 路由 | 查询结果批量 camelCase 转换 | 与写入端手动映射不对称；未来字段名冲突时难排查 | ✅ 已偿还（2026-06-26）：使用 `mapCustomerFromDB` 显式字段映射 |
+| API 请求超时过短 | `src/api.ts` | 5 秒超时 | Supabase 网络慢时请求被 abort，静默 fallback | ✅ 已偿还（2026-07-03）：延长至 15 秒，并记录到宪章 |
 
 ### 4.4.2 债务偿还计划
 
-**v2.1（稳定性加固，预计 1-2 天）**
-- [ ] 验证自定义 body parser 在 Vercel 上长期稳定；
-- [ ] 引入安全的字段白名单映射工具，替代手动 if 判断；
-- [ ] 去掉 `name` / `phone` 兜底值，改为请求体验证；
-- [ ] 补充 `customers` 表缺失的常用字段（`wechat`、`avatar`、`referrer_name`、`referrer_phone` 等）；
-- [ ] 将 `USE_REAL_API` 改为环境变量或配置开关，保留 mock 快速回退能力；
-- [ ] 统一查询端字段转换方式，与写入端保持对称。
-
-**v2.2（数据一致性，预计 1-2 天）**
-- [ ] 前端表单字段与数据库 Schema 完全对齐；
-- [ ] 统一 localStorage / Zustand 缓存策略；
-- [ ] 所有写操作成功后刷新列表，不依赖缓存。
+**v2.3（客户管理收尾与稳定性加固，建议接下来做，预计 1-2 天）**
+- [ ] 验证客户画像 24 字段在客户表格管理页面可编辑、可持久化；
+- [ ] 引入字段白名单映射工具，替代 `customers.ts` 中手动 if 判断；
+- [ ] 去掉 `name` / `phone` 兜底值，改为请求体验证并返回明确 400 错误；
+- [ ] 回归测试：登录 → 客户管理 → 客户表格管理 → 会员管理 → 客户智能召回 → 客户画像；
+- [ ] 更新宪章 4.4.1 中已偿还债务的状态标记。
 
 **v3.0（功能恢复与质量，预计 3-5 天）**
-- [ ] 逐步恢复预约、店铺、技师等路由；
-- [ ] 引入 Vitest，为核心 API 写集成测试；
-- [ ] 接入 Sentry 或类似错误监控。
+- [ ] 逐步恢复预约、店铺、技师等核心路由；
+- [ ] 引入 Vitest，为核心 API（登录、客户 CRUD、画像 CRUD）写集成测试；
+- [ ] 接入 Sentry 或类似错误监控；
+- [ ] 评估是否回退自定义 body parser。
 
 ### 4.4.3 重构触发条件
 
