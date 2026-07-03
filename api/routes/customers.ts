@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../db/index.js';
 import { authMiddleware } from '../middleware/index.js';
-import { toCamelCase, toCamelCaseList } from '../utils/case.js';
+import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
 import { mapCustomerBodyToDB, validateCustomerData } from '../utils/customerMapper.js';
 
 const router = Router();
@@ -95,7 +95,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const insertData = mapCustomerBodyToDB(body);
     const validation = validateCustomerData(insertData);
-    if (!validation.valid) {
+    if ('error' in validation) {
       res.status(400).json({ success: false, error: validation.error });
       return;
     }
@@ -147,7 +147,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // 如果前端传了 name/phone，则必须非空
     if (updateData.name !== undefined) {
       const validation = validateCustomerData(updateData);
-      if (!validation.valid) {
+      if ('error' in validation) {
         res.status(400).json({ success: false, error: validation.error });
         return;
       }

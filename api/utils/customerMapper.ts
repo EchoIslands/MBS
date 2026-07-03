@@ -116,9 +116,11 @@ export function mapCustomerBodyToDB(
  * @param data 已转换的数据库对象
  * @returns 验证结果
  */
-export function validateCustomerData(
-  data: Record<string, any>
-): { valid: true } | { valid: false; error: string } {
+export type CustomerValidationResult =
+  | { valid: true }
+  | { valid: false; error: string };
+
+export function validateCustomerData(data: Record<string, any>): CustomerValidationResult {
   if (!data.name || typeof data.name !== 'string' || data.name.trim() === '') {
     return { valid: false, error: '客户姓名不能为空' };
   }
