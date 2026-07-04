@@ -28,7 +28,7 @@ import {
   MapPin,
   AlertCircle,
 } from 'lucide-react';
-import { Customer, CustomerTag, MembershipLevel, UserRole, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
+import { Customer, CustomerTag, MembershipLevel, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
 import {
   HaircutStylePreference,
   HairColorPreference,
@@ -42,7 +42,14 @@ import {
   ExtraServicePreference,
   VisitTimePreference,
 } from '../../../shared/types';
-import { purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
+import { purchaseVIPPlans, storedValuePlans } from '../../../shared/membershipPlans';
+import {
+  canCreateCustomer,
+  canEditCustomer,
+  canExportCustomers,
+  filterCustomersByRole,
+  getCustomerDataScope,
+} from '../../../shared/permissions';
 import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
@@ -91,12 +98,8 @@ const CustomerManagement: React.FC = () => {
         result = result.filter((c) => c.storedValueLevel === activeStoredLevel);
       }
 
-      // 发型师只看自己服务的客户
-      if (userRole === UserRole.STYLIST && currentEmployee) {
-        result = result.filter(
-          (c) => c.servedByStylistIds && c.servedByStylistIds.includes(currentEmployee.id)
-        );
-      }
+      // 按角色过滤可见客户
+      result = filterCustomersByRole(result, userRole, currentEmployee?.id);
       
       // 计算到店天数
       result = result.map((c) => ({
@@ -305,16 +308,9 @@ const CustomerManagement: React.FC = () => {
     [VisitTimePreference.WEEKDAY]: '工作日',
   };
 
-  // 计算筛选后的客户（发型师只看自己服务过的客户）
+  // 计算筛选后的客户（按角色过滤可见范围）
   const filteredCustomers = useMemo(() => {
-    let base = customers;
-
-    // 发型师角色：只看自己服务过的客户
-    if (userRole === UserRole.STYLIST && currentEmployee) {
-      base = base.filter(
-        (c) => c.servedByStylistIds && c.servedByStylistIds.includes(currentEmployee.id),
-      );
-    }
+    const base = filterCustomersByRole(customers, userRole, currentEmployee?.id);
 
     return base.filter((c) => {
       const matchesSearch =
@@ -335,11 +331,9 @@ const CustomerManagement: React.FC = () => {
     });
   }, [customers, searchTerm, activeTag, activePurchaseLevel, activeStoredLevel, userRole, currentEmployee]);
 
-  // 统计（发型师只统计自己的客户）
+  // 统计（按角色限定统计范围）
   const stats = useMemo(() => {
-    const base = userRole === UserRole.STYLIST && currentEmployee
-      ? filteredCustomers
-      : customers;
+    const base = getCustomerDataScope(userRole) === 'own' ? filteredCustomers : customers;
     const totalMembers = base.filter(
       (c) => c.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || c.storedValueLevel !== StoredValueLevel.NONE
     ).length;
@@ -410,8 +404,7 @@ const CustomerManagement: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const canExport =
-    userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
+  const canExport = canExportCustomers(userRole);
 
   // 点击标签统计卡片
   const handleTagClick = (tag: CustomerTag | 'all') => {
@@ -485,13 +478,15 @@ const CustomerManagement: React.FC = () => {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             {loading ? '刷新中...' : '刷新'}
           </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
-          >
-            <Plus size={16} />
-            添加客户
-          </button>
+          {canCreateCustomer(userRole) && (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+            >
+              <Plus size={16} />
+              添加客户
+            </button>
+          )}
           {(activeTag !== 'all' || activePurchaseLevel !== 'all' || activeStoredLevel !== 'all' || searchTerm !== '') && (
             <button
               onClick={resetFilters}
@@ -1178,26 +1173,30 @@ const CustomerManagement: React.FC = () => {
               >
                 关闭
               </button>
-              <button
-                onClick={() => {
-                  setShowEdit(viewingCustomer);
-                  setViewingCustomer(null);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-colors text-sm font-medium"
-              >
-                <Edit size={16} />
-                编辑信息
-              </button>
-              <button
-                onClick={() => {
-                  navigate(`/shop/customer-profile/${viewingCustomer.id}`);
-                  setViewingCustomer(null);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition-colors text-sm font-medium"
-              >
-                <UserCircle size={16} />
-                {viewingCustomer.profile ? '编辑画像' : '新建画像'}
-              </button>
+              {canEditCustomer(userRole) && (
+                <button
+                  onClick={() => {
+                    setShowEdit(viewingCustomer);
+                    setViewingCustomer(null);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-colors text-sm font-medium"
+                >
+                  <Edit size={16} />
+                  编辑信息
+                </button>
+              )}
+              {canEditCustomer(userRole) && (
+                <button
+                  onClick={() => {
+                    navigate(`/shop/customer-profile/${viewingCustomer.id}`);
+                    setViewingCustomer(null);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition-colors text-sm font-medium"
+                >
+                  <UserCircle size={16} />
+                  {viewingCustomer.profile ? '编辑画像' : '新建画像'}
+                </button>
+              )}
             </div>
           </div>
         </div>

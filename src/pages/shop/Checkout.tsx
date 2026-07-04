@@ -20,19 +20,13 @@ import {
   Customer,
   Product,
   Service,
+  Shop,
   SettlementItem,
   SettlementDiscountDetail,
   ProductCategory,
   PurchaseVIPLevel,
   StoredValueLevel,
 } from '../../../shared/types';
-import {
-  mockCustomers,
-  mockShops,
-  mockBookings,
-  mockMemberBenefitRecords,
-  mockSettlements,
-} from '../../../shared/mockData';
 import {
   getPurchaseVIPLabel,
   getStoredValueLabel,
@@ -42,6 +36,7 @@ import {
   isVIPExpiringSoon,
   calcSettlementDiscountDetail,
 } from '../../lib/membership';
+import { customerApi, shopApi, bookingApi, settlementApi, memberBenefitApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
@@ -77,50 +72,112 @@ const Checkout: React.FC = () => {
   const initialCustomerId = searchParams.get('customerId');
   const initialBookingId = searchParams.get('bookingId');
 
-  const [customers] = useState<Customer[]>(mockCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
+  const [shop, setShop] = useState<Shop | null>(null);
+  const [loadingShop, setLoadingShop] = useState(true);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedBenefits, setSelectedBenefits] = useState<string[]>([]);
+  const [availableBenefits, setAvailableBenefits] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const shop = mockShops.find((s) => s.id === (currentShop?.id || 'shop1'));
   const services = shop?.services || [];
   const products = shop?.products || [];
   const employees = shop?.employees || [];
 
-  // 初始化：根据 URL 参数选择客户或预约
+  // 加载店铺信息和客户列表
   useEffect(() => {
-    if (initialCustomerId) {
-      const c = customers.find((c) => c.id === initialCustomerId);
-      if (c) setSelectedCustomer(c);
-    }
-    if (initialBookingId) {
-      const booking = mockBookings.find((b) => b.id === initialBookingId);
-      if (booking && booking.customerId) {
-        const c = customers.find((cust) => cust.id === booking.customerId);
-        if (c) setSelectedCustomer(c);
-        if (booking.serviceId && booking.price) {
-          setCart([
-            {
-              id: booking.serviceId,
-              type: 'service',
-              name: booking.serviceName || '预约服务',
-              originalPrice: booking.price,
-              quantity: 1,
-              employeeId: booking.barberId,
-              employeeName: booking.barberName,
-            },
-          ]);
+    let cancelled = false;
+    const loadInitialData = async () => {
+      setLoadingShop(true);
+      setLoadingCustomers(true);
+      setError(null);
+      try {
+        const shopId = currentShop?.id || 'shop1';
+        const [shopData, customerList] = await Promise.all([
+          shopApi.getShop(shopId),
+          customerApi.getAll(),
+        ]);
+        if (cancelled) return;
+        setShop(shopData);
+        setCustomers(customerList || []);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || '加载初始数据失败');
+      } finally {
+        if (!cancelled) {
+          setLoadingShop(false);
+          setLoadingCustomers(false);
         }
       }
+    };
+    loadInitialData();
+    return () => { cancelled = true; };
+  }, [currentShop?.id]);
+
+  // 初始化：根据 URL 参数选择客户或预约
+  useEffect(() => {
+    if (loadingCustomers || customers.length === 0) return;
+
+    const initFromParams = async () => {
+      if (initialCustomerId) {
+        const c = customers.find((c) => c.id === initialCustomerId);
+        if (c) setSelectedCustomer(c);
+      }
+      if (initialBookingId) {
+        try {
+          const booking = await bookingApi.getBooking(initialBookingId);
+          if (booking && booking.customerId) {
+            const c = customers.find((cust) => cust.id === booking.customerId);
+            if (c) setSelectedCustomer(c);
+            if (booking.serviceId && booking.price) {
+              setCart([
+                {
+                  id: booking.serviceId,
+                  type: 'service',
+                  name: booking.serviceName || '预约服务',
+                  originalPrice: booking.price,
+                  quantity: 1,
+                  employeeId: booking.barberId,
+                  employeeName: booking.barberName,
+                },
+              ]);
+            }
+          }
+        } catch (e) {
+          console.warn('[checkout] 加载预约失败:', e);
+        }
+      }
+    };
+    initFromParams();
+  }, [initialCustomerId, initialBookingId, customers, loadingCustomers]);
+
+  // 选中客户后加载可用权益
+  useEffect(() => {
+    if (!selectedCustomer) {
+      setAvailableBenefits([]);
+      return;
     }
-  }, [initialCustomerId, initialBookingId, customers]);
+    let cancelled = false;
+    const loadBenefits = async () => {
+      try {
+        const benefits = await memberBenefitApi.getAvailableByCustomer(selectedCustomer.id);
+        if (!cancelled) setAvailableBenefits(benefits || []);
+      } catch (e) {
+        if (!cancelled) setAvailableBenefits([]);
+      }
+    };
+    loadBenefits();
+    return () => { cancelled = true; };
+  }, [selectedCustomer]);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return customers.slice(0, 8);
@@ -130,13 +187,6 @@ const Checkout: React.FC = () => {
         c.phone.includes(customerSearch)
     );
   }, [customerSearch, customers]);
-
-  const availableBenefits = useMemo(() => {
-    if (!selectedCustomer) return [];
-    return mockMemberBenefitRecords.filter(
-      (b) => b.customerId === selectedCustomer.id && b.status === 'available'
-    );
-  }, [selectedCustomer]);
 
   const cartWithAdjustedPrices = useMemo(() => {
     return cart.map((item) => {
@@ -263,7 +313,7 @@ const Checkout: React.FC = () => {
     doSubmit();
   };
 
-  const doSubmit = () => {
+  const doSubmit = async () => {
     setSubmitting(true);
 
     const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item) => {
@@ -306,38 +356,44 @@ const Checkout: React.FC = () => {
       tax: 0,
       total,
       paymentMethod,
-      paymentStatus: 'completed' as const,
       usedBenefitIds: selectedBenefits,
-      createdAt: new Date(),
       processedBy: currentEmployee?.name,
     };
 
-    mockSettlements.push(newSettlement);
+    try {
+      await settlementApi.create(newSettlement);
 
-    // 扣减余额（mock 中同步修改）
-    if (paymentMethod === 'balance') {
-      const principal = selectedCustomer!.storedValueBalance - selectedCustomer!.withdrawableReferralAmount;
-      const usedPrincipal = Math.min(total, principal);
-      const usedReferral = total - usedPrincipal;
-      selectedCustomer!.storedValueBalance = Math.round((selectedCustomer!.storedValueBalance - total) * 100) / 100;
-      selectedCustomer!.balance = selectedCustomer!.storedValueBalance;
-      if (usedReferral > 0) {
-        selectedCustomer!.withdrawableReferralAmount = Math.round(
-          (selectedCustomer!.withdrawableReferralAmount - usedReferral) * 100
-        ) / 100;
+      // 本地同步更新客户余额，让 UI 立即反映
+      if (paymentMethod === 'balance' && selectedCustomer) {
+        const principal = selectedCustomer.storedValueBalance - selectedCustomer.withdrawableReferralAmount;
+        const usedPrincipal = Math.min(total, principal);
+        const usedReferral = total - usedPrincipal;
+        const newBalance = Math.round((selectedCustomer.storedValueBalance - total) * 100) / 100;
+        const newReferral = usedReferral > 0
+          ? Math.round((selectedCustomer.withdrawableReferralAmount - usedReferral) * 100) / 100
+          : selectedCustomer.withdrawableReferralAmount;
+
+        const updatedCustomer = {
+          ...selectedCustomer,
+          storedValueBalance: newBalance,
+          balance: newBalance,
+          withdrawableReferralAmount: newReferral,
+        };
+        setSelectedCustomer(updatedCustomer);
+        setCustomers((prev) =>
+          prev.map((c) => (c.id === updatedCustomer.id ? updatedCustomer : c))
+        );
       }
-    }
 
-    // 核销权益
-    selectedBenefits.forEach((bid) => {
-      const benefit = mockMemberBenefitRecords.find((b) => b.id === bid);
-      if (benefit) benefit.status = 'used';
-    });
-
-    setTimeout(() => {
+      // 清空已核销权益
+      setAvailableBenefits((prev) => prev.filter((b) => !selectedBenefits.includes(b.id)));
+      setSelectedBenefits([]);
       setSubmitting(false);
       setSuccess(true);
-    }, 500);
+    } catch (err: any) {
+      alert(err.message || '结算失败，请重试');
+      setSubmitting(false);
+    }
   };
 
   if (success) {
@@ -381,6 +437,20 @@ const Checkout: React.FC = () => {
     <ShopLayout title="开单结算">
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6">
+          {(loadingShop || loadingCustomers) && (
+            <div className="text-center py-12 text-gray-500">
+              <div className="animate-spin inline-block w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full mb-3" />
+              <p className="text-sm">加载中...</p>
+            </div>
+          )}
+
+          {error && !loadingShop && !loadingCustomers && (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-red-600 text-sm">
+              {error}
+            </div>
+          )}
+
+          {!loadingShop && !loadingCustomers && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* 左侧：客户 + 服务/商品 + 权益 */}
             <div className="lg:col-span-2 space-y-6">
@@ -734,6 +804,7 @@ const Checkout: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
 

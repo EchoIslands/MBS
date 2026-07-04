@@ -1,5 +1,5 @@
 import { Shop, Booking, Review, Queue } from '../shared/types';
-import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers } from '../shared/mockData';
+import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 
 // ====== 开关：是否使用真实后端 API ======
 // 方式 1：通过环境变量配置  VITE_USE_REAL_API=true
@@ -520,6 +520,53 @@ export const reviewApi = {
     if (!review) throw new Error('评价不存在');
     review.isHidden = isHidden;
     return review;
+  },
+};
+
+// 结算相关 API
+export const settlementApi = {
+  create: async (data: any): Promise<any> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: any }>(`${API_BASE}/settlements`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.success) return result.data;
+    }
+    // Mock fallback
+    const newSettlement = { id: `settle_${Date.now()}`, ...data, createdAt: new Date() };
+    mockSettlements.push(newSettlement);
+    return newSettlement;
+  },
+
+  getByShop: async (shopId: string): Promise<any[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: any[] }>(`${API_BASE}/settlements?shopId=${shopId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return result.data;
+    }
+    return mockSettlements.filter((s: any) => s.shopId === shopId);
+  },
+};
+
+// 会员权益相关 API
+export const memberBenefitApi = {
+  getAvailableByCustomer: async (customerId: string): Promise<any[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: any[] }>(
+        `${API_BASE}/member-benefits/customer/${customerId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return mockMemberBenefitRecords.filter(
+      (b) => b.customerId === customerId && b.status === 'available'
+    );
   },
 };
 

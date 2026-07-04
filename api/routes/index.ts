@@ -1695,4 +1695,224 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
 
 mainRouter.use('/shops', shopsRouter);
 
+// ===================== settlements =====================
+const settlementsRouter = Router();
+
+const settlementFromDb = (s: any): any => ({
+  id: s.id,
+  shopId: s.shop_id,
+  customerId: s.customer_id,
+  customerName: s.customer_name,
+  bookingId: s.booking_id,
+  items: s.items || [],
+  subtotal: Number(s.subtotal) || 0,
+  discountDetail: s.discount_detail || {},
+  discount: Number(s.discount) || 0,
+  tax: Number(s.tax) || 0,
+  total: Number(s.total) || 0,
+  paymentMethod: s.payment_method,
+  paymentStatus: s.payment_status,
+  usedBenefitIds: s.used_benefit_ids || [],
+  processedBy: s.processed_by,
+  createdAt: s.created_at,
+});
+
+// 创建结算记录
+settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const {
+      id,
+      customerId,
+      customerName,
+      bookingId,
+      items,
+      subtotal,
+      discountDetail,
+      discount,
+      tax,
+      total,
+      paymentMethod,
+      usedBenefitIds,
+    } = req.body || {};
+
+    if (!customerId || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    const settlementId = id || `settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+    const { data: settlement, error: insertError } = await supabase
+      .from('settlements')
+      .insert({
+        id: settlementId,
+        shop_id: shopId,
+        customer_id: customerId,
+        customer_name: customerName || '',
+        booking_id: bookingId || null,
+        items: items,
+        subtotal: subtotal || 0,
+        discount_detail: discountDetail || {},
+        discount: discount || 0,
+        tax: tax || 0,
+        total: total || 0,
+        payment_method: paymentMethod || 'cash',
+        payment_status: 'completed',
+        used_benefit_ids: usedBenefitIds || [],
+        processed_by: req.employee!.name,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[settlements] 创建结算记录失败:', insertError.message);
+      return res.status(500).json({ success: false, error: '创建结算记录失败: ' + insertError.message });
+    }
+
+    // 更新客户消费统计
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount')
+      .eq('id', customerId)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (customer) {
+      const newVisitCount = (customer.visit_count || 0) + 1;
+      const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
+      const updatePayload: any = {
+        visit_count: newVisitCount,
+        total_spent: newTotalSpent,
+        last_visit_at: new Date().toISOString(),
+      };
+
+      // 储值支付：扣减余额
+      if (paymentMethod === 'balance') {
+        const currentBalance = Number(customer.stored_value_balance || 0);
+        const currentReferral = Number(customer.withdrawable_referral_amount || 0);
+        const principal = currentBalance - currentReferral;
+        const usedPrincipal = Math.min(Number(total), principal);
+        const usedReferral = Number(total) - usedPrincipal;
+
+        updatePayload.stored_value_balance = Math.round((currentBalance - Number(total)) * 100) / 100;
+        updatePayload.balance = updatePayload.stored_value_balance;
+        if (usedReferral > 0) {
+          updatePayload.withdrawable_referral_amount = Math.round((currentReferral - usedReferral) * 100) / 100;
+        }
+      }
+
+      await supabase.from('customers').update(updatePayload).eq('id', customerId).eq('shop_id', shopId);
+    }
+
+    // 核销权益
+    const benefits = usedBenefitIds || [];
+    if (benefits.length > 0) {
+      await supabase
+        .from('member_benefits')
+        .update({
+          status: 'used',
+          used_at: new Date().toISOString(),
+          used_by: req.employee!.id,
+          used_order_id: settlementId,
+        })
+        .in('id', benefits)
+        .eq('customer_id', customerId);
+    }
+
+    // 创建到店记录
+    const visitRecord = {
+      id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      customer_id: customerId,
+      shop_id: shopId,
+      booking_id: bookingId || null,
+      stylist_id: null,
+      stylist_name: req.employee!.name,
+      service_ids: items.filter((i: any) => i.type === 'service').map((i: any) => i.id),
+      service_names: items.filter((i: any) => i.type === 'service').map((i: any) => i.name),
+      total_amount: total || 0,
+      check_in_time: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    await supabase.from('customer_visit_records').insert(visitRecord);
+
+    res.status(201).json({ success: true, data: settlementFromDb(settlement) });
+  } catch (error) {
+    console.error('[settlements] 创建结算异常:', error);
+    res.status(500).json({ success: false, error: '创建结算失败' });
+  }
+});
+
+// 获取店铺结算列表
+settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { data, error } = await supabase
+      .from('settlements')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[settlements] 查询结算列表失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询结算列表失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(settlementFromDb) });
+  } catch (error) {
+    console.error('[settlements] 获取结算列表异常:', error);
+    res.status(500).json({ success: false, error: '获取结算列表失败' });
+  }
+});
+
+mainRouter.use('/settlements', settlementsRouter);
+
+// ===================== member_benefits =====================
+const memberBenefitsRouter = Router();
+
+const benefitFromDb = (b: any): any => ({
+  id: b.id,
+  customerId: b.customer_id,
+  shopId: b.shop_id,
+  type: b.type,
+  name: b.name,
+  description: b.description || '',
+  status: b.status,
+  grantedAt: b.granted_at,
+  grantedBy: b.granted_by,
+  usedAt: b.used_at,
+  usedBy: b.used_by,
+  usedOrderId: b.used_order_id,
+  expiresAt: b.expires_at,
+});
+
+// 获取客户可用权益
+memberBenefitsRouter.get('/customer/:customerId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { customerId } = req.params;
+
+    const { data, error } = await supabase
+      .from('member_benefits')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('customer_id', customerId)
+      .eq('status', 'available')
+      .or(`expires_at.is.null,expires_at.gte.${new Date().toISOString()}`)
+      .order('granted_at', { ascending: false });
+
+    if (error) {
+      console.error('[member_benefits] 查询权益失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询权益失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(benefitFromDb) });
+  } catch (error) {
+    console.error('[member_benefits] 获取权益异常:', error);
+    res.status(500).json({ success: false, error: '获取权益失败' });
+  }
+});
+
+mainRouter.use('/member-benefits', memberBenefitsRouter);
+
 export default mainRouter;

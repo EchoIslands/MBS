@@ -9,7 +9,7 @@ import {
   MemberBenefitRecord,
   SettlementDiscountDetail,
 } from '../../shared/types';
-import { purchaseVIPPlans, storedValuePlans } from '../../shared/mockData';
+import { purchaseVIPPlans, storedValuePlans } from '../../shared/membershipPlans';
 
 // ==================== 权益有效期 ====================
 

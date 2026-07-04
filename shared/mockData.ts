@@ -1,4 +1,5 @@
-import { Shop, Customer, Booking, Review, Queue, Service, OpeningHours, Employee, StylistPerformance, FinancialReport, DateRange, UserRole, OwnerDashboard, RefundRequest, RefundStatus, CustomerFeedback, FeedbackType, CustomerSuccessMetrics, Product, ProductCategory, CustomerTag, MembershipLevel, PurchaseVIPLevel, StoredValueLevel, BenefitType, StoredValueTxType, Settlement, SatisfactionSurvey, MembershipBenefit, PurchaseVIPPlan, StoredValuePlan, MemberBenefitRecord, StoredValueTransaction, ReferralRecord, CustomerProfile, HaircutStylePreference, HairColorPreference, PermColorPreference, TreatmentPreference, HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle, ExtraServicePreference, VisitTimePreference, CustomerVisitRecord, ShopReview, StylistReview, FollowUpRecord } from './types';
+import { Shop, Customer, Booking, Review, Queue, Service, OpeningHours, Employee, StylistPerformance, FinancialReport, DateRange, UserRole, OwnerDashboard, RefundRequest, RefundStatus, CustomerFeedback, FeedbackType, CustomerSuccessMetrics, Product, ProductCategory, CustomerTag, MembershipLevel, PurchaseVIPLevel, StoredValueLevel, BenefitType, StoredValueTxType, Settlement, SatisfactionSurvey, MembershipBenefit, MemberBenefitRecord, StoredValueTransaction, ReferralRecord, CustomerProfile, HaircutStylePreference, HairColorPreference, PermColorPreference, TreatmentPreference, HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle, ExtraServicePreference, VisitTimePreference, CustomerVisitRecord, ShopReview, StylistReview, FollowUpRecord } from './types';
+export { purchaseVIPPlans, storedValuePlans } from './membershipPlans';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -975,109 +976,6 @@ export const membershipBenefits: MembershipBenefit[] = [
     gifts: ['专属发型师', '优先预约', '生日派对'],
     canBecomeStockholder: true,
     referralBonusRate: 0.05,
-  },
-];
-
-// 购买型 VIP 会员计划
-export const purchaseVIPPlans: PurchaseVIPPlan[] = [
-  {
-    level: PurchaseVIPLevel.REGULAR,
-    name: '普通用户',
-    price: 0,
-    period: '长期',
-    discount: 1,
-    pointsRate: 1,
-    benefits: ['按店内正常价格消费'],
-    color: 'gray',
-  },
-  {
-    level: PurchaseVIPLevel.BRONZE,
-    name: '普卡 VIP',
-    price: 29,
-    period: '年',
-    discount: 0.88,
-    pointsRate: 1.2,
-    benefits: ['全场 8.8 折（假发除外）', '消费满 59 元送洗发水', '积分 1.2 倍'],
-    color: 'orange',
-  },
-  {
-    level: PurchaseVIPLevel.SILVER,
-    name: '银卡 VIP',
-    price: 59,
-    period: '年',
-    discount: 0.78,
-    pointsRate: 1.5,
-    benefits: ['全场 7.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 1.5 倍', '每次消费送饮品'],
-    color: 'blue',
-  },
-  {
-    level: PurchaseVIPLevel.GOLD,
-    name: '金卡 VIP',
-    price: 79,
-    period: '年',
-    discount: 0.68,
-    pointsRate: 2,
-    benefits: ['全场 6.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 2 倍', '每次消费送饮品', '不满意重做'],
-    color: 'yellow',
-  },
-  {
-    level: PurchaseVIPLevel.DIAMOND,
-    name: '钻石 VIP',
-    price: 99,
-    period: '年',
-    discount: 0.58,
-    pointsRate: 3,
-    benefits: ['全场 5.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 3 倍', '每次消费送饮品', '不满意重做', '单次免费剪发一次'],
-    color: 'purple',
-  },
-];
-
-// 储值会员计划
-export const storedValuePlans: StoredValuePlan[] = [
-  {
-    level: StoredValueLevel.NONE,
-    name: '未储值',
-    amount: 0,
-    discount: 1,
-    pointsRate: 1,
-    benefits: ['可使用现金/微信/支付宝支付'],
-    color: 'gray',
-  },
-  {
-    level: StoredValueLevel.STORE_500,
-    name: '储值卡',
-    amount: 500,
-    discount: 0.9,
-    pointsRate: 1.1,
-    benefits: ['储值 500 元', '折上折再享 9 折', '积分 1.1 倍'],
-    color: 'green',
-  },
-  {
-    level: StoredValueLevel.STORE_1000,
-    name: '安心卡',
-    amount: 1000,
-    discount: 0.85,
-    pointsRate: 1.3,
-    benefits: ['储值 1000 元', '折上折再享 8.5 折', '积分 1.3 倍'],
-    color: 'cyan',
-  },
-  {
-    level: StoredValueLevel.STORE_2000,
-    name: '顺心卡',
-    amount: 2000,
-    discount: 0.8,
-    pointsRate: 1.5,
-    benefits: ['储值 2000 元', '折上折再享 8 折', '积分 1.5 倍'],
-    color: 'indigo',
-  },
-  {
-    level: StoredValueLevel.STORE_5000,
-    name: '随心卡',
-    amount: 5000,
-    discount: 0.7,
-    pointsRate: 2,
-    benefits: ['储值 5000 元', '折上折再享 7 折', '积分 2 倍'],
-    color: 'red',
   },
 ];
 
