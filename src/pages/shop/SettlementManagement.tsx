@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CreditCard,
@@ -16,22 +16,60 @@ import {
   User,
   Package,
 } from 'lucide-react';
-import { Settlement } from '../../../shared/types';
-import { mockSettlements, mockCustomers } from '../../../shared/mockData';
+import { Settlement, Customer } from '../../../shared/types';
+import { settlementApi, customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
 const SettlementManagement: React.FC = () => {
-  const [settlements] = useState<Settlement[]>(mockSettlements);
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [viewingSettlement, setViewingSettlement] = useState<Settlement | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  
+
+  // 新建结算弹窗状态
+  const [newCustomerId, setNewCustomerId] = useState('');
+  const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
+  const [newAmount, setNewAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
   const navigate = useNavigate();
-  const { currentShop } = useAppStore();
+  const { currentShop, currentEmployee } = useAppStore();
+
+  // 加载结算记录和客户列表
+  useEffect(() => {
+    let cancelled = false;
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const shopId = currentShop?.id || 'shop1';
+        const [settlementList, customerList] = await Promise.all([
+          settlementApi.getByShop(shopId),
+          customerApi.getAll(),
+        ]);
+        if (cancelled) return;
+        setSettlements((settlementList || []).map((s: any) => ({
+          ...s,
+          createdAt: s.createdAt || s.created_at,
+        })) as Settlement[]);
+        setCustomers(customerList || []);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || '加载数据失败');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    loadData();
+    return () => { cancelled = true; };
+  }, [currentShop?.id]);
 
   const paymentMethods = [
     { value: 'all', label: '全部' },
@@ -140,6 +178,20 @@ const SettlementManagement: React.FC = () => {
           })}
         </div>
 
+        {loading && (
+          <div className="text-center py-12 text-gray-500">
+            <div className="animate-spin inline-block w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full mb-3" />
+            <p className="text-sm">加载中...</p>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-red-600 text-sm">
+            {error}
+          </div>
+        )}
+
+        {!loading && (
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
           <div className="flex flex-col md:flex-row gap-4 mb-4">
             <div className="flex-1 relative">
@@ -299,6 +351,7 @@ const SettlementManagement: React.FC = () => {
             </table>
           </div>
         </div>
+        )}
       </div>
 
       {viewingSettlement && (
@@ -404,9 +457,13 @@ const SettlementManagement: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">选择客户</label>
-                <select className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none">
+                <select
+                  value={newCustomerId}
+                  onChange={(e) => setNewCustomerId(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                >
                   <option value="">请选择客户</option>
-                  {mockCustomers.map(customer => (
+                  {customers.map(customer => (
                     <option key={customer.id} value={customer.id}>
                       {customer.name} ({customer.phone})
                     </option>
@@ -420,11 +477,11 @@ const SettlementManagement: React.FC = () => {
                     <button
                       key={method.value}
                       className={`py-2 px-3 rounded-xl text-sm transition-all ${
-                        selectedPaymentMethod === method.value
+                        newPaymentMethod === method.value
                           ? 'bg-green-500 text-white'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
-                      onClick={() => setSelectedPaymentMethod(method.value)}
+                      onClick={() => setNewPaymentMethod(method.value as any)}
                     >
                       {method.label}
                     </button>
@@ -437,6 +494,8 @@ const SettlementManagement: React.FC = () => {
                   <DollarSign size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="number"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
                     placeholder="0.00"
                   />
@@ -451,13 +510,53 @@ const SettlementManagement: React.FC = () => {
                 取消
               </button>
               <button
-                onClick={() => {
-                  console.log('Create settlement');
-                  setShowAddModal(false);
+                disabled={submitting || !newCustomerId || !newAmount || Number(newAmount) <= 0}
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    const amount = Number(newAmount);
+                    const customer = customers.find(c => c.id === newCustomerId);
+                    await settlementApi.create({
+                      shopId: currentShop?.id || 'shop1',
+                      customerId: newCustomerId,
+                      customerName: customer?.name || '',
+                      items: [{
+                        type: 'service',
+                        id: 'manual',
+                        name: '手工结算',
+                        originalPrice: amount,
+                        discountedPrice: amount,
+                        quantity: 1,
+                        total: amount,
+                      }],
+                      subtotal: amount,
+                      discountDetail: {},
+                      discount: 0,
+                      tax: 0,
+                      total: amount,
+                      paymentMethod: newPaymentMethod,
+                      usedBenefitIds: [],
+                      processedBy: currentEmployee?.name,
+                    });
+                    // 刷新列表
+                    const list = await settlementApi.getByShop(currentShop?.id || 'shop1');
+                    setSettlements((list || []).map((s: any) => ({
+                      ...s,
+                      createdAt: s.createdAt || s.created_at,
+                    })) as Settlement[]);
+                    setShowAddModal(false);
+                    setNewCustomerId('');
+                    setNewAmount('');
+                    setNewPaymentMethod('cash');
+                  } catch (err: any) {
+                    alert(err.message || '创建结算失败');
+                  } finally {
+                    setSubmitting(false);
+                  }
                 }}
-                className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors"
+                className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-xl font-medium transition-colors"
               >
-                确认结算
+                {submitting ? '提交中...' : '确认结算'}
               </button>
             </div>
           </div>
