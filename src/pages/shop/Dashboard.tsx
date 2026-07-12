@@ -12,17 +12,15 @@ import {
   MessageSquare,
   UserCircle,
 } from 'lucide-react';
-import { Booking, UserRole } from '../../../shared/types';
+import { Booking, Customer, UserRole, Settlement } from '../../../shared/types';
 import { useAppStore } from '../../store';
-import { mockCustomers, mockShops } from '../../../shared/mockData';
+import { customerApi, bookingApi, settlementApi } from '../../api';
 import ShopLayout from './ShopLayout';
-
-const API_BASE = '/api';
 
 const Dashboard: React.FC = () => {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [todaySettlements, setTodaySettlements] = useState<Settlement[]>([]);
+  const [recentCustomers, setRecentCustomers] = useState<Customer[]>([]);
   const navigate = useNavigate();
   const { currentShop, currentEmployee, userRole } = useAppStore();
 
@@ -30,32 +28,49 @@ const Dashboard: React.FC = () => {
     if (!currentShop) return;
 
     const fetchTodayBookings = async () => {
-      setLoading(true);
-      setError(null);
       try {
         const today = new Date().toISOString().split('T')[0];
-        const params = new URLSearchParams();
-        params.set('shopId', currentShop.id);
-        params.set('page', '1');
-        params.set('pageSize', '50');
-        params.set('dateStart', today);
-
-        const res = await fetch(`${API_BASE}/bookings?${params.toString()}`);
-        const data = await res.json();
-
-        if (data.success && data.data) {
-          setTodayBookings(data.data);
-        } else {
-          setError(data.error || '获取预约列表失败');
+        const data = await bookingApi.getBookingsByShop(currentShop.id, today);
+        if (Array.isArray(data)) {
+          setTodayBookings(data);
         }
-      } catch (err: any) {
-        setError(err.message || '网络错误');
-      } finally {
-        setLoading(false);
+      } catch (err: unknown) {
+        console.error('[Dashboard] 获取预约列表失败:', err instanceof Error ? err.message : err);
+      }
+    };
+
+    const fetchRecentCustomers = async () => {
+      try {
+        const data = await customerApi.getAll();
+        if (Array.isArray(data)) {
+          setRecentCustomers(data.slice(0, 5));
+        }
+      } catch (err: unknown) {
+        console.error('[Dashboard] 获取最近客户失败:', err instanceof Error ? (err as Error).message : err);
+      }
+    };
+
+    const fetchTodaySettlements = async () => {
+      try {
+        const data = await settlementApi.getByShop(currentShop.id);
+        if (Array.isArray(data)) {
+          const today = new Date().toDateString();
+          setTodaySettlements(
+            data.filter(
+              (s) =>
+                s.paymentStatus === 'completed' &&
+                new Date(s.createdAt).toDateString() === today
+            )
+          );
+        }
+      } catch (err: unknown) {
+        console.error('[Dashboard] 获取结算记录失败:', err instanceof Error ? err.message : err);
       }
     };
 
     fetchTodayBookings();
+    fetchRecentCustomers();
+    fetchTodaySettlements();
   }, [currentShop]);
 
   if (!currentShop && !currentEmployee) return null;
@@ -76,9 +91,7 @@ const Dashboard: React.FC = () => {
   const pendingCount = todayBookings.filter(
     (b) => b.status === 'pending' || b.status === 'confirmed',
   ).length;
-  const totalRevenue = todayBookings
-    .filter((b) => b.status === 'completed')
-    .reduce((sum, b) => sum + (b.price || 0), 0);
+  const totalRevenue = todaySettlements.reduce((sum, s) => sum + s.total, 0);
 
   const stats = [
     { label: '今日预约', value: todayBookings.length, icon: Calendar, color: 'text-blue-500' },
@@ -136,9 +149,6 @@ const Dashboard: React.FC = () => {
   // 最近预约列表
   const recentBookings = todayBookings.slice(0, 5);
 
-  // 最近客户
-  const recentCustomers = mockCustomers.slice(0, 5);
-
   return (
     <ShopLayout title="首页概览">
       {/* 欢迎区 */}
@@ -147,7 +157,7 @@ const Dashboard: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold mb-1">你好，{welcomeRole}</h2>
             <p className="text-orange-100 text-sm">
-              {currentShop?.name || mockShops[0]?.name || '皓诗形象设计'} · {new Date().toLocaleDateString('zh-CN')}
+              {currentShop?.name || '皓诗形象设计'} · {new Date().toLocaleDateString('zh-CN')}
             </p>
           </div>
           <div className="hidden md:block text-right text-sm">
@@ -204,7 +214,7 @@ const Dashboard: React.FC = () => {
                         {booking.customerName || '顾客'}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {booking.serviceName} · {(booking as any).stylistName || booking.barberName || '待分配'}
+                        {booking.serviceName} · {booking.stylistName || booking.barberName || '待分配'}
                       </div>
                     </div>
                   </div>

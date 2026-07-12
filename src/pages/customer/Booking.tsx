@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users, Zap,
-  Scissors, Sparkles, ChevronRight, Award, ThumbsUp
+  ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
+  Scissors, Sparkles, Award, Zap
 } from 'lucide-react';
 import { mockShops, mockBookings } from '../../../shared/mockData';
 import { Employee, Shop } from '../../../shared/types';
@@ -104,7 +104,7 @@ const Booking: React.FC = () => {
     if (dates.length > 0 && !selectedDate) {
       setSelectedDate(dates[0].value);
     }
-  }, [shop, dates]);
+  }, [shop, dates, selectedService, selectedDate]);
 
   const stylists = useMemo(() =>
     shop?.employees.filter((e) => e.role === 'stylist' || !e.role) || [],
@@ -139,26 +139,43 @@ const Booking: React.FC = () => {
   };
 
   // 找最快可服务的技师
+  // 注意：必须依赖 mockBookings，否则已有预约变化时 fastest 不会重新计算
   const fastest = useMemo(() => {
-    if (!stylists || stylists.length === 0) return null;
+    if (!stylists || stylists.length === 0 || !selectedDate || !selectedTime) return null;
     let best: Employee | null = null;
     let min = Infinity;
     for (const barber of stylists) {
-      const av = getBarberAvailability(barber, selectedDate, selectedTime);
-      if (av.isAvailable && av.waitTime < min) {
-        min = av.waitTime;
+      if (isBarberBusy(barber.id, selectedDate, selectedTime)) continue;
+
+      const sameDayBookings = mockBookings.filter((bk) => {
+        if (bk.barberId !== barber.id) return false;
+        if (bk.status === 'cancelled') return false;
+        const bkDate = new Date(bk.scheduledTime);
+        return bkDate.toISOString().split('T')[0] === selectedDate;
+      });
+
+      const ratingBonus = Math.min(10, ((barber.rating || 4.5) - 4) * 10);
+      const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
+
+      if (waitTime < min) {
+        min = waitTime;
         best = barber;
       }
     }
     return best;
-  }, [stylists, selectedDate, selectedTime]);
+  }, [stylists, selectedDate, selectedTime, mockBookings]);
 
   const handleBooking = async () => {
     if (!selectedService || !selectedDate || !selectedTime) {
       alert('请填写完整预约信息');
       return;
     }
-    let target = selectionMode === 'specific'
+    if (!currentCustomer) {
+      alert('请先登录顾客账号');
+      navigate('/customer/login');
+      return;
+    }
+    const target = selectionMode === 'specific'
       ? stylists.find((e) => e.id === selectedBarberId)
       : fastest;
     if (!target) {
@@ -166,7 +183,7 @@ const Booking: React.FC = () => {
       return;
     }
     setBooking(true);
-    
+
     // 构建预约时间
     const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
     console.log('🔍 传给后端的 scheduledTime:', {
@@ -176,19 +193,18 @@ const Booking: React.FC = () => {
       scheduledTimeISO: scheduledTime.toISOString(),
       isValid: !isNaN(scheduledTime.getTime())
     });
-    const service = shop?.services.find((s) => s.id === selectedService);
-    
+
     try {
       // 调用后端API创建预约
       const newBooking = await bookingApi.createBooking({
         shopId: shop?.id || 'shop1',
-        customerId: 'cust1', // 实际应从登录状态获取
+        customerId: currentCustomer.id,
         serviceId: selectedService,
         scheduledTime: scheduledTime.toISOString(), // 明确转换为 ISO 字符串
         barberId: target.id,
         barberName: target.name,
         notes,
-      } as any);
+      });
       
       // 使用真实的预约ID跳转
       navigate(`/customer/queue/${newBooking.id}`);

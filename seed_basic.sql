@@ -105,22 +105,7 @@ on conflict (id) do update set
   stored_value_level = excluded.stored_value_level,
   stored_value_balance = excluded.stored_value_balance,
   stored_value_expires_at = excluded.stored_value_expires_at,
-  withdrawable_referral_amount = excluded.withdrawable_referral_amount,
-  wechat = excluded.wechat,
-  id_card_number = excluded.id_card_number,
-  hobbies = excluded.hobbies,
-  is_referred = excluded.is_referred,
-  referrer_name = excluded.referrer_name,
-  referrer_phone = excluded.referrer_phone,
-  referral_consumption = excluded.referral_consumption,
-  shared_fund = excluded.shared_fund,
-  total_shared_fund = excluded.total_shared_fund,
-  withdrawable_amount = excluded.withdrawable_amount,
-  has_booking = excluded.has_booking,
-  last_service_items = excluded.last_service_items,
-  is_member = excluded.is_member,
-  has_recharged = excluded.has_recharged,
-  recharge_level = excluded.recharge_level;
+  withdrawable_referral_amount = excluded.withdrawable_referral_amount;
 
 -- 验证数据是否插入成功
 select 'shops' as table_name, count(*) as rows from shops

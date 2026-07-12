@@ -1,9 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { mockReviews, mockShopReviews, mockStylistReviews } from '../_internal/mockData.js';
+import { mockReviews } from '../_internal/mockData.js';
 
 const router = Router();
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // ==================== 评价管理 API ====================
 
@@ -22,34 +20,39 @@ router.get('/', (req: Request, res: Response) => {
 
   let reviews = [...mockReviews];
 
-  // 店铺筛�?  if (shopId) {
+  // 店铺筛选
+  if (shopId) {
     reviews = reviews.filter((r) => r.shopId === shopId);
   }
 
-  // 发型师筛�?  if (stylistId) {
+  // 发型师筛选
+  if (stylistId) {
     reviews = reviews.filter((r) => r.stylistId === stylistId);
   }
 
-  // 客户筛�?  if (customerId) {
+  // 客户筛选
+  if (customerId) {
     reviews = reviews.filter((r) => r.customerId === customerId);
   }
 
-  // 评分筛�?  if (rating) {
+  // 评分筛选
+  if (rating) {
     const ratingNum = parseInt(rating as string, 10);
     reviews = reviews.filter((r) => Math.floor(r.overallScore) === ratingNum);
   }
 
-  // 是否有回�?  if (hasReply === 'true') {
-    reviews = reviews.filter((r) => (r as any).reply);
+  // 是否有回复
+  if (hasReply === 'true') {
+    reviews = reviews.filter((r) => (r as unknown).reply);
   } else if (hasReply === 'false') {
-    reviews = reviews.filter((r) => !(r as any).reply);
+    reviews = reviews.filter((r) => !(r as unknown).reply);
   }
 
   // 是否隐藏
   if (isHidden === 'true') {
-    reviews = reviews.filter((r) => (r as any).isHidden);
+    reviews = reviews.filter((r) => (r as unknown).isHidden);
   } else if (isHidden === 'false') {
-    reviews = reviews.filter((r) => !(r as any).isHidden);
+    reviews = reviews.filter((r) => !(r as unknown).isHidden);
   }
 
   // 按创建时间倒序
@@ -80,7 +83,7 @@ router.get('/:id', (req: Request, res: Response) => {
   const review = mockReviews.find((r) => r.id === id);
 
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存�? });
+    return res.status(404).json({ success: false, error: '评价不存在' });
   }
 
   res.json({ success: true, data: review });
@@ -93,7 +96,7 @@ router.post('/:id/reply', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存�? });
+    return res.status(404).json({ success: false, error: '评价不存在' });
   }
 
   if (!content || content.trim() === '') {
@@ -101,11 +104,11 @@ router.post('/:id/reply', (req: Request, res: Response) => {
   }
 
   // 检查是否已回复
-  if ((review as any).reply) {
+  if ((review as unknown).reply) {
     return res.status(400).json({ success: false, error: '该评价已回复' });
   }
 
-  (review as any).reply = {
+  (review as unknown).reply = {
     content,
     repliedBy,
     repliedByName,
@@ -116,7 +119,7 @@ router.post('/:id/reply', (req: Request, res: Response) => {
     success: true,
     data: {
       id: review.id,
-      reply: (review as any).reply,
+      reply: (review as unknown).reply,
     },
   });
 });
@@ -128,25 +131,25 @@ router.put('/:id/reply', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存�? });
+    return res.status(404).json({ success: false, error: '评价不存在' });
   }
 
-  if (!(review as any).reply) {
-    return res.status(400).json({ success: false, error: '该评价尚未回�? });
+  if (!(review as unknown).reply) {
+    return res.status(400).json({ success: false, error: '该评价尚未回复' });
   }
 
   if (!content || content.trim() === '') {
     return res.status(400).json({ success: false, error: '回复内容不能为空' });
   }
 
-  (review as any).reply.content = content;
-  (review as any).reply.updatedAt = new Date();
+  (review as unknown).reply.content = content;
+  (review as unknown).reply.updatedAt = new Date();
 
   res.json({
     success: true,
     data: {
       id: review.id,
-      reply: (review as any).reply,
+      reply: (review as unknown).reply,
     },
   });
 });
@@ -157,20 +160,20 @@ router.delete('/:id/reply', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存�? });
+    return res.status(404).json({ success: false, error: '评价不存在' });
   }
 
-  if (!(review as any).reply) {
-    return res.status(400).json({ success: false, error: '该评价尚未回�? });
+  if (!(review as unknown).reply) {
+    return res.status(400).json({ success: false, error: '该评价尚未回复' });
   }
 
-  delete (review as any).reply;
+  delete (review as unknown).reply;
 
   res.json({
     success: true,
     data: {
       id: review.id,
-      message: '回复已删�?,
+      message: '回复已删除',
     },
   });
 });
@@ -182,18 +185,18 @@ router.post('/:id/hide', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存�? });
+    return res.status(404).json({ success: false, error: '评价不存在' });
   }
 
-  if ((review as any).isHidden) {
+  if ((review as unknown).isHidden) {
     return res.status(400).json({ success: false, error: '该评价已隐藏' });
   }
 
-  (review as any).isHidden = true;
-  (review as any).hiddenReason = reason;
-  (review as any).hiddenBy = hiddenBy;
-  (review as any).hiddenByName = hiddenByName;
-  (review as any).hiddenAt = new Date();
+  (review as unknown).isHidden = true;
+  (review as unknown).hiddenReason = reason;
+  (review as unknown).hiddenBy = hiddenBy;
+  (review as unknown).hiddenByName = hiddenByName;
+  (review as unknown).hiddenAt = new Date();
 
   res.json({
     success: true,
@@ -201,7 +204,7 @@ router.post('/:id/hide', (req: Request, res: Response) => {
       id: review.id,
       isHidden: true,
       hiddenReason: reason,
-      hiddenAt: (review as any).hiddenAt,
+      hiddenAt: (review as unknown).hiddenAt,
     },
   });
 });
@@ -212,25 +215,25 @@ router.post('/:id/show', (req: Request, res: Response) => {
 
   const review = mockReviews.find((r) => r.id === id);
   if (!review) {
-    return res.status(404).json({ success: false, error: '评价不存�? });
+    return res.status(404).json({ success: false, error: '评价不存在' });
   }
 
-  if (!(review as any).isHidden) {
+  if (!(review as unknown).isHidden) {
     return res.status(400).json({ success: false, error: '该评价未隐藏' });
   }
 
-  (review as any).isHidden = false;
-  delete (review as any).hiddenReason;
-  delete (review as any).hiddenBy;
-  delete (review as any).hiddenByName;
-  delete (review as any).hiddenAt;
+  (review as unknown).isHidden = false;
+  delete (review as unknown).hiddenReason;
+  delete (review as unknown).hiddenBy;
+  delete (review as unknown).hiddenByName;
+  delete (review as unknown).hiddenAt;
 
   res.json({
     success: true,
     data: {
       id: review.id,
       isHidden: false,
-      message: '评价已显�?,
+      message: '评价已显示',
     },
   });
 });
@@ -265,9 +268,9 @@ router.get('/stats/summary', (req: Request, res: Response) => {
     total,
     avgRating,
     ratingDistribution,
-    withReply: reviews.filter((r) => (r as any).reply).length,
-    withoutReply: reviews.filter((r) => !(r as any).reply).length,
-    hidden: reviews.filter((r) => (r as any).isHidden).length,
+    withReply: reviews.filter((r) => (r as unknown).reply).length,
+    withoutReply: reviews.filter((r) => !(r as unknown).reply).length,
+    hidden: reviews.filter((r) => (r as unknown).isHidden).length,
     avgServiceScore: total > 0 
       ? parseFloat((reviews.reduce((sum, r) => sum + r.serviceScore, 0) / total).toFixed(1))
       : 0,
@@ -311,7 +314,8 @@ router.get('/shop/:shopId', (req: Request, res: Response) => {
   });
 });
 
-// 获取发型师评价列�?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
+// 获取发型师评价列表
+router.get('/stylist/:stylistId', (req: Request, res: Response) => {
   const { stylistId } = req.params;
   const { rating, page = '1', pageSize = '20' } = req.query;
 

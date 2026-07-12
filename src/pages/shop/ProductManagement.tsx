@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  ArrowLeft, 
-  Plus, 
+  
+  
   Edit, 
   Trash2, 
   Eye, 
   EyeOff, 
   Save,
   Package,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory } from '../../../shared/types';
+import { productApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const categoryNames: Record<ProductCategory, string> = {
@@ -24,7 +26,9 @@ const categoryNames: Record<ProductCategory, string> = {
 
 const ProductManagement: React.FC = () => {
   const { currentShop } = useAppStore();
-  const [products, setProducts] = useState<Product[]>(currentShop?.products || []);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<Partial<Product>>({
@@ -39,6 +43,37 @@ const ProductManagement: React.FC = () => {
     isActive: true,
     tags: [],
   });
+
+  const shopId = currentShop?.id || '';
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      if (!shopId) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await productApi.getByShop(shopId);
+        if (Array.isArray(data)) {
+          setProducts(data.map((p: unknown) => {
+            const item = p as Partial<Product>;
+            return {
+              ...item,
+              createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+              updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date(),
+            } as Product;
+          }));
+        }
+      } catch (err: unknown) {
+        console.error('[ProductManagement] 获取商品失败:', err);
+        alert('获取商品失败：' + (err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, [shopId]);
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
@@ -63,65 +98,110 @@ const ProductManagement: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || !formData.category || formData.price === undefined) {
       alert('请填写完整信息');
       return;
     }
-
-    if (editingProduct) {
-      // 编辑现有商品
-      setProducts(products.map(p => 
-        p.id === editingProduct.id 
-          ? { ...p, ...formData, updatedAt: new Date() } as Product
-          : p
-      ));
-    } else {
-      // 添加新商品
-      const newProduct: Product = {
-        id: Date.now().toString(),
-        shopId: currentShop?.id || '',
-        name: formData.name!,
-        category: formData.category as ProductCategory,
-        price: formData.price!,
-        originalPrice: formData.originalPrice,
-        description: formData.description || '',
-        images: formData.images || ['https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'],
-        stock: formData.stock || 0,
-        sales: formData.sales || 0,
-        isActive: formData.isActive ?? true,
-        rating: 5,
-        reviewCount: 0,
-        tags: formData.tags || [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setProducts([...products, newProduct]);
+    if (!shopId) {
+      alert('未选择店铺');
+      return;
     }
 
-    setShowModal(false);
-    setEditingProduct(null);
-  };
-
-  const handleDelete = (productId: string) => {
-    if (confirm('确定要删除这个商品吗？')) {
-      setProducts(products.filter(p => p.id !== productId));
+    setSaving(true);
+    try {
+      if (editingProduct) {
+        const updated = await productApi.update(shopId, editingProduct.id, formData);
+        if (updated) {
+          setProducts(products.map(p => 
+            p.id === editingProduct.id 
+              ? { ...p, ...updated, updatedAt: new Date(updated.updatedAt || Date.now()) } as Product
+              : p
+          ));
+        }
+      } else {
+        const newProduct = await productApi.create(shopId, {
+          name: formData.name,
+          category: formData.category,
+          price: formData.price,
+          originalPrice: formData.originalPrice,
+          description: formData.description,
+          images: formData.images || ['https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'],
+          stock: formData.stock || 0,
+          sales: formData.sales || 0,
+          isActive: formData.isActive ?? true,
+          rating: 5,
+          reviewCount: 0,
+          tags: formData.tags || [],
+        });
+        if (newProduct) {
+          setProducts([...products, {
+            ...newProduct,
+            createdAt: new Date(newProduct.createdAt || Date.now()),
+            updatedAt: new Date(newProduct.updatedAt || Date.now()),
+          }]);
+        }
+      }
+      setShowModal(false);
+      setEditingProduct(null);
+    } catch (err: unknown) {
+      console.error('[ProductManagement] 保存商品失败:', err);
+      alert('保存失败：' + (err as Error).message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const toggleStatus = (productId: string) => {
-    setProducts(products.map(p => 
-      p.id === productId 
-        ? { ...p, isActive: !p.isActive }
-        : p
-    ));
+  const handleDelete = async (productId: string) => {
+    if (!confirm('确定要删除这个商品吗？')) return;
+    if (!shopId) return;
+    try {
+      const ok = await productApi.delete(shopId, productId);
+      if (ok) {
+        setProducts(products.filter(p => p.id !== productId));
+      } else {
+        alert('删除失败');
+      }
+    } catch (err: unknown) {
+      console.error('[ProductManagement] 删除商品失败:', err);
+      alert('删除失败：' + (err as Error).message);
+    }
+  };
+
+  const toggleStatus = async (productId: string) => {
+    if (!shopId) return;
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    const nextIsActive = !product.isActive;
+    try {
+      const updated = await productApi.update(shopId, productId, { isActive: nextIsActive });
+      if (updated) {
+        setProducts(products.map(p => 
+          p.id === productId 
+            ? { ...p, isActive: nextIsActive, updatedAt: new Date(updated.updatedAt || Date.now()) }
+            : p
+        ));
+      }
+    } catch (err: unknown) {
+      console.error('[ProductManagement] 切换商品状态失败:', err);
+      alert('操作失败：' + (err as Error).message);
+    }
   };
 
   return (
     <ShopLayout title="商品管理">
       <div className="min-h-screen bg-gray-50">
-        {/* 统计卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {loading && (
+          <div className="flex items-center justify-center h-64 text-gray-500">
+            <Loader2 size={32} className="animate-spin mr-2" />
+            加载中...
+          </div>
+        )}
+
+        {!loading && (
+          <>
+            {/* 统计卡片 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
@@ -275,7 +355,9 @@ const ProductManagement: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
+      </>
+    )}
+  </div>
 
       {/* 添加/编辑商品弹窗 */}
       {showModal && (
@@ -420,10 +502,11 @@ const ProductManagement: React.FC = () => {
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
+                disabled={saving}
+                className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <Save size={18} />
-                保存
+                {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {saving ? '保存中...' : '保存'}
               </button>
             </div>
           </div>

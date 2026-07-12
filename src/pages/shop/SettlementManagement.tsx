@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import {
   CreditCard,
   Wallet,
@@ -10,7 +10,6 @@ import {
   Eye,
   Calendar,
   DollarSign,
-  CheckCircle,
   XCircle,
   Clock,
   User,
@@ -39,8 +38,6 @@ const SettlementManagement: React.FC = () => {
   const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
   const [newAmount, setNewAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  const navigate = useNavigate();
   const { currentShop, currentEmployee } = useAppStore();
 
   // 加载结算记录和客户列表
@@ -56,13 +53,16 @@ const SettlementManagement: React.FC = () => {
           customerApi.getAll(),
         ]);
         if (cancelled) return;
-        setSettlements((settlementList || []).map((s: any) => ({
-          ...s,
-          createdAt: s.createdAt || s.created_at,
-        })) as Settlement[]);
+        setSettlements((settlementList || []).map((s: unknown) => {
+          const item = s as Partial<Settlement> & { created_at?: string | Date };
+          return {
+            ...item,
+            createdAt: item.createdAt || item.created_at,
+          } as Settlement;
+        }));
         setCustomers(customerList || []);
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || '加载数据失败');
+      } catch (err: unknown) {
+        if (!cancelled) setError((err as Error).message || '加载数据失败');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -481,7 +481,7 @@ const SettlementManagement: React.FC = () => {
                           ? 'bg-green-500 text-white'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
-                      onClick={() => setNewPaymentMethod(method.value as any)}
+                      onClick={() => setNewPaymentMethod(method.value as 'cash' | 'wechat' | 'alipay' | 'card' | 'balance')}
                     >
                       {method.label}
                     </button>
@@ -530,7 +530,15 @@ const SettlementManagement: React.FC = () => {
                         total: amount,
                       }],
                       subtotal: amount,
-                      discountDetail: {},
+                      discountDetail: {
+                        purchaseVIPDiscount: 1,
+                        storedValueDiscount: 1,
+                        finalDiscount: 1,
+                        purchaseVIPDiscountAmount: 0,
+                        storedValueDiscountAmount: 0,
+                        benefitDiscountAmount: 0,
+                        discount: 0,
+                      },
                       discount: 0,
                       tax: 0,
                       total: amount,
@@ -540,16 +548,19 @@ const SettlementManagement: React.FC = () => {
                     });
                     // 刷新列表
                     const list = await settlementApi.getByShop(currentShop?.id || 'shop1');
-                    setSettlements((list || []).map((s: any) => ({
-                      ...s,
-                      createdAt: s.createdAt || s.created_at,
-                    })) as Settlement[]);
+                    setSettlements((list || []).map((s: unknown) => {
+                      const item = s as Partial<Settlement> & { created_at?: string | Date };
+                      return {
+                        ...item,
+                        createdAt: item.createdAt || item.created_at,
+                      } as Settlement;
+                    }));
                     setShowAddModal(false);
                     setNewCustomerId('');
                     setNewAmount('');
                     setNewPaymentMethod('cash');
-                  } catch (err: any) {
-                    alert(err.message || '创建结算失败');
+                  } catch (err: unknown) {
+                    alert((err as Error).message || '创建结算失败');
                   } finally {
                     setSubmitting(false);
                   }

@@ -1,25 +1,55 @@
-import React, { useState, useMemo } from 'react';
-import { Download, BarChart3, TrendingUp, Users, Calendar, FileSpreadsheet } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Download, BarChart3, TrendingUp, Users, Calendar, FileSpreadsheet, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ShopLayout from './ShopLayout';
 import { useAppStore } from '../../store';
-import { getMockFinancialReport, mockBookings } from '../../../shared/mockData';
-import { FinancialReport } from '../../../shared/types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { FinancialReport, Booking, Settlement } from '../../../shared/types';
+import { financialApi, bookingApi, settlementApi } from '../../api';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 const DEFAULT_SHOP_ID = 'shop1';
 
 const FinancialReportPage: React.FC = () => {
   const { currentShop } = useAppStore();
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
+  const [report, setReport] = useState<FinancialReport | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // 直接同步计算 report，不依赖 useEffect 异步初始化
-  // 用 currentShop?.id（如果存在）或 DEFAULT_SHOP_ID 作为兜底
   const shopId = currentShop?.id || DEFAULT_SHOP_ID;
-  const report: FinancialReport = useMemo(
-    () => getMockFinancialReport(shopId),
-    [shopId]
-  );
+
+  useEffect(() => {
+    const fetchReport = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [reportData, bookingsData, settlementsData] = await Promise.all([
+          financialApi.getReport(shopId),
+          bookingApi.getBookingsByShop(shopId),
+          settlementApi.getByShop(shopId),
+        ]);
+        if (reportData) {
+          setReport(reportData);
+        } else {
+          setError('暂无财务数据');
+        }
+        if (Array.isArray(bookingsData)) {
+          setBookings(bookingsData);
+        }
+        if (Array.isArray(settlementsData)) {
+          setSettlements(settlementsData);
+        }
+      } catch (err: unknown) {
+        console.error('[FinancialReport] 获取财务报表失败:', err);
+        setError(err instanceof Error ? (err as Error).message : '获取财务数据失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
+  }, [shopId]);
 
   // 趋势图数据（随时间范围切换横坐标）
   const chartData = useMemo(() => {
@@ -76,7 +106,29 @@ const FinancialReportPage: React.FC = () => {
       ? '本季度营收趋势（按月）'
       : '本年营收趋势（按月）';
 
+  if (loading) {
+    return (
+      <ShopLayout title="财务报表">
+        <div className="flex items-center justify-center h-64 text-gray-500">
+          <Loader2 size={32} className="animate-spin mr-2" />
+          加载中...
+        </div>
+      </ShopLayout>
+    );
+  }
+
+  if (error || !report) {
+    return (
+      <ShopLayout title="财务报表">
+        <div className="max-w-6xl mx-auto px-4 py-6 text-center text-gray-500">
+          {error || '暂无财务数据'}
+        </div>
+      </ShopLayout>
+    );
+  }
+
   const exportToExcel = () => {
+    if (!report) return;
     const shopName = currentShop?.name || '店铺';
     const data = [
       ['财务报表', shopName],
@@ -119,18 +171,20 @@ const FinancialReportPage: React.FC = () => {
     const bookingsData = [
       ['预约记录'],
       ['时间', '顾客', '服务', '发型师', '金额', '状态'],
-      ...mockBookings
+      ...bookings
         .filter((b) => b.shopId === shopId)
         .map((booking) => [
           new Date(booking.scheduledTime).toLocaleString('zh-CN'),
-          booking.customerName,
-          booking.serviceName,
-          booking.barberName || '随机',
-          booking.price,
+          booking.customerName || '顾客',
+          booking.serviceName || '服务',
+          booking.barberName || booking.stylistName || '随机',
+          booking.price || 0,
           booking.status === 'confirmed'
             ? '已确认'
             : booking.status === 'completed'
             ? '已完成'
+            : booking.status === 'cancelled'
+            ? '已取消'
             : '待确认',
         ]),
     ];
@@ -330,46 +384,52 @@ const FinancialReportPage: React.FC = () => {
               <thead>
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">日期</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">顾客</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">项目</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">类型</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">支付方式</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-600">金额</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {[...Array(5)].map((_, i) => {
-                  const isIncome = Math.random() > 0.2;
-                  return (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="py-3 px-4 text-sm text-gray-600">
-                        {new Date(Date.now() - i * 86400000).toLocaleDateString('zh-CN')}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-800">
-                        {isIncome ? '精剪服务' : '店铺租金'}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            isIncome
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}
-                        >
-                          {isIncome ? '收入' : '支出'}
-                        </span>
-                      </td>
-                      <td
-                        className={`py-3 px-4 text-sm text-right font-medium ${
-                          isIncome ? 'text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {isIncome ? '+' : '-'}¥
-                        {isIncome
-                          ? Math.floor(Math.random() * 300 + 50)
-                          : Math.floor(Math.random() * 5000 + 1000)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {settlements.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-sm text-gray-400">
+                      暂无收支明细
+                    </td>
+                  </tr>
+                ) : (
+                  settlements
+                    .filter((s) => s.shopId === shopId && s.paymentStatus === 'completed')
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    .slice(0, 20)
+                    .map((s) => {
+                      const itemNames = s.items.map((i) => i.name).join('、') || '服务/商品';
+                      const paymentLabel: Record<string, string> = {
+                        cash: '现金',
+                        wechat: '微信',
+                        alipay: '支付宝',
+                        card: '银行卡',
+                        balance: '储值余额',
+                      };
+                      return (
+                        <tr key={s.id} className="hover:bg-gray-50">
+                          <td className="py-3 px-4 text-sm text-gray-600">
+                            {new Date(s.createdAt).toLocaleString('zh-CN')}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-800">{s.customerName || '顾客'}</td>
+                          <td className="py-3 px-4 text-sm text-gray-800">{itemNames}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              {paymentLabel[s.paymentMethod] || s.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-right font-medium text-green-600">
+                            +¥{s.total.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })
+                )}
               </tbody>
             </table>
           </div>

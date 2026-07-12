@@ -1,34 +1,103 @@
-import React, { useState } from 'react';
-import { Clock, CheckCircle, XCircle, DollarSign, MessageSquare, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Clock, CheckCircle, XCircle, DollarSign, MessageSquare, AlertTriangle, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { mockRefundRequests } from '../../../shared/mockData';
 import { RefundStatus, RefundRequest } from '../../../shared/types';
+import { refundApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const RefundManagement: React.FC = () => {
   const { currentShop } = useAppStore();
+  const [refunds, setRefunds] = useState<RefundRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [selectedRefund, setSelectedRefund] = useState<RefundRequest | null>(null);
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [processAction, setProcessAction] = useState<'approve' | 'reject'>('approve');
   const [rejectReason, setRejectReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'original' | 'balance' | 'bank'>('original');
 
-  // 获取店铺的退款申请
-  const shopRefunds = mockRefundRequests.filter(r => r.shopId === currentShop?.id);
-  const pendingRefunds = shopRefunds.filter(r => r.status === RefundStatus.PENDING);
-  const processedRefunds = shopRefunds.filter(r => r.status !== RefundStatus.PENDING);
+  // 加载店铺退款申请
+  const fetchRefunds = async () => {
+    if (!currentShop?.id) return;
+    setLoading(true);
+    try {
+      const data = await refundApi.getByShop(currentShop.id);
+      if (Array.isArray(data)) {
+        setRefunds(
+          data.map((r: unknown) => {
+            const item = r as Partial<RefundRequest>;
+            return {
+              ...item,
+              createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+              processedAt: item.processedAt ? new Date(item.processedAt) : undefined,
+            } as RefundRequest;
+          })
+        );
+      }
+    } catch (err: unknown) {
+      console.error('[RefundManagement] 获取退款申请失败:', (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRefunds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentShop?.id]);
+
+  const shopRefunds = refunds.filter((r) => r.shopId === currentShop?.id);
+  const pendingRefunds = shopRefunds.filter((r) => r.status === RefundStatus.PENDING);
+  const processedRefunds = shopRefunds.filter((r) => r.status !== RefundStatus.PENDING);
 
   const handleProcess = (refund: RefundRequest, action: 'approve' | 'reject') => {
     setSelectedRefund(refund);
     setProcessAction(action);
+    setRefundMethod('original');
+    setRejectReason('');
     setShowProcessModal(true);
   };
 
-  const confirmProcess = () => {
-    // 模拟处理退款
-    setShowProcessModal(false);
-    setSelectedRefund(null);
-    setRejectReason('');
+  const confirmProcess = async () => {
+    if (!selectedRefund) return;
+    setProcessing(true);
+    try {
+      const status = processAction === 'approve' ? RefundStatus.APPROVED : RefundStatus.REJECTED;
+      const payload: { rejectReason?: string; refundMethod?: string } = {};
+      if (processAction === 'approve') {
+        payload.refundMethod = refundMethod;
+      } else {
+        payload.rejectReason = rejectReason;
+      }
+
+      const result = await refundApi.updateStatus(selectedRefund.id, status, payload);
+      if (result) {
+        setRefunds(
+          refunds.map((r) =>
+            r.id === selectedRefund.id
+              ? {
+                  ...r,
+                  status: result.status || status,
+                  refundMethod: result.refundMethod || refundMethod,
+                  rejectReason: result.rejectReason || rejectReason,
+                  processedBy: result.processedBy,
+                  processedAt: result.processedAt ? new Date(result.processedAt) : new Date(),
+                }
+              : r
+          )
+        );
+      } else {
+        alert('处理退款失败，请重试');
+      }
+    } catch (err: unknown) {
+      console.error('[RefundManagement] 处理退款失败:', (err as Error).message);
+      alert('处理退款失败：' + (err as Error).message);
+    } finally {
+      setProcessing(false);
+      setShowProcessModal(false);
+      setSelectedRefund(null);
+      setRejectReason('');
+    }
   };
 
   const getStatusBadge = (status: RefundStatus) => {
@@ -78,132 +147,138 @@ const RefundManagement: React.FC = () => {
           </div>
         </div>
 
-        {/* 待处理退款 */}
-        {pendingRefunds.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <AlertTriangle size={20} className="text-orange-500" />
-              待处理退款申请
-            </h2>
-            <div className="space-y-4">
-              {pendingRefunds.map(refund => {
-                const statusConfig = getStatusBadge(refund.status);
-                const StatusIcon = statusConfig.icon;
-                
-                return (
-                  <div
-                    key={refund.id}
-                    className={`border-l-4 ${getPriorityColor(refund.createdAt)} border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow`}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="font-medium text-gray-800">{refund.customerName}</div>
-                        <div className="text-sm text-gray-500">
-                          申请时间：{new Date(refund.createdAt).toLocaleString('zh-CN')}
-                        </div>
-                      </div>
-                      <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${statusConfig.color}`}>
-                        <StatusIcon size={16} />
-                        {statusConfig.text}
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-sm text-gray-600">退款金额</div>
-                          <div className="text-2xl font-bold text-orange-500">¥{refund.amount}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm text-gray-600">预约服务</div>
-                          <div className="font-medium text-gray-800">精剪服务</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-red-50 rounded-lg p-3 mb-4">
-                      <div className="text-sm font-medium text-red-800 mb-1">退款原因</div>
-                      <div className="text-sm text-red-700">{refund.reason}</div>
-                    </div>
-                    
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => handleProcess(refund, 'approve')}
-                        className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle size={18} />
-                        批准退款
-                      </button>
-                      <button
-                        onClick={() => handleProcess(refund, 'reject')}
-                        className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                      >
-                        <XCircle size={18} />
-                        拒绝退款
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+        {loading ? (
+          <div className="text-center text-gray-500 py-12">
+            <Loader2 size={48} className="mx-auto mb-2 opacity-50 animate-spin" />
+            <p>加载中...</p>
           </div>
-        )}
+        ) : (
+          <>
+            {/* 待处理退款 */}
+            {pendingRefunds.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm p-6">
+                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-orange-500" />
+                  待处理退款申请
+                </h2>
+                <div className="space-y-4">
+                  {pendingRefunds.map((refund) => {
+                    const statusConfig = getStatusBadge(refund.status);
+                    const StatusIcon = statusConfig.icon;
 
-        {/* 已处理退款 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">已处理退款</h2>
-          
-          {processedRefunds.length > 0 ? (
-            <div className="space-y-4">
-              {processedRefunds.map(refund => {
-                const statusConfig = getStatusBadge(refund.status);
-                const StatusIcon = statusConfig.icon;
-                
-                return (
-                  <div
-                    key={refund.id}
-                    className="border border-gray-200 rounded-xl p-4"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="font-medium text-gray-800">{refund.customerName}</div>
-                        <div className="text-sm text-gray-500">
-                          处理时间：{refund.processedAt && new Date(refund.processedAt).toLocaleString('zh-CN')}
+                    return (
+                      <div
+                        key={refund.id}
+                        className={`border-l-4 ${getPriorityColor(refund.createdAt)} border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow`}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <div className="font-medium text-gray-800">{refund.customerName}</div>
+                            <div className="text-sm text-gray-500">
+                              申请时间：{new Date(refund.createdAt).toLocaleString('zh-CN')}
+                            </div>
+                          </div>
+                          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${statusConfig.color}`}>
+                            <StatusIcon size={16} />
+                            {statusConfig.text}
+                          </div>
+                        </div>
+
+                        <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm text-gray-600">退款金额</div>
+                              <div className="text-2xl font-bold text-orange-500">¥{refund.amount}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm text-gray-600">预约服务</div>
+                              <div className="font-medium text-gray-800">精剪服务</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-red-50 rounded-lg p-3 mb-4">
+                          <div className="text-sm font-medium text-red-800 mb-1">退款原因</div>
+                          <div className="text-sm text-red-700">{refund.reason}</div>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleProcess(refund, 'approve')}
+                            className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                          >
+                            <CheckCircle size={18} />
+                            批准退款
+                          </button>
+                          <button
+                            onClick={() => handleProcess(refund, 'reject')}
+                            className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                          >
+                            <XCircle size={18} />
+                            拒绝退款
+                          </button>
                         </div>
                       </div>
-                      <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${statusConfig.color}`}>
-                        <StatusIcon size={16} />
-                        {statusConfig.text}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 已处理退款 */}
+            <div className="bg-white rounded-2xl shadow-sm p-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">已处理退款</h2>
+
+              {processedRefunds.length > 0 ? (
+                <div className="space-y-4">
+                  {processedRefunds.map((refund) => {
+                    const statusConfig = getStatusBadge(refund.status);
+                    const StatusIcon = statusConfig.icon;
+
+                    return (
+                      <div key={refund.id} className="border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <div className="font-medium text-gray-800">{refund.customerName}</div>
+                            <div className="text-sm text-gray-500">
+                              处理时间：{refund.processedAt && new Date(refund.processedAt).toLocaleString('zh-CN')}
+                            </div>
+                          </div>
+                          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${statusConfig.color}`}>
+                            <StatusIcon size={16} />
+                            {statusConfig.text}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-sm">
+                          <div>
+                            <span className="text-gray-500">退款金额：</span>
+                            <span className="font-bold text-orange-500">¥{refund.amount}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">处理人：</span>
+                            <span className="text-gray-800">{refund.processedBy}</span>
+                          </div>
+                        </div>
+
+                        {refund.rejectReason && (
+                          <div className="mt-2 text-sm text-red-600">
+                            拒绝原因：{refund.rejectReason}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <div>
-                        <span className="text-gray-500">退款金额：</span>
-                        <span className="font-bold text-orange-500">¥{refund.amount}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">处理人：</span>
-                        <span className="text-gray-800">{refund.processedBy}</span>
-                      </div>
-                    </div>
-                    
-                    {refund.rejectReason && (
-                      <div className="mt-2 text-sm text-red-600">
-                        拒绝原因：{refund.rejectReason}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  <MessageSquare size={48} className="mx-auto mb-2 opacity-50" />
+                  <p>暂无已处理的退款</p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="text-center text-gray-500 py-8">
-              <MessageSquare size={48} className="mx-auto mb-2 opacity-50" />
-              <p>暂无已处理的退款</p>
-            </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* 处理退款弹窗 */}
@@ -213,7 +288,7 @@ const RefundManagement: React.FC = () => {
             <h3 className="text-lg font-bold text-gray-800 mb-4">
               {processAction === 'approve' ? '批准退款' : '拒绝退款'}
             </h3>
-            
+
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
               <div className="flex justify-between mb-2">
                 <span className="text-gray-600">顾客</span>
@@ -232,7 +307,7 @@ const RefundManagement: React.FC = () => {
                 </label>
                 <select
                   value={refundMethod}
-                  onChange={(e) => setRefundMethod(e.target.value as any)}
+                  onChange={(e) => setRefundMethod(e.target.value as 'original' | 'balance' | 'bank')}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                 >
                   <option value="original">原路退回</option>
@@ -258,18 +333,21 @@ const RefundManagement: React.FC = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowProcessModal(false)}
-                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                disabled={processing}
+                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 取消
               </button>
               <button
                 onClick={confirmProcess}
-                className={`flex-1 py-3 text-white rounded-xl font-medium transition-colors ${
-                  processAction === 'approve' 
-                    ? 'bg-green-500 hover:bg-green-600' 
+                disabled={processing || (processAction === 'reject' && !rejectReason)}
+                className={`flex-1 py-3 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${
+                  processAction === 'approve'
+                    ? 'bg-green-500 hover:bg-green-600'
                     : 'bg-red-500 hover:bg-red-600'
-                }`}
+                } disabled:opacity-50`}
               >
+                {processing && <Loader2 size={18} className="animate-spin" />}
                 确认{processAction === 'approve' ? '批准' : '拒绝'}
               </button>
             </div>

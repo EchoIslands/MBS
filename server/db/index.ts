@@ -140,7 +140,7 @@ interface ShopRow {
   is_active: boolean;
   avatar: string;
   images: string[];
-  services: any[];
+  services: unknown[];
   created_at: string;
   updated_at: string;
 }
@@ -148,9 +148,9 @@ interface ShopRow {
 // 使用全局变量确保单例
 declare global {
   var __shops: Map<string, ShopRow> | undefined;
-  var __reviews: Map<string, any> | undefined;
-  var __queues: Map<string, any> | undefined;
-  var __employees: Map<string, any> | undefined;
+  var __reviews: Map<string, unknown> | undefined;
+  var __queues: Map<string, unknown> | undefined;
+  var __employees: Map<string, unknown> | undefined;
 }
 
 if (!global.__shops) {
@@ -190,31 +190,31 @@ export const shopQueries = {
 };
 
 export const reviewQueries = {
-  async listByShop(shopId: string): Promise<any[]> {
-    return Array.from(global.__reviews!.values()).filter((r: any) => r.shop_id === shopId);
+  async listByShop(shopId: string): Promise<unknown[]> {
+    return Array.from(global.__reviews!.values()).filter((r: unknown) => r.shop_id === shopId);
   },
 
-  async listByStylist(stylistId: string): Promise<any[]> {
-    return Array.from(global.__reviews!.values()).filter((r: any) => r.stylist_id === stylistId);
+  async listByStylist(stylistId: string): Promise<unknown[]> {
+    return Array.from(global.__reviews!.values()).filter((r: unknown) => r.stylist_id === stylistId);
   },
 
-  async create(data: any): Promise<any> {
+  async create(data: unknown): Promise<unknown> {
     global.__reviews!.set(data.id, data);
     return data;
   },
 };
 
 export const queueQueries = {
-  async getByShop(shopId: string): Promise<any | null> {
+  async getByShop(shopId: string): Promise<unknown | null> {
     return global.__queues!.get(shopId) || null;
   },
 
-  async createOrUpdate(shopId: string, data: any): Promise<any> {
+  async createOrUpdate(shopId: string, data: unknown): Promise<unknown> {
     global.__queues!.set(shopId, data);
     return data;
   },
 
-  async upsert(data: any): Promise<any> {
+  async upsert(data: unknown): Promise<unknown> {
     if (data.shop_id) {
       global.__queues!.set(data.shop_id, data);
     }
@@ -223,16 +223,16 @@ export const queueQueries = {
 };
 
 export const employeeQueries = {
-  async getByPhone(phone: string): Promise<any | null> {
+  async getByPhone(phone: string): Promise<unknown | null> {
     for (const [, emp] of global.__employees!) {
       if (emp.phone === phone) return emp;
     }
     return null;
   },
 
-  async listByShop(shopId: string): Promise<any[]> {
+  async listByShop(shopId: string): Promise<unknown[]> {
     return Array.from(global.__employees!.values()).filter(
-      (e: any) => e.shop_id === shopId
+      (e: unknown) => e.shop_id === shopId
     );
   },
 };

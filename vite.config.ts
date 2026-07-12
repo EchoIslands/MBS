@@ -32,8 +32,8 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
-        configure: (proxy, _options) => {
-          proxy.on('error', (err, _req, _res) => {
+        configure: (proxy, _) => {
+          proxy.on('error', (err, _, _res) => {
             console.log('proxy error', err);
           });
           proxy.on('proxyReq', (proxyReq, req, _res) => {

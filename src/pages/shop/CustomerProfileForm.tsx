@@ -1,29 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  UserCircle, Check, X, Save, ArrowLeft, Plus, Trash2,
-  Scissors, Palette, Heart, HandCoins, MessageSquare, Clock,
+  UserCircle, Check, X, Save, Plus,
+  Scissors, Palette, Heart, MessageSquare, Clock,
   Star, Wallet, Tag, AlertTriangle, Package, Loader2,
 } from 'lucide-react';
 import {
-  Customer, CustomerProfile, UserRole,
+  Customer, UserRole,
   HaircutStylePreference, HairColorPreference, PermColorPreference, TreatmentPreference,
   HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle,
   ExtraServicePreference, VisitTimePreference
 } from '../../../shared/types';
 import { useAppStore } from '../../store';
-import { getAuthToken } from '../../api';
+import { customerApi } from '../../api';
 import ShopLayout from './ShopLayout';
-
-const API_BASE = '/api';
-
-const authHeaders = (): Record<string, string> => {
-  const token = getAuthToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
 
 const CustomerProfileForm: React.FC = () => {
   const { customerId } = useParams<{ customerId: string }>();
@@ -61,15 +51,12 @@ const CustomerProfileForm: React.FC = () => {
     if (!customerId) return;
     setLoading(true);
     try {
-      // 先获取客户基本信息
-      const customerRes = await fetch(`${API_BASE}/customers/${customerId}`, { headers: authHeaders() });
-      const customerData = await customerRes.json();
-      if (!customerData.success || !customerData.data) {
+      const fetchedCustomer = await customerApi.getById(customerId);
+      if (!fetchedCustomer) {
         setCustomer(null);
         return;
       }
 
-      const fetchedCustomer = customerData.data;
       setCustomer(fetchedCustomer);
 
       // 如果已有画像，回填表单字段
@@ -367,23 +354,34 @@ const CustomerProfileForm: React.FC = () => {
     };
 
     try {
-      const method = customer.profile ? 'PUT' : 'POST';
-      const res = await fetch(`${API_BASE}/customers/${customerId}/profile`, {
-        method,
-        headers: authHeaders(),
-        body: JSON.stringify(profileData),
-      });
-
-      const data = await res.json();
-      if (data.success) {
+      const profilePayload: Partial<Customer['profile']> = {
+        updatedBy: currentEmployee?.id || '',
+        updatedByName: currentEmployee?.name || '技师',
+        haircutStyles,
+        hairColors,
+        permColors,
+        treatments,
+        ...(hairType ? { hairType } : {}),
+        ...(hairLength ? { hairLength } : {}),
+        ...(visitFrequency ? { visitFrequency } : {}),
+        ...(budgetRange ? { budgetRange } : {}),
+        ...(communicationStyle ? { communicationStyle } : {}),
+        extraServices,
+        visitTimes,
+        notes: notes.trim(),
+        allergies: hasAllergies ? allergies.trim() : '无',
+        productsUsed,
+      };
+      const updated = await customerApi.updateProfile(customerId!, profilePayload);
+      if (updated) {
         setShowSuccess(true);
         setTimeout(() => {
           setShowSuccess(false);
           navigate(-1);
         }, 1500);
       } else {
-        console.error('保存失败:', data.error);
-        alert('保存失败: ' + (data.error || '未知错误'));
+        console.error('保存失败: 未返回客户数据');
+        alert('保存失败');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '未知错误';

@@ -15,7 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { ShopReview, StylistReview, Review, UserRole } from '../../../shared/types';
-import { mockShopReviews, mockStylistReviews } from '../../../shared/mockData';
+
 import { useAppStore } from '../../store';
 import { shopApi, reviewApi } from '../../api';
 import ShopLayout from './ShopLayout';
@@ -48,8 +48,8 @@ const ReviewManagement: React.FC = () => {
   const [rawReviews, setRawReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [shopReviews, setShopReviews] = useState<ShopReview[]>(mockShopReviews);
-  const [stylistReviews, setStylistReviews] = useState<StylistReview[]>(mockStylistReviews);
+  const [shopReviews, setShopReviews] = useState<ShopReview[]>([]);
+  const [stylistReviews, setStylistReviews] = useState<StylistReview[]>([]);
 
   // 加载真实评价数据
   const fetchReviews = async () => {
@@ -59,9 +59,9 @@ const ReviewManagement: React.FC = () => {
     try {
       const data = await shopApi.getShopReviews(currentShop.id);
       setRawReviews(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('加载评价失败:', err);
-      setError(err?.message || '加载评价失败');
+      setError((err as Error).message || '加载评价失败');
     } finally {
       setLoading(false);
     }
@@ -69,6 +69,7 @@ const ReviewManagement: React.FC = () => {
 
   useEffect(() => {
     fetchReviews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentShop?.id]);
 
   // 将后端 Review 映射为前端 ShopReview / StylistReview 展示格式
@@ -114,11 +115,6 @@ const ReviewManagement: React.FC = () => {
   });
 
   useEffect(() => {
-    if (rawReviews.length === 0) {
-      setShopReviews(mockShopReviews);
-      setStylistReviews(mockStylistReviews);
-      return;
-    }
     const shop = rawReviews
       .filter((r) => !r.isHidden)
       .map(mapToShopReview);
@@ -126,7 +122,7 @@ const ReviewManagement: React.FC = () => {
       .filter((r) => r.stylistId && !r.isHidden)
       .map(mapToStylistReview);
     setShopReviews(shop);
-    setStylistReviews(stylist.length > 0 ? stylist : mockStylistReviews);
+    setStylistReviews(stylist);
   }, [rawReviews]);
 
   const canReplyReview =
@@ -201,9 +197,9 @@ const ReviewManagement: React.FC = () => {
       );
       setReplyText('');
       setReplyingTo(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('回复评价失败:', err);
-      alert(err?.message || '回复失败，请重试');
+      alert((err as Error).message || '回复失败，请重试');
     }
   };
 
@@ -215,9 +211,9 @@ const ReviewManagement: React.FC = () => {
       setRawReviews((prev) =>
         prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden } : r))
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('隐藏评价失败:', err);
-      alert(err?.message || '操作失败，请重试');
+      alert((err as Error).message || '操作失败，请重试');
     }
   };
 
@@ -229,9 +225,9 @@ const ReviewManagement: React.FC = () => {
       setRawReviews((prev) =>
         prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden } : r))
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('隐藏评价失败:', err);
-      alert(err?.message || '操作失败，请重试');
+      alert((err as Error).message || '操作失败，请重试');
     }
   };
 

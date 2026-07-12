@@ -1,36 +1,23 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Lock, Eye, EyeOff, Phone, Crown, Headphones, UserCheck, User } from 'lucide-react';
-import { loginAsShop, loginAsEmployee, useAppStore } from '../../store';
+import { loginAsEmployee, useAppStore } from '../../store';
+import { UserRole, Employee, Shop } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
-import { UserRole } from '../../../shared/types';
-import { authApi } from '../../api';
+import { authApi, shopApi } from '../../api';
 
 const DEFAULT_SHOP_ID = 'shop1';
 
 // 只保留 4 个登录模式：CEO、客服专员、店长、发型师
 type LoginMode = 'ceo' | 'cs' | 'manager' | 'stylist';
 
-const modeToRole: Record<LoginMode, UserRole> = {
-  ceo: UserRole.CEO,
-  cs: UserRole.CUSTOMER_SERVICE,
-  manager: UserRole.SHOP_MANAGER,
-  stylist: UserRole.STYLIST,
-};
-
 const ShopLogin: React.FC = () => {
-  // 从 mockData 中读取各角色首个员工的手机号作为默认
-  const shopEmployees = mockShops.find((s) => s.id === DEFAULT_SHOP_ID)?.employees || [];
-  const ceoEmp = shopEmployees.find((e) => e.role === UserRole.CEO);
-  const csEmp = shopEmployees.find((e) => e.role === UserRole.CUSTOMER_SERVICE);
-  const mgrEmp = shopEmployees.find((e) => e.role === UserRole.SHOP_MANAGER);
-  const stlEmp = shopEmployees.find((e) => e.role === UserRole.STYLIST);
-
+  // 各角色演示手机号（与数据库 seed 数据保持一致）
   const modeDefaultPhone: Record<LoginMode, string> = {
-    ceo: ceoEmp?.phone || '13900000100',
-    cs: csEmp?.phone || '13900000101',
-    manager: mgrEmp?.phone || '13900000102',
-    stylist: stlEmp?.phone || '13900000011',
+    ceo: '13900000100',
+    cs: '13900000101',
+    manager: '13900000102',
+    stylist: '13900000011',
   };
 
   const [loginMode, setLoginMode] = useState<LoginMode>('manager');
@@ -41,8 +28,6 @@ const ShopLogin: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const navigate = useNavigate();
 
-  const currentShop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
-
   const handleModeChange = (mode: LoginMode) => {
     setLoginMode(mode);
     setError('');
@@ -51,44 +36,61 @@ const ShopLogin: React.FC = () => {
     setShowPassword(true);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
+    if (loading) return;
     setError('');
     setLoading(true);
 
     try {
       // 优先使用真实 API 登录
       const result = await authApi.login(phone, password);
-      
+
       if (result?.user) {
         // 登录成功，需要把用户同步设置到 zustand store
         console.log('[Login] API 登录成功:', result.user);
-        
+
         const { setCurrentShop, setCurrentEmployee } = useAppStore.getState();
-        const shop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
-        if (shop) setCurrentShop(shop);
-        setCurrentEmployee({
+        const shopId = result.user.shopId || DEFAULT_SHOP_ID;
+        let shop: Shop | null = null;
+        try {
+          shop = await shopApi.getShop(shopId);
+          if (shop) setCurrentShop(shop);
+        } catch (shopErr: unknown) {
+          console.warn('[Login] 获取店铺信息失败:', shopErr instanceof Error ? shopErr.message : shopErr);
+        }
+        const employee: Employee = {
           ...result.user,
           role: result.user.role || UserRole.STYLIST,
           isActive: true,
-        } as any);
-        
+        } as Employee;
+        setCurrentEmployee(employee);
+        // 员工会话单独持久化，与顾客会话隔离
+        try {
+          localStorage.setItem('mbs_employee_session', JSON.stringify({
+            currentShop: shop,
+            currentEmployee: employee,
+            userRole: employee.role,
+          }));
+        } catch (_e) { /* ignore */ }
+
         navigate('/shop');
         return;
       }
-    } catch (apiError: any) {
-      console.log('[Login] API 登录失败，尝试 mock 登录:', apiError.message);
-      
-      // API 失败时降级到 mock 登录
-      const employee = currentShop?.employees.find((emp) => emp.phone === phone);
+    } catch (apiError: unknown) {
+      console.log('[Login] API 登录失败，尝试 mock 登录:', apiError instanceof Error ? apiError.message : apiError);
 
-      if (!employee) {
-        setError('手机号不存在，请重新输入');
+      // API 失败时降级到 mock 登录
+      const fallbackShop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
+      const fallbackEmployee = fallbackShop?.employees.find((emp) => emp.phone === phone);
+
+      if (!fallbackEmployee) {
+        setError(apiError instanceof Error ? apiError.message : '手机号或密码错误');
         setLoading(false);
         return;
       }
 
-      const loggedIn = loginAsEmployee(DEFAULT_SHOP_ID, employee.id, password);
+      const loggedIn = loginAsEmployee(DEFAULT_SHOP_ID, fallbackEmployee.id, password);
       if (loggedIn) {
         navigate('/shop');
       } else {
@@ -221,7 +223,13 @@ const ShopLogin: React.FC = () => {
           )}
 
           <button
-            type="submit"
+            type="button"
+            onClick={handleLogin}
+            onMouseDown={(e) => {
+              // 兜底：防止某些浏览器/自动化场景下首次点击未触发 onClick
+              e.preventDefault();
+              handleLogin();
+            }}
             disabled={loading}
             className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-3 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >

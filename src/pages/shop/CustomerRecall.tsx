@@ -43,7 +43,7 @@ const CustomerRecall: React.FC = () => {
         const data = await customerApi.getAll();
         if (Array.isArray(data)) setCustomers(data);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? (err as Error).message : String(err);
         console.error('[CustomerRecall] 获取客户列表失败:', msg);
       } finally {
         setIsLoading(false);

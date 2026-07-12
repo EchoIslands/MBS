@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, Star, Filter, User, Menu, X } from 'lucide-react';
+import { MapPin, Star, Filter, User } from 'lucide-react';
 import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -17,15 +17,7 @@ const CustomerHome: React.FC = () => {
   const navigate = useNavigate();
   const { currentCustomer, logout } = useAppStore();
 
-  useEffect(() => {
-    if (!currentCustomer) {
-      navigate('/customer/login');
-      return;
-    }
-    loadShops();
-  }, [currentCustomer]);
-
-  const loadShops = async () => {
+  const loadShops = React.useCallback(async () => {
     try {
       const data = await shopApi.getNearbyShops(39.9042, 116.4074, filterLevel || undefined);
       setShops(data);
@@ -34,11 +26,19 @@ const CustomerHome: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterLevel]);
+
+  useEffect(() => {
+    if (!currentCustomer) {
+      navigate('/customer/login');
+      return;
+    }
+    loadShops();
+  }, [currentCustomer, loadShops, navigate]);
 
   useEffect(() => {
     loadShops();
-  }, [filterLevel]);
+  }, [loadShops]);
 
   const levelLabels = [
     { value: '', label: '全部' },

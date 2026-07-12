@@ -21,12 +21,10 @@ const ProductList: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
   const [sortBy, setSortBy] = useState<'sales' | 'price' | 'rating'>('sales');
 
-  const shop = useMemo(() => currentShop, [currentShop]);
-  const products = shop?.products || [];
-
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const filteredProducts = useMemo(() => {
+    const products = currentShop?.products || [];
     let result = [...products];
 
     // 搜索过滤
@@ -59,7 +57,7 @@ const ProductList: React.FC = () => {
     }
 
     return result;
-  }, [products, searchQuery, selectedCategory, sortBy]);
+  }, [currentShop?.products, searchQuery, selectedCategory, sortBy]);
 
   const handleAddToCart = (product: Product) => {
     addToCart(product);

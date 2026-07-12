@@ -41,7 +41,8 @@ interface Order {
   updatedAt: Date;
 }
 
-// 购物车存�?const carts: Cart[] = [];
+// 购物车存储
+const carts: Cart[] = [];
 
 // 订单存储
 const orders: Order[] = [
@@ -52,7 +53,7 @@ const orders: Order[] = [
     customerName: '张三',
     shopId: 'shop1',
     items: [
-      { productId: 'prod1', productName: '洗发�?, price: 68, quantity: 2 },
+      { productId: 'prod1', productName: '洗发水', price: 68, quantity: 2 },
     ],
     totalAmount: 136,
     discountAmount: 0,
@@ -65,9 +66,10 @@ const orders: Order[] = [
   },
 ];
 
-// ==================== 购物�?API ====================
+// ==================== 购物车 API ====================
 
-// 获取购物�?router.get('/cart/:customerId', (req: Request, res: Response) => {
+// 获取购物车
+router.get('/cart/:customerId', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { shopId } = req.query;
 
@@ -104,9 +106,9 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   const { shopId, productId, productName, price, quantity = 1 } = req.body;
 
   if (!shopId || !productId || !productName || price === undefined) {
-    return res.status(400).json({ 
-      success: false, 
-      error: '店铺ID、商品ID、商品名称和价格为必填项' 
+    return res.status(400).json({
+      success: false,
+      error: '店铺ID、商品ID、商品名称和价格为必填项'
     });
   }
 
@@ -124,7 +126,8 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
     carts.push(cart);
   }
 
-  // 检查是否已存在该商�?  const existingItem = cart.items.find((item) => item.productId === productId);
+  // 检查是否已存在该商品
+  const existingItem = cart.items.find((item) => item.productId === productId);
   if (existingItem) {
     existingItem.quantity += quantity;
   } else {
@@ -144,7 +147,8 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   });
 });
 
-// 更新购物车商品数�?router.put('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
+// 更新购物车商品数量
+router.put('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
   const { customerId, productId } = req.params;
   const { shopId, quantity } = req.body;
 
@@ -163,7 +167,8 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   }
 
   if (quantity === 0) {
-    // 数量�?时删除商�?    cart.items = cart.items.filter((i) => i.productId !== productId);
+    // 数量为 0 时删除商品
+    cart.items = cart.items.filter((i) => i.productId !== productId);
   } else {
     item.quantity = quantity;
   }
@@ -180,7 +185,8 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
   });
 });
 
-// 删除购物车商�?router.delete('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
+// 删除购物车商品
+router.delete('/cart/:customerId/items/:productId', (req: Request, res: Response) => {
   const { customerId, productId } = req.params;
   const { shopId } = req.query;
 
@@ -204,12 +210,13 @@ router.post('/cart/:customerId/items', (req: Request, res: Response) => {
     data: {
       ...cart,
       totalAmount,
-      message: '商品已从购物车移�?,
+      message: '商品已从购物车移除',
     },
   });
 });
 
-// 清空购物�?router.delete('/cart/:customerId', (req: Request, res: Response) => {
+// 清空购物车
+router.delete('/cart/:customerId', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { shopId } = req.query;
 
@@ -273,7 +280,7 @@ router.get('/orders/:id', (req: Request, res: Response) => {
   const order = orders.find((o) => o.id === id);
 
   if (!order) {
-    return res.status(404).json({ success: false, error: '订单不存�? });
+    return res.status(404).json({ success: false, error: '订单不存在' });
   }
 
   res.json({ success: true, data: order });
@@ -286,18 +293,20 @@ router.post('/orders', (req: Request, res: Response) => {
   // 验证客户
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
-  // 获取购物�?  const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
+  // 获取购物车
+  const cart = carts.find((c) => c.customerId === customerId && c.shopId === shopId);
   if (!cart || cart.items.length === 0) {
-    return res.status(400).json({ success: false, error: '购物车为�? });
+    return res.status(400).json({ success: false, error: '购物车为空' });
   }
 
   const totalAmount = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const payAmount = totalAmount - discountAmount;
 
-  // 生成订单�?  const orderNo = `ORD${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${String(orders.length + 1).padStart(3, '0')}`;
+  // 生成订单号
+  const orderNo = `ORD${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${String(orders.length + 1).padStart(3, '0')}`;
 
   const order: Order = {
     id: generateId(),
@@ -317,7 +326,8 @@ router.post('/orders', (req: Request, res: Response) => {
 
   orders.push(order);
 
-  // 清空购物�?  cart.items = [];
+  // 清空购物车
+  cart.items = [];
   cart.updatedAt = new Date();
 
   res.status(201).json({ success: true, data: order });
@@ -330,11 +340,11 @@ router.post('/orders/:id/pay', (req: Request, res: Response) => {
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '订单不存�? });
+    return res.status(404).json({ success: false, error: '订单不存在' });
   }
 
   if (order.status !== 'pending') {
-    return res.status(400).json({ success: false, error: '只能支付待付款订�? });
+    return res.status(400).json({ success: false, error: '只能支付待付款订单' });
   }
 
   order.status = 'paid';
@@ -367,11 +377,11 @@ router.post('/orders/:id/complete', (req: Request, res: Response) => {
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '订单不存�? });
+    return res.status(404).json({ success: false, error: '订单不存在' });
   }
 
   if (order.status !== 'paid') {
-    return res.status(400).json({ success: false, error: '只能完成已支付订�? });
+    return res.status(400).json({ success: false, error: '只能完成已支付订单' });
   }
 
   order.status = 'completed';
@@ -394,14 +404,15 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '订单不存�? });
+    return res.status(404).json({ success: false, error: '订单不存在' });
   }
 
   if (!['pending', 'paid'].includes(order.status)) {
-    return res.status(400).json({ success: false, error: '只能取消待付款或已支付订�? });
+    return res.status(400).json({ success: false, error: '只能取消待付款或已支付订单' });
   }
 
-  // 如果已支付，退�?  if (order.status === 'paid') {
+  // 如果已支付，退款
+  if (order.status === 'paid') {
     const customer = mockCustomers.find((c) => c.id === order.customerId);
     if (customer) {
       customer.totalSpent = Math.max(0, (customer.totalSpent || 0) - order.payAmount);
@@ -410,7 +421,7 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
   }
 
   order.status = 'cancelled';
-  (order as any).cancelReason = reason;
+  (order as Record<string, unknown>).cancelReason = reason;
   order.updatedAt = new Date();
 
   res.json({
@@ -424,22 +435,23 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
   });
 });
 
-// 申请退�?router.post('/orders/:id/refund', (req: Request, res: Response) => {
+// 申请退款
+router.post('/orders/:id/refund', (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason } = req.body;
 
   const order = orders.find((o) => o.id === id);
   if (!order) {
-    return res.status(404).json({ success: false, error: '订单不存�? });
+    return res.status(404).json({ success: false, error: '订单不存在' });
   }
 
   if (order.status !== 'completed') {
-    return res.status(400).json({ success: false, error: '只能对已完成订单申请退�? });
+    return res.status(400).json({ success: false, error: '只能对已完成订单申请退款' });
   }
 
   order.status = 'refunded';
-  (order as any).refundReason = reason;
-  (order as any).refundedAt = new Date();
+  (order as Record<string, unknown>).refundReason = reason;
+  (order as Record<string, unknown>).refundedAt = new Date();
   order.updatedAt = new Date();
 
   // 退款给客户
@@ -455,7 +467,7 @@ router.post('/orders/:id/cancel', (req: Request, res: Response) => {
       orderNo: order.orderNo,
       status: order.status,
       refundReason: reason,
-      refundedAt: (order as any).refundedAt,
+      refundedAt: (order as Record<string, unknown>).refundedAt,
     },
   });
 });

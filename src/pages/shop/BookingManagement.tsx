@@ -9,7 +9,6 @@ import {
   XCircle,
   AlertCircle,
   Search,
-  Filter,
   RefreshCw,
   MessageSquare,
   ChevronRight,
@@ -18,11 +17,10 @@ import {
   LayoutList,
   Columns,
 } from 'lucide-react';
-import { Booking, UserRole } from '../../../shared/types';
+import { Booking } from '../../../shared/types';
 import { useNavigate } from 'react-router-dom';
+import { bookingApi } from '../../api';
 import ShopLayout from './ShopLayout';
-
-const API_BASE = '/api';
 
 const BookingManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -42,27 +40,14 @@ const BookingManagement: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      params.set('shopId', 'shop1');
-      params.set('page', '1');
-      params.set('pageSize', '50');
-      if (statusFilter !== 'all') {
-        params.set('status', statusFilter);
-      }
-      if (dateFilter) {
-        params.set('dateStart', dateFilter);
-      }
-
-      const res = await fetch(`${API_BASE}/bookings?${params.toString()}`);
-      const data = await res.json();
-
-      if (data.success && data.data) {
-        setBookings(data.data);
-      } else {
-        setError(data.error || '获取预约列表失败');
-      }
-    } catch (err: any) {
-      setError(err.message || '网络错误');
+      const data = await bookingApi.getBookingsByShop(
+        'shop1',
+        dateFilter || undefined,
+        statusFilter !== 'all' ? statusFilter : undefined
+      );
+      setBookings(data || []);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setLoading(false);
     }
@@ -79,14 +64,8 @@ const BookingManagement: React.FC = () => {
 
     setCompleting(true);
     try {
-      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'completed' }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
+      const updated = await bookingApi.updateBookingStatus(viewingBooking.id, 'completed');
+      if (updated) {
         setViewingBooking(null);
         fetchBookings();
         // 预约完成后跳转到开单结算
@@ -94,10 +73,10 @@ const BookingManagement: React.FC = () => {
           navigate(`/shop/checkout?bookingId=${viewingBooking.id}&customerId=${viewingBooking.customerId}`);
         }
       } else {
-        setError(data.error || '完成服务失败');
+        setError('完成服务失败');
       }
-    } catch (err: any) {
-      setError(err.message || '网络错误');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setCompleting(false);
     }
@@ -111,21 +90,15 @@ const BookingManagement: React.FC = () => {
 
     setNoShowing(true);
     try {
-      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
+      const updated = await bookingApi.updateBookingStatus(viewingBooking.id, 'cancelled');
+      if (updated) {
         setViewingBooking(null);
         fetchBookings();
       } else {
-        setError(data.error || '标记失败');
+        setError('标记失败');
       }
-    } catch (err: any) {
-      setError(err.message || '网络错误');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setNoShowing(false);
     }
@@ -139,21 +112,15 @@ const BookingManagement: React.FC = () => {
 
     setConfirming(true);
     try {
-      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'confirmed' }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
+      const updated = await bookingApi.updateBookingStatus(viewingBooking.id, 'confirmed');
+      if (updated) {
         setViewingBooking(null);
         fetchBookings();
       } else {
-        setError(data.error || '确认预约失败');
+        setError('确认预约失败');
       }
-    } catch (err: any) {
-      setError(err.message || '网络错误');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setConfirming(false);
     }
@@ -167,21 +134,15 @@ const BookingManagement: React.FC = () => {
 
     setCancellingBooking(true);
     try {
-      const res = await fetch(`${API_BASE}/bookings/${viewingBooking.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
+      const updated = await bookingApi.updateBookingStatus(viewingBooking.id, 'cancelled');
+      if (updated) {
         setViewingBooking(null);
         fetchBookings();
       } else {
-        setError(data.error || '取消预约失败');
+        setError('取消预约失败');
       }
-    } catch (err: any) {
-      setError(err.message || '网络错误');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setCancellingBooking(false);
     }
@@ -189,9 +150,7 @@ const BookingManagement: React.FC = () => {
 
   // 兼容 API 返回的 stylistName/stylistId 与 mock 使用的 barberName/barberId
   const getBarberName = (booking: Booking) =>
-    (booking as any).stylistName || booking.barberName || '';
-  const getBarberId = (booking: Booking) =>
-    (booking as any).stylistId || booking.barberId || '';
+    booking.stylistName || booking.barberName || '';
 
   // 判断预约是否已过期（confirmed 状态且预约时间已过）
   const isExpired = (booking: Booking) => {
@@ -693,12 +652,12 @@ const BookingManagement: React.FC = () => {
                   </span>
                   <span className="font-medium text-gray-800">{viewingBooking.customerName}</span>
                 </div>
-                {(viewingBooking as any).customerPhone && (
+                {viewingBooking.customerPhone && (
                   <div className="flex items-center justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500 flex items-center gap-2">
                       <Phone size={16} /> 手机号
                     </span>
-                    <span className="font-medium text-gray-800">{(viewingBooking as any).customerPhone}</span>
+                    <span className="font-medium text-gray-800">{viewingBooking.customerPhone}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">
@@ -757,6 +716,14 @@ const BookingManagement: React.FC = () => {
                   >
                     {confirming ? <Loader2 size={18} className="animate-spin" /> : null}
                     确认预约
+                  </button>
+                  <button
+                    onClick={handleCompleteBooking}
+                    disabled={completing}
+                    className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {completing ? <Loader2 size={18} className="animate-spin" /> : null}
+                    直接完成
                   </button>
                   <button
                     onClick={handleCancelBooking}

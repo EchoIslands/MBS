@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import apiRouter from './routes/index.js';
 
@@ -9,7 +9,7 @@ app.use(cors());
 // 兼容 Vercel Runtime 的自定义 JSON body parser
 // 原因：在部分 Vercel Node Runtime 版本里 express.json() 读不到流，
 //      导致 req.body 为 {}，客户姓名/电话等字段丢失。
-const getRawBody = (req: any): Promise<string> => {
+const getRawBody = (req: Request): Promise<string> => {
   return new Promise((resolve, reject) => {
     let data = '';
     req.setEncoding('utf8');
@@ -19,13 +19,13 @@ const getRawBody = (req: any): Promise<string> => {
     req.on('end', () => {
       resolve(data);
     });
-    req.on('error', (err: any) => {
+    req.on('error', (err: unknown) => {
       reject(err);
     });
   });
 };
 
-const jsonBodyParser = async (req: any, _res: any, next: any) => {
+const jsonBodyParser = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   // 已经解析过就不再处理
   if (req._body) {
     return next();
@@ -42,8 +42,9 @@ const jsonBodyParser = async (req: any, _res: any, next: any) => {
     req.body = raw ? JSON.parse(raw) : {};
     req._body = true;
     next();
-  } catch (err: any) {
-    console.error('[body-parser] parse error:', err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[body-parser] parse error:', message);
     next(err);
   }
 };

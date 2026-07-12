@@ -1,13 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Crown,
   Star,
   User,
   Gift,
-  Percent,
   Wallet,
-  ArrowRight,
   Plus,
   Check,
   Search,
@@ -17,9 +14,7 @@ import {
   CreditCard,
   TrendingUp,
   Award,
-  Calendar,
   Clock,
-  RefreshCw,
   Package,
   Coffee,
   Loader2,
@@ -29,13 +24,12 @@ import {
   PurchaseVIPLevel,
   StoredValueLevel,
   BenefitType,
-  MembershipLevel,
+  MemberBenefitRecord,
+  ReferralRecord,
 } from '../../../shared/types';
 import {
-  mockReferrals,
   purchaseVIPPlans,
   storedValuePlans,
-  mockMemberBenefitRecords,
 } from '../../../shared/mockData';
 import {
   getPurchaseVIPLabel,
@@ -44,7 +38,7 @@ import {
   isVIPExpiringSoon,
 } from '../../lib/membership';
 import { useAppStore } from '../../store';
-import { customerApi } from '../../api';
+import { customerApi, memberBenefitApi, referralApi, membershipApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 type ModalMode = 'purchase' | 'storedValue' | null;
@@ -61,9 +55,11 @@ const MembershipManagement: React.FC = () => {
   const [modalCustomer, setModalCustomer] = useState<Customer | null>(null);
   const [selectedPurchaseLevel, setSelectedPurchaseLevel] = useState<PurchaseVIPLevel>(PurchaseVIPLevel.BRONZE);
   const [selectedStoredLevel, setSelectedStoredLevel] = useState<StoredValueLevel>(StoredValueLevel.STORE_500);
-  const [activeTab, setActiveTab] = useState<'purchase' | 'stored'>('purchase');
+  const [benefits, setBenefits] = useState<MemberBenefitRecord[]>([]);
+  const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
+  const [loadingBenefits, setLoadingBenefits] = useState(false);
+  const [loadingReferrals, setLoadingReferrals] = useState(false);
 
-  const navigate = useNavigate();
   const { currentShop } = useAppStore();
 
   // 从真实 API 获取客户数据
@@ -75,14 +71,67 @@ const MembershipManagement: React.FC = () => {
         if (Array.isArray(data)) {
           setCustomers(data);
         }
-      } catch (err: any) {
-        console.error('[MembershipManagement] 获取客户列表失败:', err.message);
+      } catch (err: unknown) {
+        console.error('[MembershipManagement] 获取客户列表失败:', err instanceof Error ? (err as Error).message : '未知错误');
       } finally {
         setLoading(false);
       }
     };
     fetchCustomers();
   }, []);
+
+  // 加载推荐记录
+  useEffect(() => {
+    const fetchReferrals = async () => {
+      if (!currentShop?.id) return;
+      setLoadingReferrals(true);
+      try {
+        const data = await referralApi.getByShop(currentShop.id);
+        if (Array.isArray(data)) {
+          setReferrals(data.map((r: ReferralRecord) => ({
+            ...r,
+            createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+            confirmedAt: r.confirmedAt ? new Date(r.confirmedAt) : undefined,
+          })));
+        }
+      } catch (err: unknown) {
+        console.error('[MembershipManagement] 获取推荐记录失败:', err instanceof Error ? (err as Error).message : '未知错误');
+      } finally {
+        setLoadingReferrals(false);
+      }
+    };
+    fetchReferrals();
+  }, [currentShop?.id]);
+
+  // 加载客户权益
+  const fetchBenefits = useCallback(async (customerId: string) => {
+    setLoadingBenefits(true);
+    try {
+      const data = await memberBenefitApi.getAvailableByCustomer(customerId);
+      if (Array.isArray(data)) {
+        setBenefits(
+          data.map((b) => ({
+            ...b,
+            grantedAt: b.grantedAt ? new Date(b.grantedAt) : new Date(),
+            usedAt: b.usedAt ? new Date(b.usedAt) : undefined,
+            expiresAt: b.expiresAt ? new Date(b.expiresAt) : undefined,
+          }))
+        );
+      }
+    } catch (err: unknown) {
+      console.error('[MembershipManagement] 获取权益失败:', err instanceof Error ? (err as Error).message : '未知错误');
+    } finally {
+      setLoadingBenefits(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!viewingCustomer?.id) {
+      setBenefits([]);
+      return;
+    }
+    fetchBenefits(viewingCustomer.id);
+  }, [viewingCustomer?.id, fetchBenefits]);
 
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
@@ -181,26 +230,33 @@ const MembershipManagement: React.FC = () => {
   const confirmPurchaseUpgrade = async () => {
     if (!modalCustomer || !selectedPurchaseLevel) return;
 
-    const updated: Customer = {
-      ...modalCustomer,
-      purchaseVIPLevel: selectedPurchaseLevel,
-      purchaseVIPExpiresAt: new Date(Date.now() + 365 * 86400000),
-      membershipLevel: modalCustomer.isStockholder
-        ? MembershipLevel.STOCKHOLDER
-        : selectedPurchaseLevel !== PurchaseVIPLevel.REGULAR || modalCustomer.storedValueLevel !== StoredValueLevel.NONE
-        ? MembershipLevel.PREMIUM
-        : MembershipLevel.REGULAR,
-      isMember:
-        selectedPurchaseLevel !== PurchaseVIPLevel.REGULAR ||
-        modalCustomer.storedValueLevel !== StoredValueLevel.NONE,
-    };
-
     try {
-      await customerApi.update(modalCustomer.id, updated);
-      setCustomers(customers.map((c) => (c.id === modalCustomer.id ? updated : c)));
-    } catch (err: any) {
-      console.error('[MembershipManagement] 更新 VIP 失败:', err.message);
-      alert('更新 VIP 失败：' + err.message);
+      const result = await membershipApi.upgrade(modalCustomer.id, {
+        purchaseVIPLevel: selectedPurchaseLevel,
+      });
+      if (result?.customer) {
+        const updated: Customer = {
+          ...modalCustomer,
+          ...result.customer,
+          purchaseVIPExpiresAt: result.customer.purchaseVIPExpiresAt
+            ? new Date(result.customer.purchaseVIPExpiresAt)
+            : undefined,
+          storedValueExpiresAt: result.customer.storedValueExpiresAt
+            ? new Date(result.customer.storedValueExpiresAt)
+            : undefined,
+        };
+        setCustomers((prev) => prev.map((c) => (c.id === modalCustomer.id ? updated : c)));
+        if (viewingCustomer?.id === modalCustomer.id) {
+          setViewingCustomer(updated);
+          fetchBenefits(updated.id);
+        }
+      } else {
+        alert('办理 VIP 失败，请重试');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? (err as Error).message : '未知错误';
+      console.error('[MembershipManagement] 更新 VIP 失败:', msg);
+      alert('更新 VIP 失败：' + msg);
     } finally {
       setModalMode(null);
       setModalCustomer(null);
@@ -210,39 +266,33 @@ const MembershipManagement: React.FC = () => {
   const confirmStoredUpgrade = async () => {
     if (!modalCustomer || !selectedStoredLevel) return;
 
-    const newPlan = storedValuePlans.find((p) => p.level === selectedStoredLevel);
-    const currentPlan = storedValuePlans.find((p) => p.level === modalCustomer.storedValueLevel);
-    const addAmount = (newPlan?.amount || 0) - (currentPlan?.amount || 0);
-
-    // 储值有效期 2 年（从办理/升级之日起算）
-    const storedValueExpiresAt = new Date();
-    storedValueExpiresAt.setFullYear(storedValueExpiresAt.getFullYear() + 2);
-
-    const newBalance = modalCustomer.storedValueBalance + addAmount;
-    const updated: Customer = {
-      ...modalCustomer,
-      storedValueLevel: selectedStoredLevel,
-      storedValueBalance: newBalance,
-      storedValueExpiresAt,
-      balance: newBalance,
-      hasRecharged: selectedStoredLevel !== StoredValueLevel.NONE,
-      rechargeLevel: getStoredValueLabel(selectedStoredLevel),
-      membershipLevel: modalCustomer.isStockholder
-        ? MembershipLevel.STOCKHOLDER
-        : modalCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || selectedStoredLevel !== StoredValueLevel.NONE
-        ? MembershipLevel.PREMIUM
-        : MembershipLevel.REGULAR,
-      isMember:
-        modalCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ||
-        selectedStoredLevel !== StoredValueLevel.NONE,
-    };
-
     try {
-      await customerApi.update(modalCustomer.id, updated);
-      setCustomers(customers.map((c) => (c.id === modalCustomer.id ? updated : c)));
-    } catch (err: any) {
-      console.error('[MembershipManagement] 更新储值失败:', err.message);
-      alert('更新储值失败：' + err.message);
+      const result = await membershipApi.upgrade(modalCustomer.id, {
+        storedValueLevel: selectedStoredLevel,
+      });
+      if (result?.customer) {
+        const updated: Customer = {
+          ...modalCustomer,
+          ...result.customer,
+          purchaseVIPExpiresAt: result.customer.purchaseVIPExpiresAt
+            ? new Date(result.customer.purchaseVIPExpiresAt)
+            : undefined,
+          storedValueExpiresAt: result.customer.storedValueExpiresAt
+            ? new Date(result.customer.storedValueExpiresAt)
+            : undefined,
+        };
+        setCustomers((prev) => prev.map((c) => (c.id === modalCustomer.id ? updated : c)));
+        if (viewingCustomer?.id === modalCustomer.id) {
+          setViewingCustomer(updated);
+          fetchBenefits(updated.id);
+        }
+      } else {
+        alert('办理储值失败，请重试');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? (err as Error).message : '未知错误';
+      console.error('[MembershipManagement] 更新储值失败:', msg);
+      alert('更新储值失败：' + msg);
     } finally {
       setModalMode(null);
       setModalCustomer(null);
@@ -514,7 +564,6 @@ const MembershipManagement: React.FC = () => {
 
   const renderCustomerDetail = () => {
     if (!viewingCustomer) return null;
-    const benefits = mockMemberBenefitRecords.filter((b) => b.customerId === viewingCustomer.id);
     const purchasePlan = purchaseVIPPlans.find((p) => p.level === viewingCustomer.purchaseVIPLevel);
     const storedPlan = storedValuePlans.find((p) => p.level === viewingCustomer.storedValueLevel);
 
@@ -636,7 +685,12 @@ const MembershipManagement: React.FC = () => {
               <Gift size={16} />
               可用权益
             </h4>
-            {benefits.length > 0 ? (
+            {loadingBenefits ? (
+              <div className="text-center text-gray-500 py-4">
+                <Loader2 size={24} className="mx-auto mb-1 opacity-50 animate-spin" />
+                <p className="text-sm">加载中...</p>
+              </div>
+            ) : benefits.length > 0 ? (
               <div className="space-y-2">
                 {benefits.map((benefit) => (
                   <div
@@ -714,17 +768,16 @@ const MembershipManagement: React.FC = () => {
         : (p as typeof storedValuePlans[0]).level === selected
     );
 
-    const priceLabel = isPurchase
-      ? `¥${(selectedPlan as typeof purchaseVIPPlans[0])?.price || 0}`
-      : `储值 ¥${(selectedPlan as typeof storedValuePlans[0])?.amount || 0}`;
-
     const currentPrice = isPurchase
       ? (currentPlan as typeof purchaseVIPPlans[0])?.price || 0
       : (currentPlan as typeof storedValuePlans[0])?.amount || 0;
     const selectedPrice = isPurchase
       ? (selectedPlan as typeof purchaseVIPPlans[0])?.price || 0
       : (selectedPlan as typeof storedValuePlans[0])?.amount || 0;
-    const diff = selectedPrice - currentPrice;
+    // VIP 按目标价与当前已付价补差；储值按目标档位与当前余额补差，与后端一致
+    const diff = isPurchase
+      ? Math.max(0, selectedPrice - currentPrice)
+      : Math.max(0, selectedPrice - modalCustomer.storedValueBalance);
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -805,7 +858,7 @@ const MembershipManagement: React.FC = () => {
           <div className="bg-gray-50 rounded-xl p-4 mb-4">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500">当前{isPurchase ? '已付' : '已储'}金额</span>
-              <span className="font-medium">¥{currentPrice}</span>
+              <span className="font-medium">¥{isPurchase ? currentPrice : modalCustomer.storedValueBalance}</span>
             </div>
             <div className="flex items-center justify-between text-sm mt-2">
               <span className="text-gray-500">目标{isPurchase ? '金额' : '储值金额'}</span>
@@ -871,8 +924,13 @@ const MembershipManagement: React.FC = () => {
               推荐记录
             </h2>
             <div className="space-y-4">
-              {mockReferrals.length > 0 ? (
-                mockReferrals.map((referral) => (
+              {loadingReferrals ? (
+                <div className="text-center text-gray-500 py-8">
+                  <Loader2 size={32} className="mx-auto mb-2 opacity-50 animate-spin" />
+                  <p>加载中...</p>
+                </div>
+              ) : referrals.length > 0 ? (
+                referrals.map((referral) => (
                   <div key={referral.id} className="border border-gray-200 rounded-xl p-4">
                     <div className="flex items-center justify-between">
                       <div>

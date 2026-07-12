@@ -7,7 +7,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // 会员等级配置
 const MEMBER_LEVELS = {
-  normal: { name: '普通会�?, discount: 1.0, pointsRate: 1, benefits: ['基础服务'] },
+  normal: { name: '普通会员', discount: 1.0, pointsRate: 1, benefits: ['基础服务'] },
   silver: { name: '银卡会员', discount: 0.95, pointsRate: 1.2, benefits: ['基础服务', '生日优惠', '优先预约'] },
   gold: { name: '金卡会员', discount: 0.9, pointsRate: 1.5, benefits: ['基础服务', '生日优惠', '优先预约', '专属折扣', '免费护理'] },
   platinum: { name: '铂金会员', discount: 0.85, pointsRate: 2.0, benefits: ['基础服务', '生日优惠', '优先预约', '专属折扣', '免费护理', '私人顾问', '年度礼包'] },
@@ -29,7 +29,7 @@ router.get('/:customerId/benefits', (req: Request, res: Response) => {
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   const level = (customer.membershipLevel || 'normal') as keyof typeof MEMBER_LEVELS;
@@ -81,35 +81,37 @@ router.post('/:customerId/upgrade', (req: Request, res: Response) => {
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   const currentLevel = (customer.membershipLevel || 'normal') as keyof typeof MEMBER_LEVELS;
   const target = targetLevel as keyof typeof MEMBER_LEVELS;
 
   if (!MEMBER_LEVELS[target]) {
-    return res.status(400).json({ success: false, error: '无效的目标等�? });
+    return res.status(400).json({ success: false, error: '无效的目标等级' });
   }
 
-  // 检查是否可以升级（不能降级�?  const levelOrder = ['normal', 'silver', 'gold', 'platinum'];
+  // 检查是否可以升级（不能降级）
+  const levelOrder = ['normal', 'silver', 'gold', 'platinum'];
   const currentIndex = levelOrder.indexOf(currentLevel);
   const targetIndex = levelOrder.indexOf(target);
 
   if (targetIndex <= currentIndex) {
-    return res.status(400).json({ success: false, error: '只能升级到更高级�? });
+    return res.status(400).json({ success: false, error: '只能升级到更高级别' });
   }
 
-  // 检查消费金额是否达�?  const totalSpent = customer.totalSpent || 0;
+  // 检查消费金额是否达标
+  const totalSpent = customer.totalSpent || 0;
   if (totalSpent < UPGRADE_THRESHOLDS[target]) {
-    return res.status(400).json({ 
-      success: false, 
-      error: `消费金额未达标，需要累计消�?${UPGRADE_THRESHOLDS[target]} 元` 
+    return res.status(400).json({
+      success: false,
+      error: `消费金额未达标，需要累计消费 ${UPGRADE_THRESHOLDS[target]} 元`
     });
   }
 
   // 执行升级
   customer.membershipLevel = target;
-  const levelConfig = MEMBER_LEVELS[target];
+  const newLevelConfig = MEMBER_LEVELS[target];
 
   res.json({
     success: true,
@@ -119,9 +121,9 @@ router.post('/:customerId/upgrade', (req: Request, res: Response) => {
       previousLevel: currentLevel,
       previousLevelName: MEMBER_LEVELS[currentLevel].name,
       newLevel: target,
-      newLevelName: levelConfig.name,
-      newBenefits: levelConfig.benefits,
-      newDiscount: levelConfig.discount,
+      newLevelName: newLevelConfig.name,
+      newBenefits: newLevelConfig.benefits,
+      newDiscount: newLevelConfig.discount,
       reason,
       upgradedAt: new Date(),
     },
@@ -135,13 +137,14 @@ router.get('/:customerId/referrals', (req: Request, res: Response) => {
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   // 获取该客户的推荐记录
   const referrals = mockReferrals.filter((r) => r.referrerId === customerId);
 
-  // 计算总提�?  const totalCommission = referrals
+  // 计算总提成
+  const totalCommission = referrals
     .filter((r) => r.status === 'paid')
     .reduce((sum, r) => sum + (r.bonusAmount || 0), 0);
 
@@ -196,7 +199,7 @@ router.post('/:customerId/referrals', (req: Request, res: Response) => {
     createdAt: new Date(),
   };
 
-  mockReferrals.push(referral as any);
+  mockReferrals.push(referral as typeof mockReferrals[0]);
 
   res.status(201).json({
     success: true,
@@ -204,13 +207,14 @@ router.post('/:customerId/referrals', (req: Request, res: Response) => {
   });
 });
 
-// 确认推荐（被推荐人到店消费后�?router.post('/referrals/:referralId/confirm', (req: Request, res: Response) => {
+// 确认推荐（被推荐人到店消费后）
+router.post('/referrals/:referralId/confirm', (req: Request, res: Response) => {
   const { referralId } = req.params;
   const { commission = 50 } = req.body;
 
   const referral = mockReferrals.find((r) => r.id === referralId);
   if (!referral) {
-    return res.status(404).json({ success: false, error: '推荐记录不存�? });
+    return res.status(404).json({ success: false, error: '推荐记录不存在' });
   }
 
   if (referral.status === 'paid') {
@@ -219,7 +223,7 @@ router.post('/:customerId/referrals', (req: Request, res: Response) => {
 
   referral.status = 'paid';
   referral.bonusAmount = commission;
-  (referral as any).completedAt = new Date();
+  (referral as Record<string, unknown>).completedAt = new Date();
 
   // 给推荐人增加积分
   const referrer = mockCustomers.find((c) => c.id === referral.referrerId);
@@ -240,7 +244,7 @@ router.post('/:customerId/points/redeem', (req: Request, res: Response) => {
 
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   if (!points || points <= 0) {

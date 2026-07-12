@@ -8,7 +8,7 @@ import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { employeeQueries } from '../db/index.js'
-import { mockShops, stylistPasswords, managerPasswords, ceoPasswords, csPasswords, shopPasswords } from '../_internal/mockData.js'
+import { mockShops, stylistPasswords, managerPasswords, ceoPasswords, csPasswords } from '../_internal/mockData.js'
 
 const router = Router()
 
@@ -27,11 +27,27 @@ const getPasswordMap = (role?: string): Record<string, string> => {
   }
 }
 
-// �?mock 数据中查找员�?const findMockEmployee = (phone: string) => {
+interface EmployeeLike {
+  id: string
+  phone?: string
+  name?: string
+  role?: string
+  shopId?: string
+  shop_id?: string
+  password_hash?: string
+  is_active?: boolean
+  avatar?: string
+  title?: string
+  specialty?: string
+  rating?: number
+}
+
+// 从 mock 数据中查找员工
+const findMockEmployee = (phone: string): EmployeeLike | null => {
   for (const shop of mockShops) {
-    const employee = shop.employees.find(e => (e as any).phone === phone)
+    const employee = shop.employees.find((e: unknown) => (e as EmployeeLike).phone === phone)
     if (employee) {
-      return { ...employee, shopId: shop.id }
+      return { ...(employee as EmployeeLike), shopId: shop.id }
     }
   }
   return null
@@ -41,7 +57,8 @@ const getPasswordMap = (role?: string): Record<string, string> => {
 const verifyMockPassword = (employeeId: string, password: string, role?: string): boolean => {
   if (password !== '123456') return false
   const passwords = getPasswordMap(role)
-  return passwords[employeeId] === '123456' || true // 默认 123456 都可以登�?}
+  return passwords[employeeId] === '123456' || true // 默认 123456 都可以登录
+}
 
 // 登录
 router.post('/login', async (req: Request, res: Response) => {
@@ -52,21 +69,22 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!phone || !password) {
       return res.status(400).json({
         success: false,
-        error: '请输入手机号和密�?,
+        error: '请输入手机号和密码',
       })
     }
 
-    // 先尝试从数据库查�?    const dbEmployee = await employeeQueries.getByPhone(phone)
-    
-    let employee = dbEmployee
+    // 先尝试从数据库查询
+    const dbEmployee = await employeeQueries.getByPhone(phone)
+
+    let employee: EmployeeLike | null = dbEmployee as EmployeeLike | null
     let isFromDb = true
-    
+
     // 如果数据库没有，尝试 mock 数据
     if (!employee) {
-      employee = findMockEmployee(phone) as any
+      employee = findMockEmployee(phone)
       isFromDb = false
     }
-    
+
     if (!employee) {
       return res.status(401).json({
         success: false,
@@ -76,15 +94,15 @@ router.post('/login', async (req: Request, res: Response) => {
 
     // 验证密码
     let isValidPassword = false
-    
+
     if (isFromDb) {
-      // 数据库模式：支持 bcrypt 加密密码或明�?123456
+      // 数据库模式：支持 bcrypt 加密密码或明文 123456
       isValidPassword = password === '123456' ||
-        (employee as any).password_hash === password ||
-        await bcrypt.compare(password, (employee as any).password_hash || '')
+        employee.password_hash === password ||
+        await bcrypt.compare(password, employee.password_hash || '')
     } else {
-      // Mock 模式：默认密�?123456
-      isValidPassword = verifyMockPassword(employee.id, password, (employee as any).role)
+      // Mock 模式：默认密码 123456
+      isValidPassword = verifyMockPassword(employee.id, password, employee.role)
     }
 
     if (!isValidPassword) {
@@ -94,10 +112,11 @@ router.post('/login', async (req: Request, res: Response) => {
       })
     }
 
-    // 检查员工是否在�?    if ((employee as any).is_active === false) {
+    // 检查员工是否在岗
+    if (employee.is_active === false) {
       return res.status(403).json({
         success: false,
-        error: '该账号已被禁�?,
+        error: '该账号已被禁用',
       })
     }
 
@@ -105,9 +124,9 @@ router.post('/login', async (req: Request, res: Response) => {
     const token = jwt.sign(
       {
         id: employee.id,
-        phone: (employee as any).phone,
-        role: (employee as any).role || 'stylist',
-        shopId: (employee as any).shopId || (employee as any).shop_id,
+        phone: employee.phone,
+        role: employee.role || 'stylist',
+        shopId: employee.shopId || employee.shop_id,
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
@@ -120,19 +139,19 @@ router.post('/login', async (req: Request, res: Response) => {
         token,
         user: {
           id: employee.id,
-          name: (employee as any).name,
-          phone: (employee as any).phone,
-          avatar: (employee as any).avatar,
-          title: (employee as any).title,
-          role: (employee as any).role || 'stylist',
-          shopId: (employee as any).shopId || (employee as any).shop_id,
-          specialty: (employee as any).specialty,
-          rating: (employee as any).rating,
+          name: employee.name,
+          phone: employee.phone,
+          avatar: employee.avatar,
+          title: employee.title,
+          role: employee.role || 'stylist',
+          shopId: employee.shopId || employee.shop_id,
+          specialty: employee.specialty,
+          rating: employee.rating,
         },
         expiresIn: JWT_EXPIRES_IN,
       },
     })
-  } catch (error) {
+  } catch (_error) {
     console.error('登录失败:', error)
     return res.status(500).json({
       success: false,
@@ -141,9 +160,10 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 })
 
-// 获取当前用户信息（需�?token�?router.get('/me', async (req: Request, res: Response) => {
+// 获取当前用户信息（需要 token）
+router.get('/me', async (req: Request, res: Response) => {
   try {
-    // �?header 获取 token
+    // 从 header 获取 token
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
@@ -155,19 +175,20 @@ router.post('/login', async (req: Request, res: Response) => {
     const token = authHeader.substring(7)
 
     // 验证 token
-    const decoded = jwt.verify(token, JWT_SECRET) as any
+    const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>
     console.log('[auth/me] decoded:', decoded)
 
-    // 先尝试从数据库查�?    let employee = null
+    // 先尝试从数据库查询
+    let employee: EmployeeLike | null = null
     if (decoded.shopId) {
-      const employees = await employeeQueries.listByShop(decoded.shopId)
-      employee = employees.find((e: any) => e.id === decoded.id)
+      const employees = await employeeQueries.listByShop(decoded.shopId as string)
+      employee = employees.find((e: unknown) => (e as EmployeeLike).id === decoded.id) as EmployeeLike | null
     }
-    
-    // 如果数据库没有，尝试根据手机号查�?mock 数据
+
+    // 如果数据库没有，尝试根据手机号查询 mock 数据
     if (!employee && decoded.phone) {
-      const mockEmployee = findMockEmployee(decoded.phone)
-      if (mockEmployee && (mockEmployee as any).id === decoded.id) {
+      const mockEmployee = findMockEmployee(decoded.phone as string)
+      if (mockEmployee && mockEmployee.id === decoded.id) {
         employee = mockEmployee
       }
     }
@@ -175,7 +196,7 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!employee) {
       return res.status(404).json({
         success: false,
-        error: '用户不存�?,
+        error: '用户不存在',
       })
     }
 
@@ -183,27 +204,27 @@ router.post('/login', async (req: Request, res: Response) => {
       success: true,
       data: {
         id: employee.id,
-        name: (employee as any).name,
-        phone: (employee as any).phone,
-        avatar: (employee as any).avatar,
-        title: (employee as any).title,
-        role: (employee as any).role || 'stylist',
-        shopId: (employee as any).shopId || (employee as any).shop_id,
-        specialty: (employee as any).specialty,
-        rating: (employee as any).rating,
+        name: employee.name,
+        phone: employee.phone,
+        avatar: employee.avatar,
+        title: employee.title,
+        role: employee.role || 'stylist',
+        shopId: employee.shopId || employee.shop_id,
+        specialty: employee.specialty,
+        rating: employee.rating,
       },
     })
-  } catch (error) {
-    if ((error as any).name === 'JsonWebTokenError') {
+  } catch (_error) {
+    if ((error as Record<string, unknown>).name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
         error: 'Token 无效',
       })
     }
-    if ((error as any).name === 'TokenExpiredError') {
+    if ((error as Record<string, unknown>).name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        error: 'Token 已过期，请重新登�?,
+        error: 'Token 已过期，请重新登录',
       })
     }
     console.error('获取用户信息失败:', error)
@@ -214,7 +235,8 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 })
 
-// 注册（演示用，生产环境应关闭�?router.post('/register', async (req: Request, res: Response) => {
+// 注册（演示用，生产环境应关闭）
+router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, phone, password, role, shopId, title, specialty } = req.body
 
@@ -222,15 +244,16 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!name || !phone || !password) {
       return res.status(400).json({
         success: false,
-        error: '请填写完整信�?,
+        error: '请填写完整信息',
       })
     }
 
-    // 检查手机号是否已存�?    const existingEmployee = await employeeQueries.getByPhone(phone)
+    // 检查手机号是否已存在
+    const existingEmployee = await employeeQueries.getByPhone(phone)
     if (existingEmployee) {
       return res.status(400).json({
         success: false,
-        error: '该手机号已注�?,
+        error: '该手机号已注册',
       })
     }
 
@@ -250,7 +273,7 @@ router.post('/login', async (req: Request, res: Response) => {
       })
     }
 
-    const { data, error } = await db.from('employees').insert({
+    const { data: _data, error } = await db.from('employees').insert({
       id,
       name,
       phone,
@@ -289,7 +312,7 @@ router.post('/login', async (req: Request, res: Response) => {
         },
       },
     })
-  } catch (error) {
+  } catch (_error) {
     console.error('注册失败:', error)
     return res.status(500).json({
       success: false,
@@ -305,12 +328,12 @@ router.put('/password', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        error: '未登�?,
+        error: '未登录',
       })
     }
 
     const token = authHeader.substring(7)
-    const decoded = jwt.verify(token, JWT_SECRET) as any
+    const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>
 
     const { oldPassword, newPassword } = req.body
 
@@ -322,24 +345,25 @@ router.put('/password', async (req: Request, res: Response) => {
     }
 
     // 查询员工
-    const employees = await employeeQueries.listByShop(decoded.shopId)
-    const employee = employees.find((e: any) => e.id === decoded.id)
+    const employees = await employeeQueries.listByShop(decoded.shopId as string)
+    const employee = employees.find((e: unknown) => (e as EmployeeLike).id === decoded.id) as EmployeeLike | null
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        error: '用户不存�?,
+        error: '用户不存在',
       })
     }
 
-    // 验证旧密�?    const isValid = oldPassword === '123456' ||
-      (employee as any).password_hash === oldPassword ||
-      await bcrypt.compare(oldPassword, (employee as any).password_hash || '')
+    // 验证旧密码
+    const isValid = oldPassword === '123456' ||
+      employee.password_hash === oldPassword ||
+      await bcrypt.compare(oldPassword, employee.password_hash || '')
 
     if (!isValid) {
       return res.status(401).json({
         success: false,
-        error: '旧密码错�?,
+        error: '旧密码错误',
       })
     }
 
@@ -370,7 +394,7 @@ router.put('/password', async (req: Request, res: Response) => {
       success: true,
       message: '密码修改成功',
     })
-  } catch (error) {
+  } catch (_error) {
     console.error('修改密码失败:', error)
     return res.status(500).json({
       success: false,
@@ -387,12 +411,12 @@ router.post('/verify', async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         valid: false,
-        error: '未登�?,
+        error: '未登录',
       })
     }
 
     const token = authHeader.substring(7)
-    const decoded = jwt.verify(token, JWT_SECRET) as any
+    const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>
 
     return res.json({
       success: true,
@@ -404,7 +428,7 @@ router.post('/verify', async (req: Request, res: Response) => {
         shopId: decoded.shopId,
       },
     })
-  } catch (error) {
+  } catch (_error) {
     return res.status(401).json({
       success: false,
       valid: false,

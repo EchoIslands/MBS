@@ -1,23 +1,26 @@
 import { Router, Request, Response } from 'express';
-import { mockRefundRequests, mockCustomers, mockBookings } from '../_internal/mockData.js';
+import { mockRefundRequests, mockCustomers } from '../_internal/mockData.js';
 import { RefundStatus } from '../_internal/types.js';
 
 const router = Router();
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// ==================== 退款申�?API ====================
+// ==================== 退款申请 API ====================
 
-// 获取退款申请列�?router.get('/', (req: Request, res: Response) => {
+// 获取退款申请列表
+router.get('/', (req: Request, res: Response) => {
   const { shopId, status, page = '1', pageSize = '20' } = req.query;
 
   let refunds = [...mockRefundRequests];
 
-  // 店铺筛�?  if (shopId) {
+  // 店铺筛选
+  if (shopId) {
     refunds = refunds.filter((r) => r.shopId === shopId);
   }
 
-  // 状态筛�?  if (status) {
+  // 状态筛选
+  if (status) {
     refunds = refunds.filter((r) => r.status === status);
   }
 
@@ -43,7 +46,8 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   });
 });
 
-// 获取单个退款申请详�?router.get('/:id', (req: Request, res: Response) => {
+// 获取单个退款申请详情
+router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const refund = mockRefundRequests.find((r) => r.id === id);
 
@@ -54,7 +58,8 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   res.json({ success: true, data: refund });
 });
 
-// 创建退款申�?router.post('/', (req: Request, res: Response) => {
+// 创建退款申请
+router.post('/', (req: Request, res: Response) => {
   const { 
     shopId, 
     customerId, 
@@ -62,26 +67,26 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
     amount, 
     reason, 
     description,
-    type = 'refund' // refund �?partial_refund
+    type = 'refund' // refund 或 partial_refund
   } = req.body;
 
   // 验证必填字段
   if (!shopId || !customerId || !amount || !reason) {
     return res.status(400).json({ 
       success: false, 
-      error: '店铺ID、客户ID、退款金额和退款原因为必填�? 
+      error: '店铺ID、客户ID、退款金额和退款原因为必填项' 
     });
   }
 
   // 验证客户存在
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   // 验证金额
   if (amount <= 0) {
-    return res.status(400).json({ success: false, error: '退款金额必须大�?' });
+    return res.status(400).json({ success: false, error: '退款金额必须大于0' });
   }
 
   const refund = {
@@ -98,12 +103,13 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
     createdAt: new Date(),
   };
 
-  mockRefundRequests.push(refund as any);
+  mockRefundRequests.push(refund as unknown);
 
   res.status(201).json({ success: true, data: refund });
 });
 
-// 审批退款申�?router.post('/:id/approve', (req: Request, res: Response) => {
+// 审批退款申请
+router.post('/:id/approve', (req: Request, res: Response) => {
   const { id } = req.params;
   const { approvedBy, approvedByName, note } = req.body;
 
@@ -113,14 +119,14 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   }
 
   if (refund.status !== 'pending') {
-    return res.status(400).json({ success: false, error: '只能审批待处理的退款申�? });
+    return res.status(400).json({ success: false, error: '只能审批待处理的退款申请' });
   }
 
   refund.status = RefundStatus.APPROVED;
-  (refund as any).approvedBy = approvedBy;
-  (refund as any).approvedByName = approvedByName;
-  (refund as any).approvedAt = new Date();
-  (refund as any).approvalNote = note;
+  (refund as unknown).approvedBy = approvedBy;
+  (refund as unknown).approvedByName = approvedByName;
+  (refund as unknown).approvedAt = new Date();
+  (refund as unknown).approvalNote = note;
 
   res.json({
     success: true,
@@ -129,12 +135,13 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
       status: refund.status,
       approvedBy,
       approvedByName,
-      approvedAt: (refund as any).approvedAt,
+      approvedAt: (refund as unknown).approvedAt,
     },
   });
 });
 
-// 拒绝退款申�?router.post('/:id/reject', (req: Request, res: Response) => {
+// 拒绝退款申请
+router.post('/:id/reject', (req: Request, res: Response) => {
   const { id } = req.params;
   const { rejectedBy, rejectedByName, reason } = req.body;
 
@@ -144,7 +151,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   }
 
   if (refund.status !== 'pending') {
-    return res.status(400).json({ success: false, error: '只能拒绝待处理的退款申�? });
+    return res.status(400).json({ success: false, error: '只能拒绝待处理的退款申请' });
   }
 
   if (!reason) {
@@ -152,10 +159,10 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
   }
 
   refund.status = RefundStatus.REJECTED;
-  (refund as any).rejectedBy = rejectedBy;
-  (refund as any).rejectedByName = rejectedByName;
-  (refund as any).rejectedAt = new Date();
-  (refund as any).rejectionReason = reason;
+  (refund as unknown).rejectedBy = rejectedBy;
+  (refund as unknown).rejectedByName = rejectedByName;
+  (refund as unknown).rejectedAt = new Date();
+  (refund as unknown).rejectionReason = reason;
 
   res.json({
     success: true,
@@ -164,7 +171,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
       status: refund.status,
       rejectedBy,
       rejectedByName,
-      rejectedAt: (refund as any).rejectedAt,
+      rejectedAt: (refund as unknown).rejectedAt,
       rejectionReason: reason,
     },
   });
@@ -181,15 +188,15 @@ router.post('/:id/process', (req: Request, res: Response) => {
   }
 
   if (refund.status !== 'approved') {
-    return res.status(400).json({ success: false, error: '只能处理已审批的退款申�? });
+    return res.status(400).json({ success: false, error: '只能处理已审批的退款申请' });
   }
 
   refund.status = RefundStatus.COMPLETED;
-  (refund as any).processedBy = processedBy;
-  (refund as any).processedByName = processedByName;
-  (refund as any).processedAt = new Date();
-  (refund as any).transactionId = transactionId;
-  (refund as any).processNote = note;
+  (refund as unknown).processedBy = processedBy;
+  (refund as unknown).processedByName = processedByName;
+  (refund as unknown).processedAt = new Date();
+  (refund as unknown).transactionId = transactionId;
+  (refund as unknown).processNote = note;
 
   // 更新客户累计消费（扣除退款金额）
   const customer = mockCustomers.find((c) => c.id === refund.customerId);
@@ -205,13 +212,14 @@ router.post('/:id/process', (req: Request, res: Response) => {
       amount: refund.amount,
       processedBy,
       processedByName,
-      processedAt: (refund as any).processedAt,
+      processedAt: (refund as unknown).processedAt,
       transactionId,
     },
   });
 });
 
-// 取消退款申�?router.post('/:id/cancel', (req: Request, res: Response) => {
+// 取消退款申请
+router.post('/:id/cancel', (req: Request, res: Response) => {
   const { id } = req.params;
   const { cancelledBy, reason } = req.body;
 
@@ -221,13 +229,13 @@ router.post('/:id/process', (req: Request, res: Response) => {
   }
 
   if (!['pending', 'approved'].includes(refund.status)) {
-    return res.status(400).json({ success: false, error: '只能取消待处理或已审批的退款申�? });
+    return res.status(400).json({ success: false, error: '只能取消待处理或已审批的退款申请' });
   }
 
   refund.status = RefundStatus.CANCELLED;
-  (refund as any).cancelledBy = cancelledBy;
-  (refund as any).cancelledAt = new Date();
-  (refund as any).cancelReason = reason;
+  (refund as unknown).cancelledBy = cancelledBy;
+  (refund as unknown).cancelledAt = new Date();
+  (refund as unknown).cancelReason = reason;
 
   res.json({
     success: true,
@@ -235,13 +243,14 @@ router.post('/:id/process', (req: Request, res: Response) => {
       id: refund.id,
       status: refund.status,
       cancelledBy,
-      cancelledAt: (refund as any).cancelledAt,
+      cancelledAt: (refund as unknown).cancelledAt,
       cancelReason: reason,
     },
   });
 });
 
-// 获取退款统�?router.get('/stats/summary', (req: Request, res: Response) => {
+// 获取退款统计
+router.get('/stats/summary', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
   let refunds = [...mockRefundRequests];

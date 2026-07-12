@@ -1,13 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation, Outlet } from "react-router-dom";
-import { useEffect } from 'react';
-import { useAppStore } from "./store";
+import { useEffect, useState } from 'react';
+import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./store";
 
 // 角色选择
 import SelectRole from "./pages/SelectRole";
 
 // 顾客端
 import CustomerLogin from "./pages/customer/Login";
-import CustomerHome from "./pages/customer/Home";
 import ShopDetail from "./pages/customer/ShopDetail";
 import Booking from "./pages/customer/Booking";
 import Queue from "./pages/customer/Queue";
@@ -22,7 +21,6 @@ import Cart from "./pages/customer/Cart";
 import ShopLogin from "./pages/shop/Login";
 import Dashboard from "./pages/shop/Dashboard";
 import ShopManage from "./pages/shop/Manage";
-import ReviewsManagement from "./pages/shop/Reviews";
 import StylistDashboard from "./pages/shop/StylistDashboard";
 import FinancialReport from "./pages/shop/FinancialReport";
 import OwnerDashboard from "./pages/shop/OwnerDashboard";
@@ -42,12 +40,79 @@ import Checkout from "./pages/shop/Checkout";
 // 默认店铺ID
 const DEFAULT_SHOP_ID = "shop1";
 
+// 从 localStorage 判断是否存在员工会话（同步，用于路由守卫首次渲染）
+const hasEmployeeSession = (): boolean => {
+  try {
+    const raw = localStorage.getItem('mbs_employee_session');
+    if (!raw) return false;
+    const session = JSON.parse(raw) as { currentEmployee?: { id?: string } | null };
+    return !!session?.currentEmployee?.id;
+  } catch (_e) {
+    return false;
+  }
+};
+
+// 从 localStorage 判断是否存在顾客会话（同步，用于路由守卫首次渲染）
+const hasCustomerSession = (): boolean => {
+  try {
+    const raw = localStorage.getItem('mbs_customer_session');
+    if (!raw) return false;
+    const session = JSON.parse(raw) as { id?: string } | null;
+    return !!session?.id;
+  } catch (_e) {
+    return false;
+  }
+};
+
 // 理发店端路由守卫：未登录时重定向到 /shop/login
 const ShopRouteGuard = () => {
-  const { currentShop, currentEmployee } = useAppStore();
+  const { currentShop, currentEmployee, hasHydrated } = useAppStore();
+  const [checked, setChecked] = useState(false);
   const location = useLocation();
+
+  useEffect(() => {
+    if (!checked && hasEmployeeSession()) {
+      restoreEmployeeSession();
+    }
+    setChecked(true);
+  }, [checked]);
+
+  // 等待持久化恢复完成后再判断登录态，避免刷新时误判为未登录
+  if (!hasHydrated || !checked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-500">
+        加载中...
+      </div>
+    );
+  }
   if (!currentShop && !currentEmployee && location.pathname !== "/shop/login") {
     return <Navigate to="/shop/login" replace />;
+  }
+  return <Outlet />;
+};
+
+// 顾客端路由守卫：未登录时重定向到 /customer/login
+const CustomerRouteGuard = () => {
+  const { currentCustomer, hasHydrated } = useAppStore();
+  const [checked, setChecked] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!checked && hasCustomerSession()) {
+      restoreCustomerSession();
+    }
+    setChecked(true);
+  }, [checked]);
+
+  if (!hasHydrated || !checked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-500">
+        加载中...
+      </div>
+    );
+  }
+  if (!currentCustomer && location.pathname !== "/customer/login") {
+    return <Navigate to="/customer/login" replace />;
   }
   return <Outlet />;
 };
@@ -63,6 +128,15 @@ const ShopRedirect = () => {
 };
 
 export default function App() {
+  const { hasHydrated } = useAppStore();
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    // 从独立的会话存储中恢复登录态，避免多角色共用同一 key 互相覆盖
+    restoreEmployeeSession();
+    restoreCustomerSession();
+  }, [hasHydrated]);
+
   return (
     <Router>
       <Routes>
@@ -77,13 +151,15 @@ export default function App() {
         <Route path="/customer" element={<Navigate to={`/customer/shop/${DEFAULT_SHOP_ID}`} replace />} />
         <Route path="/customer/shop/:id" element={<ShopDetail />} />
         <Route path="/customer/products/:shopId" element={<ProductList />} />
-        <Route path="/customer/cart/:shopId" element={<Cart />} />
         <Route path="/customer/booking/:shopId" element={<Booking />} />
         <Route path="/customer/queue/:bookingId" element={<Queue />} />
-        <Route path="/customer/profile" element={<Profile />} />
-        <Route path="/customer/review/:bookingId" element={<ReviewPage />} />
-        <Route path="/customer/refund" element={<RefundPage />} />
-        <Route path="/customer/feedback" element={<Feedback />} />
+        <Route element={<CustomerRouteGuard />}>
+          <Route path="/customer/profile" element={<Profile />} />
+          <Route path="/customer/cart/:shopId" element={<Cart />} />
+          <Route path="/customer/review/:bookingId" element={<ReviewPage />} />
+          <Route path="/customer/refund" element={<RefundPage />} />
+          <Route path="/customer/feedback" element={<Feedback />} />
+        </Route>
 
         {/* 理发店端路由 */}
         <Route path="/shop/login" element={<ShopLogin />} />

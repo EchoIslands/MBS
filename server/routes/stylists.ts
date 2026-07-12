@@ -3,20 +3,23 @@ import { mockBookings, mockReviews } from '../_internal/mockData.js';
 
 const router = Router();
 
-// 从预约数据中提取发型师信息（兼容 barberId/stylistId�?const getStylistName = (stylistId: string): string => {
-  const booking = mockBookings.find((b) => b.stylistId === stylistId || (b as any).barberId === stylistId);
-  return booking?.stylistName || (booking as any)?.barberName || '未知发型�?;
+// 从预约数据中提取发型师信息（兼容 barberId/stylistId）
+const getStylistName = (stylistId: string): string => {
+  const booking = mockBookings.find((b) => b.stylistId === stylistId || (b as unknown).barberId === stylistId);
+  return booking?.stylistName || (booking as unknown)?.barberName || '未知发型师';
 };
 
-// 检查预约是否属于指定发型师（兼�?barberId/stylistId�?const isStylistBooking = (b: any, stylistId: string): boolean => {
+// 检查预约是否属于指定发型师（兼容 barberId/stylistId）
+const isStylistBooking = (b: unknown, stylistId: string): boolean => {
   return b.stylistId === stylistId || b.barberId === stylistId;
 };
 
-// 获取预约的发型师ID（兼�?barberId/stylistId�?const getBookingStylistId = (b: any): string | undefined => {
+// 获取预约的发型师ID（兼容 barberId/stylistId）
+const getBookingStylistId = (b: unknown): string | undefined => {
   return b.stylistId || b.barberId;
 };
 
-// ==================== 发型师业�?API ====================
+// ==================== 发型师业绩 API ====================
 
 router.get('/:stylistId/performance', (req: Request, res: Response) => {
   const { stylistId } = req.params;
@@ -27,13 +30,14 @@ router.get('/:stylistId/performance', (req: Request, res: Response) => {
   let endDate: Date;
 
   switch (range) {
-    case 'week':
+    case 'week': {
       const dayOfWeek = now.getDay() || 7;
       startDate = new Date(now);
       startDate.setDate(startDate.getDate() - dayOfWeek + 1);
       endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 7);
       break;
+    }
     case 'month':
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -242,13 +246,14 @@ router.get('/ranking', (req: Request, res: Response) => {
   let endDate: Date;
 
   switch (range) {
-    case 'week':
+    case 'week': {
       const dayOfWeek = now.getDay() || 7;
       startDate = new Date(now);
       startDate.setDate(startDate.getDate() - dayOfWeek + 1);
       endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 7);
       break;
+    }
     case 'month':
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -307,7 +312,7 @@ router.get('/ranking', (req: Request, res: Response) => {
     .sort((a, b) => b.revenue - a.revenue);
 
   ranking.forEach((item, index) => {
-    (item as any).rank = index + 1;
+    (item as unknown).rank = index + 1;
   });
 
   res.json({

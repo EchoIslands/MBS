@@ -197,7 +197,9 @@ export interface SettlementItem {
   quantity: number;
   discountedPrice: number;       // 折后单价
   total: number;                 // 折后小计
-  category?: ProductCategory;    // 商品分类（用于假发等排除折扣）
+  category?: ProductCategory | 'service'; // 商品分类或服务标记（用于假发等排除折扣）
+  employeeId?: string;           // 服务发型师 ID
+  employeeName?: string;         // 服务发型师姓名
 }
 
 // 结算折扣明细
@@ -446,6 +448,7 @@ export interface Employee {
 export interface StylistPerformance {
   stylistId: string;
   stylistName: string;
+  title?: string;
   avatar?: string;
   // 业绩数据
   revenue: {
@@ -920,6 +923,8 @@ export interface AppState {
   currentEmployee: Employee | null;
   // 新增：购物车
   cart: CartItem[];
+  // 持久化恢复标志
+  hasHydrated: boolean;
   // 登录时可以选择发型师身份
   setUserRole: (role: UserRole) => void;
   setCurrentCustomer: (customer: Customer | null) => void;
@@ -934,4 +939,5 @@ export interface AppState {
   toggleCartItemSelection: (itemId: string) => void;
   selectAllCartItems: (selected: boolean) => void;
   clearCart: () => void;
+  setHasHydrated: (value: boolean) => void;
 }

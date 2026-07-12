@@ -18,7 +18,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 // 将 snake_case 数据转为 camelCase 供前端使用
-const shopFromDb = (row: any): any => ({
+const shopFromDb = (row: unknown): unknown => ({
   id: row.id,
   name: row.name,
   description: row.description,
@@ -40,9 +40,9 @@ router.get('/', async (req: Request, res: Response) => {
 
   const dbShops = await shopQueries.list();
   const hasDb = dbShops.length > 0;
-  let shops: any[] = hasDb ? dbShops.map(shopFromDb) : [...mockShops];
+  let shops: unknown[] = hasDb ? dbShops.map(shopFromDb) : [...mockShops];
 
-  shops = shops.map((shop: any) => ({
+  shops = shops.map((shop: unknown) => ({
     ...shop,
     distance: calculateDistance(
       parseFloat(lat as string),
@@ -53,11 +53,11 @@ router.get('/', async (req: Request, res: Response) => {
   }));
 
   if (level) {
-    shops = shops.filter((shop: any) => shop.level === level);
+    shops = shops.filter((shop: unknown) => shop.level === level);
   }
 
   const levelWeight: Record<string, number> = { excellent: 0, good: 1, average: 2, poor: 3 };
-  shops.sort((a: any, b: any) => {
+  shops.sort((a: unknown, b: unknown) => {
     const weightA = levelWeight[a.level] ?? 1;
     const weightB = levelWeight[b.level] ?? 1;
     if (weightA !== weightB) return weightA - weightB;
@@ -74,7 +74,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     res.json(shopFromDb(dbShop));
     return;
   }
-  const shop = mockShops.find((s: any) => s.id === req.params.id);
+  const shop = mockShops.find((s: unknown) => s.id === req.params.id);
   if (!shop) {
     return res.status(404).json({ message: '店铺不存在' });
   }
@@ -88,7 +88,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   // 先尝试从数据库更新
   const shop = await shopQueries.get(req.params.id);
   if (shop) {
-    const updateData: any = {
+    const updateData: unknown = {
       name: name || shop.name,
       description: description || shop.description,
       phone: phone || shop.phone,
@@ -99,7 +99,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (openingHours !== undefined) updateData.opening_hours = JSON.stringify(openingHours);
     updateData.updated_at = new Date().toISOString();
 
-    const updated = await (shopQueries as any).update(req.params.id, updateData);
+    const updated = await (shopQueries as unknown).update(req.params.id, updateData);
     if (updated) {
       res.json({ success: true, message: '店铺信息已更新' });
       return;
@@ -107,7 +107,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 
   // fallback 到 mockShops
-  const shopIndex = mockShops.findIndex((s: any) => s.id === req.params.id);
+  const shopIndex = mockShops.findIndex((s: unknown) => s.id === req.params.id);
   if (shopIndex === -1) {
     return res.status(404).json({ message: '店铺不存在' });
   }
@@ -135,7 +135,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   const newId = 'shop_' + Math.random().toString(36).substr(2, 9);
-  const newShop: any = {
+  const newShop: unknown = {
     id: newId,
     name,
     description: description || '',
@@ -144,14 +144,14 @@ router.post('/', async (req: Request, res: Response) => {
     longitude: 116.4074,
     phone: phone || '',
     images: [],
-    services: services.map((s: any, i: number) => ({
+    services: services.map((s: unknown, i: number) => ({
       id: s.id || 'svc_' + i,
       name: s.name,
       price: s.price,
       duration: s.duration,
       description: s.description,
     })),
-    employees: employees.map((e: any, i: number) => ({
+    employees: employees.map((e: unknown, i: number) => ({
       id: e.id || 'emp_' + i,
       name: e.name,
       title: e.title,
@@ -191,7 +191,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/:id/bookings', async (req: Request, res: Response) => {
   const dbBookings = await bookingQueries.listByShop(req.params.id);
   if (dbBookings.length > 0) {
-    const camel = dbBookings.map((b: any) => ({
+    const camel = dbBookings.map((b: unknown) => ({
       id: b.id,
       shopId: b.shop_id,
       customerId: b.customer_id,
@@ -211,7 +211,7 @@ router.get('/:id/bookings', async (req: Request, res: Response) => {
     return;
   }
 
-  const bookings = mockBookings.filter((b: any) => b.shopId === req.params.id);
+  const bookings = mockBookings.filter((b: unknown) => b.shopId === req.params.id);
   res.json(bookings);
 });
 
@@ -219,7 +219,7 @@ router.get('/:id/bookings', async (req: Request, res: Response) => {
 router.get('/:id/reviews', async (req: Request, res: Response) => {
   const dbReviews = await reviewQueries.listByShop(req.params.id);
   if (dbReviews.length > 0) {
-    const camel = dbReviews.map((r: any) => ({
+    const camel = dbReviews.map((r: unknown) => ({
       id: r.id,
       shopId: r.shop_id,
       customerId: r.customer_id,
@@ -246,7 +246,7 @@ router.get('/:id/reviews', async (req: Request, res: Response) => {
     return;
   }
 
-  const reviews = mockReviews.filter((r: any) => r.shopId === req.params.id);
+  const reviews = mockReviews.filter((r: unknown) => r.shopId === req.params.id);
   res.json(reviews);
 });
 
@@ -256,8 +256,8 @@ router.get('/:id/queue', async (req: Request, res: Response) => {
   if (dbQueue) {
     const bookings = await bookingQueries.listByShop(req.params.id);
     const pendingBookings = bookings
-      .filter((b: any) => b.status === 'pending' || b.status === 'confirmed')
-      .map((b: any) => ({
+      .filter((b: unknown) => b.status === 'pending' || b.status === 'confirmed')
+      .map((b: unknown) => ({
         id: b.id,
         shopId: b.shop_id,
         customerId: b.customer_id,
@@ -284,12 +284,12 @@ router.get('/:id/queue', async (req: Request, res: Response) => {
     return;
   }
 
-  const queue = mockQueues.find((q: any) => q.shopId === req.params.id);
+  const queue = mockQueues.find((q: unknown) => q.shopId === req.params.id);
   if (!queue) {
     return res.status(404).json({ message: '队列不存在' });
   }
   queue.bookings = mockBookings.filter(
-    (b: any) => b.shopId === req.params.id && (b.status === 'pending' || b.status === 'confirmed'),
+    (b: unknown) => b.shopId === req.params.id && (b.status === 'pending' || b.status === 'confirmed'),
   );
   res.json(queue);
 });

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Clock as ClockIcon, MapPin, Bell, Music, CheckCircle, User, Calendar,
-  Scissors, Star, Sparkles, Award, ChevronRight, Zap, Users,
+  Scissors, Star, Sparkles, Award, ChevronRight, Users,
 } from 'lucide-react';
 import { Booking, Queue as QueueType, Employee, Shop } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
@@ -74,7 +74,11 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
  */
 function playReminderSound() {
   try {
-    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const win = window as Window & {
+      AudioContext?: typeof AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AudioCtx = win.AudioContext || win.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const oscillator = ctx.createOscillator();
@@ -118,7 +122,6 @@ const Queue: React.FC = () => {
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [selectedSound] = useState('清脆铃声');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
   const hasNotifiedRef = useRef(false);
   const navigate = useNavigate();
 
@@ -151,11 +154,12 @@ const Queue: React.FC = () => {
             : new Date(result.scheduledTime);
 
           // 后端可能返回 stylistId/stylistName，前端使用 barberId/barberName
+          const raw = result as unknown as Record<string, unknown>;
           const fetchedBooking: Booking = {
             ...result,
             scheduledTime: scheduledTimeDate,
-            barberId: (result as any).barberId || (result as any).stylistId,
-            barberName: (result as any).barberName || (result as any).stylistName,
+            barberId: (raw.barberId || raw.stylistId) as string | undefined,
+            barberName: (raw.barberName || raw.stylistName) as string | undefined,
           };
           // 标记为真实数据（从 bookingApi 获取，无论是 mock 还是真实 API）
           setIsFromApi(true);
@@ -224,11 +228,9 @@ const Queue: React.FC = () => {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         });
-        setLocationError(null);
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         console.log('获取位置失败:', err.message);
-        setLocationError('未获取到位置，使用店铺默认距离');
       });
   }, []);
 
@@ -259,8 +261,9 @@ const Queue: React.FC = () => {
 
   // 当前为您服务的发型师
   const currentShop = shop || mockShops.find((s) => s.id === booking?.shopId) || mockShops[0];
-  const barber: Employee | undefined = currentShop?.employees.find((e) => e.role === 'stylist' || !e.role);
-  const stylist: Employee | undefined = barber || currentShop?.employees[0];
+  const stylist: Employee | undefined = booking?.barberId
+    ? currentShop?.employees.find((e) => e.id === booking.barberId)
+    : currentShop?.employees.find((e) => e.role === 'stylist' || !e.role) || currentShop?.employees[0];
 
   // 获取预约时间信息
   const getTimeUntilAppointment = () => {
@@ -303,7 +306,7 @@ const Queue: React.FC = () => {
 
   // 从排队数据中获取当前预约的服务时长（分钟）
   const currentBookingQueueInfo = queue?.bookings?.find((b) => b.id === booking?.id);
-  const serviceMinutes = (currentBookingQueueInfo as any)?.duration || 30;
+  const serviceMinutes = (currentBookingQueueInfo as { duration?: number })?.duration || 30;
 
   // 如果服务已开始，显示剩余分钟；
   // 否则按“前方还有几人 × 当前服务时长”计算。已经排到第 1 位时等待时间为 0。
@@ -686,6 +689,12 @@ const Queue: React.FC = () => {
                     {new Date(booking.scheduledTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </span>
+              </div>
+              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                <span className="text-gray-500 flex items-center gap-2">
+                  <User size={14} className="text-purple-500" /> 顾客
+                </span>
+                <span className="font-medium text-gray-800">{booking.customerName || '顾客'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-500 flex items-center gap-2">

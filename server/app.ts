@@ -68,7 +68,7 @@ app.use('/api/orders', ordersRoutes)
  */
 app.use(
   '/api/health',
-  (req: Request, res: Response, next: NextFunction): void => {
+  (req: Request, res: Response, _next: NextFunction): void => {
     res.status(200).json({
       success: true,
       message: 'ok',
@@ -91,7 +91,7 @@ app.get('/api/kanban', (req: Request, res: Response) => {
     } else {
       res.status(404).json({ error: '看板状态文件不存在' })
     }
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ error: '读取看板状态失败' })
   }
 })
@@ -104,13 +104,13 @@ app.put('/api/kanban', (req: Request, res: Response) => {
       return
     }
     
-    let state = { lastUpdated: new Date().toISOString(), tasks: [] as any[] }
+    let state = { lastUpdated: new Date().toISOString(), tasks: [] as unknown[] }
     if (fs.existsSync(KANBAN_STATE_FILE)) {
       const data = fs.readFileSync(KANBAN_STATE_FILE, 'utf-8')
       state = JSON.parse(data)
     }
     
-    const taskIndex = state.tasks.findIndex((t: any) => t.id === taskId)
+    const taskIndex = state.tasks.findIndex((t: unknown) => t.id === taskId)
     if (taskIndex >= 0) {
       state.tasks[taskIndex].status = status
     }
@@ -118,7 +118,7 @@ app.put('/api/kanban', (req: Request, res: Response) => {
     
     fs.writeFileSync(KANBAN_STATE_FILE, JSON.stringify(state, null, 2))
     res.json({ success: true, task: state.tasks[taskIndex] })
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ error: '更新看板状态失败' })
   }
 })
@@ -135,14 +135,14 @@ app.put('/api/kanban/batch', (req: Request, res: Response) => {
       return
     }
     
-    let state = { lastUpdated: new Date().toISOString(), tasks: [] as any[] }
+    let state = { lastUpdated: new Date().toISOString(), tasks: [] as unknown[] }
     if (fs.existsSync(KANBAN_STATE_FILE)) {
       const data = fs.readFileSync(KANBAN_STATE_FILE, 'utf-8')
       state = JSON.parse(data)
     }
     
-    tasks.forEach((update: any) => {
-      const taskIndex = state.tasks.findIndex((t: any) => t.id === update.taskId)
+    tasks.forEach((update: unknown) => {
+      const taskIndex = state.tasks.findIndex((t: unknown) => t.id === update.taskId)
       if (taskIndex >= 0) {
         state.tasks[taskIndex].status = update.status
       }
@@ -151,7 +151,7 @@ app.put('/api/kanban/batch', (req: Request, res: Response) => {
     
     fs.writeFileSync(KANBAN_STATE_FILE, JSON.stringify(state, null, 2))
     res.json({ success: true, tasks: state.tasks })
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ error: '批量更新看板状态失败' })
   }
 })

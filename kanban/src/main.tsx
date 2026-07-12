@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+/* eslint-disable react-refresh/only-export-components */
+import React, { useState, useEffect, useCallback } from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 
@@ -117,6 +118,17 @@ const TASKS = [
   { id: 'task-16', title: '购物车+订单 API', description: '购物车操作、订单创建和状态管理', status: 'todo', priority: 'high', assignee: 'dev1', tags: ['商品'] },
 ]
 
+interface Scenario {
+  label?: string
+  phone?: string
+  password?: string
+  path?: string
+  method?: string
+  expectedSuccess?: boolean
+  customTest?: boolean
+  [key: string]: unknown
+}
+
 interface Task {
   id: string
   title: string
@@ -127,16 +139,20 @@ interface Task {
   tags: string[]
   apiPath?: string
   method?: string
-  scenarios?: any[]
+  scenarios?: Scenario[]
   createdAt?: string
   updatedAt?: string
 }
 
-const fetchKanbanState = async () => {
+interface KanbanState {
+  tasks?: Task[]
+}
+
+const fetchKanbanState = async (): Promise<KanbanState | null> => {
   try {
     const res = await fetch(`${API_BASE}/kanban`)
     if (!res.ok) return null
-    return await res.json()
+    return (await res.json()) as KanbanState
   } catch {
     return null
   }
@@ -149,7 +165,6 @@ const StatsPanel: React.FC<{ tasks: Task[]; onStatusClick: (status: string) => v
   const inProgress = tasks.filter(t => t.status === 'in-progress').length
   const todo = tasks.filter(t => t.status === 'todo').length
   const testing = tasks.filter(t => t.status === 'testing').length
-  const fixed = tasks.filter(t => t.status === 'fixed').length
   const progress = total > 0 ? Math.round((done / total) * 100) : 0
 
   return (
@@ -294,14 +309,14 @@ const DoneTasksPanel: React.FC<{ tasks: Task[]; onTaskTest: (taskId: string) => 
 
 // ========== 通用 API 测试面板（根据任务动态生成内容）==========
 const TaskTestPanel: React.FC<{ task: Task; onClose: () => void }> = ({ task, onClose }) => {
-  const [results, setResults] = useState<any[]>([])
+  const [results, setResults] = useState<unknown[]>([])
   const [testing, setTesting] = useState(false)
 
-  const runTest = async (scenario: any, index: number) => {
+  const runTest = useCallback(async (scenario: Scenario, index: number) => {
     const startTime = Date.now()
     try {
       let body = ''
-      let headers: Record<string, string> = {}
+      const headers: Record<string, string> = {}
 
       if (task.method === 'POST' || task.method === 'PUT') {
         headers['Content-Type'] = 'application/json'
@@ -330,18 +345,18 @@ const TaskTestPanel: React.FC<{ task: Task; onClose: () => void }> = ({ task, on
         response: data,
         error: data.error || null,
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         ...scenario,
         index,
         success: false,
-        error: e.message || '网络错误',
+        error: e instanceof Error ? e.message : '网络错误',
         response: null,
       }
     }
-  }
+  }, [task.method, task.apiPath])
 
-  const runAll = async () => {
+  const runAll = useCallback(async () => {
     setTesting(true)
     setResults([])
     const testResults = []
@@ -352,12 +367,12 @@ const TaskTestPanel: React.FC<{ task: Task; onClose: () => void }> = ({ task, on
       setResults([...testResults])
     }
     setTesting(false)
-  }
+  }, [task.scenarios, runTest])
 
   useEffect(() => {
     // 打开时自动运行一次测试
     runAll()
-  }, [task.id])
+  }, [task.id, runAll])
 
   const totalCount = results.length
   const passCount = results.filter(r => r.success === r.expectedSuccess).length
@@ -467,19 +482,16 @@ const TaskTestPanel: React.FC<{ task: Task; onClose: () => void }> = ({ task, on
 const StatusListPanel: React.FC<{ status: string; tasks: Task[]; onClose: () => void; onTaskClick: (task: Task) => void; onTaskTest: (taskId: string) => void }> = ({ status, tasks, onClose, onTaskClick, onTaskTest }) => {
   let filtered: Task[] = []
   let title = ''
-  let icon = '📋'
   let colorClass = 'border-slate-200 bg-slate-50'
 
   if (status === 'all') {
     filtered = tasks
     title = '全部任务'
-    icon = '📊'
     colorClass = 'border-blue-200 bg-blue-50'
   } else {
     const statusDef = STATUSES.find(s => s.id === status)
     filtered = tasks.filter(t => t.status === status)
     title = `${statusDef?.icon} ${statusDef?.label}的任务`
-    icon = statusDef?.icon || '📋'
     colorClass = `${statusDef?.border} ${statusDef?.light}`
   }
 
@@ -725,7 +737,7 @@ const App: React.FC = () => {
       const state = await fetchKanbanState()
       if (state && state.tasks && state.tasks.length > 0) {
         const merged = TASKS.map(task => {
-          const apiTask = state.tasks.find((t: any) => t.id === task.id)
+          const apiTask = state.tasks.find((t: Task) => t.id === task.id)
           return apiTask ? { ...task, status: apiTask.status } : task
         })
         setTasks(merged)
@@ -739,7 +751,7 @@ const App: React.FC = () => {
     const state = await fetchKanbanState()
     if (state && state.tasks) {
       const merged = TASKS.map(task => {
-        const apiTask = state.tasks.find((t: any) => t.id === task.id)
+        const apiTask = state.tasks.find((t: Task) => t.id === task.id)
         return apiTask ? { ...task, status: apiTask.status } : task
       })
       setTasks(merged)
@@ -764,8 +776,6 @@ const App: React.FC = () => {
     setViewTask(null)
     setViewStatus(status)
   }
-
-  const filteredForView = viewStatus ? (viewStatus === 'all' ? tasks : tasks.filter(t => t.status === viewStatus)) : []
 
   return (
     <div className="min-h-screen bg-slate-100">

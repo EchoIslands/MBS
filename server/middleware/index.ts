@@ -11,7 +11,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mbs-secret-key-2024'
 // 统一响应格式
 export const successResponse = (
   res: Response,
-  data: any,
+  data: unknown,
   message: string = '操作成功'
 ) => {
   return res.json({
@@ -36,10 +36,10 @@ export const errorResponse = (
 
 // 错误处理中间件
 export const errorHandler = (
-  err: any,
+  err: unknown,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   console.error('[Error]', err)
   
@@ -66,7 +66,7 @@ export const errorHandler = (
 export const authenticate = (
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   try {
     const authHeader = req.headers.authorization
@@ -74,14 +74,14 @@ export const authenticate = (
       return errorResponse(res, '未登录，请先登录', 401)
     }
     const token = authHeader.substring(7)
-    const decoded = jwt.verify(token, JWT_SECRET) as any
-    (req as any).user = decoded
+    const decoded = jwt.verify(token, JWT_SECRET) as unknown
+    (req as unknown).user = decoded
     next()
   } catch (err) {
-    if ((err as any).name === 'JsonWebTokenError') {
+    if ((err as unknown).name === 'JsonWebTokenError') {
       return errorResponse(res, 'Token 无效', 401)
     }
-    if ((err as any).name === 'TokenExpiredError') {
+    if ((err as unknown).name === 'TokenExpiredError') {
       return errorResponse(res, 'Token 已过期，请重新登录', 401)
     }
     return errorResponse(res, '认证失败', 401)
@@ -90,8 +90,8 @@ export const authenticate = (
 
 // 角色权限中间件
 export const requireRole = (...roles: string[]) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user
+  return (req: Request, res: Response, _next: NextFunction) => {
+    const user = (req as unknown).user
     if (!user) return errorResponse(res, '未登录', 401)
     if (!roles.includes(user.role)) return errorResponse(res, '权限不足', 403)
     next()
@@ -102,7 +102,7 @@ export const requireRole = (...roles: string[]) => {
 export const logger = (
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   const startTime = Date.now()
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`)
@@ -117,7 +117,7 @@ export const logger = (
 export const cors = (
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')

@@ -78,11 +78,11 @@ const ARRAY_FIELDS = new Set([
  * @returns 转换后的对象
  */
 export function mapCustomerBodyToDB(
-  body: Record<string, any>,
+  body: Record<string, unknown>,
   options: { allowId?: boolean; allowShopId?: boolean } = {}
-): Record<string, any> {
+): Record<string, unknown> {
   const snakeBody = toSnakeCase(body);
-  const result: Record<string, any> = {};
+  const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(snakeBody)) {
     if (key === 'id' && !options.allowId) continue;
@@ -120,7 +120,7 @@ export type CustomerValidationResult =
   | { valid: true }
   | { valid: false; error: string };
 
-export function validateCustomerData(data: Record<string, any>): CustomerValidationResult {
+export function validateCustomerData(data: Record<string, unknown>): CustomerValidationResult {
   if (!data.name || typeof data.name !== 'string' || data.name.trim() === '') {
     return { valid: false, error: '客户姓名不能为空' };
   }

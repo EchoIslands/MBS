@@ -18,10 +18,10 @@ const ReviewsManagement: React.FC = () => {
       setError(null);
       const data = await shopApi.getShopReviews(currentShop.id);
       setReviews(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('加载评价失败:', err);
       setReviews([]);
-      setError(err?.message || '加载评价失败，请检查网络或后端服务');
+      setError((err as Error).message || '加载评价失败，请检查网络或后端服务');
     } finally {
       setLoading(false);
     }
@@ -29,6 +29,7 @@ const ReviewsManagement: React.FC = () => {
 
   useEffect(() => {
     fetchReviews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentShop?.id]);
 
   const renderStars = (count: number) => {

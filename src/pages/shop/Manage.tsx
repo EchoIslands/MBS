@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar } from 'lucide-react';
+import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
+import { shopApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const defaultOpeningHours: OpeningHours = {
@@ -63,6 +64,19 @@ const ShopManage: React.FC = () => {
     setServices(services.filter((s) => s.id !== id));
   };
 
+  // 将本地 employees 同步到全局 mockShops / localStorage，并更新 store 中的 currentShop
+  const syncEmployeesToShop = async (nextEmployees: Employee[]) => {
+    if (!currentShop) return;
+    try {
+      const updated = await shopApi.updateShop(currentShop.id, { employees: nextEmployees });
+      if (updated) {
+        updateShop({ employees: nextEmployees });
+      }
+    } catch (err) {
+      console.error('[ShopManage] 同步员工数据失败:', err);
+    }
+  };
+
   const addEmployee = () => {
     if (!newEmployee.name) return;
     const employee: Employee = {
@@ -74,18 +88,24 @@ const ShopManage: React.FC = () => {
       rating: 5.0,
       isActive: true,
     };
-    setEmployees([...employees, employee]);
+    const next = [...employees, employee];
+    setEmployees(next);
     setNewEmployee({ name: '', title: '', specialty: '', avatar: '' });
+    syncEmployeesToShop(next);
   };
 
   const removeEmployee = (id: string) => {
-    setEmployees(employees.filter((e) => e.id !== id));
+    const next = employees.filter((e) => e.id !== id);
+    setEmployees(next);
+    syncEmployeesToShop(next);
   };
 
   const toggleEmployeeStatus = (id: string) => {
-    setEmployees(employees.map((e) => 
+    const next = employees.map((e) =>
       e.id === id ? { ...e, isActive: !e.isActive } : e
-    ));
+    );
+    setEmployees(next);
+    syncEmployeesToShop(next);
   };
 
   const handleSave = async () => {
@@ -102,30 +122,15 @@ const ShopManage: React.FC = () => {
         openingHours,
         bookingConfirmMode,
       };
-      const response = await fetch(`/api/shops/${currentShop.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(shopData),
-      });
-      if (response.ok) {
+      const updated = await shopApi.updateShop(currentShop.id, shopData);
+      if (updated) {
         // 同时更新 store 中的店铺
-        updateShop({
-          ...currentShop,
-          name: shopName,
-          description: shopDesc,
-          phone: shopPhone,
-          address: shopAddress,
-          services,
-          employees,
-          openingHours,
-          bookingConfirmMode,
-        });
+        updateShop(updated);
         alert('保存成功！');
         navigate('/shop');
       } else {
-        const errText = await response.text().catch(() => '');
-        console.error('保存失败:', response.status, errText);
-        alert(`保存失败：${response.status}${errText ? ' - ' + errText : ''}`);
+        console.error('保存失败: 未返回店铺数据');
+        alert('保存失败');
       }
     } catch (error) {
       console.error('保存失败:', error);

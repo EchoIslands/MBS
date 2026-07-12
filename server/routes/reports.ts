@@ -22,13 +22,15 @@ const getDateRange = (type: TimeRange, date?: string): { start: Date; end: Date 
       end = new Date(refDate);
       end.setDate(end.getDate() + 1);
       break;
-    case 'week':
-      // 周一作为一周开�?      const dayOfWeek = refDate.getDay() || 7; // 周日返回7
+    case 'week': {
+      // 周一作为一周开始
+      const dayOfWeek = refDate.getDay() || 7; // 周日返回7
       start = new Date(refDate);
       start.setDate(start.getDate() - dayOfWeek + 1);
       end = new Date(start);
       end.setDate(end.getDate() + 7);
       break;
+    }
     case 'month':
       start = new Date(refDate.getFullYear(), refDate.getMonth(), 1);
       end = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 1);
@@ -131,7 +133,8 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
     );
   });
 
-  // 上一个周�?  const prevDate = new Date(now);
+  // 上一个周期
+  const prevDate = new Date(now);
   if (compareType === 'month') {
     prevDate.setMonth(prevDate.getMonth() - 1);
   } else if (compareType === 'week') {
@@ -185,14 +188,16 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   });
 });
 
-// 获取技师业绩报�?router.get('/stylist/:stylistId', (req: Request, res: Response) => {
+// 获取技师业绩报表
+router.get('/stylist/:stylistId', (req: Request, res: Response) => {
   const { stylistId } = req.params;
   const { range = 'month', date } = req.query;
 
   const timeRange = range as TimeRange;
   const { start, end } = getDateRange(timeRange, date as string);
 
-  // 筛选该技师已完成的预�?  const stylistBookings = mockBookings.filter((b) => {
+  // 筛选该技师已完成的预约
+  const stylistBookings = mockBookings.filter((b) => {
     const bookingDate = new Date(b.scheduledTime);
     return (
       b.stylistId === stylistId &&
@@ -223,7 +228,8 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   });
 });
 
-// 获取店铺日汇总报�?router.get('/shop/:shopId/daily', (req: Request, res: Response) => {
+// 获取店铺日汇总报表
+router.get('/shop/:shopId/daily', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { days = '7' } = req.query;
 
@@ -237,7 +243,8 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
   // 按天分组统计
   const dailyStats: Record<string, { revenue: number; count: number; avgValue: number }> = {};
   
-  // 初始化所有日�?  for (let i = 0; i < daysNum; i++) {
+  // 初始化所有日期
+  for (let i = 0; i < daysNum; i++) {
     const date = new Date(start);
     date.setDate(date.getDate() + i);
     const dateKey = date.toISOString().split('T')[0];
@@ -256,7 +263,8 @@ router.get('/shop/:shopId/compare', (req: Request, res: Response) => {
     }
   });
 
-  // 计算客单价并转换为数�?  const result = Object.entries(dailyStats)
+  // 计算客单价并转换为数组
+  const result = Object.entries(dailyStats)
     .map(([date, stats]) => ({
       date,
       ...stats,

@@ -12,55 +12,126 @@ import {
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import {
-  getMockStylistPerformance,
-  mockBookings,
-  mockShops,
-} from '../../../shared/mockData';
-import { StylistPerformance, UserRole } from '../../../shared/types';
+import { stylistApi, bookingApi } from '../../api';
+import { StylistPerformance, UserRole, Booking } from '../../../shared/types';
 import ShopLayout from './ShopLayout';
 
 const StylistDashboard: React.FC = () => {
   const { currentEmployee, currentShop, userRole } = useAppStore();
   const [ownPerformance, setOwnPerformance] = useState<StylistPerformance | null>(null);
   const [allPerformances, setAllPerformances] = useState<StylistPerformance[]>([]);
-  const [todayBookings, setTodayBookings] = useState<any[]>([]);
+  const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
 
   const isManagerOrCEO =
     userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentShop || !userRole) return;
+    let cancelled = false;
 
-    // 发型师自己的业绩
-    if (currentEmployee) {
-      const perf = getMockStylistPerformance(currentEmployee.id, currentShop.id);
-      setOwnPerformance(perf);
-    }
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const shopId = currentShop.id;
+        const [performanceList, bookings] = await Promise.all([
+          stylistApi.getPerformance(shopId),
+          bookingApi.getBookingsByShop(shopId),
+        ]);
+        if (cancelled) return;
 
-    // 店长/CEO：加载所有发型师的业绩
-    if (isManagerOrCEO) {
-      const stylists = mockShops
-        .find((s) => s.id === currentShop.id)
-        ?.employees.filter((e) => e.role === UserRole.STYLIST && e.isActive) || [];
+        // 转换并排序业绩
+        const allPerf = (performanceList || [])
+          .map((p: unknown) => {
+            const item = p as Partial<StylistPerformance>;
+            return {
+              stylistId: item.stylistId || '',
+              stylistName: item.stylistName || '',
+              title: item.title || '发型师',
+              averageRating: item.averageRating || 0,
+              revenue: {
+                today: item.revenue?.today || 0,
+                week: item.revenue?.week || 0,
+                month: item.revenue?.month || 0,
+                year: item.revenue?.year || 0,
+              },
+              services: {
+                total: item.services?.total || 0,
+                byType: item.services?.byType || {},
+              },
+              estimatedCommission: item.estimatedCommission || 0,
+            } as StylistPerformance;
+          })
+          .sort((a, b) => b.revenue.month - a.revenue.month);
 
-      const allPerf = stylists.map((stylist) =>
-        getMockStylistPerformance(stylist.id, currentShop.id),
-      );
-      setAllPerformances(allPerf);
-    }
+        setAllPerformances(allPerf);
 
-    // 筛选预约
-    const bookings = mockBookings.filter(
-      (b) =>
-        b.shopId === currentShop.id &&
-        (userRole === UserRole.STYLIST ? b.barberId === currentEmployee?.id : true),
-    );
-    setTodayBookings(bookings);
+        // 当前发型师自己的业绩
+        if (currentEmployee) {
+          const own = allPerf.find((p) => p.stylistId === currentEmployee.id);
+          if (own) {
+            setOwnPerformance(own);
+          } else if (!isManagerOrCEO) {
+            // 非管理岗且没有业绩记录时，展示空数据
+            setOwnPerformance({
+              stylistId: currentEmployee.id,
+              stylistName: currentEmployee.name,
+              averageRating: 0,
+              revenue: { today: 0, week: 0, month: 0 },
+              services: { total: 0, byType: {} },
+              estimatedCommission: 0,
+            } as StylistPerformance);
+          }
+        }
+
+        // 今日预约（按日期和服务对象筛选）
+        const todayStr = new Date().toISOString().split('T')[0];
+        const filtered = (bookings || []).filter((b) => {
+          const scheduled = b.scheduledTime ? new Date(b.scheduledTime) : null;
+          const isToday = scheduled
+            ? scheduled.toISOString().split('T')[0] === todayStr
+            : false;
+          const matchRole =
+            userRole === UserRole.STYLIST ? b.barberId === currentEmployee?.id : true;
+          return isToday && matchRole;
+        });
+        setTodayBookings(filtered);
+      } catch (err: unknown) {
+        if (!cancelled) setError((err as Error).message || '加载数据失败');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadData();
+    return () => { cancelled = true; };
   }, [currentEmployee, currentShop, userRole, isManagerOrCEO]);
 
   // ========== 店长/CEO 视图：全员业绩看板 ==========
-  if (isManagerOrCEO && allPerformances.length > 0) {
+  if (loading) {
+    return (
+      <ShopLayout title="发型师看板">
+        <div className="text-gray-500 text-center py-12">
+          <div className="animate-spin inline-block w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mb-3" />
+          <p className="text-sm">加载中...</p>
+        </div>
+      </ShopLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <ShopLayout title="发型师看板">
+        <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-600 text-sm">
+          {error}
+        </div>
+      </ShopLayout>
+    );
+  }
+
+  if (isManagerOrCEO) {
     // 汇总数据
     const totalToday = allPerformances.reduce((sum, p) => sum + p.revenue.today, 0);
     const totalWeek = allPerformances.reduce((sum, p) => sum + p.revenue.week, 0);
@@ -142,8 +213,6 @@ const StylistDashboard: React.FC = () => {
 
           {/* 排名行 */}
           {sorted.map((perf, index) => {
-            const shop = mockShops.find((s) => s.id === currentShop?.id);
-            const stylist = shop?.employees.find((e) => e.id === perf.stylistId);
             const rank = index + 1;
             const rankColor =
               rank === 1
@@ -178,7 +247,7 @@ const StylistDashboard: React.FC = () => {
                       {perf.stylistName}
                     </div>
                     <div className="text-xs text-gray-400 truncate">
-                      {stylist?.title || '发型师'}
+                      {perf.title || '发型师'}
                     </div>
                   </div>
                 </div>

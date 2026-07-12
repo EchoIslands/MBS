@@ -111,7 +111,7 @@ const CustomerManagement: React.FC = () => {
       
       setCustomers(result);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '获取客户列表失败');
+      setError(err instanceof Error ? (err as Error).message : '获取客户列表失败');
     } finally {
       setLoading(false);
     }
@@ -359,7 +359,7 @@ const CustomerManagement: React.FC = () => {
         color: 'text-green-500',
       },
     ];
-  }, [customers, filteredCustomers, userRole, currentEmployee]);
+  }, [customers, filteredCustomers, userRole]);
 
   // 导出客户CSV（仅CEO和客服可见）
   const handleExportCSV = () => {

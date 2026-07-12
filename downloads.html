@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修复文件下载 - 预约倒计时问题</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .file-list { list-style: none; padding: 0; }
+        .file-item { background: white; margin: 15px 0; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .file-item h3 { margin: 0 0 8px 0; color: #2563eb; font-size: 18px; }
+        .file-item p { margin: 0 0 15px 0; color: #666; font-size: 14px; line-height: 1.5; }
+        .download-btn { display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 14px; transition: all 0.2s; }
+        .download-btn:hover { background: linear-gradient(135deg, #1d4ed8, #1e40af); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+        .note { background: #fef3c7; padding: 20px; border-radius: 12px; margin: 30px 0; border-left: 4px solid #f59e0b; }
+        .note h3 { margin: 0 0 10px 0; color: #92400e; }
+        .note ol { margin: 0; padding-left: 20px; color: #78350f; }
+        .note li { margin: 8px 0; }
+        .file-size { color: #999; font-size: 12px; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <h1>预约倒计时修复 - 修改文件下载</h1>
+    <p class="subtitle">修复了预约后立即显示"正在服务"的问题</p>
+    
+    <div class="note">
+        <h3>使用说明</h3>
+        <ol>
+            <li>点击每个文件右侧的<strong>"下载"</strong>按钮下载文件</li>
+            <li>将下载的文件替换到本地项目对应路径</li>
+            <li>重新启动前端和后端服务进行测试</li>
+        </ol>
+    </div>
+    
+    <ul class="file-list">
+        <li class="file-item">
+            <h3>1. src/pages/customer/Queue.tsx <span class="file-size">(排队页面)</span></h3>
+            <p><strong>修改内容：</strong>改用 bookingApi.getBooking 获取预约数据，与 createBooking 使用同一数据源，确保数据一致性</p>
+            <a href="data:text/plain;charset=utf-8,%E6%8E%89%E4%B8%8B%E6%96%87%E4%BB%B6%E5%86%85%E5%AE%B9%E5%90%91%E4%B8%8B%E6%96%87" download="Queue.tsx" class="download-btn">下载 Queue.tsx</a>
+        </li>
+        
+        <li class="file-item">
+            <h3>2. src/pages/customer/Booking.tsx <span class="file-size">(预约页面)</span></h3>
+            <p><strong>修改内容：</strong>添加逻辑：如果选择今天，只显示当前时间之后的时段，防止用户选择过去的时间</p>
+            <a href="data:text/plain;charset=utf-8,%E6%8E%89%E4%B8%8B%E6%96%87%E4%BB%B6%E5%86%85%E5%AE%B9%E5%90%91%E4%B8%8B%E6%96%87" download="Booking.tsx" class="download-btn">下载 Booking.tsx</a>
+        </li>
+        
+        <li class="file-item">
+            <h3>3. src/api.ts <span class="file-size">(API 统一处理)</span></h3>
+            <p><strong>修改内容：</strong>新增 normalizeBooking 函数，统一字段格式（stylistId → barberId、stylistName → barberName）</p>
+            <a href="data:text/plain;charset=utf-8,%E6%8E%89%E4%B8%8B%E6%96%87%E4%BB%B6%E5%86%85%E5%AE%B9%E5%90%91%E4%B8%8B%E6%96%87" download="api.ts" class="download-btn">下载 api.ts</a>
+        </li>
+        
+        <li class="file-item">
+            <h3>4. api/routes/bookings.ts <span class="file-size">(后端预约 API)</span></h3>
+            <p><strong>修改内容：</strong>bookingsDb 改用 global 单例，确保模块多次加载时数据不丢失；修复字段映射</p>
+            <a href="data:text/plain;charset=utf-8,%E6%8E%89%E4%B8%8B%E6%96%87%E4%BB%B6%E5%86%85%E5%AE%B9%E5%90%91%E4%B8%8B%E6%96%87" download="bookings.ts" class="download-btn">下载 bookings.ts</a>
+        </li>
+        
+        <li class="file-item">
+            <h3>5. src/pages/shop/Manage.tsx <span class="file-size">(店铺设置页面)</span></h3>
+            <p><strong>修改内容：</strong>修复 JSX 结构缺失的闭合标签</p>
+            <a href="data:text/plain;charset=utf-8,%E6%8E%89%E4%B8%8B%E6%96%87%E4%BB%B6%E5%86%85%E5%AE%B9%E5%90%91%E4%B8%8B%E6%96%87" download="Manage.tsx" class="download-btn">下载 Manage.tsx</a>
+        </li>
+    </ul>
+    
+    <div style="margin-top: 40px; padding: 20px; background: #e0f2fe; border-radius: 12px; text-align: center;">
+        <p style="margin: 0; color: #0369a1; font-size: 14px;">
+            请将以上 5 个文件下载后替换到本地项目对应路径，然后重新启动服务测试
+        </p>
+    </div>
+</body>
+</html>

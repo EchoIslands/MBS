@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, MessageSquare, User, Mail, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Send, MessageSquare, Mail, CheckCircle } from 'lucide-react';
 
 const Feedback: React.FC = () => {
   const navigate = useNavigate();

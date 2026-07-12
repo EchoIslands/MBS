@@ -25,6 +25,7 @@ create table if not exists shops (
   booking_confirm_mode text default 'auto',
   rating numeric default 5.0,
   review_count integer default 0,
+  products jsonb default '[]'::jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -35,6 +36,7 @@ alter table shops add column if not exists opening_hours jsonb default '{}'::jso
 alter table shops add column if not exists booking_confirm_mode text default 'auto';
 alter table shops add column if not exists rating numeric default 5.0;
 alter table shops add column if not exists review_count integer default 0;
+alter table shops add column if not exists products jsonb default '[]'::jsonb;
 alter table shops add column if not exists updated_at timestamptz default now();
 
 -- ========== 2. 员工表（发型师 / 店长 / CEO / 客服） ==========
@@ -195,6 +197,7 @@ create table if not exists queues (
 -- ========== 9. 会员权益记录表（可核销）【新增】 ==========
 create table if not exists member_benefit_records (
   id text primary key,
+  shop_id text references shops(id) on delete cascade,
   customer_id text references customers(id) on delete cascade,
   type text not null, -- shampoo / conditioner / free_haircut / drink / redo
   name text not null,
@@ -210,6 +213,9 @@ create table if not exists member_benefit_records (
   expires_at timestamptz,        -- 过期时间
   created_at timestamptz default now()
 );
+
+-- 如果 member_benefit_records 表已存在，补充 shop_id
+alter table member_benefit_records add column if not exists shop_id text references shops(id) on delete cascade;
 
 -- ========== 10. 储值余额流水表【新增】 ==========
 create table if not exists stored_value_transactions (
@@ -265,6 +271,7 @@ create table if not exists settlement_items (
 -- ========== 13. 推荐记录表【新增】 ==========
 create table if not exists referral_records (
   id text primary key,
+  shop_id text references shops(id) on delete cascade,
   referrer_id text references customers(id) on delete set null,
   referrer_name text,
   referred_id text references customers(id) on delete set null,
@@ -274,6 +281,37 @@ create table if not exists referral_records (
   status text default 'pending', -- pending / confirmed / paid
   created_at timestamptz default now(),
   confirmed_at timestamptz       -- 确认日期（首次消费后）
+);
+
+-- ========== 14. 满意度回访表【新增】 ==========
+create table if not exists satisfaction_surveys (
+  id text primary key,
+  shop_id text references shops(id) on delete cascade,
+  booking_id text references bookings(id) on delete set null,
+  customer_id text references customers(id) on delete set null,
+  customer_name text,
+  rating integer check (rating between 1 and 5),
+  recommended boolean default false,
+  comment text,
+  created_at timestamptz default now()
+);
+
+-- ========== 15. 退款申请表【新增】 ==========
+create table if not exists refund_requests (
+  id text primary key,
+  shop_id text references shops(id) on delete cascade,
+  booking_id text references bookings(id) on delete set null,
+  customer_id text references customers(id) on delete set null,
+  customer_name text,
+  amount numeric default 0,
+  reason text,
+  status text default 'pending', -- pending / approved / rejected / completed / cancelled
+  refund_method text,            -- original / balance / bank
+  processed_by text,
+  processed_by_name text,
+  processed_at timestamptz,
+  reject_reason text,
+  created_at timestamptz default now()
 );
 
 -- ========== 索引（提高查询速度） ==========
@@ -295,6 +333,9 @@ create index if not exists idx_settlements_shop_id on settlements(shop_id);
 create index if not exists idx_settlements_customer_id on settlements(customer_id);
 create index if not exists idx_settlement_items_settlement_id on settlement_items(settlement_id);
 create index if not exists idx_referral_referrer_id on referral_records(referrer_id);
+create index if not exists idx_satisfaction_surveys_shop_id on satisfaction_surveys(shop_id);
+create index if not exists idx_refund_requests_shop_id on refund_requests(shop_id);
+create index if not exists idx_refund_requests_status on refund_requests(status);
 
 -- ========== 行级安全（RLS）策略 ==========
 alter table shops enable row level security;
@@ -310,6 +351,8 @@ alter table stored_value_transactions enable row level security;
 alter table settlements enable row level security;
 alter table settlement_items enable row level security;
 alter table referral_records enable row level security;
+alter table satisfaction_surveys enable row level security;
+alter table refund_requests enable row level security;
 
 -- ========== 完成提示 ==========
 -- 执行完成后，你的数据库结构将包含：

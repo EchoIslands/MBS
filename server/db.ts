@@ -1,14 +1,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import 'dotenv/config';
+import { createRequire } from 'module';
 
 // Node.js 20 以下没有原生 WebSocket，需要通过 ws 包提供。
 // 如果 ws 没装（比如用户只跑了一次 npm install 后才新增这个依赖），要优雅降级。
-let wsTransport: any = undefined;
+const require = createRequire(import.meta.url);
+let wsTransport: typeof import('ws') | undefined;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ws = require('ws');
-  wsTransport = ws as any;
-} catch (e) {
+  wsTransport = require('ws') as typeof import('ws');
+} catch (_e) {
   // 没装 ws 也不要紧，Supabase 在新一点版本里会用内置实现。
   // 仅当真正需要 realtime 订阅时才会报错，我们当前没用到。
 }
@@ -26,7 +26,7 @@ export const getDb = (): SupabaseClient | null => {
   }
   if (!client) {
     try {
-      const opts: any = {
+      const opts: { auth: { autoRefreshToken: boolean; persistSession: boolean }; realtime?: { transport: typeof import('ws') } } = {
         auth: {
           autoRefreshToken: false,
           persistSession: false,
@@ -37,8 +37,9 @@ export const getDb = (): SupabaseClient | null => {
       }
       client = createClient(SUPABASE_URL, SUPABASE_KEY, opts);
       console.log(`[db] Supabase 已连接：${SUPABASE_URL}`);
-    } catch (err: any) {
-      console.error('[db] Supabase 初始化失败，将降级使用本地模拟数据：', err?.message || err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[db] Supabase 初始化失败，将降级使用本地模拟数据：', message);
       initFailed = true;
       client = null;
     }
@@ -50,22 +51,6 @@ export const isDbReady = (): boolean => getDb() !== null;
 
 const generateId = () =>
   Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
-
-const safeResult = <T>(result: { data: T | null; error: any }): T[] => {
-  if (result.error) {
-    console.error('[db] Supabase 查询失败:', result.error.message);
-    return [];
-  }
-  return (result.data || []) as T[];
-};
-
-const safeSingle = <T>(result: { data: T | null; error: any }): T | null => {
-  if (result.error) {
-    console.error('[db] Supabase 查询失败:', result.error.message);
-    return null;
-  }
-  return (result.data || null) as T | null;
-};
 
 // ---------- 店铺 ----------
 export const shopQueries = {
@@ -108,7 +93,7 @@ export const bookingQueries = {
     if (error) { console.error('[db]', error.message); return null; }
     return data;
   },
-  create: async (data: any) => {
+  create: async (data: unknown) => {
     const db = getDb();
     if (!db) return { id: generateId(), ...data };
     const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
@@ -116,7 +101,7 @@ export const bookingQueries = {
     if (error) { console.error('[db]', error.message); return insertData; }
     return result;
   },
-  update: async (id: string, data: any) => {
+  update: async (id: string, data: unknown) => {
     const db = getDb();
     if (!db) return null;
     const { data: result, error } = await db.from('bookings').update(data).eq('id', id).select().single();
@@ -134,7 +119,7 @@ export const reviewQueries = {
     if (error) { console.error('[db]', error.message); return []; }
     return data || [];
   },
-  create: async (data: any) => {
+  create: async (data: unknown) => {
     const db = getDb();
     if (!db) return { id: generateId(), ...data };
     const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
@@ -153,7 +138,7 @@ export const queueQueries = {
     if (error) { console.error('[db]', error.message); return null; }
     return data;
   },
-  upsert: async (data: any) => {
+  upsert: async (data: unknown) => {
     const db = getDb();
     if (!db) return data;
     const { data: result, error } = await db.from('queues').upsert(data, { onConflict: 'shop_id' }).select().single();
@@ -196,7 +181,7 @@ export const customerQueries = {
     if (error) { console.error('[db]', error.message); return null; }
     return data;
   },
-  create: async (data: any) => {
+  create: async (data: unknown) => {
     const db = getDb();
     if (!db) return { id: generateId(), ...data };
     const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };

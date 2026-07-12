@@ -76,7 +76,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     console.log(`[auth] 员工 ${employee.name} (${employee.phone}) 登录成功`);
     res.json({ success: true, data: { token, user } });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[auth] 登录异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -113,7 +113,7 @@ authRouter.get('/me', authMiddleware, async (req: Request, res: Response) => {
     };
 
     res.json({ success: true, data: user });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[auth] 获取当前用户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -146,7 +146,7 @@ const getBookingTimeSlotStart = (date: Date, slotMinutes: number = BOOKING_TIME_
   return d;
 };
 
-const bookingFromDb = (b: any): any => ({
+const bookingFromDb = (b: unknown): unknown => ({
   id: b.id,
   shopId: b.shop_id,
   customerId: b.customer_id,
@@ -444,7 +444,7 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
       if (isNaN(scheduledTimeDate.getTime())) {
         throw new Error('invalid date');
       }
-    } catch (e) {
+    } catch (_e) {
       return res.status(400).json({
         success: false,
         error: '预约时间格式无效',
@@ -477,8 +477,8 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
         .eq('id', shopId)
         .maybeSingle();
       if (shopData?.services) {
-        const services = shopData.services as any[];
-        const svc = services.find((s: any) => s.id === serviceId);
+        const services = shopData.services as unknown[];
+        const svc = services.find((s: unknown) => s.id === serviceId);
         if (svc) {
           finalServiceName = svc.name || finalServiceName;
           finalPrice = svc.price || finalPrice;
@@ -606,8 +606,8 @@ customersRouter.get('/', async (req: Request, res: Response) => {
 
     // 批量查询客户画像与到店记录，按 customer_id 聚合
     const customerIds = customers.map((c) => c.id).filter(Boolean);
-    let profilesMap: Record<string, any> = {};
-    let visitsMap: Record<string, any[]> = {};
+    let profilesMap: Record<string, unknown> = {};
+    let visitsMap: Record<string, unknown[]> = {};
 
     if (customerIds.length > 0) {
       const [{ data: profiles }, { data: visits }] = await Promise.all([
@@ -622,14 +622,14 @@ customersRouter.get('/', async (req: Request, res: Response) => {
       profilesMap = (profiles || []).reduce((acc, p) => {
         acc[p.customer_id] = toCamelCase(p);
         return acc;
-      }, {} as Record<string, any>);
+      }, {} as Record<string, unknown>);
 
       visitsMap = (visits || []).reduce((acc, v) => {
         const camel = toCamelCase(v);
         if (!acc[camel.customerId]) acc[camel.customerId] = [];
         acc[camel.customerId].push(camel);
         return acc;
-      }, {} as Record<string, any[]>);
+      }, {} as Record<string, unknown[]>);
     }
 
     const enriched = customers.map((c) => ({
@@ -639,7 +639,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
     }));
 
     res.json({ success: true, data: enriched });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 获取客户列表异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -688,7 +688,7 @@ customersRouter.post('/', async (req: Request, res: Response) => {
 
     console.log(`[customers] 客户创建成功 id=${data.id}`);
     res.json({ success: true, data: toCamelCase(data) });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 创建客户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -744,8 +744,196 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
 
     console.log(`[customers] 客户 ${data.name} 更新成功`);
     res.json({ success: true, data: toCamelCase(data) });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 更新客户异常:', err.message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * PUT /api/customers/:id/membership
+ * 更新客户会员状态（VIP/储值升级），同步创建权益和流水
+ */
+customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.employee!.shopId;
+    const { purchaseVIPLevel, storedValueLevel } = req.body || {};
+
+    const { data: customer, error: fetchError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (fetchError || !customer) {
+      console.error('[customers] 查询客户失败:', fetchError?.message);
+      res.status(404).json({ success: false, error: '客户不存在或无权访问' });
+      return;
+    }
+
+    const updatePayload: unknown = {};
+    const now = new Date().toISOString();
+
+    // 购买型 VIP 升级/续费
+    let vipAddAmount = 0;
+    if (purchaseVIPLevel && typeof purchaseVIPLevel === 'string') {
+      const vipPrices: Record<string, number> = {
+        regular: 0,
+        bronze: 29,
+        silver: 59,
+        gold: 79,
+        diamond: 99,
+      };
+      updatePayload.purchase_vip_level = purchaseVIPLevel;
+      // 续费逻辑：当前未过期则延长一年，否则从当前时间起一年
+      const currentExpiry = customer.purchase_vip_expires_at
+        ? new Date(customer.purchase_vip_expires_at).getTime()
+        : 0;
+      const baseTime = currentExpiry > Date.now() ? currentExpiry : Date.now();
+      updatePayload.purchase_vip_expires_at = new Date(baseTime + 365 * 86400000).toISOString();
+      // 计算补差金额（目标价格 - 当前已付价格）
+      const currentVIPPrice = vipPrices[customer.purchase_vip_level || 'regular'] || 0;
+      vipAddAmount = Math.max(0, (vipPrices[purchaseVIPLevel] || 0) - currentVIPPrice);
+    }
+
+    // 储值会员升级/办理
+    let storedValueTx: unknown = null;
+    let storedAddAmount = 0;
+    if (storedValueLevel && typeof storedValueLevel === 'string') {
+      const planAmounts: Record<string, number> = {
+        none: 0,
+        store_500: 500,
+        store_1000: 1000,
+        store_2000: 2000,
+        store_5000: 5000,
+      };
+      const newAmount = planAmounts[storedValueLevel] || 0;
+      // 基于当前储值余额计算实际需补金额，而非仅按档位差
+      const currentBalance = Number(customer.stored_value_balance || 0);
+      storedAddAmount = Math.max(0, newAmount - currentBalance);
+      const newBalance = currentBalance + storedAddAmount;
+      const hadRecharged = customer.stored_value_level && customer.stored_value_level !== 'none';
+
+      updatePayload.stored_value_level = storedValueLevel;
+      updatePayload.stored_value_balance = newBalance;
+      updatePayload.balance = newBalance;
+      updatePayload.has_recharged = storedValueLevel !== 'none';
+      updatePayload.recharge_level = storedValueLevel;
+      updatePayload.stored_value_expires_at = new Date(Date.now() + 2 * 365 * 86400000).toISOString();
+
+      if (storedAddAmount > 0) {
+        storedValueTx = {
+          id: `svtx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          customer_id: id,
+          type: hadRecharged ? 'upgrade' : 'recharge',
+          amount: storedAddAmount,
+          balance_after: newBalance,
+          referral_portion: 0,
+          note: hadRecharged ? `储值升级至 ${storedValueLevel}` : `开通 ${storedValueLevel}`,
+          created_at: now,
+          created_by: req.employee!.id,
+        };
+      }
+    }
+
+    // 同步更新兼容字段
+    const isMember =
+      (updatePayload.purchase_vip_level || customer.purchase_vip_level) !== 'regular' ||
+      (updatePayload.stored_value_level || customer.stored_value_level) !== 'none';
+    updatePayload.is_member = isMember;
+    if (customer.is_stockholder) {
+      updatePayload.membership_level = 'stockholder';
+    } else if (isMember) {
+      updatePayload.membership_level = 'premium';
+    } else {
+      updatePayload.membership_level = 'regular';
+    }
+
+    const { data: updatedCustomer, error: updateError } = await supabase
+      .from('customers')
+      .update(updatePayload)
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('[customers] 更新会员状态失败:', updateError.message);
+      res.status(500).json({ success: false, error: '更新会员状态失败' });
+      return;
+    }
+
+    // 创建储值流水
+    if (storedValueTx) {
+      const { error: txError } = await supabase.from('stored_value_transactions').insert(storedValueTx);
+      if (txError) {
+        console.error('[customers] 创建储值流水失败:', txError.message);
+      }
+    }
+
+    // 根据购买型 VIP 等级发放权益（每次升级时发放）
+    if (purchaseVIPLevel && purchaseVIPLevel !== 'regular') {
+      const benefitConfigs: Array<{ type: string; name: string; description: string }> = [];
+      if (purchaseVIPLevel === 'bronze') {
+        benefitConfigs.push({ type: 'shampoo', name: '洗发水', description: '普卡 VIP 权益' });
+      } else if (purchaseVIPLevel === 'silver') {
+        benefitConfigs.push({ type: 'shampoo', name: '洗发水', description: '银卡 VIP 权益' });
+        benefitConfigs.push({ type: 'conditioner', name: '护发素', description: '银卡 VIP 权益' });
+        benefitConfigs.push({ type: 'drink', name: '饮品', description: '银卡 VIP 权益' });
+      } else if (purchaseVIPLevel === 'gold') {
+        benefitConfigs.push({ type: 'shampoo', name: '洗发水', description: '金卡 VIP 权益' });
+        benefitConfigs.push({ type: 'conditioner', name: '护发素', description: '金卡 VIP 权益' });
+        benefitConfigs.push({ type: 'drink', name: '饮品', description: '金卡 VIP 权益' });
+        benefitConfigs.push({ type: 'redo', name: '不满意重做', description: '金卡 VIP 权益' });
+      } else if (purchaseVIPLevel === 'diamond') {
+        benefitConfigs.push({ type: 'shampoo', name: '洗发水', description: '钻石 VIP 权益' });
+        benefitConfigs.push({ type: 'conditioner', name: '护发素', description: '钻石 VIP 权益' });
+        benefitConfigs.push({ type: 'drink', name: '饮品', description: '钻石 VIP 权益' });
+        benefitConfigs.push({ type: 'redo', name: '不满意重做', description: '钻石 VIP 权益' });
+        benefitConfigs.push({ type: 'free_haircut', name: '免费剪发一次', description: '钻石 VIP 权益' });
+      }
+
+      const expiryDays: Record<string, number> = {
+        shampoo: 90,
+        conditioner: 90,
+        drink: 365,
+        redo: 7,
+        free_haircut: 365,
+      };
+
+      const benefitsToInsert = benefitConfigs.map((b) => ({
+        id: `benefit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        shop_id: shopId,
+        customer_id: id,
+        type: b.type,
+        name: b.name,
+        description: b.description,
+        status: 'available',
+        granted_at: now,
+        granted_by: req.employee!.id,
+        expires_at: new Date(Date.now() + (expiryDays[b.type] || 365) * 86400000).toISOString(),
+      }));
+
+      if (benefitsToInsert.length > 0) {
+        const { error: benefitError } = await supabase.from('member_benefit_records').insert(benefitsToInsert);
+        if (benefitError) {
+          console.error('[customers] 创建权益记录失败:', benefitError.message);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        customer: toCamelCase(updatedCustomer),
+        vipAddAmount,
+        storedAddAmount,
+      },
+    });
+  } catch (err: unknown) {
+    console.error('[customers] 更新会员状态异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -773,7 +961,7 @@ customersRouter.delete('/:id', async (req: Request, res: Response) => {
 
     console.log(`[customers] 客户 ${id} 删除成功`);
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 删除客户异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -825,7 +1013,7 @@ customersRouter.get('/:id', async (req: Request, res: Response) => {
         visitRecords: (visits || []).map(toCamelCase),
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 获取客户详情异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -866,7 +1054,7 @@ customersRouter.get('/:id/profile', async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: data ? toCamelCase(data) : null });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 获取客户画像异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -896,7 +1084,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
 
     const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const snakeBody = toSnakeCase(req.body || {});
-    const insertData: Record<string, any> = {
+    const insertData: Record<string, unknown> = {
       id: profileId,
       customer_id: id,
     };
@@ -920,7 +1108,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: toCamelCase(data) });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 创建客户画像异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -949,7 +1137,7 @@ customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
     }
 
     const snakeBody = toSnakeCase(req.body || {});
-    const upsertData: Record<string, any> = { customer_id: id };
+    const upsertData: Record<string, unknown> = { customer_id: id };
 
     for (const [key, value] of Object.entries(snakeBody)) {
       if (key === 'id' || key === 'customer_id') continue;
@@ -987,7 +1175,7 @@ customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: toCamelCase(result.data) });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[customers] 更新客户画像异常:', err.message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -1032,13 +1220,13 @@ const getQueueServiceDuration = async (shopId: string, serviceId: string): Promi
       .maybeSingle();
 
     if (data?.services) {
-      const services = data.services as any[];
-      const svc = services.find((s: any) => s.id === serviceId);
+      const services = data.services as unknown[];
+      const svc = services.find((s: unknown) => s.id === serviceId);
       if (svc && typeof svc.duration === 'number' && svc.duration > 0) {
         return svc.duration;
       }
     }
-  } catch (e) {
+  } catch (_e) {
     console.error('[queues] 查询服务时长失败:', e);
   }
   return DEFAULT_QUEUE_SERVICE_MINUTES;
@@ -1069,7 +1257,7 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
 
     // 为每个 booking 补充服务时长
     const list = await Promise.all(
-      (bookings || []).map(async (b: any) => {
+      (bookings || []).map(async (b: unknown) => {
         const duration = await getQueueServiceDuration(shopId, b.service_id);
         return {
           id: b.id,
@@ -1115,11 +1303,11 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
       }
 
       const completedInCurrentSlot = (completed || []).filter(
-        (b: any) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
+        (b: unknown) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
       );
       const maxCompleted =
         completedInCurrentSlot.length > 0
-          ? Math.max(...completedInCurrentSlot.map((b: any) => b.queue_number || 0))
+          ? Math.max(...completedInCurrentSlot.map((b: unknown) => b.queue_number || 0))
           : 0;
       currentNumber = maxCompleted + 1;
     }
@@ -1175,7 +1363,7 @@ queuesRouter.put('/:shopId', async (req: Request, res: Response) => {
     }
 
     const list = await Promise.all(
-      (bookings || []).map(async (b: any) => {
+      (bookings || []).map(async (b: unknown) => {
         const duration = await getQueueServiceDuration(shopId, b.service_id);
         return {
           id: b.id,
@@ -1217,7 +1405,7 @@ mainRouter.use('/queues', queuesRouter);
 // ===================== reviews =====================
 const reviewsRouter = Router();
 
-const reviewFromDb = (r: any): any => ({
+const reviewFromDb = (r: unknown): unknown => ({
   id: r.id,
   shopId: r.shop_id,
   customerId: r.customer_id,
@@ -1317,7 +1505,7 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
       .select('overall_score')
       .eq('shop_id', shopId);
 
-    const scores = (reviewStats || []).map((r: any) => Number(r.overall_score)).filter((s: number) => !isNaN(s));
+    const scores = (reviewStats || []).map((r: unknown) => Number(r.overall_score)).filter((s: number) => !isNaN(s));
     const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 5;
 
     await supabase
@@ -1522,7 +1710,7 @@ mainRouter.use('/reviews', reviewsRouter);
 // ===================== shops =====================
 const shopsRouter = Router();
 
-const shopFromDb = (s: any): any => ({
+const shopFromDb = (s: unknown): unknown => ({
   id: s.id,
   name: s.name,
   description: s.description || '',
@@ -1535,10 +1723,14 @@ const shopFromDb = (s: any): any => ({
   avatar: s.avatar || '',
   images: s.images || [],
   services: s.services || [],
+  products: s.products || [],
+  openingHours: s.opening_hours || {},
+  employees: s.employees || [],
   bookingConfirmMode: s.booking_confirm_mode || 'auto',
   rating: s.rating || 5,
   reviewCount: s.review_count || 0,
   createdAt: s.created_at,
+  updatedAt: s.updated_at,
 });
 
 // 获取店铺列表
@@ -1612,7 +1804,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: {
         ...shopFromDb(data),
-        employees: (employees || []).map((e: any) => ({
+        employees: (employees || []).map((e: unknown) => ({
           id: e.id,
           name: e.name,
           phone: e.phone,
@@ -1653,7 +1845,7 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
       isActive,
     } = req.body || {};
 
-    const updatePayload: any = {
+    const updatePayload: unknown = {
       updated_at: new Date().toISOString(),
     };
 
@@ -1693,12 +1885,116 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// 商品管理（店铺 products JSONB 字段）
+shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase.from('shops').select('products').eq('id', id).single();
+    if (error) {
+      console.error('[shops] 查询商品失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询商品失败' });
+    }
+    res.json({ success: true, data: data?.products || [] });
+  } catch (error) {
+    console.error('[shops] 获取商品异常:', error);
+    res.status(500).json({ success: false, error: '获取商品失败' });
+  }
+});
+
+shopsRouter.post('/:id/products', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const product = req.body || {};
+    if (!product.name || !product.category || product.price === undefined) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    const { data: shop, error: fetchError } = await supabase.from('shops').select('products').eq('id', id).single();
+    if (fetchError) {
+      console.error('[shops] 查询店铺商品失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询店铺失败' });
+    }
+
+    const newProduct = {
+      ...product,
+      id: product.id || `prod_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      shopId: id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const products = [...(shop?.products || []), newProduct];
+
+    const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
+    if (updateError) {
+      console.error('[shops] 添加商品失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '添加商品失败' });
+    }
+
+    res.status(201).json({ success: true, data: newProduct });
+  } catch (error) {
+    console.error('[shops] 添加商品异常:', error);
+    res.status(500).json({ success: false, error: '添加商品失败' });
+  }
+});
+
+shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id, productId } = req.params;
+    const updates = req.body || {};
+
+    const { data: shop, error: fetchError } = await supabase.from('shops').select('products').eq('id', id).single();
+    if (fetchError) {
+      console.error('[shops] 查询店铺商品失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询店铺失败' });
+    }
+
+    const products = (shop?.products || []).map((p: unknown) =>
+      p.id === productId ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
+    );
+
+    const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
+    if (updateError) {
+      console.error('[shops] 更新商品失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '更新商品失败' });
+    }
+
+    const updated = products.find((p: unknown) => p.id === productId);
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error('[shops] 更新商品异常:', error);
+    res.status(500).json({ success: false, error: '更新商品失败' });
+  }
+});
+
+shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id, productId } = req.params;
+    const { data: shop, error: fetchError } = await supabase.from('shops').select('products').eq('id', id).single();
+    if (fetchError) {
+      console.error('[shops] 查询店铺商品失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询店铺失败' });
+    }
+
+    const products = (shop?.products || []).filter((p: unknown) => p.id !== productId);
+    const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
+    if (updateError) {
+      console.error('[shops] 删除商品失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '删除商品失败' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[shops] 删除商品异常:', error);
+    res.status(500).json({ success: false, error: '删除商品失败' });
+  }
+});
+
 mainRouter.use('/shops', shopsRouter);
 
 // ===================== settlements =====================
 const settlementsRouter = Router();
 
-const settlementFromDb = (s: any): any => ({
+const settlementFromDb = (s: unknown): unknown => ({
   id: s.id,
   shopId: s.shop_id,
   customerId: s.customer_id,
@@ -1781,7 +2077,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     if (customer) {
       const newVisitCount = (customer.visit_count || 0) + 1;
       const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
-      const updatePayload: any = {
+      const updatePayload: unknown = {
         visit_count: newVisitCount,
         total_spent: newTotalSpent,
         last_visit_at: new Date().toISOString(),
@@ -1809,11 +2105,12 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     const benefits = usedBenefitIds || [];
     if (benefits.length > 0) {
       await supabase
-        .from('member_benefits')
+        .from('member_benefit_records')
         .update({
           status: 'used',
           used_at: new Date().toISOString(),
           used_by: req.employee!.id,
+          used_by_name: req.employee!.name,
           used_order_id: settlementId,
         })
         .in('id', benefits)
@@ -1828,8 +2125,8 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       booking_id: bookingId || null,
       stylist_id: null,
       stylist_name: req.employee!.name,
-      service_ids: items.filter((i: any) => i.type === 'service').map((i: any) => i.id),
-      service_names: items.filter((i: any) => i.type === 'service').map((i: any) => i.name),
+      service_ids: items.filter((i: unknown) => i.type === 'service').map((i: unknown) => i.id),
+      service_names: items.filter((i: unknown) => i.type === 'service').map((i: unknown) => i.name),
       total_amount: total || 0,
       check_in_time: new Date().toISOString(),
       created_at: new Date().toISOString(),
@@ -1867,10 +2164,253 @@ settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) =
 
 mainRouter.use('/settlements', settlementsRouter);
 
+// ===================== financial =====================
+const financialRouter = Router();
+
+financialRouter.use(authMiddleware);
+
+financialRouter.get('/report', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const dateRange = (req.query.dateRange as string) || 'month';
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const yearStart = new Date(today.getFullYear(), 0, 1);
+    const quarterStart = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+
+    let trendStart = monthStart;
+    if (dateRange === 'week') trendStart = weekStart;
+    if (dateRange === 'quarter') trendStart = quarterStart;
+    if (dateRange === 'year') trendStart = yearStart;
+
+    const { data: settlements, error } = await supabase
+      .from('settlements')
+      .select('*')
+      .eq('shop_id', shopId)
+      .gte('created_at', trendStart.toISOString());
+
+    if (error) {
+      console.error('[financial] 查询结算失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询财务数据失败' });
+    }
+
+    const revenue = { today: 0, week: 0, month: 0, year: 0 };
+    const services = { today: 0, week: 0, month: 0, year: 0 };
+    const ticketSum = { today: 0, week: 0, month: 0, year: 0 };
+    const ticketCount = { today: 0, week: 0, month: 0, year: 0 };
+
+    const stylistMap: Record<
+      string,
+      { name: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
+    > = {};
+
+    (settlements || []).forEach((s: unknown) => {
+      const createdAt = new Date(s.created_at);
+      const isToday = createdAt >= today;
+      const isWeek = createdAt >= weekStart;
+      const isMonth = createdAt >= monthStart;
+      const isYear = createdAt >= yearStart;
+      const total = Number(s.total) || 0;
+
+      if (isToday) {
+        revenue.today += total;
+        ticketSum.today += total;
+        ticketCount.today += 1;
+      }
+      if (isWeek) {
+        revenue.week += total;
+        ticketSum.week += total;
+        ticketCount.week += 1;
+      }
+      if (isMonth) {
+        revenue.month += total;
+        ticketSum.month += total;
+        ticketCount.month += 1;
+      }
+      if (isYear) {
+        revenue.year += total;
+        ticketSum.year += total;
+        ticketCount.year += 1;
+      }
+
+      (s.items || []).forEach((item: unknown) => {
+        const itemTotal = Number(item.total) || 0;
+        const qty = Number(item.quantity) || 1;
+        const empId = item.employee_id || item.employeeId;
+        const empName = item.employee_name || item.employeeName || '发型师';
+
+        if (empId) {
+          if (!stylistMap[empId]) {
+            stylistMap[empId] = { name: empName, revenue: 0, services: 0, ratingSum: 0, ratingCount: 0 };
+          }
+          if (isMonth) {
+            stylistMap[empId].revenue += itemTotal;
+            if (item.type === 'service' || item.type === undefined) {
+              stylistMap[empId].services += qty;
+            }
+          }
+        }
+
+        if (isMonth && (item.type === 'service' || item.type === undefined)) {
+          services.month += qty;
+        }
+        if (isYear && (item.type === 'service' || item.type === undefined)) {
+          services.year += qty;
+        }
+        if (isWeek && (item.type === 'service' || item.type === undefined)) {
+          services.week += qty;
+        }
+        if (isToday && (item.type === 'service' || item.type === undefined)) {
+          services.today += qty;
+        }
+      });
+    });
+
+    const { data: reviews } = await supabase.from('reviews').select('*').eq('shop_id', shopId);
+    (reviews || []).forEach((r: unknown) => {
+      if (r.stylist_id && stylistMap[r.stylist_id]) {
+        stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
+        stylistMap[r.stylist_id].ratingCount += 1;
+      }
+    });
+
+    const topStylists = Object.entries(stylistMap)
+      .map(([id, info]) => ({
+        id,
+        name: info.name,
+        revenue: Math.round(info.revenue * 100) / 100,
+        services: info.services,
+        rating:
+          info.ratingCount > 0
+            ? Math.round((info.ratingSum / info.ratingCount) * 10) / 10
+            : 5,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const averageTicket = {
+      today: ticketCount.today > 0 ? Math.round((ticketSum.today / ticketCount.today) * 100) / 100 : 0,
+      week: ticketCount.week > 0 ? Math.round((ticketSum.week / ticketCount.week) * 100) / 100 : 0,
+      month: ticketCount.month > 0 ? Math.round((ticketSum.month / ticketCount.month) * 100) / 100 : 0,
+      year: ticketCount.year > 0 ? Math.round((ticketSum.year / ticketCount.year) * 100) / 100 : 0,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        revenue: {
+          today: Math.round(revenue.today * 100) / 100,
+          week: Math.round(revenue.week * 100) / 100,
+          month: Math.round(revenue.month * 100) / 100,
+          year: Math.round(revenue.year * 100) / 100,
+        },
+        services,
+        averageTicket,
+        topStylists,
+      },
+    });
+  } catch (error) {
+    console.error('[financial] 获取财务报表异常:', error);
+    res.status(500).json({ success: false, error: '获取财务报表失败' });
+  }
+});
+
+mainRouter.use('/financial', financialRouter);
+
+// ===================== stylists =====================
+const stylistsRouter = Router();
+
+stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const yearStart = new Date(today.getFullYear(), 0, 1);
+
+    const [{ data: employees }, { data: settlements }, { data: reviews }] = await Promise.all([
+      supabase.from('employees').select('*').eq('shop_id', shopId).eq('role', 'STYLIST').eq('is_active', true),
+      supabase.from('settlements').select('*').eq('shop_id', shopId),
+      supabase.from('reviews').select('*').eq('shop_id', shopId),
+    ]);
+
+    const performances = (employees || []).map((emp: unknown) => {
+      const stylistId = emp.id;
+
+      const revenue = { today: 0, week: 0, month: 0, year: 0 };
+      const services = { total: 0, byType: {} as Record<string, number> };
+
+      (settlements || []).forEach((s: unknown) => {
+        const createdAt = new Date(s.created_at);
+        const isToday = createdAt >= today;
+        const isWeek = createdAt >= weekStart;
+        const isMonth = createdAt >= monthStart;
+        const isYear = createdAt >= yearStart;
+
+        (s.items || []).forEach((item: unknown) => {
+          if (item.employeeId !== stylistId) return;
+          const itemTotal = Number(item.total) || 0;
+          const qty = Number(item.quantity) || 1;
+
+          if (isToday) revenue.today += itemTotal;
+          if (isWeek) revenue.week += itemTotal;
+          if (isMonth) revenue.month += itemTotal;
+          if (isYear) revenue.year += itemTotal;
+
+          if (item.type === 'service') {
+            services.total += qty;
+            const name = item.name || '其他';
+            services.byType[name] = (services.byType[name] || 0) + qty;
+          }
+        });
+      });
+
+      const stylistReviews = (reviews || []).filter((r: unknown) => r.stylist_id === stylistId);
+      const avgRating =
+        stylistReviews.length > 0
+          ? stylistReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / stylistReviews.length
+          : 0;
+
+      const estimatedCommission = Math.round(revenue.month * 0.15 * 100) / 100;
+
+      return {
+        stylistId,
+        stylistName: emp.name,
+        title: emp.title || '发型师',
+        averageRating: Math.round(avgRating * 10) / 10,
+        revenue: {
+          today: Math.round(revenue.today * 100) / 100,
+          week: Math.round(revenue.week * 100) / 100,
+          month: Math.round(revenue.month * 100) / 100,
+          year: Math.round(revenue.year * 100) / 100,
+        },
+        services: {
+          total: services.total,
+          byType: services.byType,
+        },
+        estimatedCommission,
+      };
+    });
+
+    res.json({ success: true, data: performances });
+  } catch (error) {
+    console.error('[stylists] 获取业绩异常:', error);
+    res.status(500).json({ success: false, error: '获取发型师业绩失败' });
+  }
+});
+
+mainRouter.use('/stylists', stylistsRouter);
+
 // ===================== member_benefits =====================
 const memberBenefitsRouter = Router();
 
-const benefitFromDb = (b: any): any => ({
+const benefitFromDb = (b: unknown): unknown => ({
   id: b.id,
   customerId: b.customer_id,
   shopId: b.shop_id,
@@ -1893,7 +2433,7 @@ memberBenefitsRouter.get('/customer/:customerId', authMiddleware, async (req: Re
     const { customerId } = req.params;
 
     const { data, error } = await supabase
-      .from('member_benefits')
+      .from('member_benefit_records')
       .select('*')
       .eq('shop_id', shopId)
       .eq('customer_id', customerId)
@@ -1914,5 +2454,433 @@ memberBenefitsRouter.get('/customer/:customerId', authMiddleware, async (req: Re
 });
 
 mainRouter.use('/member-benefits', memberBenefitsRouter);
+
+// ===================== referrals =====================
+const referralsRouter = Router();
+
+referralsRouter.use(authMiddleware);
+
+const referralFromDb = (r: unknown): unknown => ({
+  id: r.id,
+  referrerId: r.referrer_id,
+  referrerName: r.referrer_name,
+  referredId: r.referred_id,
+  referredName: r.referred_name,
+  referredPhone: r.referred_phone,
+  bonusAmount: Number(r.bonus_amount) || 0,
+  status: r.status,
+  createdAt: r.created_at,
+  confirmedAt: r.confirmed_at,
+});
+
+// 获取店铺推荐记录
+referralsRouter.get('/', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { data, error } = await supabase
+      .from('referral_records')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[referrals] 查询推荐记录失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询推荐记录失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(referralFromDb) });
+  } catch (error) {
+    console.error('[referrals] 获取推荐记录异常:', error);
+    res.status(500).json({ success: false, error: '获取推荐记录失败' });
+  }
+});
+
+mainRouter.use('/referrals', referralsRouter);
+
+// ===================== satisfaction surveys =====================
+const surveysRouter = Router();
+
+surveysRouter.use(authMiddleware);
+
+const surveyFromDb = (s: unknown): unknown => ({
+  id: s.id,
+  shopId: s.shop_id,
+  bookingId: s.booking_id,
+  customerId: s.customer_id,
+  customerName: s.customer_name || '顾客',
+  rating: Number(s.rating) || 5,
+  recommended: Boolean(s.recommended),
+  comment: s.comment || '',
+  createdAt: s.created_at,
+});
+
+// 获取店铺满意度回访列表
+surveysRouter.get('/', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { data, error } = await supabase
+      .from('satisfaction_surveys')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[surveys] 查询回访记录失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询回访记录失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(surveyFromDb) });
+  } catch (error) {
+    console.error('[surveys] 获取回访记录异常:', error);
+    res.status(500).json({ success: false, error: '获取回访记录失败' });
+  }
+});
+
+// 创建满意度回访
+surveysRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { bookingId, customerId, customerName, rating, recommended, comment } = req.body || {};
+
+    if (!bookingId || !customerId || !rating) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    const id = `survey_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const { data, error } = await supabase
+      .from('satisfaction_surveys')
+      .insert({
+        id,
+        shop_id: shopId,
+        booking_id: bookingId,
+        customer_id: customerId,
+        customer_name: customerName || '顾客',
+        rating: Number(rating),
+        recommended: Boolean(recommended),
+        comment: comment || '',
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[surveys] 创建回访记录失败:', error.message);
+      return res.status(500).json({ success: false, error: '创建回访记录失败' });
+    }
+
+    res.status(201).json({ success: true, data: surveyFromDb(data) });
+  } catch (error) {
+    console.error('[surveys] 创建回访记录异常:', error);
+    res.status(500).json({ success: false, error: '创建回访记录失败' });
+  }
+});
+
+mainRouter.use('/satisfaction-surveys', surveysRouter);
+
+// ===================== refunds =====================
+const refundsRouter = Router();
+
+refundsRouter.use(authMiddleware);
+
+const refundFromDb = (r: unknown): unknown => ({
+  id: r.id,
+  shopId: r.shop_id,
+  bookingId: r.booking_id,
+  customerId: r.customer_id,
+  customerName: r.customer_name || '顾客',
+  amount: Number(r.amount) || 0,
+  reason: r.reason || '',
+  status: r.status,
+  refundMethod: r.refund_method,
+  processedBy: r.processed_by,
+  processedByName: r.processed_by_name,
+  processedAt: r.processed_at,
+  rejectReason: r.reject_reason,
+  createdAt: r.created_at,
+});
+
+// 获取店铺退款申请列表
+refundsRouter.get('/', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { data, error } = await supabase
+      .from('refund_requests')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[refunds] 查询退款申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询退款申请失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(refundFromDb) });
+  } catch (error) {
+    console.error('[refunds] 获取退款申请异常:', error);
+    res.status(500).json({ success: false, error: '获取退款申请失败' });
+  }
+});
+
+// 创建退款申请
+refundsRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { bookingId, customerId, customerName, amount, reason } = req.body || {};
+
+    if (!bookingId || !customerId || amount === undefined) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    const id = `refund_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const { data, error } = await supabase
+      .from('refund_requests')
+      .insert({
+        id,
+        shop_id: shopId,
+        booking_id: bookingId,
+        customer_id: customerId,
+        customer_name: customerName || '顾客',
+        amount: Number(amount),
+        reason: reason || '',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[refunds] 创建退款申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '创建退款申请失败' });
+    }
+
+    res.status(201).json({ success: true, data: refundFromDb(data) });
+  } catch (error) {
+    console.error('[refunds] 创建退款申请异常:', error);
+    res.status(500).json({ success: false, error: '创建退款申请失败' });
+  }
+});
+
+// 处理退款申请
+refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, rejectReason, refundMethod } = req.body || {};
+
+    if (!status || !['approved', 'rejected', 'completed', 'cancelled'].includes(status)) {
+      return res.status(400).json({ success: false, error: '无效的状态值' });
+    }
+
+    const updatePayload: unknown = { status };
+    if (status === 'rejected' && rejectReason) {
+      updatePayload.reject_reason = rejectReason;
+    }
+    if (['approved', 'completed'].includes(status)) {
+      updatePayload.refund_method = refundMethod || 'original';
+      updatePayload.processed_by = req.employee!.id;
+      updatePayload.processed_by_name = req.employee!.name;
+      updatePayload.processed_at = new Date().toISOString();
+    }
+
+    const { data, error } = await supabase
+      .from('refund_requests')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[refunds] 更新退款申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新退款申请失败' });
+    }
+
+    res.json({ success: true, data: refundFromDb(data) });
+  } catch (error) {
+    console.error('[refunds] 更新退款申请异常:', error);
+    res.status(500).json({ success: false, error: '更新退款申请失败' });
+  }
+});
+
+mainRouter.use('/refunds', refundsRouter);
+
+// ===================== owner dashboard =====================
+const ownerRouter = Router();
+
+ownerRouter.use(authMiddleware);
+
+ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
+  try {
+    const employee = req.employee!;
+    if (!['ceo', 'shop_owner'].includes(employee.role)) {
+      return res.status(403).json({ success: false, error: '无权访问老板视图' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const yearStart = new Date(today.getFullYear(), 0, 1);
+
+    const [{ data: shops }, { data: settlements }, { data: bookings }, { data: reviews }] = await Promise.all([
+      supabase.from('shops').select('*').eq('is_active', true),
+      supabase.from('settlements').select('*'),
+      supabase.from('bookings').select('*'),
+      supabase.from('reviews').select('*'),
+    ]);
+
+    const totalRevenue = { today: 0, week: 0, month: 0, year: 0 };
+    const totalServices = { today: 0, week: 0, month: 0, year: 0 };
+    const totalCustomers = { today: 0, week: 0, month: 0, year: 0 };
+
+    const shopStatsMap: Record<
+      string,
+      { shopName: string; revenue: number; services: number; customers: Set<string>; employees: number }
+    > = {};
+
+    (shops || []).forEach((s: unknown) => {
+      shopStatsMap[s.id] = {
+        shopName: s.name,
+        revenue: 0,
+        services: 0,
+        customers: new Set(),
+        employees: (s.employees || []).filter((e: unknown) => e.is_active !== false).length,
+      };
+    });
+
+    const customerPeriodSet = { today: new Set<string>(), week: new Set<string>(), month: new Set<string>(), year: new Set<string>() };
+
+    (settlements || []).forEach((s: unknown) => {
+      const createdAt = new Date(s.created_at);
+      const isToday = createdAt >= today;
+      const isWeek = createdAt >= weekStart;
+      const isMonth = createdAt >= monthStart;
+      const isYear = createdAt >= yearStart;
+      const total = Number(s.total) || 0;
+      const shopId = s.shop_id;
+
+      if (isToday) totalRevenue.today += total;
+      if (isWeek) totalRevenue.week += total;
+      if (isMonth) totalRevenue.month += total;
+      if (isYear) totalRevenue.year += total;
+
+      if (shopStatsMap[shopId]) {
+        if (isMonth) shopStatsMap[shopId].revenue += total;
+      }
+
+      (s.items || []).forEach((item: unknown) => {
+        const qty = Number(item.quantity) || 1;
+        if (isMonth && (item.type === 'service' || item.type === undefined)) {
+          totalServices.month += qty;
+          if (shopStatsMap[shopId]) shopStatsMap[shopId].services += qty;
+        }
+        if (isYear && (item.type === 'service' || item.type === undefined)) {
+          totalServices.year += qty;
+        }
+        if (isWeek && (item.type === 'service' || item.type === undefined)) {
+          totalServices.week += qty;
+        }
+        if (isToday && (item.type === 'service' || item.type === undefined)) {
+          totalServices.today += qty;
+        }
+      });
+    });
+
+    (bookings || []).forEach((b: unknown) => {
+      const scheduledAt = new Date(b.scheduled_time);
+      const customerId = b.customer_id;
+      if (!customerId) return;
+      if (scheduledAt >= today) customerPeriodSet.today.add(customerId);
+      if (scheduledAt >= weekStart) customerPeriodSet.week.add(customerId);
+      if (scheduledAt >= monthStart) {
+        customerPeriodSet.month.add(customerId);
+        if (shopStatsMap[b.shop_id]) shopStatsMap[b.shop_id].customers.add(customerId);
+      }
+      if (scheduledAt >= yearStart) customerPeriodSet.year.add(customerId);
+    });
+
+    totalCustomers.today = customerPeriodSet.today.size;
+    totalCustomers.week = customerPeriodSet.week.size;
+    totalCustomers.month = customerPeriodSet.month.size;
+    totalCustomers.year = customerPeriodSet.year.size;
+
+    const stylistMap: Record<
+      string,
+      { name: string; shopId: string; shopName: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
+    > = {};
+
+    (settlements || []).forEach((s: unknown) => {
+      const createdAt = new Date(s.created_at);
+      if (createdAt < monthStart) return;
+      (s.items || []).forEach((item: unknown) => {
+        const empId = item.employee_id || item.employeeId;
+        const empName = item.employee_name || item.employeeName || '发型师';
+        if (!empId) return;
+        if (!stylistMap[empId]) {
+          stylistMap[empId] = {
+            name: empName,
+            shopId: s.shop_id,
+            shopName: shopStatsMap[s.shop_id]?.shopName || '店铺',
+            revenue: 0,
+            services: 0,
+            ratingSum: 0,
+            ratingCount: 0,
+          };
+        }
+        stylistMap[empId].revenue += Number(item.total) || 0;
+        if (item.type === 'service' || item.type === undefined) {
+          stylistMap[empId].services += Number(item.quantity) || 1;
+        }
+      });
+    });
+
+    (reviews || []).forEach((r: unknown) => {
+      if (r.stylist_id && stylistMap[r.stylist_id]) {
+        stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
+        stylistMap[r.stylist_id].ratingCount += 1;
+      }
+    });
+
+    const topStylists = Object.entries(stylistMap)
+      .map(([id, info]) => ({
+        id,
+        name: info.name,
+        shopId: info.shopId,
+        shopName: info.shopName,
+        revenue: Math.round(info.revenue * 100) / 100,
+        services: info.services,
+        rating: info.ratingCount > 0 ? Math.round((info.ratingSum / info.ratingCount) * 10) / 10 : 5,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
+    res.json({
+      success: true,
+      data: {
+        totalRevenue: {
+          today: Math.round(totalRevenue.today * 100) / 100,
+          week: Math.round(totalRevenue.week * 100) / 100,
+          month: Math.round(totalRevenue.month * 100) / 100,
+          year: Math.round(totalRevenue.year * 100) / 100,
+        },
+        totalServices,
+        totalCustomers,
+        shopStats: Object.entries(shopStatsMap).map(([shopId, info]) => ({
+          shopId,
+          shopName: info.shopName,
+          revenue: Math.round(info.revenue * 100) / 100,
+          services: info.services,
+          customers: info.customers.size,
+          employees: info.employees,
+        })),
+        topStylists,
+      },
+    });
+  } catch (error) {
+    console.error('[owner] 获取老板视图异常:', error);
+    res.status(500).json({ success: false, error: '获取老板视图失败' });
+  }
+});
+
+mainRouter.use('/owner', ownerRouter);
 
 export default mainRouter;

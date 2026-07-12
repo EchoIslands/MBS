@@ -17,7 +17,7 @@ import { getAvatarUrl } from '../../lib/avatar';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { currentShop, setCurrentShop } = useAppStore();
+  const { setCurrentShop } = useAppStore();
   const [shop, setShop] = useState<Shop | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
@@ -25,13 +25,7 @@ const ShopDetail: React.FC = () => {
   const [activeImage, setActiveImage] = useState(0);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (id) {
-      loadShopData();
-    }
-  }, [id]);
-
-  const loadShopData = async () => {
+  const loadShopData = React.useCallback(async () => {
     try {
       const shopData = await shopApi.getShop(id!);
       setShop(shopData);
@@ -42,7 +36,13 @@ const ShopDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, setCurrentShop]);
+
+  useEffect(() => {
+    if (id) {
+      loadShopData();
+    }
+  }, [id, loadShopData]);
 
   const loadReviews = async (shopId: string) => {
     setReviewsLoading(true);

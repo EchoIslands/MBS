@@ -11,7 +11,8 @@ const visitRecords: CustomerVisitRecord[] = [];
 
 // ==================== 到店记录 API ====================
 
-// 客户到店打卡（check-in�?router.post('/checkin', (req: Request, res: Response) => {
+// 客户到店打卡（check-in）
+router.post('/checkin', (req: Request, res: Response) => {
   const { customerId, shopId, bookingId, stylistId, stylistName } = req.body;
 
   // 验证必填字段
@@ -22,19 +23,20 @@ const visitRecords: CustomerVisitRecord[] = [];
   // 验证客户存在
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   // 验证店铺存在
   const shop = mockShops.find((s) => s.id === shopId);
   if (!shop) {
-    return res.status(404).json({ success: false, error: '店铺不存�? });
+    return res.status(404).json({ success: false, error: '店铺不存在' });
   }
 
-  // 如果有预约ID，验证预约存�?  if (bookingId) {
+  // 如果有预约ID，验证预约存在
+  if (bookingId) {
     const booking = mockBookings.find((b) => b.id === bookingId);
     if (!booking) {
-      return res.status(404).json({ success: false, error: '预约不存�? });
+      return res.status(404).json({ success: false, error: '预约不存在' });
     }
     // 检查预约是否属于该客户
     if (booking.customerId !== customerId) {
@@ -61,7 +63,8 @@ const visitRecords: CustomerVisitRecord[] = [];
   res.status(201).json({ success: true, data: visitRecord });
 });
 
-// 客户离店结算（check-out�?router.post('/checkout', (req: Request, res: Response) => {
+// 客户离店结算（check-out）
+router.post('/checkout', (req: Request, res: Response) => {
   const { visitId, serviceIds, serviceNames, products, totalAmount, paymentMethod, notes } = req.body;
 
   // 验证必填字段
@@ -72,12 +75,13 @@ const visitRecords: CustomerVisitRecord[] = [];
   // 查找到店记录
   const index = visitRecords.findIndex((v) => v.id === visitId);
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '到店记录不存�? });
+    return res.status(404).json({ success: false, error: '到店记录不存在' });
   }
 
   const record = visitRecords[index];
 
-  // 检查是否已经离�?  if (record.checkOutTime) {
+  // 检查是否已经离店
+  if (record.checkOutTime) {
     return res.status(400).json({ success: false, error: '该记录已完成离店结算' });
   }
 
@@ -106,14 +110,15 @@ const visitRecords: CustomerVisitRecord[] = [];
   res.json({ success: true, data: updated });
 });
 
-// 获取客户的到店记�?router.get('/customer/:customerId', (req: Request, res: Response) => {
+// 获取客户的到店记录
+router.get('/customer/:customerId', (req: Request, res: Response) => {
   const { customerId } = req.params;
   const { page = '1', pageSize = '20' } = req.query;
 
   // 验证客户存在
   const customer = mockCustomers.find((c) => c.id === customerId);
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   let records = visitRecords.filter((v) => v.customerId === customerId);
@@ -141,19 +146,21 @@ const visitRecords: CustomerVisitRecord[] = [];
   });
 });
 
-// 获取店铺的到店记�?router.get('/shop/:shopId', (req: Request, res: Response) => {
+// 获取店铺的到店记录
+router.get('/shop/:shopId', (req: Request, res: Response) => {
   const { shopId } = req.params;
   const { page = '1', pageSize = '20', dateStart, dateEnd } = req.query;
 
   // 验证店铺存在
   const shop = mockShops.find((s) => s.id === shopId);
   if (!shop) {
-    return res.status(404).json({ success: false, error: '店铺不存�? });
+    return res.status(404).json({ success: false, error: '店铺不存在' });
   }
 
   let records = visitRecords.filter((v) => v.shopId === shopId);
 
-  // 日期筛�?  if (dateStart) {
+  // 日期筛选
+  if (dateStart) {
     records = records.filter((v) => new Date(v.checkInTime) >= new Date(dateStart as string));
   }
   if (dateEnd) {
@@ -189,7 +196,7 @@ router.get('/:id', (req: Request, res: Response) => {
   const record = visitRecords.find((v) => v.id === id);
 
   if (!record) {
-    return res.status(404).json({ success: false, error: '到店记录不存�? });
+    return res.status(404).json({ success: false, error: '到店记录不存在' });
   }
 
   res.json({ success: true, data: record });
@@ -202,7 +209,7 @@ router.get('/shop/:shopId/today', (req: Request, res: Response) => {
   // 验证店铺存在
   const shop = mockShops.find((s) => s.id === shopId);
   if (!shop) {
-    return res.status(404).json({ success: false, error: '店铺不存�? });
+    return res.status(404).json({ success: false, error: '店铺不存在' });
   }
 
   const today = new Date();

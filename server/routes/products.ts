@@ -28,14 +28,14 @@ const products: Product[] = [
   {
     id: 'prod1',
     shopId: 'shop1',
-    name: '洗发�?,
+    name: '洗发水',
     category: '洗护用品',
     price: 68,
     costPrice: 35,
     stock: 100,
     minStock: 20,
     maxStock: 200,
-    unit: '�?,
+    unit: '瓶',
     status: 'active',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -43,14 +43,14 @@ const products: Product[] = [
   {
     id: 'prod2',
     shopId: 'shop1',
-    name: '护发�?,
+    name: '护发素',
     category: '洗护用品',
     price: 58,
     costPrice: 28,
     stock: 80,
     minStock: 15,
     maxStock: 150,
-    unit: '�?,
+    unit: '瓶',
     status: 'active',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -78,39 +78,44 @@ const stockRecords: StockRecord[] = [];
 
 // 获取商品列表
 router.get('/', (req: Request, res: Response) => {
-  const { 
-    shopId, 
-    category, 
-    status, 
+  const {
+    shopId,
+    category,
+    status,
     keyword,
     lowStock,
-    page = '1', 
-    pageSize = '20' 
+    page = '1',
+    pageSize = '20'
   } = req.query;
 
   let result = [...products];
 
-  // 店铺筛�?  if (shopId) {
+  // 店铺筛选
+  if (shopId) {
     result = result.filter((p) => p.shopId === shopId);
   }
 
-  // 分类筛�?  if (category) {
+  // 分类筛选
+  if (category) {
     result = result.filter((p) => p.category === category);
   }
 
-  // 状态筛�?  if (status) {
+  // 状态筛选
+  if (status) {
     result = result.filter((p) => p.status === status);
   }
 
-  // 关键词搜�?  if (keyword) {
+  // 关键词搜索
+  if (keyword) {
     const kw = (keyword as string).toLowerCase();
-    result = result.filter((p) => 
-      p.name.toLowerCase().includes(kw) || 
+    result = result.filter((p) =>
+      p.name.toLowerCase().includes(kw) ||
       p.barcode?.includes(kw)
     );
   }
 
-  // 低库存筛�?  if (lowStock === 'true') {
+  // 低库存筛选
+  if (lowStock === 'true') {
     result = result.filter((p) => p.minStock && p.stock <= p.minStock);
   }
 
@@ -142,7 +147,7 @@ router.get('/:id', (req: Request, res: Response) => {
   const product = products.find((p) => p.id === id);
 
   if (!product) {
-    return res.status(404).json({ success: false, error: '商品不存�? });
+    return res.status(404).json({ success: false, error: '商品不存在' });
   }
 
   res.json({ success: true, data: product });
@@ -150,33 +155,34 @@ router.get('/:id', (req: Request, res: Response) => {
 
 // 创建商品
 router.post('/', (req: Request, res: Response) => {
-  const { 
-    shopId, 
-    name, 
-    category, 
-    price, 
-    costPrice, 
-    stock = 0, 
-    minStock, 
-    maxStock, 
-    unit, 
-    barcode, 
-    description, 
-    images 
+  const {
+    shopId,
+    name,
+    category,
+    price,
+    costPrice,
+    stock = 0,
+    minStock,
+    maxStock,
+    unit,
+    barcode,
+    description,
+    images
   } = req.body;
 
   // 验证必填字段
   if (!shopId || !name || !category || price === undefined) {
-    return res.status(400).json({ 
-      success: false, 
-      error: '店铺ID、商品名称、分类和价格为必填项' 
+    return res.status(400).json({
+      success: false,
+      error: '店铺ID、商品名称、分类和价格为必填项'
     });
   }
 
-  // 检查条码是否重�?  if (barcode) {
+  // 检查条码是否重复
+  if (barcode) {
     const existing = products.find((p) => p.barcode === barcode);
     if (existing) {
-      return res.status(400).json({ success: false, error: '条码已存�? });
+      return res.status(400).json({ success: false, error: '条码已存在' });
     }
   }
 
@@ -190,7 +196,7 @@ router.post('/', (req: Request, res: Response) => {
     stock,
     minStock,
     maxStock,
-    unit: unit || '�?,
+    unit: unit || '瓶',
     barcode,
     description,
     images,
@@ -207,29 +213,30 @@ router.post('/', (req: Request, res: Response) => {
 // 更新商品
 router.put('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
-  const { 
-    name, 
-    category, 
-    price, 
-    costPrice, 
-    minStock, 
-    maxStock, 
-    unit, 
-    barcode, 
-    description, 
-    images, 
-    status 
+  const {
+    name,
+    category,
+    price,
+    costPrice,
+    minStock,
+    maxStock,
+    unit,
+    barcode,
+    description,
+    images,
+    status
   } = req.body;
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '商品不存�? });
+    return res.status(404).json({ success: false, error: '商品不存在' });
   }
 
-  // 检查条码是否重�?  if (barcode && barcode !== product.barcode) {
+  // 检查条码是否重复
+  if (barcode && barcode !== product.barcode) {
     const existing = products.find((p) => p.barcode === barcode && p.id !== id);
     if (existing) {
-      return res.status(400).json({ success: false, error: '条码已存�? });
+      return res.status(400).json({ success: false, error: '条码已存在' });
     }
   }
 
@@ -256,18 +263,18 @@ router.delete('/:id', (req: Request, res: Response) => {
   const index = products.findIndex((p) => p.id === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '商品不存�? });
+    return res.status(404).json({ success: false, error: '商品不存在' });
   }
 
   const deleted = products.splice(index, 1)[0];
 
-  res.json({ 
-    success: true, 
-    data: { 
-      id: deleted.id, 
+  res.json({
+    success: true,
+    data: {
+      id: deleted.id,
       name: deleted.name,
-      message: '商品已删�? 
-    } 
+      message: '商品已删除'
+    }
   });
 });
 
@@ -279,7 +286,8 @@ router.get('/inventory/list', (req: Request, res: Response) => {
 
   let result = products.filter((p) => p.shopId === shopId);
 
-  // 低库存筛�?  if (lowStock === 'true') {
+  // 低库存筛选
+  if (lowStock === 'true') {
     result = result.filter((p) => p.minStock && p.stock <= p.minStock);
   }
 
@@ -308,7 +316,7 @@ router.post('/:id/stock/in', (req: Request, res: Response) => {
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '商品不存�? });
+    return res.status(404).json({ success: false, error: '商品不存在' });
   }
 
   const beforeStock = product.stock;
@@ -355,7 +363,7 @@ router.post('/:id/stock/out', (req: Request, res: Response) => {
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '商品不存�? });
+    return res.status(404).json({ success: false, error: '商品不存在' });
   }
 
   if (product.stock < quantity) {
@@ -401,16 +409,16 @@ router.post('/:id/stock/adjust', (req: Request, res: Response) => {
   const { quantity, reason, operatorId, operatorName } = req.body;
 
   if (quantity === undefined) {
-    return res.status(400).json({ success: false, error: '调整后库存数量必�? });
+    return res.status(400).json({ success: false, error: '调整后库存数量必填' });
   }
 
   if (quantity < 0) {
-    return res.status(400).json({ success: false, error: '库存不能为负�? });
+    return res.status(400).json({ success: false, error: '库存不能为负数' });
   }
 
   const product = products.find((p) => p.id === id);
   if (!product) {
-    return res.status(404).json({ success: false, error: '商品不存�? });
+    return res.status(404).json({ success: false, error: '商品不存在' });
   }
 
   const beforeStock = product.stock;
@@ -476,7 +484,7 @@ router.get('/:id/stock/records', (req: Request, res: Response) => {
 router.get('/categories/list', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
-  const shopProducts = shopId 
+  const shopProducts = shopId
     ? products.filter((p) => p.shopId === shopId)
     : products;
 
@@ -489,7 +497,7 @@ router.get('/categories/list', (req: Request, res: Response) => {
 router.get('/inventory/stats', (req: Request, res: Response) => {
   const { shopId } = req.query;
 
-  const shopProducts = shopId 
+  const shopProducts = shopId
     ? products.filter((p) => p.shopId === shopId)
     : products;
 

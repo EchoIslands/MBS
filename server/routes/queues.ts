@@ -10,8 +10,8 @@ router.get('/:shopId', async (req: Request, res: Response) => {
   if (dbQueue) {
     const bookings = await bookingQueries.listByShop(shopId);
     const pendingBookings = bookings
-      .filter((b: any) => b.status === 'pending' || b.status === 'confirmed')
-      .map((b: any) => ({
+      .filter((b: unknown) => b.status === 'pending' || b.status === 'confirmed')
+      .map((b: unknown) => ({
         id: b.id,
         shopId: b.shop_id,
         customerId: b.customer_id,
@@ -39,7 +39,7 @@ router.get('/:shopId', async (req: Request, res: Response) => {
     });
     return;
   }
-  return res.status(404).json({ success: false, error: '队列不存�? });
+  return res.status(404).json({ success: false, error: '队列不存在' });
 });
 
 // 更新队列
@@ -71,16 +71,18 @@ router.post('/:shopId/next', async (req: Request, res: Response) => {
   const dbQueue = await queueQueries.getByShop(shopId);
   
   if (!dbQueue) {
-    return res.status(404).json({ success: false, error: '队列不存�? });
+    return res.status(404).json({ success: false, error: '队列不存在' });
   }
 
-  // 获取所有待处理的预�?  const bookings = await bookingQueries.listByShop(shopId);
+  // 获取所有待处理的预约
+  const bookings = await bookingQueries.listByShop(shopId);
   const pendingBookings = bookings.filter(
-    (b: any) => b.status === 'pending' || b.status === 'confirmed'
+    (b: unknown) => b.status === 'pending' || b.status === 'confirmed'
   );
 
-  // 找到当前号码对应的预�?  const currentBooking = pendingBookings.find(
-    (b: any) => b.queue_number === dbQueue.current_number
+  // 找到当前号码对应的预约
+  const currentBooking = pendingBookings.find(
+    (b: unknown) => b.queue_number === dbQueue.current_number
   );
 
   // 更新当前号码
@@ -92,7 +94,8 @@ router.post('/:shopId/next', async (req: Request, res: Response) => {
     updated_at: new Date().toISOString(),
   });
 
-  // 如果有当前预约，更新其状态为服务�?  if (currentBooking) {
+  // 如果有当前预约，更新其状态为服务中
+  if (currentBooking) {
     await bookingQueries.update(currentBooking.id, { status: 'serving' });
   }
 
@@ -119,17 +122,18 @@ router.post('/:shopId/skip', async (req: Request, res: Response) => {
   const dbQueue = await queueQueries.getByShop(shopId);
   
   if (!dbQueue) {
-    return res.status(404).json({ success: false, error: '队列不存�? });
+    return res.status(404).json({ success: false, error: '队列不存在' });
   }
 
-  // 获取所有待处理的预�?  const bookings = await bookingQueries.listByShop(shopId);
+  // 获取所有待处理的预约
+  const bookings = await bookingQueries.listByShop(shopId);
   const pendingBookings = bookings.filter(
-    (b: any) => b.status === 'pending' || b.status === 'confirmed'
+    (b: unknown) => b.status === 'pending' || b.status === 'confirmed'
   );
 
   // 找到被跳过的预约
   const skippedBooking = pendingBookings.find(
-    (b: any) => b.queue_number === dbQueue.current_number
+    (b: unknown) => b.queue_number === dbQueue.current_number
   );
 
   // 更新当前号码
@@ -182,7 +186,7 @@ router.post('/:shopId/reset', async (req: Request, res: Response) => {
       estimatedWaitTime: result.estimated_wait_time,
       updatedAt: result.updated_at,
     },
-    message: '队列已重�?,
+    message: '队列已重置',
   });
 });
 
@@ -194,12 +198,12 @@ router.get('/:shopId/stats', async (req: Request, res: Response) => {
   
   const stats = {
     total: bookings.length,
-    pending: bookings.filter((b: any) => b.status === 'pending').length,
-    confirmed: bookings.filter((b: any) => b.status === 'confirmed').length,
-    serving: bookings.filter((b: any) => b.status === 'serving').length,
-    completed: bookings.filter((b: any) => b.status === 'completed').length,
-    cancelled: bookings.filter((b: any) => b.status === 'cancelled').length,
-    skipped: bookings.filter((b: any) => b.status === 'skipped').length,
+    pending: bookings.filter((b: unknown) => b.status === 'pending').length,
+    confirmed: bookings.filter((b: unknown) => b.status === 'confirmed').length,
+    serving: bookings.filter((b: unknown) => b.status === 'serving').length,
+    completed: bookings.filter((b: unknown) => b.status === 'completed').length,
+    cancelled: bookings.filter((b: unknown) => b.status === 'cancelled').length,
+    skipped: bookings.filter((b: unknown) => b.status === 'skipped').length,
   };
 
   res.json({

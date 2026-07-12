@@ -186,7 +186,8 @@ export function isVIPExpiringSoon(customer: Customer): boolean {
  * 判断购买型 VIP 是否已过期
  */
 export function isVIPExpired(customer: Customer): boolean {
-  if (!customer.purchaseVIPExpiresAt) return customer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR;
+  // 未设置过期时间且已购买 VIP，视为未过期
+  if (!customer.purchaseVIPExpiresAt) return customer.purchaseVIPLevel === PurchaseVIPLevel.REGULAR;
   return new Date(customer.purchaseVIPExpiresAt).getTime() < Date.now();
 }
 
@@ -202,7 +203,8 @@ export function getEffectivePurchaseVIPLevel(customer: Customer): PurchaseVIPLev
  * 判断储值会员是否已过期
  */
 export function isStoredValueExpired(customer: Customer): boolean {
-  if (!customer.storedValueExpiresAt) return customer.storedValueLevel !== StoredValueLevel.NONE;
+  // 未设置过期时间且已购买储值卡，视为未过期
+  if (!customer.storedValueExpiresAt) return customer.storedValueLevel === StoredValueLevel.NONE;
   return new Date(customer.storedValueExpiresAt).getTime() < Date.now();
 }
 

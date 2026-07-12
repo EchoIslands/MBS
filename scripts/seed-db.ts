@@ -24,7 +24,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 }
 
 // 加载 ws 传输（Node.js 20 需要）
-let wsTransport: any = undefined;
+let wsTransport: unknown = undefined;
 try {
   wsTransport = require('ws');
 } catch (_e) {
@@ -37,7 +37,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { transport: wsTransport },
 });
 
-const upsertMany = async (table: string, rows: any[], conflict = 'id') => {
+const upsertMany = async (table: string, rows: unknown[], conflict = 'id') => {
   if (!rows.length) return;
   const { error } = await db.from(table).upsert(rows, { onConflict: conflict });
   if (error) {
@@ -52,7 +52,7 @@ const main = async () => {
   console.log(`   URL: ${SUPABASE_URL}\n`);
 
   // 1. 店铺
-  const shops = mockShops.map((s: any) => ({
+  const shops = mockShops.map((s: unknown) => ({
     id: s.id,
     name: s.name,
     description: s.description || '',
@@ -64,15 +64,15 @@ const main = async () => {
     is_active: true,
     avatar: s.avatar || null,
     images: s.images || [],
-    services: (s as any).services || [],
+    services: (s as unknown).services || [],
     created_at: new Date().toISOString(),
   }));
   await upsertMany('shops', shops);
 
   // 2. 员工（按 id 去重，避免多店铺共用 ID 导致 upsert 冲突）
-  const employeeMap = new Map<string, any>();
+  const employeeMap = new Map<string, unknown>();
   for (const s of mockShops) {
-    for (const e of (s as any).employees || []) {
+    for (const e of (s as unknown).employees || []) {
       if (!employeeMap.has(e.id)) {
         employeeMap.set(e.id, {
           id: e.id,
@@ -94,7 +94,7 @@ const main = async () => {
   await upsertMany('employees', Array.from(employeeMap.values()));
 
   // 3. 客户
-  const customers = mockCustomers.map((c: any) => ({
+  const customers = mockCustomers.map((c: unknown) => ({
     id: c.id,
     shop_id: c.shopId || 'shop1',
     name: c.name,
@@ -145,8 +145,8 @@ const main = async () => {
 
   // 3.1 客户画像
   const profiles = mockCustomers
-    .filter((c: any) => c.profile)
-    .map((c: any) => {
+    .filter((c: unknown) => c.profile)
+    .map((c: unknown) => {
       const p = c.profile;
       return {
         id: p.id || `profile_${c.id}`,
@@ -175,10 +175,10 @@ const main = async () => {
 
   // 3.2 客户到店记录
   // 先收集 mockBookings 中存在的 booking id，避免外键约束失败
-  const validBookingIds = new Set((mockBookings || []).map((b: any) => b.id));
+  const validBookingIds = new Set((mockBookings || []).map((b: unknown) => b.id));
   const visitRecords = mockCustomers
-    .flatMap((c: any) => (c.visitRecords || []).map((v: any) => ({ ...v, customerId: c.id, shopId: c.shopId || 'shop1' })))
-    .map((v: any) => ({
+    .flatMap((c: unknown) => (c.visitRecords || []).map((v: unknown) => ({ ...v, customerId: c.id, shopId: c.shopId || 'shop1' })))
+    .map((v: unknown) => ({
       id: v.id || `vr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       customer_id: v.customerId,
       shop_id: v.shopId,
@@ -198,7 +198,7 @@ const main = async () => {
   await upsertMany('customer_visit_records', visitRecords);
 
   // 4. 预约
-  const bookings = mockBookings.map((b: any) => ({
+  const bookings = mockBookings.map((b: unknown) => ({
     id: b.id,
     shop_id: b.shopId,
     customer_id: b.customerId,
@@ -219,7 +219,7 @@ const main = async () => {
   await upsertMany('bookings', bookings);
 
   // 5. 评价
-  const reviews = mockReviews.map((r: any) => ({
+  const reviews = mockReviews.map((r: unknown) => ({
     id: r.id,
     shop_id: r.shopId,
     customer_id: r.customerId,
@@ -245,7 +245,7 @@ const main = async () => {
   await upsertMany('reviews', reviews);
 
   // 6. 队列（每个店一行）
-  const queues = shops.map((s: any) => ({
+  const queues = shops.map((s: unknown) => ({
     shop_id: s.id,
     current_number: 0,
     estimated_wait_time: 15,

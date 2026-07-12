@@ -1,83 +1,89 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ArrowLeft, 
   TrendingUp, 
   Users, 
   DollarSign, 
   Star,
   BarChart3,
   Store,
-  Trophy,
-  Calendar,
-  Download
+  Trophy
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { getOwnerDashboard, mockShops } from '../../../shared/mockData';
 import { OwnerDashboard, UserRole } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
+import { ownerApi } from '../../api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import ShopLayout from './ShopLayout';
 
 const OwnerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentShop, userRole } = useAppStore();
+  const { userRole } = useAppStore();
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('month');
 
+  // 加载老板视图数据
+  const fetchDashboard = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await ownerApi.getDashboard();
+      if (data) {
+        setDashboard(data);
+      } else {
+        setError('获取经营概览失败，请稍后重试');
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? (err as Error).message : String(err);
+      console.error('[OwnerDashboard] 获取经营概览失败:', message);
+      setError('获取经营概览失败：' + message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // 老板数据看板只有平台管理员和老板角色可以访问
-    if (![UserRole.PLATFORM_ADMIN, UserRole.SHOP_OWNER].includes(userRole as UserRole)) {
+    // 老板数据看板只有 CEO 和老板角色可以访问
+    if (![UserRole.CEO, UserRole.SHOP_OWNER].includes(userRole as UserRole)) {
       navigate('/shop');
       return;
     }
 
-    setDashboard(getOwnerDashboard());
+    fetchDashboard();
   }, [userRole, navigate]);
 
-  if (!dashboard) {
-    return null;
+  if (loading) {
+    return (
+      <ShopLayout title="老板视图">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center text-gray-500">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4" />
+            <p>加载经营数据中...</p>
+          </div>
+        </div>
+      </ShopLayout>
+    );
   }
 
-  const exportReport = () => {
-    const data = [
-      ['老板经营概览'],
-      ['生成时间', new Date().toLocaleString('zh-CN')],
-      [],
-      ['总体数据'],
-      ['指标', '今日', '本周', '本月', '本年'],
-      ['总营收(元)', dashboard.totalRevenue.today, dashboard.totalRevenue.week, dashboard.totalRevenue.month, dashboard.totalRevenue.year],
-      ['总服务数', dashboard.totalServices.today, dashboard.totalServices.week, dashboard.totalServices.month, dashboard.totalServices.year],
-      ['总客户数', dashboard.totalCustomers.today, dashboard.totalCustomers.week, dashboard.totalCustomers.month, dashboard.totalCustomers.year],
-      [],
-      ['店铺业绩'],
-      ['店铺', '营收(元)', '服务数', '客户数', '员工数'],
-      ...dashboard.shopStats.map(shop => [
-        shop.shopName,
-        shop.revenue,
-        shop.services,
-        shop.customers,
-        shop.employees
-      ]),
-      [],
-      ['发型师排名'],
-      ['发型师', '所属店铺', '营收(元)', '服务数', '评分'],
-      ...dashboard.topStylists.map(stylist => [
-        stylist.name,
-        stylist.shopName,
-        stylist.revenue,
-        stylist.services,
-        stylist.rating
-      ])
-    ];
-
-    const csv = data.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `老板经营概览_${new Date().toLocaleDateString('zh-CN')}.csv`;
-    link.click();
-  };
+  if (error || !dashboard) {
+    return (
+      <ShopLayout title="老板视图">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center text-gray-500">
+            <p className="text-red-500 mb-4">{error || '暂无数据'}</p>
+            <button
+              onClick={fetchDashboard}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              重新加载
+            </button>
+          </div>
+        </div>
+      </ShopLayout>
+    );
+  }
 
   const periodLabels = {
     today: '今日',
@@ -202,7 +208,7 @@ const OwnerDashboardPage: React.FC = () => {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
                     outerRadius={100}
                     fill="#8884d8"
                     dataKey="services"

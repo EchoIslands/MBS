@@ -3,8 +3,8 @@
  */
 
 /** snake_case → camelCase：用于将 Supabase 查询结果转为前端格式 */
-export function toCamelCase<T = Record<string, any>>(obj: Record<string, any>): T {
-  const result: Record<string, any> = {};
+export function toCamelCase<T = Record<string, unknown>>(obj: Record<string, unknown>): T {
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     const camelKey = key
       .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
@@ -16,8 +16,8 @@ export function toCamelCase<T = Record<string, any>>(obj: Record<string, any>): 
 }
 
 /** camelCase → snake_case：用于将前端请求数据转为 Supabase 写入格式 */
-export function toSnakeCase(obj: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = {};
+export function toSnakeCase(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     const snakeKey = key
       // 先把 VIP 整体转成 Vip，避免 purchaseVIPLevel -> purchase_v_i_p_level
@@ -31,6 +31,6 @@ export function toSnakeCase(obj: Record<string, any>): Record<string, any> {
 }
 
 /** 批量转换数组 */
-export function toCamelCaseList<T = Record<string, any>>(list: Record<string, any>[]): T[] {
+export function toCamelCaseList<T = Record<string, unknown>>(list: Record<string, unknown>[]): T[] {
   return list.map(toCamelCase) as T[];
 }

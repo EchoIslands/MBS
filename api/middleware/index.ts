@@ -13,6 +13,7 @@ export interface AuthEmployee {
 
 // 扩展 Express Request 类型
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       employee?: AuthEmployee;
@@ -34,7 +35,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     const decoded = jwt.verify(token, JWT_SECRET) as AuthEmployee;
     req.employee = decoded;
     next();
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[middleware] JWT 验证失败:', err.message);
     res.status(401).json({ success: false, error: '登录已过期，请重新登录' });
   }

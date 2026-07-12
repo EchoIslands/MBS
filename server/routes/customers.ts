@@ -22,15 +22,18 @@ router.get('/', (req: Request, res: Response) => {
     );
   }
 
-  // 标签筛�?  if (tag && typeof tag === 'string' && tag !== 'all') {
+  // 标签筛选
+  if (tag && typeof tag === 'string' && tag !== 'all') {
     result = result.filter((c) => c.tags.includes(tag as CustomerTag));
   }
 
-  // 会员等级筛�?  if (level && typeof level === 'string' && level !== 'all') {
+  // 会员等级筛选
+  if (level && typeof level === 'string' && level !== 'all') {
     result = result.filter((c) => c.membershipLevel === level);
   }
 
-  // 店铺筛选（发型师角色：只看服务过的客户�?  if (shopId && typeof shopId === 'string') {
+  // 店铺筛选（发型师角色：只看服务过的客户）
+  if (shopId && typeof shopId === 'string') {
     result = result.filter((c) => c.servedByStylistIds?.includes(shopId));
   }
 
@@ -68,7 +71,7 @@ router.get('/:id', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === id);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   // 计算距离上次到店天数
@@ -82,7 +85,8 @@ router.get('/:id', (req: Request, res: Response) => {
   res.json({ success: true, data: customerWithDays });
 });
 
-// 创建新客�?router.post('/', (req: Request, res: Response) => {
+// 创建新客户
+router.post('/', (req: Request, res: Response) => {
   const {
     name,
     phone,
@@ -97,12 +101,13 @@ router.get('/:id', (req: Request, res: Response) => {
 
   // 验证必填字段
   if (!name || !phone) {
-    return res.status(400).json({ success: false, error: '姓名和电话为必填�? });
+    return res.status(400).json({ success: false, error: '姓名和电话为必填项' });
   }
 
-  // 检查手机号是否已存�?  const existing = mockCustomers.find((c) => c.phone === phone);
+  // 检查手机号是否已存在
+  const existing = mockCustomers.find((c) => c.phone === phone);
   if (existing) {
-    return res.status(400).json({ success: false, error: '该手机号已注�? });
+    return res.status(400).json({ success: false, error: '该手机号已注册' });
   }
 
   const newCustomer: Customer = {
@@ -127,8 +132,8 @@ router.get('/:id', (req: Request, res: Response) => {
     churnRisk: 'low',
   };
 
-  // 添加�?mockCustomers（实际项目中应该写入数据库）
-  (mockCustomers as any[]).push(newCustomer);
+  // 添加到 mockCustomers（实际项目中应该写入数据库）
+  (mockCustomers as Customer[]).push(newCustomer);
 
   res.status(201).json({ success: true, data: newCustomer });
 });
@@ -139,7 +144,7 @@ router.put('/:id', (req: Request, res: Response) => {
   const index = mockCustomers.findIndex((c) => c.id === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   const {
@@ -200,12 +205,12 @@ router.delete('/:id', (req: Request, res: Response) => {
   const index = mockCustomers.findIndex((c) => c.id === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
-  (mockCustomers as any[]).splice(index, 1);
+  (mockCustomers as Customer[]).splice(index, 1);
 
-  res.json({ success: true, message: '客户已删�? });
+  res.json({ success: true, message: '客户已删除' });
 });
 
 // ==================== 客户画像 API ====================
@@ -216,7 +221,7 @@ router.get('/:customerId/profile', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   res.json({
@@ -231,11 +236,11 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   if (customer.profile) {
-    return res.status(400).json({ success: false, error: '该客户已有画像，请使用更新接�? });
+    return res.status(400).json({ success: false, error: '该客户已有画像，请使用更新接口' });
   }
 
   const {
@@ -253,7 +258,7 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
     extraServices = [],
     visitTimes = [],
     notes = '',
-    allergies = '�?,
+    allergies = '',
     productsUsed = [],
   } = req.body;
 
@@ -261,7 +266,7 @@ router.post('/:customerId/profile', (req: Request, res: Response) => {
     id: generateId(),
     customerId,
     updatedBy: updatedBy || '',
-    updatedByName: updatedByName || '技�?,
+    updatedByName: updatedByName || '技师',
     updatedAt: new Date(),
     haircutStyles,
     hairColors,
@@ -291,7 +296,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
   const customer = mockCustomers.find((c) => c.id === customerId);
 
   if (!customer) {
-    return res.status(404).json({ success: false, error: '客户不存�? });
+    return res.status(404).json({ success: false, error: '客户不存在' });
   }
 
   const existing = customer.profile;
@@ -320,7 +325,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
     id: existing?.id || generateId(),
     customerId,
     updatedBy: updatedBy || existing?.updatedBy || '',
-    updatedByName: updatedByName || existing?.updatedByName || '技�?,
+    updatedByName: updatedByName || existing?.updatedByName || '技师',
     updatedAt: now,
     haircutStyles: haircutStyles !== undefined ? haircutStyles : existing?.haircutStyles || [],
     hairColors: hairColors !== undefined ? hairColors : existing?.hairColors || [],
@@ -334,7 +339,7 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
     extraServices: extraServices !== undefined ? extraServices : existing?.extraServices || [],
     visitTimes: visitTimes !== undefined ? visitTimes : existing?.visitTimes || [],
     notes: notes !== undefined ? notes : existing?.notes || '',
-    allergies: allergies !== undefined ? allergies : existing?.allergies || '�?,
+    allergies: allergies !== undefined ? allergies : existing?.allergies || '',
     productsUsed: productsUsed !== undefined ? productsUsed : existing?.productsUsed || [],
     createdAt: existing?.createdAt || now,
   };

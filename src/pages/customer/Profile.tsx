@@ -5,7 +5,7 @@ import {
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
   X, Phone, Scissors, MapPin, Loader2,
 } from 'lucide-react';
-import { Booking, MembershipLevel, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType } from '../../../shared/types';
+import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType } from '../../../shared/types';
 import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
 import { bookingApi, reviewApi } from '../../api';
@@ -18,29 +18,6 @@ import {
 } from '../../lib/membership';
 
 // 旧的会员等级标签与颜色（兼容股东展示）
-const levelConfig = {
-  [MembershipLevel.REGULAR]: {
-    label: '普通会员',
-    gradient: 'from-gray-400 to-gray-500',
-    bgLight: 'bg-gray-50',
-    text: 'text-gray-700',
-    border: 'border-gray-200',
-  },
-  [MembershipLevel.PREMIUM]: {
-    label: '高级会员',
-    gradient: 'from-blue-500 to-indigo-600',
-    bgLight: 'bg-blue-50',
-    text: 'text-blue-700',
-    border: 'border-blue-200',
-  },
-  [MembershipLevel.STOCKHOLDER]: {
-    label: '股东会员',
-    gradient: 'from-purple-500 via-pink-500 to-orange-500',
-    bgLight: 'bg-purple-50',
-    text: 'text-purple-700',
-    border: 'border-purple-200',
-  },
-};
 
 const purchaseVIPGradient: Record<PurchaseVIPLevel, string> = {
   [PurchaseVIPLevel.REGULAR]: 'from-gray-400 to-gray-500',
@@ -82,7 +59,7 @@ const Profile: React.FC = () => {
     return map;
   }, [customerReviews]);
 
-  const loadBookings = async () => {
+  const loadBookings = React.useCallback(async () => {
     if (!currentCustomer) return;
     setLoading(true);
     try {
@@ -94,9 +71,9 @@ const Profile: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentCustomer]);
 
-  const loadCustomerReviews = async () => {
+  const loadCustomerReviews = React.useCallback(async () => {
     if (!currentCustomer) return;
     try {
       const data = await reviewApi.getCustomerReviews(currentCustomer.id);
@@ -105,7 +82,7 @@ const Profile: React.FC = () => {
       console.error('加载顾客评价失败:', error);
       setCustomerReviews([]);
     }
-  };
+  }, [currentCustomer]);
 
   useEffect(() => {
     if (!currentCustomer) {
@@ -115,7 +92,7 @@ const Profile: React.FC = () => {
 
     loadBookings();
     loadCustomerReviews();
-  }, [currentCustomer, navigate]);
+  }, [currentCustomer, navigate, loadBookings, loadCustomerReviews]);
 
   const handleCancelBooking = async () => {
     if (!viewingBooking) return;
@@ -140,8 +117,6 @@ const Profile: React.FC = () => {
   };
 
   // 会员等级
-  const memberLevel = currentCustomer?.membershipLevel ?? MembershipLevel.REGULAR;
-  const levelInfo = levelConfig[memberLevel];
   const purchaseLevel = currentCustomer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
   const storedLevel = currentCustomer?.storedValueLevel ?? StoredValueLevel.NONE;
   const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel);
@@ -149,11 +124,9 @@ const Profile: React.FC = () => {
   const effectiveDiscount = currentCustomer ? getCustomerEffectiveDiscount(currentCustomer) : 1;
   const expiringSoon = currentCustomer ? isVIPExpiringSoon(currentCustomer) : false;
   const storedExpiringSoon = currentCustomer ? isStoredValueExpiringSoon(currentCustomer) : false;
-  const totalSaved = currentCustomer?.totalSaved ?? 0;
   const balance = currentCustomer?.storedValueBalance ?? 0;
   const withdrawable = currentCustomer?.withdrawableReferralAmount ?? 0;
   const points = currentCustomer?.points ?? 0;
-  const visitCount = currentCustomer?.visitCount ?? 0;
   const totalSpent = currentCustomer?.totalSpent ?? 0;
 
   // 当前店铺信息（默认取第一个）
@@ -640,12 +613,12 @@ const Profile: React.FC = () => {
                     {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
                   </span>
                 </div>
-                {(viewingBooking as any).customerPhone && (
+                {(viewingBooking as { customerPhone?: string }).customerPhone && (
                   <div className="flex items-center justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500 flex items-center gap-2">
                       <Phone size={16} /> 手机号
                     </span>
-                    <span className="font-medium text-gray-800">{(viewingBooking as any).customerPhone}</span>
+                    <span className="font-medium text-gray-800">{(viewingBooking as { customerPhone?: string }).customerPhone}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">

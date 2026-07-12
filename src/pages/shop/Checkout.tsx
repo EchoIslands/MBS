@@ -26,6 +26,7 @@ import {
   ProductCategory,
   PurchaseVIPLevel,
   StoredValueLevel,
+  MemberBenefitRecord,
 } from '../../../shared/types';
 import {
   getPurchaseVIPLabel,
@@ -46,7 +47,7 @@ interface CartItem {
   name: string;
   originalPrice: number;
   quantity: number;
-  category?: ProductCategory;
+  category?: ProductCategory | 'service';
   employeeId?: string;
   employeeName?: string;
   employeeLevel?: 'normal' | 'gold' | 'director';
@@ -84,7 +85,7 @@ const Checkout: React.FC = () => {
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedBenefits, setSelectedBenefits] = useState<string[]>([]);
-  const [availableBenefits, setAvailableBenefits] = useState<any[]>([]);
+  const [availableBenefits, setAvailableBenefits] = useState<MemberBenefitRecord[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -92,7 +93,6 @@ const Checkout: React.FC = () => {
 
   const services = shop?.services || [];
   const products = shop?.products || [];
-  const employees = shop?.employees || [];
 
   // 加载店铺信息和客户列表
   useEffect(() => {
@@ -110,8 +110,8 @@ const Checkout: React.FC = () => {
         if (cancelled) return;
         setShop(shopData);
         setCustomers(customerList || []);
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || '加载初始数据失败');
+      } catch (err: unknown) {
+        if (!cancelled) setError((err as Error).message || '加载初始数据失败');
       } finally {
         if (!cancelled) {
           setLoadingShop(false);
@@ -146,6 +146,7 @@ const Checkout: React.FC = () => {
                   name: booking.serviceName || '预约服务',
                   originalPrice: booking.price,
                   quantity: 1,
+                  category: 'service',
                   employeeId: booking.barberId,
                   employeeName: booking.barberName,
                 },
@@ -171,7 +172,7 @@ const Checkout: React.FC = () => {
       try {
         const benefits = await memberBenefitApi.getAvailableByCustomer(selectedCustomer.id);
         if (!cancelled) setAvailableBenefits(benefits || []);
-      } catch (e) {
+      } catch (_e) {
         if (!cancelled) setAvailableBenefits([]);
       }
     };
@@ -237,6 +238,7 @@ const Checkout: React.FC = () => {
         name: service.name,
         originalPrice: service.price,
         quantity: 1,
+        category: 'service' as const,
         employeeLevel: 'normal',
       },
     ]);
@@ -333,6 +335,8 @@ const Checkout: React.FC = () => {
         discountedPrice: discountedUnit,
         total: Math.round(discountedUnit * item.quantity * 100) / 100,
         category: item.category,
+        employeeId: item.employeeId,
+        employeeName: item.employeeName,
       };
     });
 
@@ -390,8 +394,8 @@ const Checkout: React.FC = () => {
       setSelectedBenefits([]);
       setSubmitting(false);
       setSuccess(true);
-    } catch (err: any) {
-      alert(err.message || '结算失败，请重试');
+    } catch (err: unknown) {
+      alert((err as Error).message || '结算失败，请重试');
       setSubmitting(false);
     }
   };
@@ -670,7 +674,7 @@ const Checkout: React.FC = () => {
                         {item.type === 'service' && (
                           <select
                             value={item.employeeLevel || 'normal'}
-                            onChange={(e) => updateServiceLevel(index, e.target.value as any)}
+                            onChange={(e) => updateServiceLevel(index, e.target.value as 'normal' | 'gold' | 'director')}
                             className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 mb-2 outline-none"
                           >
                             <option value="normal">{designerLabelMap.normal} (+¥0)</option>
@@ -739,7 +743,7 @@ const Checkout: React.FC = () => {
                     </div>
                     {selectedCustomer && (
                       <div className="text-xs text-gray-400 text-right">
-                        当前综合折扣 {(getCustomerEffectiveDiscount(selectedCustomer) * 10).toFixed(2)} 折
+                        当前综合折扣 {Math.round(getCustomerEffectiveDiscount(selectedCustomer) * 100) / 10} 折
                       </div>
                     )}
                   </div>
@@ -759,13 +763,23 @@ const Checkout: React.FC = () => {
                       ].map((opt) => {
                         const Icon = opt.icon;
                         const disabled = opt.key === 'balance' && selectedCustomer && selectedCustomer.storedValueBalance < total;
+                        const selected = paymentMethod === opt.key;
+                        const handleSelect = () => {
+                          if (!disabled) setPaymentMethod(opt.key as 'cash' | 'wechat' | 'alipay' | 'card' | 'balance');
+                        };
                         return (
                           <button
                             key={opt.key}
-                            onClick={() => !disabled && setPaymentMethod(opt.key as any)}
+                            type="button"
+                            onClick={handleSelect}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleSelect();
+                            }}
                             disabled={disabled}
-                            className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 text-sm transition-all ${
-                              paymentMethod === opt.key
+                            aria-pressed={selected}
+                            className={`flex flex-col items-center gap-1 p-4 rounded-xl border-2 text-sm transition-all select-none ${
+                              selected
                                 ? 'border-purple-500 bg-purple-50 text-purple-700'
                                 : disabled
                                 ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'

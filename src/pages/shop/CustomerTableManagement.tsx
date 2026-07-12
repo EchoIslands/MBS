@@ -76,7 +76,7 @@ const CustomerTableManagement: React.FC = () => {
       }));
       setCustomers(extended);
     } catch (err: unknown) {
-      console.error('[CustomerTable] 获取客户列表失败:', err instanceof Error ? err.message : err);
+      console.error('[CustomerTable] 获取客户列表失败:', err instanceof Error ? (err as Error).message : err);
     } finally {
       setLoading(false);
     }

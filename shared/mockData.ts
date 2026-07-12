@@ -1,7 +1,5 @@
-import { Shop, Customer, Booking, Review, Queue, Service, OpeningHours, Employee, StylistPerformance, FinancialReport, DateRange, UserRole, OwnerDashboard, RefundRequest, RefundStatus, CustomerFeedback, FeedbackType, CustomerSuccessMetrics, Product, ProductCategory, CustomerTag, MembershipLevel, PurchaseVIPLevel, StoredValueLevel, BenefitType, StoredValueTxType, Settlement, SatisfactionSurvey, MembershipBenefit, MemberBenefitRecord, StoredValueTransaction, ReferralRecord, CustomerProfile, HaircutStylePreference, HairColorPreference, PermColorPreference, TreatmentPreference, HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle, ExtraServicePreference, VisitTimePreference, CustomerVisitRecord, ShopReview, StylistReview, FollowUpRecord } from './types';
+import { Shop, Customer, Booking, Review, Queue, OpeningHours, StylistPerformance, FinancialReport, DateRange, UserRole, OwnerDashboard, RefundRequest, RefundStatus, CustomerFeedback, FeedbackType, CustomerSuccessMetrics, Product, ProductCategory, CustomerTag, MembershipLevel, PurchaseVIPLevel, StoredValueLevel, BenefitType, StoredValueTxType, Settlement, SatisfactionSurvey, MembershipBenefit, MemberBenefitRecord, StoredValueTransaction, ReferralRecord, HaircutStylePreference, HairColorPreference, PermColorPreference, TreatmentPreference, HairType, HairLength, VisitFrequency, BudgetRange, CommunicationStyle, ExtraServicePreference, VisitTimePreference, ShopReview, StylistReview, FollowUpRecord } from './types';
 export { purchaseVIPPlans, storedValuePlans } from './membershipPlans';
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const defaultOpeningHours: OpeningHours = {
   monday: { open: '09:00', close: '21:00', isOpen: true },
@@ -934,7 +932,7 @@ export function generateMockProducts(shopId: string): Product[] {
 }
 
 export function getCustomerSuccessMetrics(customerId: string): CustomerSuccessMetrics {
-  const customer = mockCustomers.find(c => c.id === customerId);
+  const _customer = mockCustomers.find(c => c.id === customerId);
   const bookings = mockBookings.filter(b => b.customerId === customerId);
 
   return {
@@ -948,7 +946,7 @@ export function getCustomerSuccessMetrics(customerId: string): CustomerSuccessMe
     averageRating: 4.5,
     lastVisitDate: bookings.length > 0 ? new Date(bookings[0].scheduledTime) : undefined,
     loyaltyPoints: Math.floor(Math.random() * 500) + 100,
-    membershipLevel: ['regular', 'silver', 'gold', 'platinum'][Math.floor(Math.random() * 4)] as any,
+    membershipLevel: ['regular', 'silver', 'gold', 'platinum'][Math.floor(Math.random() * 4)] as 'regular' | 'silver' | 'gold' | 'platinum',
     customerSince: new Date(Date.now() - Math.floor(Math.random() * 365) * 86400000),
   };
 }
