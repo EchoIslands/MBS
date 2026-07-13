@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -20,9 +20,16 @@ import {
   Package,
   Bell,
   ArrowLeft,
+  Camera,
+  Check,
+  X,
+  Lock,
+  Edit3,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { UserRole } from '../../../shared/types';
+import { employeeApi } from '../../api';
+import { getAvatarUrl } from '../../lib/avatar';
+import { UserRole, Employee } from '../../../shared/types';
 
 interface ShopLayoutProps {
   children: React.ReactNode;
@@ -187,6 +194,62 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   const employeeName = currentEmployee?.name || currentShop?.name || '管理后台';
   const roleLabel = roleLabels[userRole || ''] || '管理员';
 
+  // 个人资料弹窗状态
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: currentEmployee?.name || '',
+    title: currentEmployee?.title || '',
+    specialty: currentEmployee?.specialty || '',
+    avatar: currentEmployee?.avatar || '',
+    password: '',
+  });
+  const updateCurrentEmployee = useAppStore((state) => state.updateCurrentEmployee);
+
+  const handleOpenProfile = () => {
+    setProfileForm({
+      name: currentEmployee?.name || '',
+      title: currentEmployee?.title || '',
+      specialty: currentEmployee?.specialty || '',
+      avatar: currentEmployee?.avatar || '',
+      password: '',
+    });
+    setProfileOpen(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!currentEmployee) return;
+    setSavingProfile(true);
+    try {
+      const payload: Partial<Employee> & { password?: string } = {
+        name: profileForm.name.trim() || undefined,
+        title: profileForm.title.trim() || undefined,
+        specialty: profileForm.specialty.trim() || undefined,
+        avatar: profileForm.avatar.trim() || undefined,
+      };
+      if (profileForm.password.trim()) {
+        payload.password = profileForm.password.trim();
+      }
+      const updated = await employeeApi.updateMe(payload);
+      if (updated) {
+        updateCurrentEmployee({
+          name: updated.name,
+          title: updated.title,
+          avatar: updated.avatar,
+          specialty: updated.specialty,
+        });
+        setProfileOpen(false);
+      } else {
+        alert('保存失败，请重试');
+      }
+    } catch (err: unknown) {
+      console.error('[ShopLayout] 保存个人资料失败:', err);
+      alert('保存失败');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   // 手机端只显示前 5 个菜单（避免底部导航过密）
   const bottomMenus = visibleMenus.slice(0, 5);
   const moreMenus = visibleMenus.slice(5);
@@ -215,13 +278,23 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-            <div className="hidden sm:flex items-center gap-2 text-sm bg-white/10 px-3 py-1.5 rounded-lg">
-              <UserCircle size={18} />
-              <div>
+            <button
+              onClick={handleOpenProfile}
+              className="flex items-center gap-2 text-sm bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <img
+                src={currentEmployee?.avatar || getAvatarUrl(employeeName)}
+                alt={employeeName}
+                className="w-7 h-7 rounded-full object-cover border border-white/30"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = getAvatarUrl(employeeName);
+                }}
+              />
+              <div className="hidden sm:block text-left">
                 <div className="font-medium">{employeeName}</div>
                 <div className="text-xs text-orange-100">{roleLabel}</div>
               </div>
-            </div>
+            </button>
             <button
               onClick={handleLogout}
               className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
@@ -313,6 +386,114 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
           )}
         </div>
       </nav>
+
+      {/* 个人资料编辑弹窗 */}
+      {profileOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Edit3 size={20} className="text-orange-500" />
+                个人资料
+              </h3>
+              <button
+                onClick={() => setProfileOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex justify-center">
+                <div className="relative">
+                  <img
+                    src={profileForm.avatar || getAvatarUrl(profileForm.name || employeeName)}
+                    alt={profileForm.name || employeeName}
+                    className="w-20 h-20 rounded-full object-cover border-4 border-orange-100"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getAvatarUrl(profileForm.name || employeeName);
+                    }}
+                  />
+                  <div className="absolute -bottom-1 -right-1 bg-orange-500 text-white p-1.5 rounded-full">
+                    <Camera size={14} />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">头像图片地址</label>
+                <input
+                  type="text"
+                  value={profileForm.avatar}
+                  onChange={(e) => setProfileForm({ ...profileForm, avatar: e.target.value })}
+                  placeholder="https://example.com/avatar.jpg"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                <input
+                  type="text"
+                  value={profileForm.name}
+                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">职位</label>
+                <input
+                  type="text"
+                  value={profileForm.title}
+                  onChange={(e) => setProfileForm({ ...profileForm, title: e.target.value })}
+                  placeholder="如：首席发型师"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">专长</label>
+                <input
+                  type="text"
+                  value={profileForm.specialty}
+                  onChange={(e) => setProfileForm({ ...profileForm, specialty: e.target.value })}
+                  placeholder="如：精剪、烫染"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  <Lock size={14} />
+                  新密码（留空则不修改）
+                </label>
+                <input
+                  type="password"
+                  value={profileForm.password}
+                  onChange={(e) => setProfileForm({ ...profileForm, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => setProfileOpen(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveProfile}
+                disabled={savingProfile}
+                className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {savingProfile ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Check size={18} />
+                )}
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
