@@ -87,7 +87,23 @@ create table if not exists customers (
   stored_value_balance numeric default 0,        -- 储值总余额（本金 + 返现）
   stored_value_expires_at timestamptz,           -- 储值到期时间（2 年有效期）
   withdrawable_referral_amount numeric default 0,-- 可提现返现余额
-  total_saved numeric default 0                  -- 累计节省金额
+  total_saved numeric default 0,                 -- 累计节省金额
+  -- 客户管理扩展字段
+  wechat text,                                   -- 微信号
+  id_card_number text,                           -- 身份证号
+  hobbies text,                                  -- 爱好及其他
+  is_referred boolean default false,             -- 是否转介绍
+  referrer_name text,                            -- 转介绍人姓名
+  referrer_phone text,                           -- 转介绍人电话
+  referral_consumption numeric default 0,        -- 转介绍带来的消费
+  shared_fund numeric default 0,                 -- 共享基金
+  total_shared_fund numeric default 0,           -- 合计共享基金
+  withdrawable_amount numeric default 0,         -- 可取现金额
+  has_booking boolean default false,             -- 是否有预约
+  last_service_items text[] default '{}',        -- 上次消费项目
+  is_member boolean default false,               -- 是否会员（兼容旧字段）
+  has_recharged boolean default false,           -- 是否已充值（兼容旧字段）
+  recharge_level text                            -- 充值级别文本（兼容旧字段）
 );
 
 -- 如果 customers 表已存在，补充新增字段
@@ -98,6 +114,21 @@ alter table customers add column if not exists stored_value_balance numeric defa
 alter table customers add column if not exists stored_value_expires_at timestamptz;
 alter table customers add column if not exists withdrawable_referral_amount numeric default 0;
 alter table customers add column if not exists total_saved numeric default 0;
+alter table customers add column if not exists wechat text;
+alter table customers add column if not exists id_card_number text;
+alter table customers add column if not exists hobbies text;
+alter table customers add column if not exists is_referred boolean default false;
+alter table customers add column if not exists referrer_name text;
+alter table customers add column if not exists referrer_phone text;
+alter table customers add column if not exists referral_consumption numeric default 0;
+alter table customers add column if not exists shared_fund numeric default 0;
+alter table customers add column if not exists total_shared_fund numeric default 0;
+alter table customers add column if not exists withdrawable_amount numeric default 0;
+alter table customers add column if not exists has_booking boolean default false;
+alter table customers add column if not exists last_service_items text[] default '{}';
+alter table customers add column if not exists is_member boolean default false;
+alter table customers add column if not exists has_recharged boolean default false;
+alter table customers add column if not exists recharge_level text;
 
 -- ========== 4. 客户画像 ==========
 create table if not exists customer_profiles (
