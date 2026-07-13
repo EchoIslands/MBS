@@ -35,6 +35,23 @@ const roleLabels: Partial<Record<UserRole, string>> = {
   [UserRole.STYLIST]: '技师/发型师',
 };
 
+// 补全缺失的营业时间字段，避免后端/缓存数据不完整导致崩溃
+const normalizeOpeningHours = (hours?: OpeningHours | null): OpeningHours => {
+  const result: OpeningHours = { ...defaultOpeningHours };
+  if (!hours) return result;
+  weekDayLabels.forEach(({ key }) => {
+    const day = hours[key];
+    if (day && typeof day.isOpen === 'boolean') {
+      result[key] = {
+        open: day.open || defaultOpeningHours[key].open,
+        close: day.close || defaultOpeningHours[key].close,
+        isOpen: day.isOpen,
+      };
+    }
+  });
+  return result;
+};
+
 const ShopManage: React.FC = () => {
   const navigate = useNavigate();
   const { currentShop, updateShop, userRole } = useAppStore();
@@ -54,7 +71,7 @@ const ShopManage: React.FC = () => {
     role: UserRole.STYLIST,
     password: '',
   });
-  const [openingHours, setOpeningHours] = useState<OpeningHours>(currentShop?.openingHours || defaultOpeningHours);
+  const [openingHours, setOpeningHours] = useState<OpeningHours>(normalizeOpeningHours(currentShop?.openingHours));
   const [bookingConfirmMode, setBookingConfirmMode] = useState<'auto' | 'manual'>(currentShop?.bookingConfirmMode || 'auto');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -68,7 +85,7 @@ const ShopManage: React.FC = () => {
     setShopPhone(currentShop.phone || '');
     setShopAddress(currentShop.address || '');
     setServices(currentShop.services || []);
-    setOpeningHours(currentShop.openingHours || defaultOpeningHours);
+    setOpeningHours(normalizeOpeningHours(currentShop.openingHours));
     setBookingConfirmMode(currentShop.bookingConfirmMode || 'auto');
   }, [currentShop]);
 
