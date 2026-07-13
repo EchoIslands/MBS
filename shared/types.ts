@@ -931,6 +931,7 @@ export interface AppState {
   setCurrentShop: (shop: Shop | null) => void;
   updateShop: (shopData: Partial<Shop>) => void;
   setCurrentEmployee: (employee: Employee | null) => void;
+  updateCurrentEmployee: (employeeData: Partial<Employee>) => void;
   logout: () => void;
   // 新增：购物车操作
   addToCart: (product: Product, quantity?: number) => void;

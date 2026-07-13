@@ -35,6 +35,19 @@ export const useAppStore = create<AppState>()(
           return next;
         });
       },
+      updateCurrentEmployee: (employeeData: Partial<Employee>) => {
+        set((state) => {
+          if (!state.currentEmployee) return state;
+          const updated = { ...state.currentEmployee, ...employeeData };
+          const next = { currentEmployee: updated };
+          saveEmployeeSession({
+            currentShop: state.currentShop,
+            currentEmployee: updated,
+            userRole: updated.role || state.userRole,
+          });
+          return next;
+        });
+      },
       logout: () => {
         saveCustomerSession(null);
         saveEmployeeSession({ currentShop: null, currentEmployee: null, userRole: null });

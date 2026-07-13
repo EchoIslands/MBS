@@ -10,10 +10,14 @@ import {
   Award,
   BarChart3,
   Users,
+  Camera,
+  Check,
+  X,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { stylistApi, bookingApi } from '../../api';
+import { stylistApi, bookingApi, employeeApi } from '../../api';
 import { StylistPerformance, UserRole, Booking } from '../../../shared/types';
+import { getAvatarUrl } from '../../lib/avatar';
 import ShopLayout from './ShopLayout';
 
 const StylistDashboard: React.FC = () => {
@@ -26,6 +30,12 @@ const StylistDashboard: React.FC = () => {
     userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 头像编辑状态
+  const [editingAvatar, setEditingAvatar] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(currentEmployee?.avatar || '');
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const updateCurrentEmployee = useAppStore((state) => state.updateCurrentEmployee);
 
   useEffect(() => {
     if (!currentShop || !userRole) return;
@@ -108,6 +118,31 @@ const StylistDashboard: React.FC = () => {
     loadData();
     return () => { cancelled = true; };
   }, [currentEmployee, currentShop, userRole, isManagerOrCEO]);
+
+  // 保存头像
+  const handleSaveAvatar = async () => {
+    if (!currentEmployee) return;
+    setSavingAvatar(true);
+    try {
+      const updated = await employeeApi.updateMe({ avatar: avatarUrl.trim() || undefined });
+      if (updated) {
+        updateCurrentEmployee({ avatar: updated.avatar });
+        setEditingAvatar(false);
+      } else {
+        alert('头像保存失败，请重试');
+      }
+    } catch (err: unknown) {
+      console.error('[StylistDashboard] 保存头像失败:', err);
+      alert('头像保存失败');
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
+
+  const handleCancelAvatar = () => {
+    setAvatarUrl(currentEmployee?.avatar || '');
+    setEditingAvatar(false);
+  };
 
   // ========== 店长/CEO 视图：全员业绩看板 ==========
   if (loading) {
@@ -368,16 +403,70 @@ const StylistDashboard: React.FC = () => {
       {/* 发型师个人信息卡片 */}
       <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center">
-            <UserCircle size={56} className="text-orange-500" />
+          <div className="relative">
+            <img
+              src={currentEmployee?.avatar || getAvatarUrl(currentEmployee?.name || '发型师')}
+              alt={currentEmployee?.name || '发型师'}
+              className="w-16 h-16 rounded-full object-cover border-2 border-orange-100"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getAvatarUrl(currentEmployee?.name || '发型师');
+              }}
+            />
+            {!editingAvatar && (
+              <button
+                onClick={() => setEditingAvatar(true)}
+                className="absolute -bottom-1 -right-1 bg-orange-500 hover:bg-orange-600 text-white p-1.5 rounded-full shadow-sm transition-colors"
+                title="修改头像"
+              >
+                <Camera size={14} />
+              </button>
+            )}
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">
-              {currentEmployee?.name || '发型师'}
-            </h2>
-            <p className="text-sm text-gray-500">
-              {currentEmployee?.title || '首席发型师'}
-            </p>
+          <div className="flex-1">
+            {editingAvatar ? (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">头像图片地址</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    placeholder="https://example.com/avatar.jpg"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  />
+                  <button
+                    onClick={handleSaveAvatar}
+                    disabled={savingAvatar}
+                    className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-lg transition-colors disabled:opacity-60"
+                    title="保存"
+                  >
+                    {savingAvatar ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Check size={18} />
+                    )}
+                  </button>
+                  <button
+                    onClick={handleCancelAvatar}
+                    disabled={savingAvatar}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-lg transition-colors disabled:opacity-60"
+                    title="取消"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400">支持任意图片 URL，留空则使用默认头像</p>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold text-gray-800">
+                  {currentEmployee?.name || '发型师'}
+                </h2>
+                <p className="text-sm text-gray-500">
+                  {currentEmployee?.title || '首席发型师'}
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

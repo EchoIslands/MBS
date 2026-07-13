@@ -551,6 +551,29 @@ export const employeeApi = {
     return null;
   },
 
+  updateMe: async (data: Partial<Employee> & { password?: string }): Promise<Employee | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Employee }>(`${API_BASE}/employees/me`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return result.data;
+    }
+    // Mock fallback：更新 mockShops 中当前登录员工的信息
+    await new Promise((r) => setTimeout(r, 200));
+    const currentUser = getAuthUser() as Employee | null;
+    if (!currentUser || !mockShops[0]?.employees) return null;
+    const idx = mockShops[0].employees.findIndex((e) => e.id === currentUser.id);
+    if (idx !== -1) {
+      mockShops[0].employees[idx] = { ...mockShops[0].employees[idx], ...data } as Employee;
+      saveShopsToCache();
+      return mockShops[0].employees[idx];
+    }
+    return null;
+  },
+
   delete: async (id: string): Promise<boolean> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
