@@ -37,7 +37,7 @@ const roleLabels: Partial<Record<UserRole, string>> = {
 
 const ShopManage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentShop, updateShop, currentEmployee, userRole } = useAppStore();
+  const { currentShop, updateShop, userRole } = useAppStore();
   const [shopName, setShopName] = useState(currentShop?.name || '');
   const [shopDesc, setShopDesc] = useState(currentShop?.description || '');
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
@@ -59,6 +59,18 @@ const ShopManage: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
+
+  // currentShop 变化时同步表单状态（避免路由守卫仅恢复 employee 时 currentShop 为空导致崩溃）
+  React.useEffect(() => {
+    if (!currentShop) return;
+    setShopName(currentShop.name || '');
+    setShopDesc(currentShop.description || '');
+    setShopPhone(currentShop.phone || '');
+    setShopAddress(currentShop.address || '');
+    setServices(currentShop.services || []);
+    setOpeningHours(currentShop.openingHours || defaultOpeningHours);
+    setBookingConfirmMode(currentShop.bookingConfirmMode || 'auto');
+  }, [currentShop]);
 
   // 加载员工列表
   React.useEffect(() => {
@@ -252,6 +264,16 @@ const ShopManage: React.FC = () => {
       setTimeout(() => setCopied(false), 2000);
     });
   };
+
+  if (!currentShop) {
+    return (
+      <ShopLayout title="店铺设置">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">
+          加载店铺信息中…
+        </div>
+      </ShopLayout>
+    );
+  }
 
   return (
     <ShopLayout title="店铺设置">

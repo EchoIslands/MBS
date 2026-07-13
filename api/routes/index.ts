@@ -207,7 +207,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
     }
 
     // 检查手机号是否已存在
-    const { data: existing, error: checkError } = await supabase
+    const { data: existing, error: _checkError } = await supabase
       .from('employees')
       .select('id')
       .eq('phone', phone)
@@ -2416,12 +2416,26 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
       .from('settlements')
       .select('*')
       .eq('shop_id', shopId)
+      .eq('payment_status', 'completed')
       .gte('created_at', trendStart.toISOString());
 
     if (error) {
       console.error('[financial] 查询结算失败:', error.message);
       return res.status(500).json({ success: false, error: '查询财务数据失败' });
     }
+
+    // 关联结算明细（ Supabase 不会自动返回关联表）
+    const settlementIds = (settlements || []).map((s: unknown) => s.id).filter(Boolean) as string[];
+    const { data: itemsData } = await supabase
+      .from('settlement_items')
+      .select('*')
+      .in('settlement_id', settlementIds.length > 0 ? settlementIds : ['__none__']);
+    const itemsBySettlement = new Map<string, unknown[]>();
+    (itemsData || []).forEach((item: unknown) => {
+      const sid = item.settlement_id as string;
+      if (!itemsBySettlement.has(sid)) itemsBySettlement.set(sid, []);
+      itemsBySettlement.get(sid)!.push(item);
+    });
 
     const revenue = { today: 0, week: 0, month: 0, year: 0 };
     const services = { today: 0, week: 0, month: 0, year: 0 };
@@ -2462,7 +2476,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
         ticketCount.year += 1;
       }
 
-      (s.items || []).forEach((item: unknown) => {
+      (itemsBySettlement.get(s.id) || []).forEach((item: unknown) => {
         const itemTotal = Number(item.total) || 0;
         const qty = Number(item.quantity) || 1;
         const empId = item.employee_id || item.employeeId;
@@ -2709,14 +2723,15 @@ referralsRouter.get('/', async (req: Request, res: Response) => {
       .order('created_at', { ascending: false });
 
     if (error) {
+      // 表未创建或结构异常时不阻塞会员管理页面，返回空数组并记录日志
       console.error('[referrals] 查询推荐记录失败:', error.message);
-      return res.status(500).json({ success: false, error: '查询推荐记录失败' });
+      return res.json({ success: true, data: [] });
     }
 
     res.json({ success: true, data: (data || []).map(referralFromDb) });
   } catch (error) {
     console.error('[referrals] 获取推荐记录异常:', error);
-    res.status(500).json({ success: false, error: '获取推荐记录失败' });
+    res.json({ success: true, data: [] });
   }
 });
 

@@ -51,51 +51,85 @@ const FinancialReportPage: React.FC = () => {
     fetchReport();
   }, [shopId]);
 
-  // 趋势图数据（随时间范围切换横坐标）
+  // 基于真实结算记录计算趋势图数据
   const chartData = useMemo(() => {
-    const rand = (min: number, max: number) =>
-      Math.floor(Math.random() * (max - min + 1)) + min;
+    const completed = settlements.filter(
+      (s) => s.paymentStatus === 'completed' && s.createdAt
+    );
+    const now = new Date();
+
     if (dateRange === 'week') {
-      return [
-        { name: '周一', revenue: rand(500, 2500) },
-        { name: '周二', revenue: rand(500, 2500) },
-        { name: '周三', revenue: rand(500, 2500) },
-        { name: '周四', revenue: rand(500, 2500) },
-        { name: '周五', revenue: rand(1000, 4000) },
-        { name: '周六', revenue: rand(1500, 5500) },
-        { name: '周日', revenue: rand(1200, 4700) },
-      ];
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      startOfWeek.setHours(0, 0, 0, 0);
+      const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      const revenueByDay = new Array(7).fill(0);
+      completed
+        .filter((s) => new Date(s.createdAt) >= startOfWeek)
+        .forEach((s) => {
+          const d = new Date(s.createdAt);
+          revenueByDay[d.getDay()] += s.total || 0;
+        });
+      return days.map((name, i) => ({ name, revenue: Math.round(revenueByDay[i] * 100) / 100 }));
     }
+
     if (dateRange === 'month') {
-      return [
-        { name: '第1周', revenue: rand(5000, 12000) },
-        { name: '第2周', revenue: rand(5000, 12000) },
-        { name: '第3周', revenue: rand(5000, 12000) },
-        { name: '第4周', revenue: rand(5000, 12000) },
-      ];
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const revenueByWeek: Record<string, number> = {
+        第1周: 0,
+        第2周: 0,
+        第3周: 0,
+        第4周: 0,
+        第5周: 0,
+      };
+      completed
+        .filter((s) => new Date(s.createdAt) >= startOfMonth)
+        .forEach((s) => {
+          const d = new Date(s.createdAt);
+          const weekIndex = Math.floor((d.getDate() - 1) / 7) + 1;
+          const key = `第${weekIndex}周`;
+          revenueByWeek[key] = (revenueByWeek[key] || 0) + (s.total || 0);
+        });
+      return Object.entries(revenueByWeek)
+        .filter(([key]) => key !== '第5周' || revenueByWeek[key] > 0)
+        .map(([name, revenue]) => ({ name, revenue: Math.round(revenue * 100) / 100 }));
     }
+
     if (dateRange === 'quarter') {
-      return [
-        { name: '第1月', revenue: rand(20000, 45000) },
-        { name: '第2月', revenue: rand(20000, 45000) },
-        { name: '第3月', revenue: rand(20000, 45000) },
-      ];
+      const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+      const months: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const m = new Date(quarterStart.getFullYear(), quarterStart.getMonth() + i, 1);
+        months.push(`${m.getMonth() + 1}月`);
+      }
+      const revenueByMonth = new Map<string, number>();
+      months.forEach((m) => revenueByMonth.set(m, 0));
+      completed
+        .filter((s) => new Date(s.createdAt) >= quarterStart)
+        .forEach((s) => {
+          const d = new Date(s.createdAt);
+          const key = `${d.getMonth() + 1}月`;
+          if (revenueByMonth.has(key)) {
+            revenueByMonth.set(key, (revenueByMonth.get(key) || 0) + (s.total || 0));
+          }
+        });
+      return months.map((name) => ({ name, revenue: Math.round((revenueByMonth.get(name) || 0) * 100) / 100 }));
     }
-    return [
-      { name: '1月', revenue: rand(25000, 50000) },
-      { name: '2月', revenue: rand(25000, 50000) },
-      { name: '3月', revenue: rand(25000, 50000) },
-      { name: '4月', revenue: rand(25000, 50000) },
-      { name: '5月', revenue: rand(25000, 50000) },
-      { name: '6月', revenue: rand(25000, 50000) },
-      { name: '7月', revenue: rand(25000, 50000) },
-      { name: '8月', revenue: rand(25000, 50000) },
-      { name: '9月', revenue: rand(25000, 50000) },
-      { name: '10月', revenue: rand(25000, 50000) },
-      { name: '11月', revenue: rand(25000, 50000) },
-      { name: '12月', revenue: rand(25000, 50000) },
-    ];
-  }, [dateRange]);
+
+    // year
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const months = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
+    const revenueByMonth = new Map<string, number>();
+    months.forEach((m) => revenueByMonth.set(m, 0));
+    completed
+      .filter((s) => new Date(s.createdAt) >= startOfYear)
+      .forEach((s) => {
+        const d = new Date(s.createdAt);
+        const key = `${d.getMonth() + 1}月`;
+        revenueByMonth.set(key, (revenueByMonth.get(key) || 0) + (s.total || 0));
+      });
+    return months.map((name) => ({ name, revenue: Math.round((revenueByMonth.get(name) || 0) * 100) / 100 }));
+  }, [dateRange, settlements]);
 
   const chartTitle =
     dateRange === 'week'
@@ -105,6 +139,49 @@ const FinancialReportPage: React.FC = () => {
       : dateRange === 'quarter'
       ? '本季度营收趋势（按月）'
       : '本年营收趋势（按月）';
+
+  // 基于真实结算记录计算同比/环比（用于替换卡片中的随机数据）
+  const growthStats = useMemo(() => {
+    const completed = settlements.filter((s) => s.paymentStatus === 'completed' && s.createdAt);
+    const now = new Date();
+
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const sum = (list: Settlement[]) => list.reduce((acc, s) => acc + (s.total || 0), 0);
+    const countServices = (list: Settlement[]) =>
+      list.reduce((acc, s) => acc + s.items.reduce((iacc, i) => iacc + (i.quantity || 0), 0), 0);
+    const avgTicket = (list: Settlement[]) => {
+      const services = countServices(list);
+      return services > 0 ? sum(list) / services : 0;
+    };
+
+    const todayList = completed.filter((s) => new Date(s.createdAt) >= todayStart);
+    const yesterdayList = completed.filter(
+      (s) => new Date(s.createdAt) >= yesterdayStart && new Date(s.createdAt) < todayStart
+    );
+    const thisMonthList = completed.filter((s) => new Date(s.createdAt) >= thisMonthStart);
+    const lastMonthList = completed.filter(
+      (s) => new Date(s.createdAt) >= lastMonthStart && new Date(s.createdAt) < thisMonthStart
+    );
+
+    const growth = (current: number, previous: number) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return Math.round(((current - previous) / previous) * 1000) / 10;
+    };
+
+    return {
+      revenueToday: sum(todayList),
+      revenueYesterday: sum(yesterdayList),
+      revenueGrowth: growth(sum(todayList), sum(yesterdayList)),
+      revenueMonthGrowth: growth(sum(thisMonthList), sum(lastMonthList)),
+      serviceMonthGrowth: growth(countServices(thisMonthList), countServices(lastMonthList)),
+      ticketMonthGrowth: growth(avgTicket(thisMonthList), avgTicket(lastMonthList)),
+    };
+  }, [settlements]);
 
   if (loading) {
     return (
@@ -264,7 +341,9 @@ const FinancialReportPage: React.FC = () => {
             <div className="text-3xl font-bold mb-1">
               ¥{report.revenue.today.toLocaleString()}
             </div>
-            <div className="text-sm opacity-80">较昨日 +{Math.floor(Math.random() * 30)}%</div>
+            <div className="text-sm opacity-80">
+              较昨日 {growthStats.revenueGrowth >= 0 ? '+' : ''}{growthStats.revenueGrowth}%
+            </div>
           </div>
 
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white">
@@ -278,7 +357,7 @@ const FinancialReportPage: React.FC = () => {
               ¥{report.revenue.month.toLocaleString()}
             </div>
             <div className="text-sm opacity-80">
-              目标完成 {Math.floor(Math.random() * 20 + 80)}%
+              较上月 {growthStats.revenueMonthGrowth >= 0 ? '+' : ''}{growthStats.revenueMonthGrowth}%
             </div>
           </div>
 
@@ -290,7 +369,9 @@ const FinancialReportPage: React.FC = () => {
               <div className="text-sm opacity-80">服务数</div>
             </div>
             <div className="text-3xl font-bold mb-1">{report.services.month}</div>
-            <div className="text-sm opacity-80">本月累计</div>
+            <div className="text-sm opacity-80">
+              较上月 {growthStats.serviceMonthGrowth >= 0 ? '+' : ''}{growthStats.serviceMonthGrowth}%
+            </div>
           </div>
 
           <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white">
@@ -301,7 +382,9 @@ const FinancialReportPage: React.FC = () => {
               <div className="text-sm opacity-80">客单价</div>
             </div>
             <div className="text-3xl font-bold mb-1">¥{report.averageTicket.month}</div>
-            <div className="text-sm opacity-80">较上月 +{Math.floor(Math.random() * 15)}%</div>
+            <div className="text-sm opacity-80">
+              较上月 {growthStats.ticketMonthGrowth >= 0 ? '+' : ''}{growthStats.ticketMonthGrowth}%
+            </div>
           </div>
         </div>
 
