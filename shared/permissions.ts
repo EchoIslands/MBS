@@ -29,7 +29,7 @@ export const canEditCustomer = (role?: UserRole | null): boolean =>
 
 /** 能否导出客户数据 */
 export const canExportCustomers = (role?: UserRole | null): boolean =>
-  !!role && [UserRole.CEO, UserRole.CUSTOMER_SERVICE].includes(role);
+  role === UserRole.CEO;
 
 /** 能否删除客户 */
 export const canDeleteCustomer = (role?: UserRole | null): boolean =>

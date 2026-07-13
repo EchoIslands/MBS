@@ -23,6 +23,8 @@ import {
 import { Customer, MembershipLevel, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
 import { getPurchaseVIPLabel, getStoredValueLabel } from '../../lib/membership';
 import { customerApi } from '../../api';
+import { useAppStore } from '../../store';
+import { canExportCustomers } from '../../../shared/permissions';
 import ShopLayout from './ShopLayout';
 
 // 根据双轨会员体系生成统一的会员级别显示文本
@@ -38,6 +40,7 @@ const getMembershipLevelLabel = (customer: Customer): string => {
 };
 
 const CustomerTableManagement: React.FC = () => {
+  const { userRole } = useAppStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -372,13 +375,15 @@ const CustomerTableManagement: React.FC = () => {
               <Plus size={16} />
               添加客户
             </button>
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
-            >
-              <Download size={16} />
-              导出CSV
-            </button>
+            {canExportCustomers(userRole) && (
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+              >
+                <Download size={16} />
+                导出CSV
+              </button>
+            )}
             <button
               onClick={() => {
                 setSearchTerm('');

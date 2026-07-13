@@ -361,7 +361,7 @@ const CustomerManagement: React.FC = () => {
     ];
   }, [customers, filteredCustomers, userRole]);
 
-  // 导出客户CSV（仅CEO和客服可见）
+  // 导出客户CSV（仅CEO可见）
   const handleExportCSV = () => {
     const headers = [
       '姓名', '手机号', '性别', '年龄', '会员等级', '累计消费', '储值余额',
