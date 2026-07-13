@@ -485,6 +485,92 @@ export const shopApi = {
   },
 };
 
+// 员工相关 API
+export const employeeApi = {
+  getAll: async (): Promise<Employee[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Employee[] }>(`${API_BASE}/employees`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return result.data;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    return mockShops[0]?.employees || [];
+  },
+
+  create: async (data: Partial<Employee> & { password: string; phone: string }): Promise<Employee | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Employee }>(`${API_BASE}/employees`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return result.data;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const newEmployee: Employee = {
+      id: `emp_${Date.now()}`,
+      name: data.name || '',
+      phone: data.phone,
+      title: data.title || '',
+      role: (data.role || UserRole.STYLIST) as UserRole,
+      specialty: data.specialty || '',
+      rating: 5,
+      avatar: data.avatar || '',
+      isActive: true,
+    };
+    if (mockShops[0]) {
+      mockShops[0].employees = mockShops[0].employees || [];
+      mockShops[0].employees.push(newEmployee);
+      saveShopsToCache();
+    }
+    return newEmployee;
+  },
+
+  update: async (id: string, data: Partial<Employee> & { password?: string }): Promise<Employee | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Employee }>(`${API_BASE}/employees/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return result.data;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    if (mockShops[0]?.employees) {
+      const idx = mockShops[0].employees.findIndex((e) => e.id === id);
+      if (idx !== -1) {
+        mockShops[0].employees[idx] = { ...mockShops[0].employees[idx], ...data } as Employee;
+        saveShopsToCache();
+        return mockShops[0].employees[idx];
+      }
+    }
+    return null;
+  },
+
+  delete: async (id: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean }>(`${API_BASE}/employees/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return result?.success === true;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    if (mockShops[0]?.employees) {
+      const before = mockShops[0].employees.length;
+      mockShops[0].employees = mockShops[0].employees.filter((e) => e.id !== id);
+      saveShopsToCache();
+      return mockShops[0].employees.length < before;
+    }
+    return false;
+  },
+};
+
 // 将后端/模拟数据转换为统一的 Booking 格式
 function normalizeBooking(b: unknown): Booking {
   const raw = b as Record<string, unknown>;

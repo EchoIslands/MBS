@@ -129,6 +129,231 @@ authRouter.post('/verify', authMiddleware, (req: Request, res: Response) => {
 
 mainRouter.use('/auth', authRouter);
 
+// ===================== employees =====================
+const employeesRouter = Router();
+
+// 生成员工 ID
+const generateEmployeeId = () => `emp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+// 角色层级：用于权限判断
+const ROLE_PRIORITY: Record<string, number> = {
+  ceo: 100,
+  shop_manager: 80,
+  customer_service: 60,
+  cashier: 60,
+  stylist: 40,
+};
+
+// 获取员工列表
+employeesRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { role, shopId } = req.employee!;
+    if (role !== 'ceo' && role !== 'shop_manager') {
+      res.status(403).json({ success: false, error: '无权查看员工列表' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[employees] 查询失败:', error.message);
+      res.status(500).json({ success: false, error: '查询员工失败' });
+      return;
+    }
+
+    res.json({ success: true, data: data || [] });
+  } catch (err: unknown) {
+    console.error('[employees] 查询异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+// 创建员工
+employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { role, shopId } = req.employee!;
+    if (role !== 'ceo' && role !== 'shop_manager') {
+      res.status(403).json({ success: false, error: '无权添加员工' });
+      return;
+    }
+
+    const { name, phone, title, role: newRole, password, specialty, avatar, is_active } = req.body;
+
+    if (!name || !phone || !newRole || !password) {
+      res.status(400).json({ success: false, error: '姓名、手机号、角色、密码为必填项' });
+      return;
+    }
+
+    const validRoles = ['ceo', 'shop_manager', 'customer_service', 'cashier', 'stylist'];
+    if (!validRoles.includes(newRole)) {
+      res.status(400).json({ success: false, error: '无效的角色' });
+      return;
+    }
+
+    // 店长只能添加技师
+    if (role === 'shop_manager' && newRole !== 'stylist') {
+      res.status(403).json({ success: false, error: '店长只能添加技师' });
+      return;
+    }
+
+    // 店长不能操作同级或上级的角色
+    if (role === 'shop_manager' && ROLE_PRIORITY[newRole] >= ROLE_PRIORITY[role]) {
+      res.status(403).json({ success: false, error: '店长只能添加技师' });
+      return;
+    }
+
+    // 检查手机号是否已存在
+    const { data: existing, error: checkError } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('phone', phone)
+      .single();
+
+    if (existing) {
+      res.status(400).json({ success: false, error: '该手机号已存在' });
+      return;
+    }
+
+    const id = generateEmployeeId();
+    const employeeData = {
+      id,
+      shop_id: shopId,
+      name,
+      phone,
+      title: title || '',
+      role: newRole,
+      password_hash: password,
+      specialty: specialty || '',
+      avatar: avatar || '',
+      rating: 5.0,
+      is_active: is_active !== false,
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('employees').insert(employeeData).select().single();
+
+    if (error) {
+      console.error('[employees] 创建失败:', error.message);
+      res.status(500).json({ success: false, error: '创建员工失败' });
+      return;
+    }
+
+    res.status(201).json({ success: true, data });
+  } catch (err: unknown) {
+    console.error('[employees] 创建异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+// 更新员工
+employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { role, shopId, id: currentId } = req.employee!;
+    if (role !== 'ceo' && role !== 'shop_manager') {
+      res.status(403).json({ success: false, error: '无权更新员工' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { name, phone, title, role: newRole, password, specialty, avatar, is_active } = req.body;
+
+    // 不能修改自己以外的 CEO（CEO 可以，店长不行）
+    if (id !== currentId) {
+      const { data: target } = await supabase.from('employees').select('role').eq('id', id).single();
+      if (target?.role === 'ceo' && role !== 'ceo') {
+        res.status(403).json({ success: false, error: '无权修改 CEO 信息' });
+        return;
+      }
+      if (target?.role === 'shop_manager' && role === 'shop_manager') {
+        res.status(403).json({ success: false, error: '店长不能修改其他店长' });
+        return;
+      }
+    }
+
+    // 店长不能把人改成非技师角色
+    if (role === 'shop_manager' && newRole && newRole !== 'stylist') {
+      res.status(403).json({ success: false, error: '店长只能设置技师角色' });
+      return;
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (title !== undefined) updateData.title = title;
+    if (newRole !== undefined) updateData.role = newRole;
+    if (password !== undefined) updateData.password_hash = password;
+    if (specialty !== undefined) updateData.specialty = specialty;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (is_active !== undefined) updateData.is_active = is_active;
+
+    const { data, error } = await supabase
+      .from('employees')
+      .update(updateData)
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[employees] 更新失败:', error.message);
+      res.status(500).json({ success: false, error: '更新员工失败' });
+      return;
+    }
+
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    console.error('[employees] 更新异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+// 删除员工
+employeesRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { role, shopId, id: currentId } = req.employee!;
+    if (role !== 'ceo' && role !== 'shop_manager') {
+      res.status(403).json({ success: false, error: '无权删除员工' });
+      return;
+    }
+
+    const { id } = req.params;
+
+    if (id === currentId) {
+      res.status(400).json({ success: false, error: '不能删除自己' });
+      return;
+    }
+
+    const { data: target } = await supabase.from('employees').select('role').eq('id', id).single();
+    if (target?.role === 'ceo') {
+      res.status(403).json({ success: false, error: '不能删除 CEO' });
+      return;
+    }
+    if (target?.role === 'shop_manager' && role === 'shop_manager') {
+      res.status(403).json({ success: false, error: '店长不能删除其他店长' });
+      return;
+    }
+
+    const { error } = await supabase.from('employees').delete().eq('id', id).eq('shop_id', shopId);
+
+    if (error) {
+      console.error('[employees] 删除失败:', error.message);
+      res.status(500).json({ success: false, error: '删除员工失败' });
+      return;
+    }
+
+    res.json({ success: true, message: '删除成功' });
+  } catch (err: unknown) {
+    console.error('[employees] 删除异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+mainRouter.use('/employees', employeesRouter);
+
 // ===================== bookings =====================
 const bookingsRouter = Router();
 

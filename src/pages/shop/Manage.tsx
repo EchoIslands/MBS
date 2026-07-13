@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { Service, Employee, OpeningHours } from '../../../shared/types';
+import { Service, Employee, OpeningHours, UserRole } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
-import { shopApi } from '../../api';
+import { shopApi, employeeApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const defaultOpeningHours: OpeningHours = {
@@ -27,26 +27,54 @@ const weekDayLabels: { key: keyof OpeningHours; label: string }[] = [
   { key: 'sunday', label: '周日' },
 ];
 
+const roleLabels: Partial<Record<UserRole, string>> = {
+  [UserRole.CEO]: 'CEO/老板',
+  [UserRole.SHOP_MANAGER]: '店长',
+  [UserRole.CUSTOMER_SERVICE]: '客服',
+  [UserRole.CASHIER]: '收银',
+  [UserRole.STYLIST]: '技师/发型师',
+};
+
 const ShopManage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentShop, updateShop } = useAppStore();
+  const { currentShop, updateShop, currentEmployee, userRole } = useAppStore();
   const [shopName, setShopName] = useState(currentShop?.name || '');
   const [shopDesc, setShopDesc] = useState(currentShop?.description || '');
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
   const [shopAddress, setShopAddress] = useState(currentShop?.address || '');
   const [services, setServices] = useState<Service[]>(currentShop?.services || []);
   const [newService, setNewService] = useState({ name: '', price: '', duration: '' });
-  const [employees, setEmployees] = useState<Employee[]>(currentShop?.employees || []);
-  const [newEmployee, setNewEmployee] = useState({ 
-    name: '', 
-    title: '', 
-    specialty: '', 
-    avatar: '' 
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [newEmployee, setNewEmployee] = useState({
+    name: '',
+    phone: '',
+    title: '',
+    specialty: '',
+    avatar: '',
+    role: UserRole.STYLIST,
+    password: '',
   });
   const [openingHours, setOpeningHours] = useState<OpeningHours>(currentShop?.openingHours || defaultOpeningHours);
   const [bookingConfirmMode, setBookingConfirmMode] = useState<'auto' | 'manual'>(currentShop?.bookingConfirmMode || 'auto');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
+
+  // 加载员工列表
+  React.useEffect(() => {
+    const loadEmployees = async () => {
+      setLoadingEmployees(true);
+      try {
+        const list = await employeeApi.getAll();
+        setEmployees(list || []);
+      } catch (err) {
+        console.error('[ShopManage] 加载员工失败:', err);
+      } finally {
+        setLoadingEmployees(false);
+      }
+    };
+    loadEmployees();
+  }, []);
 
   const addService = () => {
     if (!newService.name || !newService.price || !newService.duration) return;
@@ -64,48 +92,102 @@ const ShopManage: React.FC = () => {
     setServices(services.filter((s) => s.id !== id));
   };
 
-  // 将本地 employees 同步到全局 mockShops / localStorage，并更新 store 中的 currentShop
-  const syncEmployeesToShop = async (nextEmployees: Employee[]) => {
-    if (!currentShop) return;
+  // 判断当前用户能否添加某角色的员工
+  const canAddRole = (role: UserRole) => {
+    if (userRole === UserRole.CEO) return true;
+    if (userRole === UserRole.SHOP_MANAGER) return role === UserRole.STYLIST;
+    return false;
+  };
+
+  // 判断当前用户能否管理某个员工
+  const canManageEmployee = (emp: Employee) => {
+    if (userRole === UserRole.CEO) return true;
+    if (userRole === UserRole.SHOP_MANAGER) {
+      // 店长不能管理 CEO、其他店长、客服、收银
+      return emp.role === UserRole.STYLIST;
+    }
+    return false;
+  };
+
+  const availableRoles: UserRole[] = Object.values(UserRole).filter((r) => canAddRole(r));
+
+  const addEmployee = async () => {
+    if (!newEmployee.name || !newEmployee.phone || !newEmployee.password) {
+      alert('请填写姓名、手机号和登录密码');
+      return;
+    }
+    if (!canAddRole(newEmployee.role)) {
+      alert('当前角色无权添加该类型员工');
+      return;
+    }
     try {
-      const updated = await shopApi.updateShop(currentShop.id, { employees: nextEmployees });
-      if (updated) {
-        updateShop({ employees: nextEmployees });
+      const created = await employeeApi.create({
+        name: newEmployee.name,
+        phone: newEmployee.phone,
+        title: newEmployee.title,
+        specialty: newEmployee.specialty,
+        avatar: newEmployee.avatar || getAvatarUrl(newEmployee.name),
+        role: newEmployee.role,
+        password: newEmployee.password,
+      });
+      if (created) {
+        setEmployees([...employees, created]);
+        setNewEmployee({
+          name: '',
+          phone: '',
+          title: '',
+          specialty: '',
+          avatar: '',
+          role: UserRole.STYLIST,
+          password: '',
+        });
+      } else {
+        alert('添加员工失败');
       }
     } catch (err) {
-      console.error('[ShopManage] 同步员工数据失败:', err);
+      console.error('[ShopManage] 添加员工失败:', err);
+      alert(`添加员工失败：${err instanceof Error ? err.message : '未知错误'}`);
     }
   };
 
-  const addEmployee = () => {
-    if (!newEmployee.name) return;
-    const employee: Employee = {
-      id: Date.now().toString(),
-      name: newEmployee.name,
-      title: newEmployee.title || undefined,
-      specialty: newEmployee.specialty || undefined,
-      avatar: newEmployee.avatar || getAvatarUrl(newEmployee.name),
-      rating: 5.0,
-      isActive: true,
-    };
-    const next = [...employees, employee];
-    setEmployees(next);
-    setNewEmployee({ name: '', title: '', specialty: '', avatar: '' });
-    syncEmployeesToShop(next);
+  const removeEmployee = async (id: string) => {
+    const emp = employees.find((e) => e.id === id);
+    if (!emp || !canManageEmployee(emp)) {
+      alert('无权删除该员工');
+      return;
+    }
+    if (!confirm('确定要删除该员工吗？')) return;
+    try {
+      const ok = await employeeApi.delete(id);
+      if (ok) {
+        setEmployees(employees.filter((e) => e.id !== id));
+      } else {
+        alert('删除失败');
+      }
+    } catch (err) {
+      console.error('[ShopManage] 删除员工失败:', err);
+      alert(`删除员工失败：${err instanceof Error ? err.message : '未知错误'}`);
+    }
   };
 
-  const removeEmployee = (id: string) => {
-    const next = employees.filter((e) => e.id !== id);
-    setEmployees(next);
-    syncEmployeesToShop(next);
-  };
-
-  const toggleEmployeeStatus = (id: string) => {
-    const next = employees.map((e) =>
-      e.id === id ? { ...e, isActive: !e.isActive } : e
-    );
-    setEmployees(next);
-    syncEmployeesToShop(next);
+  const toggleEmployeeStatus = async (id: string) => {
+    const emp = employees.find((e) => e.id === id);
+    if (!emp || !canManageEmployee(emp)) {
+      alert('无权修改该员工状态');
+      return;
+    }
+    try {
+      const next = !emp.isActive;
+      const updated = await employeeApi.update(id, { isActive: next });
+      if (updated) {
+        setEmployees(employees.map((e) => (e.id === id ? { ...e, isActive: next } : e)));
+      } else {
+        alert('状态更新失败');
+      }
+    } catch (err) {
+      console.error('[ShopManage] 更新员工状态失败:', err);
+      alert(`更新失败：${err instanceof Error ? err.message : '未知错误'}`);
+    }
   };
 
   const handleSave = async () => {
@@ -118,7 +200,6 @@ const ShopManage: React.FC = () => {
         phone: shopPhone,
         address: shopAddress,
         services,
-        employees,
         openingHours,
         bookingConfirmMode,
       };
@@ -362,99 +443,139 @@ const ShopManage: React.FC = () => {
           </h2>
 
           {/* 添加员工 */}
-          <div className="bg-gray-50 rounded-xl p-4 mb-4">
-            <h3 className="font-medium text-gray-700 mb-3">添加员工</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-              <input
-                type="text"
-                placeholder="员工姓名"
-                value={newEmployee.name}
-                onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-              />
-              <input
-                type="text"
-                placeholder="职位（如：首席发型师）"
-                value={newEmployee.title}
-                onChange={(e) => setNewEmployee({ ...newEmployee, title: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-              />
-              <input
-                type="text"
-                placeholder="专长（如：精剪、烫染）"
-                value={newEmployee.specialty}
-                onChange={(e) => setNewEmployee({ ...newEmployee, specialty: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-              />
-              <button
-                onClick={addEmployee}
-                className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                <Plus size={16} />
-                添加
-              </button>
+          {(userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER) && (
+            <div className="bg-gray-50 rounded-xl p-4 mb-4">
+              <h3 className="font-medium text-gray-700 mb-3">添加员工</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                <input
+                  type="text"
+                  placeholder="员工姓名 *"
+                  value={newEmployee.name}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="手机号 *（用于登录）"
+                  value={newEmployee.phone}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+                <input
+                  type="password"
+                  placeholder="登录密码 *"
+                  value={newEmployee.password}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+                <select
+                  value={newEmployee.role}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, role: e.target.value as UserRole })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none bg-white"
+                >
+                  {availableRoles.map((r) => (
+                    <option key={r} value={r}>
+                      {roleLabels[r]}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="职位（如：首席发型师）"
+                  value={newEmployee.title}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, title: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="专长（如：精剪、烫染）"
+                  value={newEmployee.specialty}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, specialty: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+                <button
+                  onClick={addEmployee}
+                  className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors md:col-span-2 lg:col-span-2"
+                >
+                  <Plus size={16} />
+                  添加
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 员工列表 */}
           <div className="space-y-3">
-            {employees.map((employee) => (
-              <div
-                key={employee.id}
-                className={`flex items-center justify-between p-4 border rounded-xl transition-colors ${
-                  employee.isActive 
-                    ? 'border-gray-200 hover:border-orange-300' 
-                    : 'border-gray-100 bg-gray-50 opacity-60'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <img
-                    src={employee.avatar || getAvatarUrl(employee.name)}
-                    alt={employee.name}
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="font-medium text-gray-800">{employee.name}</div>
-                      {employee.title && (
-                        <div className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
-                          {employee.title}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      评分：{employee.rating}
-                      {employee.specialty && (
-                        <>
-                          <span className="mx-1">·</span>
-                          <span>专长：{employee.specialty}</span>
-                        </>
-                      )}
+            {loadingEmployees ? (
+              <div className="text-center text-gray-500 py-8">加载中...</div>
+            ) : (
+              employees.map((employee) => (
+                <div
+                  key={employee.id}
+                  className={`flex items-center justify-between p-4 border rounded-xl transition-colors ${
+                    employee.isActive
+                      ? 'border-gray-200 hover:border-orange-300'
+                      : 'border-gray-100 bg-gray-50 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={employee.avatar || getAvatarUrl(employee.name)}
+                      alt={employee.name}
+                      className="w-12 h-12 rounded-full object-cover"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-gray-800">{employee.name}</div>
+                        {employee.role && (
+                          <div className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                            {roleLabels[employee.role] || employee.role}
+                          </div>
+                        )}
+                        {employee.title && (
+                          <div className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
+                            {employee.title}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        手机号：{employee.phone || '-'}
+                        <span className="mx-1">·</span>
+                        评分：{employee.rating}
+                        {employee.specialty && (
+                          <>
+                            <span className="mx-1">·</span>
+                            <span>专长：{employee.specialty}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  {canManageEmployee(employee) && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleEmployeeStatus(employee.id)}
+                        className={`p-2 rounded-lg transition-colors ${
+                          employee.isActive
+                            ? 'text-gray-500 hover:bg-gray-100'
+                            : 'text-green-500 hover:bg-green-50'
+                        }`}
+                        title={employee.isActive ? '禁用' : '启用'}
+                      >
+                        {employee.isActive ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                      <button
+                        onClick={() => removeEmployee(employee.id)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => toggleEmployeeStatus(employee.id)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      employee.isActive 
-                        ? 'text-gray-500 hover:bg-gray-100' 
-                        : 'text-green-500 hover:bg-green-50'
-                    }`}
-                    title={employee.isActive ? '下架' : '上架'}
-                  >
-                    {employee.isActive ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                  <button
-                    onClick={() => removeEmployee(employee.id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
-            {employees.length === 0 && (
+              ))
+            )}
+            {!loadingEmployees && employees.length === 0 && (
               <div className="text-center text-gray-500 py-8">
                 暂无员工，添加您的第一位员工吧
               </div>
