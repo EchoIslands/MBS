@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -199,16 +199,19 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: currentEmployee?.name || '',
+    phone: currentEmployee?.phone || '',
     title: currentEmployee?.title || '',
     specialty: currentEmployee?.specialty || '',
     avatar: currentEmployee?.avatar || '',
     password: '',
   });
   const updateCurrentEmployee = useAppStore((state) => state.updateCurrentEmployee);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenProfile = () => {
     setProfileForm({
       name: currentEmployee?.name || '',
+      phone: currentEmployee?.phone || '',
       title: currentEmployee?.title || '',
       specialty: currentEmployee?.specialty || '',
       avatar: currentEmployee?.avatar || '',
@@ -217,12 +220,34 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
     setProfileOpen(true);
   };
 
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('请选择图片文件');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('图片大小不能超过 2MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setProfileForm((prev) => ({ ...prev, avatar: base64 }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveProfile = async () => {
     if (!currentEmployee) return;
     setSavingProfile(true);
     try {
       const payload: Partial<Employee> & { password?: string } = {
         name: profileForm.name.trim() || undefined,
+        phone: profileForm.phone.trim() || undefined,
         title: profileForm.title.trim() || undefined,
         specialty: profileForm.specialty.trim() || undefined,
         avatar: profileForm.avatar.trim() || undefined,
@@ -234,6 +259,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
       if (updated) {
         updateCurrentEmployee({
           name: updated.name,
+          phone: updated.phone,
           title: updated.title,
           avatar: updated.avatar,
           specialty: updated.specialty,
@@ -405,11 +431,15 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
             </div>
             <div className="p-5 space-y-4">
               <div className="flex justify-center">
-                <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="relative group cursor-pointer"
+                >
                   <img
                     src={profileForm.avatar || getAvatarUrl(profileForm.name || employeeName)}
                     alt={profileForm.name || employeeName}
-                    className="w-20 h-20 rounded-full object-cover border-4 border-orange-100"
+                    className="w-20 h-20 rounded-full object-cover border-4 border-orange-100 group-hover:opacity-80 transition-opacity"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = getAvatarUrl(profileForm.name || employeeName);
                     }}
@@ -417,10 +447,18 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
                   <div className="absolute -bottom-1 -right-1 bg-orange-500 text-white p-1.5 rounded-full">
                     <Camera size={14} />
                   </div>
-                </div>
+                </button>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarFileChange}
+                  className="hidden"
+                />
               </div>
+              <p className="text-center text-xs text-gray-400 -mt-2">点击头像拍照或从相册选择（同时支持电脑文件）</p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">头像图片地址</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">或填写头像图片地址</label>
                 <input
                   type="text"
                   value={profileForm.avatar}
@@ -435,6 +473,16 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
                   type="text"
                   value={profileForm.name}
                   onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">手机号</label>
+                <input
+                  type="tel"
+                  value={profileForm.phone}
+                  onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                  placeholder="登录手机号"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                 />
               </div>

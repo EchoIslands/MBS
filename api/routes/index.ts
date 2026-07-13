@@ -356,10 +356,11 @@ employeesRouter.delete('/:id', authMiddleware, async (req: Request, res: Respons
 employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id: currentId, shopId } = req.employee!;
-    const { name, title, specialty, avatar, password } = req.body || {};
+    const { name, phone, title, specialty, avatar, password } = req.body || {};
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
