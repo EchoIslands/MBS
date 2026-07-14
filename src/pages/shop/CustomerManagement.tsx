@@ -688,7 +688,7 @@ const CustomerManagement: React.FC = () => {
 
         {/* 客户列表 */}
         {!loading && !error && filteredCustomers.length > 0 ? (
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
             {filteredCustomers.map((customer) => (
               <div
                 key={customer.id}
