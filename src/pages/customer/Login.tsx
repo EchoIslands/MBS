@@ -44,7 +44,7 @@ const CustomerLogin: React.FC = () => {
         </button>
         
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">顾客登录</h1>
-        <p className="text-gray-600 mb-6 sm:mb-8 text-sm sm:text-base">登录后可预约附近理发店</p>
+        <p className="text-gray-600 mb-6 sm:mb-8 text-sm sm:text-base">登录后可预约服务</p>
         
         <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
           <div>

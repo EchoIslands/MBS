@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus,
   Edit, 
@@ -8,6 +8,8 @@ import {
   Save,
   Package,
   Loader2,
+  Upload,
+  X,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory } from '../../../shared/types';
@@ -30,6 +32,7 @@ const ProductManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
     category: ProductCategory.OTHER,
@@ -149,6 +152,31 @@ const ProductManagement: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('请选择图片文件');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('图片大小不能超过 2MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setFormData((prev) => ({ ...prev, images: [base64] }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setFormData((prev) => ({ ...prev, images: ['https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'] }));
   };
 
   const handleDelete = async (productId: string) => {
@@ -379,6 +407,48 @@ const ProductManagement: React.FC = () => {
               </h2>
             </div>
             <div className="p-6 space-y-4">
+              {/* 商品图片 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  商品图片
+                </label>
+                <div className="flex items-center gap-4">
+                  <div className="relative group">
+                    <img
+                      src={formData.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
+                      alt="商品预览"
+                      className="w-24 h-24 rounded-xl object-cover border border-gray-200"
+                    />
+                    {formData.images?.[0] && !formData.images[0].includes('unsplash.com') && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600"
+                        title="移除图片"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                  >
+                    <Upload size={16} />
+                    {formData.images?.[0] && !formData.images[0].includes('unsplash.com') ? '更换图片' : '上传图片'}
+                  </button>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-2">支持 jpg、png、gif，大小不超过 2MB</p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   商品名称 *
