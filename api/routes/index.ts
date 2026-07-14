@@ -1752,10 +1752,12 @@ const reviewFromDb = (r: unknown): unknown => ({
   bookingId: r.booking_id,
   stylistId: r.stylist_id,
   serviceScore: r.service_score,
-  priceScore: r.price_score,
-  skillScore: r.skill_score,
+  stylistScore: r.stylist_score,
   overallScore: r.overall_score,
+  serviceComment: r.service_comment || '',
+  stylistComment: r.stylist_comment || '',
   comment: r.comment || '',
+  isAwareOfMembershipBenefits: Boolean(r.is_aware_of_membership_benefits),
   customerName: r.customer_name || '顾客',
   createdAt: r.created_at,
   reply: r.reply,
@@ -1773,8 +1775,10 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
       bookingId,
       stylistId,
       serviceScore,
-      priceScore,
-      skillScore,
+      stylistScore,
+      serviceComment,
+      stylistComment,
+      isAwareOfMembershipBenefits,
       comment,
     } = req.body;
 
@@ -1800,7 +1804,7 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
 
     // 计算综合评分
     const overallScore =
-      Math.round(((Number(serviceScore || 5) + Number(priceScore || 5) + Number(skillScore || 5)) / 3) * 10) / 10;
+      Math.round(((Number(serviceScore || 5) + Number(stylistScore || 5)) / 2) * 10) / 10;
 
     // 查询顾客姓名
     let customerName = '顾客';
@@ -1822,10 +1826,12 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
         booking_id: bookingId,
         stylist_id: stylistId || null,
         service_score: Number(serviceScore || 5),
-        price_score: Number(priceScore || 5),
-        skill_score: Number(skillScore || 5),
+        stylist_score: Number(stylistScore || 5),
         overall_score: overallScore,
+        service_comment: serviceComment || '',
+        stylist_comment: stylistComment || '',
         comment: comment || '',
+        is_aware_of_membership_benefits: Boolean(isAwareOfMembershipBenefits),
         customer_name: customerName,
       })
       .select()

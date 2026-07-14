@@ -95,7 +95,7 @@ const ReviewsManagement: React.FC = () => {
                     {getLevelLabel()}
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="text-center">
                     <div className="text-gray-500 mb-1">服务评分</div>
                     <div className="text-lg font-bold text-gray-800">
@@ -108,22 +108,11 @@ const ReviewsManagement: React.FC = () => {
                     </div>
                   </div>
                   <div className="text-center">
-                    <div className="text-gray-500 mb-1">价格评分</div>
+                    <div className="text-gray-500 mb-1">发型师评分</div>
                     <div className="text-lg font-bold text-gray-800">
                       {reviews.length > 0
                         ? (
-                            reviews.reduce((sum, r) => sum + r.priceScore, 0) /
-                            reviews.length
-                          ).toFixed(1)
-                        : '-'}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-gray-500 mb-1">技术评分</div>
-                    <div className="text-lg font-bold text-gray-800">
-                      {reviews.length > 0
-                        ? (
-                            reviews.reduce((sum, r) => sum + r.skillScore, 0) /
+                            reviews.reduce((sum, r) => sum + r.stylistScore, 0) /
                             reviews.length
                           ).toFixed(1)
                         : '-'}
@@ -181,11 +170,23 @@ const ReviewsManagement: React.FC = () => {
                   </div>
 
                   <div className="flex gap-6 text-sm text-gray-500 mb-3">
-                    <span>服务 {review.serviceScore} 分</span>
-                    <span>价格 {review.priceScore} 分</span>
-                    <span>技术 {review.skillScore} 分</span>
+                    <span>店铺服务 {review.serviceScore} 分</span>
+                    <span>发型师服务 {review.stylistScore} 分</span>
+                    <span>知晓会员/活动：{review.isAwareOfMembershipBenefits ? '是' : '否'}</span>
                   </div>
 
+                  {review.serviceComment && (
+                    <p className="text-sm text-gray-600 mb-1">
+                      <span className="text-gray-400">店铺服务：</span>
+                      {review.serviceComment}
+                    </p>
+                  )}
+                  {review.stylistComment && (
+                    <p className="text-sm text-gray-600 mb-1">
+                      <span className="text-gray-400">发型师服务：</span>
+                      {review.stylistComment}
+                    </p>
+                  )}
                   <p className="text-gray-700">{review.comment}</p>
                 </div>
               ))}

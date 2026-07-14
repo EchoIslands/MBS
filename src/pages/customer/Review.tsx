@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Star, Send, CheckCircle, Share2, Gift, Sparkles, User, Heart, MessageCircle,
-  Award, Copy
+  Award, Copy, HelpCircle
 } from 'lucide-react';
 import { Booking, Review } from '../../../shared/types';
 import { useAppStore } from '../../store';
@@ -11,8 +11,10 @@ import { bookingApi, reviewApi } from '../../api';
 const ReviewPage: React.FC = () => {
   const { bookingId } = useParams<{ bookingId: string }>();
   const [serviceScore, setServiceScore] = useState(5);
-  const [priceScore, setPriceScore] = useState(5);
-  const [skillScore, setSkillScore] = useState(5);
+  const [stylistScore, setStylistScore] = useState(5);
+  const [serviceComment, setServiceComment] = useState('');
+  const [stylistComment, setStylistComment] = useState('');
+  const [isAwareOfMembershipBenefits, setIsAwareOfMembershipBenefits] = useState(false);
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [shared, setShared] = useState(false);
@@ -64,8 +66,10 @@ const ReviewPage: React.FC = () => {
         bookingId: booking.id,
         stylistId: booking.barberId,
         serviceScore,
-        priceScore,
-        skillScore,
+        stylistScore,
+        serviceComment,
+        stylistComment,
+        isAwareOfMembershipBenefits,
         comment,
       });
       setSubmitted(true);
@@ -77,42 +81,71 @@ const ReviewPage: React.FC = () => {
     }
   };
 
-  // ========== 星级评价渲染 ==========
+  // ========== 星级评价渲染（支持半星） ==========
   const renderStarSelector = (
     score: number,
     setScore: (s: number) => void,
     label: string,
     icon?: React.ReactNode
-  ) => (
-    <div className="mb-4 sm:mb-5">
-      <div className="flex items-center justify-between mb-2 sm:mb-3">
-        <label className="text-xs sm:text-sm font-medium text-gray-700 flex items-center gap-1.5">
-          {icon || <Star size={14} className="text-yellow-500" />}
-          {label}
-        </label>
-        <span className="text-base sm:text-lg font-bold text-orange-600">{score}.0</span>
+  ) => {
+    const starSize = 28;
+    return (
+      <div className="mb-4 sm:mb-5">
+        <div className="flex items-center justify-between mb-2 sm:mb-3">
+          <label className="text-xs sm:text-sm font-medium text-gray-700 flex items-center gap-1.5">
+            {icon || <Star size={14} className="text-yellow-500" />}
+            {label}
+          </label>
+          <span className="text-base sm:text-lg font-bold text-orange-600">{score.toFixed(1)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 bg-gray-50 rounded-xl p-3">
+          {[1, 2, 3, 4, 5].map((star) => {
+            const isFull = score >= star;
+            const isHalf = score >= star - 0.5 && score < star;
+            return (
+              <div
+                key={star}
+                className="relative w-12 h-12 sm:w-auto sm:h-auto flex items-center justify-center flex-shrink-0"
+                style={{ width: starSize, height: starSize }}
+              >
+                {/* 空星背景 */}
+                <Star
+                  size={starSize}
+                  className="text-gray-300 hover:text-yellow-300 transition-colors"
+                />
+                {/* 填充层：满星或半星 */}
+                {(isFull || isHalf) && (
+                  <div
+                    className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none"
+                    style={isHalf ? { clipPath: 'inset(0 50% 0 0)' } : undefined}
+                  >
+                    <Star
+                      size={starSize}
+                      className="text-yellow-500 fill-yellow-500"
+                    />
+                  </div>
+                )}
+                {/* 左半星点击区 */}
+                <button
+                  type="button"
+                  onClick={() => setScore(star - 0.5)}
+                  className="absolute left-0 top-0 w-1/2 h-full z-10"
+                  aria-label={`${star - 0.5} 星`}
+                />
+                {/* 右半星点击区 */}
+                <button
+                  type="button"
+                  onClick={() => setScore(star)}
+                  className="absolute right-0 top-0 w-1/2 h-full z-10"
+                  aria-label={`${star} 星`}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div className="flex items-center justify-between gap-2 bg-gray-50 rounded-xl p-3">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            type="button"
-            onClick={() => setScore(star)}
-            className="w-12 h-12 sm:w-auto sm:h-auto flex items-center justify-center transition-transform hover:scale-110 active:scale-95 flex-shrink-0"
-          >
-            <Star
-              size={28}
-              className={
-                star <= score
-                  ? 'text-yellow-500 fill-yellow-500'
-                  : 'text-gray-300 hover:text-yellow-300'
-              }
-            />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+    );
+  };
 
   const handleCopyLink = async () => {
     try {
@@ -257,10 +290,61 @@ const ReviewPage: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
-            {/* 三个维度评价 */}
-            {renderStarSelector(serviceScore, setServiceScore, '服务态度', <Heart size={14} className="text-pink-500" />)}
-            {renderStarSelector(priceScore, setPriceScore, '价格合理', <Gift size={14} className="text-green-500" />)}
-            {renderStarSelector(skillScore, setSkillScore, '技术水平', <Award size={14} className="text-yellow-500" />)}
+            {/* 本次店铺服务评价 */}
+            {renderStarSelector(serviceScore, setServiceScore, '本次店铺服务评价', <Heart size={14} className="text-pink-500" />)}
+            <div className="mb-4 sm:mb-5">
+              <textarea
+                value={serviceComment}
+                onChange={(e) => setServiceComment(e.target.value)}
+                placeholder="对本次店铺服务进行补充描述（可选）"
+                rows={3}
+                className="w-full px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none text-gray-700 text-sm sm:text-base"
+              />
+            </div>
+
+            {/* 本次发型师服务评价 */}
+            {renderStarSelector(stylistScore, setStylistScore, '本次发型师服务评价', <Award size={14} className="text-yellow-500" />)}
+            <div className="mb-4 sm:mb-5">
+              <textarea
+                value={stylistComment}
+                onChange={(e) => setStylistComment(e.target.value)}
+                placeholder="对本次发型师服务进行补充描述（可选）"
+                rows={3}
+                className="w-full px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none text-gray-700 text-sm sm:text-base"
+              />
+            </div>
+
+            {/* 会员/优惠活动知晓度 */}
+            <div className="mb-4 sm:mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-3">
+                <HelpCircle size={14} className="inline mr-1 text-gray-500" />
+                您是否知晓店铺会员制度、近期优惠活动等？
+              </label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAwareOfMembershipBenefits(true)}
+                  className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-colors ${
+                    isAwareOfMembershipBenefits
+                      ? 'bg-orange-500 border-orange-500 text-white'
+                      : 'bg-white border-gray-300 text-gray-700 hover:border-orange-300'
+                  }`}
+                >
+                  是
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAwareOfMembershipBenefits(false)}
+                  className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-colors ${
+                    !isAwareOfMembershipBenefits
+                      ? 'bg-orange-500 border-orange-500 text-white'
+                      : 'bg-white border-gray-300 text-gray-700 hover:border-orange-300'
+                  }`}
+                >
+                  否
+                </button>
+              </div>
+            </div>
 
             {/* 文字评价 */}
             <div className="mb-4 sm:mb-6">
@@ -293,7 +377,7 @@ const ReviewPage: React.FC = () => {
   }
 
   // ========== 提交后：分享得优惠券 ==========
-  const avgScore = ((serviceScore + priceScore + skillScore) / 3).toFixed(1);
+  const avgScore = ((serviceScore + stylistScore) / 2).toFixed(1);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-yellow-50">

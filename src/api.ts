@@ -1013,7 +1013,7 @@ export const reviewApi = {
       throw new Error('提交评价失败，请检查后端接口和数据库');
     }
     await new Promise((r) => setTimeout(r, 300));
-    const overallScore = Math.round(((data.serviceScore + data.priceScore + data.skillScore) / 3) * 10) / 10;
+    const overallScore = Math.round(((data.serviceScore + data.stylistScore) / 2) * 10) / 10;
     const newReview: Review = {
       id: Date.now().toString(),
       ...data,

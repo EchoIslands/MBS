@@ -359,11 +359,13 @@ export interface Review {
   customerId: string;
   bookingId: string;
   stylistId?: string;           // 发型师ID
-  serviceScore: number;
-  priceScore: number;
-  skillScore: number;
+  serviceScore: number;         // 本次店铺服务评价
+  stylistScore: number;         // 本次发型师服务评价
   overallScore: number;
-  comment: string;
+  serviceComment?: string;       // 本次店铺服务评价补充描述
+  stylistComment?: string;       // 本次发型师服务评价补充描述
+  comment: string;               // 整体评价
+  isAwareOfMembershipBenefits: boolean; // 是否知晓会员制度/优惠活动
   customerName?: string;
   createdAt: Date;
   // 店铺端回复与展示控制
