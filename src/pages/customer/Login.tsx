@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Phone } from 'lucide-react';
+import { ArrowLeft, Phone, User } from 'lucide-react';
 import { loginAsCustomer } from '../../store';
 
 const DEFAULT_SHOP_ID = "shop1";
 
 const CustomerLogin: React.FC = () => {
   const [phone, setPhone] = useState('13900000001');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -17,7 +18,8 @@ const CustomerLogin: React.FC = () => {
     setLoading(true);
 
     try {
-      const customer = await loginAsCustomer(phone.trim());
+      const trimmedName = name.trim();
+      const customer = await loginAsCustomer(phone.trim(), trimmedName || undefined);
       if (customer) {
         navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
       } else {
@@ -45,6 +47,25 @@ const CustomerLogin: React.FC = () => {
         <p className="text-gray-600 mb-6 sm:mb-8 text-sm sm:text-base">登录后可预约附近理发店</p>
         
         <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              称呼 <span className="text-gray-400 font-normal">（选填）</span>
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="请输入称呼"
+                className="w-full pl-10 pr-4 py-3 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm sm:text-base"
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-gray-400">
+              称呼只需填写一次，之后登录仅需手机号即可
+            </p>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               手机号

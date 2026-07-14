@@ -834,6 +834,42 @@ mainRouter.use('/bookings', bookingsRouter);
 // ===================== customers =====================
 const customersRouter = Router();
 
+/**
+ * POST /api/customers/login
+ * 顾客公开登录：通过手机号查询客户，不需要 JWT
+ */
+customersRouter.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { phone } = req.body || {};
+    if (!phone) {
+      res.status(400).json({ success: false, error: '手机号不能为空' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[customers] 登录查询失败:', error.message);
+      res.status(500).json({ success: false, error: '查询客户失败' });
+      return;
+    }
+
+    if (!data) {
+      res.status(404).json({ success: false, error: '客户不存在' });
+      return;
+    }
+
+    res.json({ success: true, data: toCamelCase(data) });
+  } catch (err: unknown) {
+    console.error('[customers] 登录异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
 // 所有客户接口都需要登录
 customersRouter.use(authMiddleware);
 

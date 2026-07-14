@@ -27,39 +27,43 @@ const SETTLEMENTS_CACHE_KEY = 'mbs_settlements_cache';
 const BENEFITS_CACHE_KEY = 'mbs_benefits_cache';
 const SHOPS_CACHE_KEY = 'mbs_shops_cache';
 
-// 启动时从 localStorage 恢复客户数据
-try {
-  const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      mockCustomers.length = 0;
-      mockCustomers.push(...parsed);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条客户数据`);
+// 启动时从 localStorage 恢复客户数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        mockCustomers.length = 0;
+        mockCustomers.push(...parsed);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条客户数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复客户数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复客户数据失败:', e);
 }
 
-// 启动时从 localStorage 恢复预约数据
-try {
-  const cached = localStorage.getItem(BOOKINGS_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const bookingsWithDates = parsed.map((b: Record<string, unknown>) => ({
-        ...b,
-        scheduledTime: new Date(b.scheduledTime as string),
-        createdAt: b.createdAt ? new Date(b.createdAt as string) : new Date(),
-      })) as unknown as Booking[];
-      mockBookings.length = 0;
-      mockBookings.push(...bookingsWithDates);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条预约数据`);
+// 启动时从 localStorage 恢复预约数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(BOOKINGS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const bookingsWithDates = parsed.map((b: Record<string, unknown>) => ({
+          ...b,
+          scheduledTime: new Date(b.scheduledTime as string),
+          createdAt: b.createdAt ? new Date(b.createdAt as string) : new Date(),
+        })) as unknown as Booking[];
+        mockBookings.length = 0;
+        mockBookings.push(...bookingsWithDates);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条预约数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复预约数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复预约数据失败:', e);
 }
 
 // 保存预约数据到 localStorage
@@ -80,23 +84,25 @@ const saveCustomersToCache = () => {
   }
 };
 
-// 启动时从 localStorage 恢复结算数据
-try {
-  const cached = localStorage.getItem(SETTLEMENTS_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const settlementsWithDates = parsed.map((s: Record<string, unknown>) => ({
-        ...s,
-        createdAt: s.createdAt ? new Date(s.createdAt as string) : new Date(),
-      })) as unknown as Settlement[];
-      mockSettlements.length = 0;
-      mockSettlements.push(...settlementsWithDates);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条结算数据`);
+// 启动时从 localStorage 恢复结算数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(SETTLEMENTS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const settlementsWithDates = parsed.map((s: Record<string, unknown>) => ({
+          ...s,
+          createdAt: s.createdAt ? new Date(s.createdAt as string) : new Date(),
+        })) as unknown as Settlement[];
+        mockSettlements.length = 0;
+        mockSettlements.push(...settlementsWithDates);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条结算数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复结算数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复结算数据失败:', e);
 }
 
 // 保存结算数据到 localStorage
@@ -108,25 +114,27 @@ const saveSettlementsToCache = () => {
   }
 };
 
-// 启动时从 localStorage 恢复会员权益数据
-try {
-  const cached = localStorage.getItem(BENEFITS_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const benefitsWithDates = parsed.map((b: Record<string, unknown>) => ({
-        ...b,
-        createdAt: b.createdAt ? new Date(b.createdAt as string) : new Date(),
-        expiresAt: b.expiresAt ? new Date(b.expiresAt as string) : undefined,
-        usedAt: b.usedAt ? new Date(b.usedAt as string) : undefined,
-      })) as unknown as MemberBenefitRecord[];
-      mockMemberBenefitRecords.length = 0;
-      mockMemberBenefitRecords.push(...benefitsWithDates);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条会员权益数据`);
+// 启动时从 localStorage 恢复会员权益数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(BENEFITS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const benefitsWithDates = parsed.map((b: Record<string, unknown>) => ({
+          ...b,
+          createdAt: b.createdAt ? new Date(b.createdAt as string) : new Date(),
+          expiresAt: b.expiresAt ? new Date(b.expiresAt as string) : undefined,
+          usedAt: b.usedAt ? new Date(b.usedAt as string) : undefined,
+        })) as unknown as MemberBenefitRecord[];
+        mockMemberBenefitRecords.length = 0;
+        mockMemberBenefitRecords.push(...benefitsWithDates);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条会员权益数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复会员权益数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复会员权益数据失败:', e);
 }
 
 // 保存会员权益数据到 localStorage
@@ -138,19 +146,21 @@ const saveBenefitsToCache = () => {
   }
 };
 
-// 启动时从 localStorage 恢复店铺数据
-try {
-  const cached = localStorage.getItem(SHOPS_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      mockShops.length = 0;
-      mockShops.push(...parsed);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条店铺数据`);
+// 启动时从 localStorage 恢复店铺数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(SHOPS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        mockShops.length = 0;
+        mockShops.push(...parsed);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条店铺数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复店铺数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复店铺数据失败:', e);
 }
 
 // 保存店铺数据到 localStorage
@@ -165,19 +175,21 @@ const saveShopsToCache = () => {
 // 队列相关缓存
 const QUEUES_CACHE_KEY = 'mbs_queues_cache';
 
-// 启动时从 localStorage 恢复队列数据
-try {
-  const cached = localStorage.getItem(QUEUES_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      mockQueues.length = 0;
-      mockQueues.push(...parsed);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条队列数据`);
+// 启动时从 localStorage 恢复队列数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(QUEUES_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        mockQueues.length = 0;
+        mockQueues.push(...parsed);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条队列数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复队列数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复队列数据失败:', e);
 }
 
 const saveQueuesToCache = () => {
@@ -191,23 +203,25 @@ const saveQueuesToCache = () => {
 // 评价相关缓存
 const REVIEWS_CACHE_KEY = 'mbs_reviews_cache';
 
-// 启动时从 localStorage 恢复评价数据
-try {
-  const cached = localStorage.getItem(REVIEWS_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const reviewsWithDates = parsed.map((r: Record<string, unknown>) => ({
-        ...r,
-        createdAt: r.createdAt ? new Date(r.createdAt as string) : new Date(),
-      })) as unknown as Review[];
-      mockReviews.length = 0;
-      mockReviews.push(...reviewsWithDates);
-      console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条评价数据`);
+// 启动时从 localStorage 恢复评价数据（真实 API 模式下不要覆盖 mock fallback）
+if (!USE_REAL_API) {
+  try {
+    const cached = localStorage.getItem(REVIEWS_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const reviewsWithDates = parsed.map((r: Record<string, unknown>) => ({
+          ...r,
+          createdAt: r.createdAt ? new Date(r.createdAt as string) : new Date(),
+        })) as unknown as Review[];
+        mockReviews.length = 0;
+        mockReviews.push(...reviewsWithDates);
+        console.log(`[cache] 已从 localStorage 恢复 ${parsed.length} 条评价数据`);
+      }
     }
+  } catch (e) {
+    console.warn('[cache] 恢复评价数据失败:', e);
   }
-} catch (e) {
-  console.warn('[cache] 恢复评价数据失败:', e);
 }
 
 const saveReviewsToCache = () => {
@@ -773,11 +787,12 @@ export const customerApi = {
   // 按手机号登录（查询真实 API，失败返回 null 由上层 fallback 到 mock）
   login: async (phone: string): Promise<Customer | null> => {
     if (!USE_REAL_API) return null;
-    const result = await http<{ success: boolean; data: Customer[]; pagination?: { total: number } }>(
-      `${API_BASE}/customers?search=${encodeURIComponent(phone)}&pageSize=1`
-    );
-    if (result?.success && Array.isArray(result.data) && result.data.length > 0) {
-      return normalizeCustomerDates(result.data[0]);
+    const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/login`, {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+    if (result?.success && result.data) {
+      return normalizeCustomerDates(result.data);
     }
     return null;
   },
