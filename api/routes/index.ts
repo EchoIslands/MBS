@@ -840,7 +840,7 @@ const customersRouter = Router();
  */
 customersRouter.post('/login', async (req: Request, res: Response) => {
   try {
-    const { phone } = req.body || {};
+    const { phone, name } = req.body || {};
     if (!phone) {
       res.status(400).json({ success: false, error: '手机号不能为空' });
       return;
@@ -859,8 +859,52 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
     }
 
     if (!data) {
-      res.status(404).json({ success: false, error: '客户不存在' });
+      // 陌生手机号自动注册为当前店铺新客户
+      const displayName = name?.trim() || `顾客${phone.slice(-4)}`;
+      const newCustomer = {
+        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        shop_id: 'shop1',
+        name: displayName,
+        phone,
+        membership_level: 'regular',
+        purchase_vip_level: 'regular',
+        stored_value_level: 'none',
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('customers')
+        .insert(newCustomer)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[customers] 自动注册新客户失败:', insertError.message);
+        res.status(500).json({ success: false, error: '客户不存在且自动注册失败' });
+        return;
+      }
+
+      console.log(`[customers] 自动注册新客户: ${inserted.phone} (${inserted.id})`);
+      res.json({ success: true, data: toCamelCase(inserted) });
       return;
+    }
+
+    // 已存在客户：如果本次填写了称呼且与现有不同，则更新
+    const providedName = name?.trim();
+    if (providedName && providedName !== data.name) {
+      const { data: updated, error: updateError } = await supabase
+        .from('customers')
+        .update({ name: providedName })
+        .eq('id', data.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('[customers] 更新称呼失败:', updateError.message);
+      } else {
+        res.json({ success: true, data: toCamelCase(updated) });
+        return;
+      }
     }
 
     res.json({ success: true, data: toCamelCase(data) });

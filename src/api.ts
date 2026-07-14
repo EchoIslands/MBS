@@ -785,11 +785,11 @@ const normalizeCustomerDates = (customer: Customer): Customer => {
 // 客户相关 API
 export const customerApi = {
   // 按手机号登录（查询真实 API，失败返回 null 由上层 fallback 到 mock）
-  login: async (phone: string): Promise<Customer | null> => {
+  login: async (phone: string, name?: string): Promise<Customer | null> => {
     if (!USE_REAL_API) return null;
     const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/login`, {
       method: 'POST',
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, ...(name ? { name } : {}) }),
     });
     if (result?.success && result.data) {
       return normalizeCustomerDates(result.data);
