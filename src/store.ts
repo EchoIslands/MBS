@@ -195,12 +195,15 @@ export const restoreCustomerSession = () => {
 };
 
 // 顾客登录：优先调用真实 API，失败时回退到 mock 数据
-export const loginAsCustomer = async (phone: string): Promise<Customer | null> => {
+export const loginAsCustomer = async (
+  phone: string,
+  name?: string
+): Promise<Customer | null> => {
   const trimmedPhone = phone.trim();
 
   // 1. 尝试真实 API 登录
   try {
-    const apiCustomer = await customerApi.login(trimmedPhone);
+    const apiCustomer = await customerApi.login(trimmedPhone, name);
     if (apiCustomer) {
       useAppStore.getState().setCurrentCustomer(apiCustomer);
       return apiCustomer;
