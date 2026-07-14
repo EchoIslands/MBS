@@ -163,7 +163,7 @@ const ShopDetail: React.FC = () => {
             <h3 className="text-lg font-bold text-gray-800 mb-4">发型师团队</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {shop.employees
-                .filter(emp => emp.isActive && emp.role === UserRole.STYLIST)
+                .filter(emp => emp.isActive && (emp.role === UserRole.STYLIST || !emp.role))
                 .map((employee) => (
                   <div
                     key={employee.id}

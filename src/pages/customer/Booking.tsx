@@ -106,7 +106,7 @@ const Booking: React.FC = () => {
   }, [shop, dates, selectedService, selectedDate]);
 
   const stylists = useMemo(() =>
-    shop?.employees.filter((e) => e.role === UserRole.STYLIST) || [],
+    shop?.employees.filter((e) => e.role === UserRole.STYLIST || !e.role) || [],
   [shop]);
 
   // 技师在特定时段是否已被预约
