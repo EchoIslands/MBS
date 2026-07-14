@@ -477,8 +477,8 @@ const CustomerTableManagement: React.FC = () => {
       </div>
 
       {/* 客户表格 */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 360px)' }}>
+        <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <Users size={20} className="text-orange-500" />
             客户列表
@@ -486,11 +486,11 @@ const CustomerTableManagement: React.FC = () => {
           </h2>
         </div>
 
-        {/* 表格容器 - 支持横向滚动 */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[2000px]">
+        {/* 表格容器 - 固定表头，tbody 独立滚动 */}
+        <div className="overflow-auto flex-1">
+          <table className="w-full min-w-[2000px] table-fixed border-collapse">
             {/* 表头 */}
-            <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+            <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0 z-10">
               <tr>
                 {[
                   { label: '序号', width: 'w-16' },
