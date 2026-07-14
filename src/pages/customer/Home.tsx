@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Star, Filter, User } from 'lucide-react';
+import { MapPin, Star, Filter, User, LogOut } from 'lucide-react';
 import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -12,10 +12,14 @@ const CustomerHome: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filterLevel, setFilterLevel] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const navigate = useNavigate();
   const { currentCustomer, logout } = useAppStore();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/customer/login');
+  };
 
   const loadShops = React.useCallback(async () => {
     try {
@@ -69,38 +73,42 @@ const CustomerHome: React.FC = () => {
               >
                 <span className="text-lg">?</span>
               </button>
-              <div className="relative">
-                <button
-                  onClick={() => setMenuOpen(!menuOpen)}
-                  className="w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center sm:gap-2 hover:bg-blue-500 rounded-lg transition-colors"
-                >
-                  <User size={20} />
-                  <span className="hidden sm:inline text-sm">{currentCustomer?.name}</span>
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl py-2 w-40 sm:w-48 z-50">
-                    <button
-                      onClick={() => navigate('/customer/profile')}
-                      className="w-full px-4 py-3 sm:py-2 text-left text-gray-700 hover:bg-gray-100 text-sm"
-                    >
-                      个人中心
-                    </button>
-                    <button
-                      onClick={() => {
-                        logout();
-                        navigate('/');
-                      }}
-                      className="w-full px-4 py-3 sm:py-2 text-left text-red-600 hover:bg-gray-100 text-sm"
-                    >
-                      退出登录
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>
       </header>
+
+      {/* 个人中心入口卡片 */}
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 pt-3 sm:pt-4">
+        <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-4 sm:p-5 text-white shadow-lg flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+              <User size={24} className="sm:hidden" />
+              <User size={28} className="hidden sm:inline" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm opacity-90">您好，{currentCustomer?.name || '顾客'}</div>
+              <div className="text-[10px] sm:text-xs opacity-75">欢迎回来</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => navigate('/customer/profile')}
+              className="bg-white text-blue-600 px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl font-semibold text-sm sm:text-base shadow hover:bg-blue-50 transition-colors"
+            >
+              个人中心
+            </button>
+            <button
+              onClick={handleLogout}
+              className="bg-blue-400/30 text-white p-2 sm:p-2.5 rounded-xl hover:bg-blue-400/50 transition-colors"
+              aria-label="退出登录"
+            >
+              <LogOut size={18} className="sm:hidden" />
+              <LogOut size={20} className="hidden sm:inline" />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* 筛选栏 —— 手机端横向滑动 */}
       {showFilters && (

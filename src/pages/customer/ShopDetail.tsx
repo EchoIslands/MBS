@@ -10,7 +10,7 @@ import {
   MessageSquare,
   MessageCircle,
 } from 'lucide-react';
-import { Shop, Review } from '../../../shared/types';
+import { Shop, Review, UserRole } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -163,7 +163,7 @@ const ShopDetail: React.FC = () => {
             <h3 className="text-lg font-bold text-gray-800 mb-4">发型师团队</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {shop.employees
-                .filter(emp => emp.isActive)
+                .filter(emp => emp.isActive && emp.role === UserRole.STYLIST)
                 .map((employee) => (
                   <div
                     key={employee.id}

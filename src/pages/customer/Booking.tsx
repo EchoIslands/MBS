@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {
-  ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
-  Scissors, Sparkles, Award, Zap
+import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
+  Scissors, Sparkles, Award, Zap, LogOut
 } from 'lucide-react';
 import { mockShops, mockBookings } from '../../../shared/mockData';
-import { Employee, Shop } from '../../../shared/types';
+import { Employee, Shop, UserRole } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
 import { calcDiscountedItemPrice } from '../../lib/membership';
@@ -14,7 +13,7 @@ type SelectionMode = 'specific' | 'fastest';
 
 const Booking: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
-  const { currentCustomer } = useAppStore();
+  const { currentCustomer, logout } = useAppStore();
 
   const [shop, setShop] = useState<Shop | null>(null);
   const [loadingShop, setLoadingShop] = useState(true);
@@ -107,7 +106,7 @@ const Booking: React.FC = () => {
   }, [shop, dates, selectedService, selectedDate]);
 
   const stylists = useMemo(() =>
-    shop?.employees.filter((e) => e.role === 'stylist' || !e.role) || [],
+    shop?.employees.filter((e) => e.role === UserRole.STYLIST) || [],
   [shop]);
 
   // 技师在特定时段是否已被预约
@@ -617,12 +616,23 @@ const Booking: React.FC = () => {
         )}
 
         {/* 底部按钮占位 —— 防止底部固定按钮遮挡内容 */}
-        <div className="h-24" />
+        <div className="h-32" />
       </div>
 
       {/* 底部固定按钮 —— 手机端保持较大的点击区域 */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-3 sm:p-4 z-30">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto space-y-2">
+          <button
+            onClick={() => {
+              logout();
+              navigate('/customer/login');
+            }}
+            className="w-full py-2.5 sm:py-3 border border-red-200 text-red-500 rounded-xl text-sm sm:text-base font-medium hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <LogOut size={16} className="sm:hidden" />
+            <LogOut size={18} className="hidden sm:inline" />
+            退出登录 / 返回登录界面
+          </button>
           <button
             onClick={handleBooking}
             disabled={booking}
