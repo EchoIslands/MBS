@@ -223,6 +223,11 @@ const CustomerTableManagement: React.FC = () => {
 
   // 添加新客户（调用 API 持久化）
   const handleAddCustomer = async (newCustomer: Partial<Customer>) => {
+    const purchaseVIPLevel = newCustomer.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
+    const storedValueLevel = newCustomer.storedValueLevel ?? StoredValueLevel.NONE;
+    const storedValueBalance = newCustomer.storedValueBalance ?? 0;
+    const isMember = purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || storedValueLevel !== StoredValueLevel.NONE;
+    
     const customer: Customer = {
       id: `cust${Date.now()}`,
       name: newCustomer.name || '',
@@ -231,48 +236,48 @@ const CustomerTableManagement: React.FC = () => {
       avatar: '',
       gender: newCustomer.gender || 'other',
       age: newCustomer.age,
-      birthday: newCustomer.birthday,
+      birthday: newCustomer.birthday ? new Date(newCustomer.birthday) : undefined,
       idCardNumber: newCustomer.idCardNumber,
       hobbies: newCustomer.hobbies,
       tags: [],
       visitCount: 0,
-      totalSpent: 0,
-      lastServiceItems: [],
+      totalSpent: newCustomer.totalSpent || 0,
+      lastServiceItems: newCustomer.lastServiceItems || [],
       lastServiceAmount: 0,
-      hasBooking: false,
-      lastStylist: '',
-      // 新版会员体系默认值
-      purchaseVIPLevel: PurchaseVIPLevel.REGULAR,
-      storedValueLevel: StoredValueLevel.NONE,
-      storedValueBalance: 0,
+      hasBooking: newCustomer.hasBooking || false,
+      lastStylist: newCustomer.lastStylist || '',
+      lastVisitAt: newCustomer.lastVisitAt ? new Date(newCustomer.lastVisitAt) : undefined,
+      // 新版会员体系
+      purchaseVIPLevel,
+      storedValueLevel,
+      storedValueBalance,
       withdrawableReferralAmount: 0,
       // 兼容旧字段
-      membershipLevel: MembershipLevel.REGULAR,
-      isMember: false,
-      hasRecharged: false,
-      rechargeLevel: '',
-      balance: 0,
-      points: 0,
+      membershipLevel: isMember ? MembershipLevel.PREMIUM : MembershipLevel.REGULAR,
+      isMember,
+      hasRecharged: storedValueLevel !== StoredValueLevel.NONE,
+      rechargeLevel: getStoredValueLabel(storedValueLevel),
+      balance: storedValueBalance,
+      points: newCustomer.points || 0,
       isReferred: !!newCustomer.referrerName,
       referrerName: newCustomer.referrerName,
       referrerPhone: newCustomer.referrerPhone,
-      referralConsumption: 0,
-      sharedFund: 0,
-      totalSharedFund: 0,
-      withdrawableAmount: 0,
+      referralConsumption: newCustomer.referralConsumption || 0,
+      sharedFund: newCustomer.sharedFund || 0,
+      totalSharedFund: newCustomer.totalSharedFund || 0,
+      withdrawableAmount: newCustomer.withdrawableAmount || 0,
       joinedAt: new Date(),
       isStockholder: false,
     };
-    // 调用 API 保存
     await customerApi.create(customer);
-    fetchCustomers(); // 重新拉取数据，确保与后端同步
+    fetchCustomers();
     setShowAdd(false);
   };
 
   // 更新客户（调用 API 持久化）
   const handleUpdateCustomer = async (updatedCustomer: Customer) => {
     await customerApi.update(updatedCustomer.id, updatedCustomer);
-    fetchCustomers(); // 重新拉取数据，确保与后端同步
+    fetchCustomers();
     setShowEdit(null);
   };
 
@@ -280,7 +285,7 @@ const CustomerTableManagement: React.FC = () => {
   const handleDeleteCustomer = async (id: string) => {
     if (window.confirm('确定要删除该客户吗？')) {
       await customerApi.delete(id);
-      fetchCustomers(); // 重新拉取数据，确保与后端同步
+      fetchCustomers();
     }
   };
 

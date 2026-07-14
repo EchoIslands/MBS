@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  
-  
+  Plus,
   Edit, 
   Trash2, 
   Eye, 
@@ -239,6 +238,17 @@ const ProductManagement: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* 添加按钮 */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors"
+          >
+            <Plus size={18} />
+            添加商品
+          </button>
         </div>
 
         {/* 商品列表 */}
