@@ -8,17 +8,25 @@ const DEFAULT_SHOP_ID = "shop1";
 const CustomerLogin: React.FC = () => {
   const [phone, setPhone] = useState('13900000001');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    const customer = loginAsCustomer(phone);
-    if (customer) {
-      navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
-    } else {
-      setError('手机号不存在，试用账号：13900000001');
+    setLoading(true);
+
+    try {
+      const customer = await loginAsCustomer(phone.trim());
+      if (customer) {
+        navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
+      } else {
+        setError('手机号不存在，试用账号：13900000001');
+      }
+    } catch (err) {
+      setError('登录失败，请稍后重试');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -61,9 +69,10 @@ const CustomerLogin: React.FC = () => {
           
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 sm:py-3.5 px-4 sm:px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 text-sm sm:text-base min-h-[52px]"
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 sm:py-3.5 px-4 sm:px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 text-sm sm:text-base min-h-[52px]"
           >
-            登录
+            {loading ? '登录中...' : '登录'}
           </button>
           
           <div className="text-center text-xs sm:text-sm text-gray-500">

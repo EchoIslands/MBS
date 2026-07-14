@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppState, UserRole, Customer, Shop, Employee, Product, CartItem } from '../shared/types';
 import { mockCustomers, mockShops, shopPasswords, stylistPasswords, ceoPasswords, csPasswords, managerPasswords } from '../shared/mockData';
+import { customerApi } from './api';
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -193,12 +194,25 @@ export const restoreCustomerSession = () => {
   }
 };
 
-// 简单的登录函数
-export const loginAsCustomer = (phone: string): Customer | null => {
-  const customer = mockCustomers.find(c => c.phone === phone);
+// 顾客登录：优先调用真实 API，失败时回退到 mock 数据
+export const loginAsCustomer = async (phone: string): Promise<Customer | null> => {
+  const trimmedPhone = phone.trim();
+
+  // 1. 尝试真实 API 登录
+  try {
+    const apiCustomer = await customerApi.login(trimmedPhone);
+    if (apiCustomer) {
+      useAppStore.getState().setCurrentCustomer(apiCustomer);
+      return apiCustomer;
+    }
+  } catch (err) {
+    console.error('[loginAsCustomer] 真实 API 登录失败:', err);
+  }
+
+  // 2. 回退到 mock 数据
+  const customer = mockCustomers.find(c => c.phone === trimmedPhone);
   if (customer) {
     useAppStore.getState().setCurrentCustomer(customer);
-    saveCustomerSession(customer);
     return customer;
   }
   return null;

@@ -770,6 +770,18 @@ const normalizeCustomerDates = (customer: Customer): Customer => {
 
 // 客户相关 API
 export const customerApi = {
+  // 按手机号登录（查询真实 API，失败返回 null 由上层 fallback 到 mock）
+  login: async (phone: string): Promise<Customer | null> => {
+    if (!USE_REAL_API) return null;
+    const result = await http<{ success: boolean; data: Customer[]; pagination?: { total: number } }>(
+      `${API_BASE}/customers?search=${encodeURIComponent(phone)}&pageSize=1`
+    );
+    if (result?.success && Array.isArray(result.data) && result.data.length > 0) {
+      return normalizeCustomerDates(result.data[0]);
+    }
+    return null;
+  },
+
   // 获取全部客户（带缓存回退）
   getAll: async (): Promise<Customer[]> => {
     if (USE_REAL_API) {
