@@ -724,40 +724,42 @@ const CustomerManagement: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-500 mb-2 flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Phone size={14} />
-                          {customer.phone}
-                        </span>
-                        <span>
-                          {customer.gender === 'male' ? '男' : customer.gender === 'female' ? '女' : '其他'} · {customer.age}岁
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar size={14} />
-                          消费 {customer.visitCount} 次
-                        </span>
-                        <span className="flex items-center gap-1 text-orange-600">
-                          <Wallet size={14} />
-                          ¥{customer.totalSpent}
-                        </span>
-                        {/* 距上次到店天数 */}
-                        <span className="flex items-center gap-1 text-gray-500">
-                          <Clock size={14} />
-                          上次到店：{customer.daysSinceLastVisit ?? '-'} 天前
-                        </span>
-                        {/* 流失风险徽标 */}
-                        {customer.churnRisk === 'high' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 font-medium">
-                            <AlertTriangle size={12} />
-                            高流失风险
+                      <div className="overflow-x-auto mb-2">
+                        <div className="flex items-center gap-4 text-sm text-gray-500 whitespace-nowrap min-w-max">
+                          <span className="flex items-center gap-1">
+                            <Phone size={14} />
+                            {customer.phone}
                           </span>
-                        )}
-                        {customer.churnRisk === 'medium' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">
-                            <Bell size={12} />
-                            需关注
+                          <span>
+                            {customer.gender === 'male' ? '男' : customer.gender === 'female' ? '女' : '其他'} · {customer.age}岁
                           </span>
-                        )}
+                          <span className="flex items-center gap-1">
+                            <Calendar size={14} />
+                            消费 {customer.visitCount} 次
+                          </span>
+                          <span className="flex items-center gap-1 text-orange-600">
+                            <Wallet size={14} />
+                            ¥{customer.totalSpent}
+                          </span>
+                          {/* 距上次到店天数 */}
+                          <span className="flex items-center gap-1 text-gray-500">
+                            <Clock size={14} />
+                            上次到店：{customer.daysSinceLastVisit ?? '-'} 天前
+                          </span>
+                          {/* 流失风险徽标 */}
+                          {customer.churnRisk === 'high' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 font-medium">
+                              <AlertTriangle size={12} />
+                              高流失风险
+                            </span>
+                          )}
+                          {customer.churnRisk === 'medium' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">
+                              <Bell size={12} />
+                              需关注
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {customer.tags.map((tag) => (
