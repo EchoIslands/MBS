@@ -9,21 +9,28 @@ import {
   User,
   MessageSquare,
   MessageCircle,
+  LogOut,
 } from 'lucide-react';
-import { Shop, Review, UserRole } from '../../../shared/types';
+import { Shop, Review, UserRole, Employee } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
 import { getAvatarUrl } from '../../lib/avatar';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { setCurrentShop } = useAppStore();
+  const { setCurrentShop, logout } = useAppStore();
   const [shop, setShop] = useState<Shop | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeImage, setActiveImage] = useState(0);
   const navigate = useNavigate();
+
+  const isStylist = (e: Employee) => {
+    if (e.role) return e.role === UserRole.STYLIST;
+    const title = e.title || '';
+    return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
+  };
 
   const loadShopData = React.useCallback(async () => {
     try {
@@ -77,15 +84,27 @@ const ShopDetail: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* 头部 */}
       <header className="sticky top-0 bg-white shadow-sm z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="font-bold text-xl text-gray-800">{shop.name}</h1>
-          <div className="flex items-center gap-1">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <h1 className="font-bold text-lg sm:text-xl text-gray-800 truncate">{shop.name}</h1>
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => navigate('/customer/profile')}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="个人中心"
+              className="flex items-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-xl font-medium text-sm shadow transition-colors"
             >
-              <User size={20} />
+              <User size={16} className="sm:hidden" />
+              <User size={18} className="hidden sm:inline" />
+              <span className="hidden sm:inline">个人中心</span>
+            </button>
+            <button
+              onClick={() => {
+                logout();
+                navigate('/customer/login');
+              }}
+              className="flex items-center gap-1.5 border border-red-300 text-red-500 hover:bg-red-50 px-3 sm:px-4 py-2 rounded-xl font-medium text-sm transition-colors"
+            >
+              <LogOut size={16} className="sm:hidden" />
+              <LogOut size={18} className="hidden sm:inline" />
+              <span className="hidden sm:inline">退出登录</span>
             </button>
           </div>
         </div>
@@ -163,7 +182,7 @@ const ShopDetail: React.FC = () => {
             <h3 className="text-lg font-bold text-gray-800 mb-4">发型师团队</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {shop.employees
-                .filter(emp => emp.isActive && (emp.role === UserRole.STYLIST || !emp.role))
+                .filter(emp => emp.isActive !== false && isStylist(emp))
                 .map((employee) => (
                   <div
                     key={employee.id}

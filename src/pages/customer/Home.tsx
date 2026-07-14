@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Star, Filter, User, LogOut } from 'lucide-react';
+import { MapPin, Star, Filter, User } from 'lucide-react';
 import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -14,12 +14,7 @@ const CustomerHome: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const navigate = useNavigate();
-  const { currentCustomer, logout } = useAppStore();
-
-  const handleLogout = () => {
-    logout();
-    navigate('/customer/login');
-  };
+  const { currentCustomer } = useAppStore();
 
   const loadShops = React.useCallback(async () => {
     try {
@@ -91,22 +86,12 @@ const CustomerHome: React.FC = () => {
               <div className="text-[10px] sm:text-xs opacity-75">欢迎回来</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => navigate('/customer/profile')}
-              className="bg-white text-blue-600 px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl font-semibold text-sm sm:text-base shadow hover:bg-blue-50 transition-colors"
-            >
-              个人中心
-            </button>
-            <button
-              onClick={handleLogout}
-              className="bg-blue-400/30 text-white p-2 sm:p-2.5 rounded-xl hover:bg-blue-400/50 transition-colors"
-              aria-label="退出登录"
-            >
-              <LogOut size={18} className="sm:hidden" />
-              <LogOut size={20} className="hidden sm:inline" />
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/customer/profile')}
+            className="bg-white text-blue-600 px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base shadow hover:bg-blue-50 transition-colors flex-shrink-0"
+          >
+            个人中心
+          </button>
         </div>
       </div>
 
