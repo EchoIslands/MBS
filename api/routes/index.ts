@@ -581,7 +581,8 @@ bookingsRouter.get('/:id', async (req: Request, res: Response) => {
 bookingsRouter.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, customerId } = req.body;
+    const employee = req.employee;
 
     if (!status || !['pending', 'confirmed', 'completed', 'cancelled'].includes(status)) {
       return res.status(400).json({
@@ -610,6 +611,29 @@ bookingsRouter.put('/:id', async (req: Request, res: Response) => {
         success: false,
         error: '预约不存在',
       });
+    }
+
+    // 权限校验
+    const isCEO = employee?.role === 'ceo';
+    const isManager = employee?.role === 'shop_manager';
+    const isCustomerService = employee?.role === 'customer_service';
+    const isTargetStylist =
+      employee?.role === 'stylist' && originalBooking.stylist_id === employee.id;
+
+    if (status === 'completed') {
+      if (!isCEO && !isTargetStylist) {
+        return res.status(403).json({ success: false, error: '只有对应发型师或 CEO 可标记服务完成' });
+      }
+    } else if (status === 'cancelled') {
+      const isCustomerSelf = customerId && customerId === originalBooking.customer_id;
+      if (!isCEO && !isCustomerService && !isCustomerSelf) {
+        return res.status(403).json({ success: false, error: '无权取消该预约' });
+      }
+    } else {
+      // pending / confirmed 状态调整，店长/客服/对应发型师可操作
+      if (!isCEO && !isManager && !isCustomerService && !isTargetStylist) {
+        return res.status(403).json({ success: false, error: '无权更新该预约状态' });
+      }
     }
 
     // 更新状态
@@ -683,6 +707,55 @@ bookingsRouter.put('/:id', async (req: Request, res: Response) => {
       success: false,
       error: '更新预约状态失败',
     });
+  }
+});
+
+// 调配预约发型师（仅店长/CEO）
+bookingsRouter.put('/:id/barber', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { stylistId, stylistName } = req.body;
+    const employee = req.employee!;
+
+    if (!stylistId || !stylistName) {
+      return res.status(400).json({ success: false, error: '缺少发型师信息' });
+    }
+
+    if (employee.role !== 'ceo' && employee.role !== 'shop_manager') {
+      return res.status(403).json({ success: false, error: '无权调配发型师' });
+    }
+
+    const { data: originalBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      console.error('[bookings] 查询预约失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询预约失败' });
+    }
+
+    if (!originalBooking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ stylist_id: stylistId, stylist_name: stylistName })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 调配发型师失败:', error.message);
+      return res.status(500).json({ success: false, error: '调配发型师失败' });
+    }
+
+    res.json({ success: true, data: bookingFromDb(data) });
+  } catch (error) {
+    console.error('[bookings] 调配发型师异常:', error);
+    res.status(500).json({ success: false, error: '调配发型师失败' });
   }
 });
 

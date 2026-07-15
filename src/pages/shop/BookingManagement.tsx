@@ -16,10 +16,12 @@ import {
   Loader2,
   LayoutList,
   Columns,
+  Settings2,
 } from 'lucide-react';
-import { Booking } from '../../../shared/types';
+import { Booking, Employee, UserRole } from '../../../shared/types';
 import { useNavigate } from 'react-router-dom';
-import { bookingApi } from '../../api';
+import { bookingApi, employeeApi } from '../../api';
+import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
 const BookingManagement: React.FC = () => {
@@ -34,6 +36,10 @@ const BookingManagement: React.FC = () => {
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('board');
   const [completing, setCompleting] = useState(false);
+  const [stylists, setStylists] = useState<Employee[]>([]);
+  const [selectedStylistId, setSelectedStylistId] = useState<string>('');
+  const [reassigning, setReassigning] = useState(false);
+  const { currentEmployee, userRole } = useAppStore();
 
   // 从 API 获取预约列表
   const fetchBookings = useCallback(async () => {
@@ -56,6 +62,36 @@ const BookingManagement: React.FC = () => {
   useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
+
+  // 打开详情弹窗时，默认选中当前发型师
+  useEffect(() => {
+    if (viewingBooking) {
+      setSelectedStylistId(viewingBooking.stylistId || viewingBooking.barberId || '');
+    } else {
+      setSelectedStylistId('');
+    }
+  }, [viewingBooking]);
+
+  // 加载发型师列表（用于调配）
+  useEffect(() => {
+    async function loadStylists() {
+      try {
+        const all = await employeeApi.getAll();
+        setStylists(all.filter((e) => e.role === UserRole.STYLIST && e.isActive));
+      } catch {
+        setStylists([]);
+      }
+    }
+    loadStylists();
+  }, []);
+
+  // 权限判断
+  const canReassignBarber = userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
+  const canCompleteService = (booking: Booking) =>
+    userRole === UserRole.CEO ||
+    (userRole === UserRole.STYLIST &&
+      (booking.stylistId === currentEmployee?.id || booking.barberId === currentEmployee?.id));
+  const canCancelBooking = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
 
   // 完成服务
   const handleCompleteBooking = async () => {
@@ -145,6 +181,29 @@ const BookingManagement: React.FC = () => {
       setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setCancellingBooking(false);
+    }
+  };
+
+  // 调配发型师
+  const handleReassignBarber = async () => {
+    if (!viewingBooking || !selectedStylistId) return;
+    const stylist = stylists.find((s) => s.id === selectedStylistId);
+    if (!stylist) return;
+    if (!window.confirm(`确认将该预约调配给 ${stylist.name} 吗？`)) return;
+
+    setReassigning(true);
+    try {
+      await bookingApi.updateBookingBarber(viewingBooking.id, stylist.id, stylist.name);
+      setViewingBooking((prev) =>
+        prev
+          ? { ...prev, stylistId: stylist.id, stylistName: stylist.name, barberId: stylist.id, barberName: stylist.name }
+          : null
+      );
+      fetchBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '调配失败');
+    } finally {
+      setReassigning(false);
     }
   };
 
@@ -705,6 +764,37 @@ const BookingManagement: React.FC = () => {
               </div>
             </div>
 
+            {/* 调配发型师选择区 */}
+            {canReassignBarber && (viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-xl">
+                <div className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                  <Settings2 size={16} />
+                  调配发型师
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedStylistId}
+                    onChange={(e) => setSelectedStylistId(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                  >
+                    <option value="">请选择发型师</option>
+                    {stylists.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleReassignBarber}
+                    disabled={!selectedStylistId || reassigning}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white rounded-xl text-sm font-medium transition-colors"
+                  >
+                    {reassigning ? <Loader2 size={16} className="animate-spin" /> : '确认调配'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* 操作按钮 */}
             <div className="flex gap-3 mt-6">
               {viewingBooking.status === 'pending' && (
@@ -717,35 +807,41 @@ const BookingManagement: React.FC = () => {
                     {confirming ? <Loader2 size={18} className="animate-spin" /> : null}
                     确认预约
                   </button>
-                  <button
-                    onClick={handleCompleteBooking}
-                    disabled={completing}
-                    className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {completing ? <Loader2 size={18} className="animate-spin" /> : null}
-                    直接完成
-                  </button>
-                  <button
-                    onClick={handleCancelBooking}
-                    disabled={cancellingBooking}
-                    className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {cancellingBooking ? <Loader2 size={18} className="animate-spin" /> : null}
-                    取消预约
-                  </button>
+                  {canCompleteService(viewingBooking) && (
+                    <button
+                      onClick={handleCompleteBooking}
+                      disabled={completing}
+                      className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {completing ? <Loader2 size={18} className="animate-spin" /> : null}
+                      直接完成
+                    </button>
+                  )}
+                  {canCancelBooking && (
+                    <button
+                      onClick={handleCancelBooking}
+                      disabled={cancellingBooking}
+                      className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {cancellingBooking ? <Loader2 size={18} className="animate-spin" /> : null}
+                      取消预约
+                    </button>
+                  )}
                 </>
               )}
               {viewingBooking.status === 'confirmed' && (
                 <>
-                  <button
-                    onClick={handleCompleteBooking}
-                    disabled={completing}
-                    className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {completing ? <Loader2 size={18} className="animate-spin" /> : null}
-                    完成服务
-                  </button>
-                  {isExpired(viewingBooking) && (
+                  {canCompleteService(viewingBooking) && (
+                    <button
+                      onClick={handleCompleteBooking}
+                      disabled={completing}
+                      className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {completing ? <Loader2 size={18} className="animate-spin" /> : null}
+                      完成服务
+                    </button>
+                  )}
+                  {canCancelBooking && (
                     <button
                       onClick={handleNoShow}
                       disabled={noShowing}

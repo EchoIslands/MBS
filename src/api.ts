@@ -697,18 +697,43 @@ export const bookingApi = {
     return booking;
   },
 
-  updateBookingStatus: async (id: string, status: Booking['status']): Promise<Booking> => {
+  updateBookingStatus: async (id: string, status: Booking['status'], customerId?: string): Promise<Booking> => {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, customerId }),
       });
       if (result?.data && result.data.id) return result.data;
+      if (result && !result.success) {
+        throw new Error('更新预约状态失败');
+      }
     }
     await new Promise((r) => setTimeout(r, 200));
     const idx = mockBookings.findIndex((b) => b.id === id);
     if (idx !== -1) {
       mockBookings[idx] = { ...mockBookings[idx], status };
+      saveBookingsToCache();
+    }
+    const booking = mockBookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Booking not found');
+    return booking;
+  },
+
+  updateBookingBarber: async (id: string, stylistId: string, stylistName: string): Promise<Booking> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}/barber`, {
+        method: 'PUT',
+        body: JSON.stringify({ stylistId, stylistName }),
+      });
+      if (result?.data && result.data.id) return result.data;
+      if (result && !result.success) {
+        throw new Error('调配发型师失败');
+      }
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const idx = mockBookings.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      mockBookings[idx] = { ...mockBookings[idx], barberId: stylistId, barberName: stylistName };
       saveBookingsToCache();
     }
     const booking = mockBookings.find((b) => b.id === id);

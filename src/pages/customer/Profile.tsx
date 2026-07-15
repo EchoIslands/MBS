@@ -95,12 +95,12 @@ const Profile: React.FC = () => {
   }, [currentCustomer, navigate, loadBookings, loadCustomerReviews]);
 
   const handleCancelBooking = async () => {
-    if (!viewingBooking) return;
+    if (!viewingBooking || !currentCustomer) return;
     if (!window.confirm('确定要取消这次预约吗？')) return;
 
     setCancelling(true);
     try {
-      await bookingApi.updateBookingStatus(viewingBooking.id, 'cancelled');
+      await bookingApi.updateBookingStatus(viewingBooking.id, 'cancelled', currentCustomer.id);
       setViewingBooking(null);
       await loadBookings();
     } catch (error) {
