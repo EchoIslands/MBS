@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar } from 'lucide-react';
+import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours, UserRole } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -61,6 +61,8 @@ const ShopManage: React.FC = () => {
   const [shopAddress, setShopAddress] = useState(currentShop?.address || '');
   const [services, setServices] = useState<Service[]>(currentShop?.services || []);
   const [newService, setNewService] = useState({ name: '', price: '', duration: '' });
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [editService, setEditService] = useState({ name: '', price: '', duration: '' });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [newEmployee, setNewEmployee] = useState({
     name: '',
@@ -119,6 +121,33 @@ const ShopManage: React.FC = () => {
 
   const removeService = (id: string) => {
     setServices(services.filter((s) => s.id !== id));
+  };
+
+  const startEditService = (service: Service) => {
+    setEditingServiceId(service.id);
+    setEditService({
+      name: service.name,
+      price: String(service.price),
+      duration: String(service.duration),
+    });
+  };
+
+  const cancelEditService = () => {
+    setEditingServiceId(null);
+    setEditService({ name: '', price: '', duration: '' });
+  };
+
+  const saveEditService = () => {
+    if (!editService.name || !editService.price || !editService.duration || !editingServiceId) return;
+    setServices(
+      services.map((s) =>
+        s.id === editingServiceId
+          ? { ...s, name: editService.name, price: Number(editService.price), duration: Number(editService.duration) }
+          : s
+      )
+    );
+    setEditingServiceId(null);
+    setEditService({ name: '', price: '', duration: '' });
   };
 
   // 判断当前用户能否添加某角色的员工
@@ -449,21 +478,68 @@ const ShopManage: React.FC = () => {
                 key={service.id}
                 className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-orange-300 transition-colors"
               >
-                <div>
-                  <div className="font-medium text-gray-800">{service.name}</div>
-                  <div className="text-sm text-gray-500">
-                    时长 {service.duration} 分钟
+                {editingServiceId === service.id ? (
+                  <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
+                    <input
+                      type="text"
+                      value={editService.name}
+                      onChange={(e) => setEditService({ ...editService, name: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                    <input
+                      type="number"
+                      value={editService.price}
+                      onChange={(e) => setEditService({ ...editService, price: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                    <input
+                      type="number"
+                      value={editService.duration}
+                      onChange={(e) => setEditService({ ...editService, duration: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={saveEditService}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      >
+                        <Check size={18} />
+                      </button>
+                      <button
+                        onClick={cancelEditService}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xl font-bold text-orange-500">¥{service.price}</span>
-                  <button
-                    onClick={() => removeService(service.id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-gray-800 truncate">{service.name}</div>
+                      <div className="text-sm text-gray-500">
+                        时长 {service.duration} 分钟
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 sm:gap-4 ml-3">
+                      <span className="text-lg sm:text-xl font-bold text-orange-500 whitespace-nowrap">¥{service.price}</span>
+                      <button
+                        onClick={() => startEditService(service)}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="编辑"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => removeService(service.id)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="删除"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
             {services.length === 0 && (
