@@ -154,7 +154,7 @@ create table if not exists reviews (
   customer_id text references customers(id) on delete set null,
   customer_name text,
   booking_id text references bookings(id) on delete set null,
-  type text not null, -- shop / stylist
+  type text default 'shop', -- shop / stylist，默认店铺评价
   stylist_id text references employees(id) on delete set null,
   stylist_name text,
   service_name text,
@@ -162,8 +162,12 @@ create table if not exists reviews (
   service_score integer,
   price_score integer,
   skill_score integer,
+  stylist_score integer,
   overall_score numeric,
   comment text,
+  service_comment text,
+  stylist_comment text,
+  is_aware_of_membership_benefits boolean default false,
   tags text[] default '{}',
   reply text,
   reply_by text,
