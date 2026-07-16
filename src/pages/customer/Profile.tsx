@@ -64,6 +64,7 @@ const Profile: React.FC = () => {
     setLoading(true);
     try {
       const data = await bookingApi.getCustomerBookings(currentCustomer.id);
+      console.log('[Profile] 加载预约:', currentCustomer.id, '总数:', data.length, data.map((b) => ({ id: b.id, status: b.status, service: b.serviceName })));
       setBookings(data);
     } catch (error) {
       console.error('加载预约列表失败:', error);
