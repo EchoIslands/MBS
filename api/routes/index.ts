@@ -2490,7 +2490,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     // 更新客户消费统计
     const { data: customer } = await supabase
       .from('customers')
-      .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount')
+      .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount, points')
       .eq('id', customerId)
       .eq('shop_id', shopId)
       .single();
@@ -2498,10 +2498,12 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     if (customer) {
       const newVisitCount = (customer.visit_count || 0) + 1;
       const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
+      const earnedPoints = Math.round(Number(total || 0));
       const updatePayload: unknown = {
         visit_count: newVisitCount,
         total_spent: newTotalSpent,
         last_visit_at: new Date().toISOString(),
+        points: (Number(customer.points) || 0) + earnedPoints,
       };
 
       // 储值支付：扣减余额

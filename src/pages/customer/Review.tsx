@@ -416,30 +416,30 @@ const ReviewPage: React.FC = () => {
           <p className="text-xs sm:text-sm text-gray-500">您的评价将在 24 小时内公开展示</p>
         </div>
 
-        {/* 分享得优惠券卡片 */}
+        {/* 分享得积分卡片 */}
         <div className="bg-white rounded-3xl shadow-lg p-4 sm:p-6 border border-orange-100 mb-4 sm:mb-6">
           <div className="mb-3 sm:mb-4">
             <h3 className="font-bold text-gray-800 text-sm sm:text-lg flex items-center gap-2">
               <Gift size={18} className="sm:hidden text-orange-500" />
               <Gift size={22} className="hidden sm:inline text-orange-500" />
-              分享给好友，双方各得 ¥10 优惠券
+              分享给好友，双方各得 10 积分
             </h3>
             <p className="text-xs sm:text-sm text-gray-500 mt-1 sm:mt-2">
-              好友通过您的分享链接完成首次服务，双方自动获得优惠券
+              好友通过您的分享链接完成首次服务，双方自动获得积分
             </p>
           </div>
 
-          {/* 优惠券预览 */}
+          {/* 积分预览 */}
           <div className="bg-gradient-to-r from-orange-500 to-yellow-500 rounded-2xl p-4 sm:p-5 text-white shadow-lg mb-3 sm:mb-4 overflow-hidden relative">
             <div className="absolute top-0 bottom-0 left-1/2 border-l-2 border-dashed border-white/30" />
             <div className="flex items-center gap-3 sm:gap-4 relative">
               <div className="text-center flex-1">
-                <div className="text-2xl sm:text-4xl font-bold mb-1">¥10</div>
-                <div className="text-[10px] sm:text-xs text-white/90">新人体验券 · 满 50 可用</div>
+                <div className="text-2xl sm:text-4xl font-bold mb-1">10</div>
+                <div className="text-[10px] sm:text-xs text-white/90">积分</div>
               </div>
               <div className="flex-1 text-right">
                 <div className="text-xs sm:text-sm font-medium mb-1">皓诗形象设计</div>
-                <div className="text-[10px] sm:text-xs text-white/90">有效期 30 天</div>
+                <div className="text-[10px] sm:text-xs text-white/90">消费可累计积分</div>
                 <div className="text-[10px] sm:text-xs text-white/90 mt-1">全店服务通用</div>
               </div>
             </div>
@@ -552,10 +552,10 @@ const ReviewPage: React.FC = () => {
               <CheckCircle size={20} className="hidden sm:inline text-green-600 flex-shrink-0 mt-0.5" />
               <div>
                 <div className="font-semibold text-green-700 mb-1 text-sm sm:text-base">
-                  🎉 您已获得 ¥10 优惠券
+                  🎉 您已获得 10 积分
                 </div>
                 <div className="text-xs sm:text-sm text-green-600">
-                  优惠券已自动发放到您的账户，下次消费可直接使用
+                  积分已自动发放到您的账户，消费可继续累计积分
                 </div>
               </div>
             </div>
@@ -563,7 +563,7 @@ const ReviewPage: React.FC = () => {
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex items-start gap-2 text-xs sm:text-sm text-yellow-700">
               <Sparkles size={16} className="flex-shrink-0 mt-0.5" />
               <span>
-                <strong>小提示：</strong>分享给好友，好友通过链接完成首次消费，双方各得 1 张券～
+                <strong>小提示：</strong>分享给好友，好友通过链接完成首次消费，双方各得 10 积分～
               </span>
             </div>
           )}

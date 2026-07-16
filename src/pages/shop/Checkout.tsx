@@ -147,8 +147,8 @@ const Checkout: React.FC = () => {
                   originalPrice: booking.price,
                   quantity: 1,
                   category: 'service',
-                  employeeId: booking.barberId,
-                  employeeName: booking.barberName,
+                  employeeId: booking.stylistId || booking.barberId,
+                  employeeName: booking.stylistName || booking.barberName,
                 },
               ]);
             }
@@ -404,14 +404,56 @@ const Checkout: React.FC = () => {
     return (
       <ShopLayout title="开单结算">
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-sm p-8 text-center max-w-md w-full">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle size={32} className="text-green-500" />
+          <div className="bg-white rounded-2xl shadow-sm p-8 max-w-md w-full">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle size={32} className="text-green-500" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">结算成功</h2>
+              <p className="text-gray-500 mb-6">
+                {selectedCustomer?.name} 消费 ¥{total.toFixed(2)}，已计入结算记录
+              </p>
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">结算成功</h2>
-            <p className="text-gray-500 mb-6">
-              {selectedCustomer?.name} 消费 ¥{total.toFixed(2)}，已计入结算记录
-            </p>
+
+            {/* 结算明细 */}
+            <div className="border-t border-gray-100 pt-4 mb-6">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">结算明细</h3>
+              <div className="space-y-2">
+                {cartWithAdjustedPrices.map((item, index) => (
+                  <div key={index} className="flex justify-between items-center text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500">{item.type === 'service' ? '服务' : '商品'}</span>
+                      <span className="text-gray-800">{item.name}</span>
+                      {item.quantity > 1 && (
+                        <span className="text-gray-400">x{item.quantity}</span>
+                      )}
+                    </div>
+                    <span className="font-medium text-gray-800">¥{(item.originalPrice * item.quantity).toFixed(2)}</span>
+                  </div>
+                ))}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center text-sm text-orange-500">
+                    <span>优惠</span>
+                    <span>-¥{discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-sm font-medium pt-2 border-t border-gray-100">
+                  <span>实付</span>
+                  <span>¥{total.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm text-gray-500">
+                  <span>支付方式</span>
+                  <span>
+                    {paymentMethod === 'cash' && '现金'}
+                    {paymentMethod === 'wechat' && '微信支付'}
+                    {paymentMethod === 'alipay' && '支付宝'}
+                    {paymentMethod === 'card' && '刷卡'}
+                    {paymentMethod === 'balance' && '储值余额'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={() => navigate('/shop/settlement')}

@@ -171,7 +171,8 @@ const CustomerTableManagement: React.FC = () => {
       '是否充值',      // 16
       '充值级别',      // 17
       '余额',          // 18
-      '是否转介绍',    // 19
+      '积分',          // 19
+      '是否转介绍',    // 20
       '转介绍人员',    // 20
       '转介绍消费',    // 21 - 这里之前是错误的"消费金额"
       '共享基金',      // 22
@@ -198,7 +199,8 @@ const CustomerTableManagement: React.FC = () => {
       c.hasRecharged ? '是' : '否',                             // 16. 是否充值
       getStoredValueLabel(c.storedValueLevel),                  // 17. 充值级别
       `¥${c.storedValueBalance.toLocaleString()}`,              // 18. 余额
-      c.isReferred ? '是' : '否',                               // 19. 是否转介绍
+      c.points || 0,                                            // 19. 积分
+      c.isReferred ? '是' : '否',                               // 20. 是否转介绍
       c.referrerName || '',                                     // 20. 转介绍人员
       c.referralConsumption ? `¥${c.referralConsumption.toLocaleString()}` : '',  // 21. 转介绍消费
       c.sharedFund ? `¥${c.sharedFund.toFixed(2)}` : '',        // 22. 共享基金
@@ -511,6 +513,7 @@ const CustomerTableManagement: React.FC = () => {
                   { label: '是否充值', width: 'w-20' },
                   { label: '充值级别', width: 'w-20' },
                   { label: '余额', width: 'w-24' },
+                  { label: '积分', width: 'w-20' },
                   { label: '是否转介绍', width: 'w-24' },
                   { label: '转介绍人员', width: 'w-28' },
                   { label: '转介绍消费', width: 'w-24' },
@@ -530,7 +533,7 @@ const CustomerTableManagement: React.FC = () => {
             <tbody className="divide-y divide-gray-100">
               {loading && (
                 <tr>
-                  <td colSpan={24} className="px-4 py-12 text-center">
+                  <td colSpan={25} className="px-4 py-12 text-center">
                     <Loader2 size={32} className="mx-auto text-orange-500 animate-spin mb-2" />
                     <div className="text-sm text-gray-500">加载客户数据中...</div>
                   </td>
@@ -615,6 +618,9 @@ const CustomerTableManagement: React.FC = () => {
                   <td className="px-4 py-3 text-sm text-gray-600">{getStoredValueLabel(customer.storedValueLevel)}</td>
                   <td className="px-4 py-3">
                     <span className="text-sm font-semibold text-green-600">¥{customer.storedValueBalance.toLocaleString()}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm font-semibold text-orange-600">{customer.points || 0}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
