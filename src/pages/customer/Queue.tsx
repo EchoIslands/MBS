@@ -62,9 +62,9 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
       return;
     }
     navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: false,
-      timeout: 10000,
-      maximumAge: 60000,
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
     });
   });
 }
