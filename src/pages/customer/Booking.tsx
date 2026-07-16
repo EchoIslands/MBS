@@ -8,6 +8,7 @@ import { Employee, Shop, UserRole } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
 import { calcDiscountedItemPrice } from '../../lib/membership';
+import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 
 type SelectionMode = 'specific' | 'fastest';
 
@@ -39,7 +40,6 @@ const Booking: React.FC = () => {
   }, [shopId]);
 
   const [selectedService, setSelectedService] = useState<string>('');
-  const [priceRange, setPriceRange] = useState<number>(Infinity);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [selectedBarberId, setSelectedBarberId] = useState<string>('');
@@ -97,31 +97,14 @@ const Booking: React.FC = () => {
     }
   }, [availableTimeSlots, selectedTime]);
 
-  // 服务价格上限与过滤
-  const maxServicePrice = useMemo(() => {
-    if (!shop || shop.services.length === 0) return 0;
-    return Math.max(...shop.services.map((s) => s.price));
-  }, [shop]);
-
-  const filteredServices = useMemo(() => {
-    if (!shop) return [];
-    return shop.services.filter((s) => s.price <= priceRange);
-  }, [shop, priceRange]);
-
   useEffect(() => {
-    if (shop && shop.services.length > 0) {
-      setPriceRange((prev) => (prev === Infinity || prev > maxServicePrice ? maxServicePrice : prev));
-    }
-  }, [shop, maxServicePrice]);
-
-  useEffect(() => {
-    if (filteredServices.length > 0 && (!selectedService || !filteredServices.find((s) => s.id === selectedService))) {
-      setSelectedService(filteredServices[0].id);
+    if (shop && shop.services.length > 0 && !selectedService) {
+      setSelectedService(shop.services[0].id);
     }
     if (dates.length > 0 && !selectedDate) {
       setSelectedDate(dates[0].value);
     }
-  }, [filteredServices, selectedService, dates, selectedDate]);
+  }, [shop, dates, selectedService, selectedDate]);
 
   const isStylist = (e: Employee) => {
     if (e.role) return e.role === UserRole.STYLIST;
@@ -292,84 +275,59 @@ const Booking: React.FC = () => {
         {/* 选择服务 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
           <h3 className="font-bold text-gray-800 mb-3 sm:mb-4">选择服务</h3>
-          <div className="flex gap-3 sm:gap-4">
-            {/* 服务列表 */}
-            <div className="flex-1 space-y-2 sm:space-y-3 min-w-0">
-              {filteredServices.map((service) => {
-                const memberPrice = calcDiscountedItemPrice(
-                  service.price,
-                  currentCustomer?.purchaseVIPLevel,
-                  currentCustomer?.storedValueLevel,
-                  'service'
-                );
-                const hasDiscount = memberPrice < service.price;
-                return (
-                  <label
-                    key={service.id}
-                    className={`flex items-center justify-between p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                      selectedService === service.id
-                        ? 'border-orange-500 bg-orange-50'
-                        : 'border-gray-200 hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                      <input
-                        type="radio"
-                        name="service"
-                        checked={selectedService === service.id}
-                        onChange={() => setSelectedService(service.id)}
-                        className="accent-orange-500 flex-shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-medium text-gray-800 text-sm sm:text-base">{service.name}</div>
-                        <div className="text-xs sm:text-sm text-gray-500">约 {service.duration} 分钟</div>
-                      </div>
+          <VerticalScrollSlider maxHeight={320} containerClassName="space-y-2 sm:space-y-3 pr-1">
+            {shop.services.map((service) => {
+              const memberPrice = calcDiscountedItemPrice(
+                service.price,
+                currentCustomer?.purchaseVIPLevel,
+                currentCustomer?.storedValueLevel,
+                'service'
+              );
+              const hasDiscount = memberPrice < service.price;
+              return (
+                <label
+                  key={service.id}
+                  className={`flex items-center justify-between p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                    selectedService === service.id
+                      ? 'border-orange-500 bg-orange-50'
+                      : 'border-gray-200 hover:border-orange-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <input
+                      type="radio"
+                      name="service"
+                      checked={selectedService === service.id}
+                      onChange={() => setSelectedService(service.id)}
+                      className="accent-orange-500 flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-800 text-sm sm:text-base">{service.name}</div>
+                      <div className="text-xs sm:text-sm text-gray-500">约 {service.duration} 分钟</div>
                     </div>
-                    <div className="text-right flex-shrink-0 ml-2">
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-2">
+                    {hasDiscount && (
+                      <div className="text-xs text-gray-400 line-through">¥{service.price}</div>
+                    )}
+                    <div className="flex items-center gap-1.5 justify-end">
                       {hasDiscount && (
-                        <div className="text-xs text-gray-400 line-through">¥{service.price}</div>
-                      )}
-                      <div className="flex items-center gap-1.5 justify-end">
-                        {hasDiscount && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded font-medium">
-                            会员价
-                          </span>
-                        )}
-                        <span className="text-orange-500 font-bold text-base sm:text-lg">
-                          ¥{memberPrice.toFixed(2)}
+                        <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded font-medium">
+                          会员价
                         </span>
-                      </div>
+                      )}
+                      <span className="text-orange-500 font-bold text-base sm:text-lg">
+                        ¥{memberPrice.toFixed(2)}
+                      </span>
                     </div>
-                  </label>
-                );
-              })}
-              {filteredServices.length === 0 && (
-                <div className="text-center text-gray-500 py-6 text-sm">当前价格区间内暂无服务</div>
-              )}
-            </div>
-
-            {/* 竖向价格滑块 */}
-            {maxServicePrice > 0 && (
-              <div className="w-10 sm:w-12 flex flex-col items-center justify-center flex-shrink-0">
-                <span className="text-[10px] sm:text-xs text-gray-500 mb-1">价格</span>
-                <div className="relative h-36 sm:h-44 w-8 sm:w-10 flex items-center justify-center">
-                  <input
-                    type="range"
-                    min={0}
-                    max={maxServicePrice}
-                    step={10}
-                    value={priceRange > maxServicePrice ? maxServicePrice : priceRange}
-                    onChange={(e) => setPriceRange(Number(e.target.value))}
-                    className="absolute w-36 sm:w-44 h-2 accent-orange-500 origin-center -rotate-90 cursor-pointer"
-                    style={{ accentColor: '#f97316' }}
-                  />
-                </div>
-                <span className="text-[10px] sm:text-xs text-orange-600 font-medium mt-1">
-                  ¥{Math.round(priceRange)}
-                </span>
-              </div>
-            )}
-          </div>
+                  </div>
+                </label>
+              );
+            })}
+          </VerticalScrollSlider>
+          {shop.services.length === 0 && (
+            <div className="text-center text-gray-500 py-6 text-sm">暂无可用服务</div>
+          )}
         </div>
 
         {/* 选择日期 */}

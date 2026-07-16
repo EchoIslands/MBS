@@ -5,6 +5,7 @@ import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours, UserRole } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
 import { shopApi, employeeApi } from '../../api';
+import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 import ShopLayout from './ShopLayout';
 
 const defaultOpeningHours: OpeningHours = {
@@ -60,7 +61,6 @@ const ShopManage: React.FC = () => {
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
   const [shopAddress, setShopAddress] = useState(currentShop?.address || '');
   const [services, setServices] = useState<Service[]>(currentShop?.services || []);
-  const [priceRange, setPriceRange] = useState<number>(Infinity);
   const [newService, setNewService] = useState({ name: '', price: '', duration: '' });
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [editService, setEditService] = useState({ name: '', price: '', duration: '' });
@@ -91,22 +91,6 @@ const ShopManage: React.FC = () => {
     setOpeningHours(normalizeOpeningHours(currentShop.openingHours));
     setBookingConfirmMode(currentShop.bookingConfirmMode || 'auto');
   }, [currentShop]);
-
-  // 服务价格上限与过滤
-  const maxServicePrice = React.useMemo(() => {
-    if (services.length === 0) return 0;
-    return Math.max(...services.map((s) => s.price));
-  }, [services]);
-
-  const filteredServices = React.useMemo(() => {
-    return services.filter((s) => s.price <= priceRange);
-  }, [services, priceRange]);
-
-  React.useEffect(() => {
-    if (services.length > 0) {
-      setPriceRange((prev) => (prev === Infinity || prev > maxServicePrice ? maxServicePrice : prev));
-    }
-  }, [services, maxServicePrice]);
 
   // 加载员工列表
   React.useEffect(() => {
@@ -488,107 +472,83 @@ const ShopManage: React.FC = () => {
             </div>
           </div>
 
-          {/* 服务列表与竖向价格滑块 */}
-          <div className="flex gap-4">
-            <div className="flex-1 space-y-3 min-w-0">
-              {filteredServices.map((service) => (
-                <div
-                  key={service.id}
-                  className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-orange-300 transition-colors"
-                >
-                  {editingServiceId === service.id ? (
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
-                      <input
-                        type="text"
-                        value={editService.name}
-                        onChange={(e) => setEditService({ ...editService, name: e.target.value })}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      />
-                      <input
-                        type="number"
-                        value={editService.price}
-                        onChange={(e) => setEditService({ ...editService, price: e.target.value })}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      />
-                      <input
-                        type="number"
-                        value={editService.duration}
-                        onChange={(e) => setEditService({ ...editService, duration: e.target.value })}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      />
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={saveEditService}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                        >
-                          <Check size={18} />
-                        </button>
-                        <button
-                          onClick={cancelEditService}
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                          ×
-                        </button>
+          {/* 服务列表 */}
+          <VerticalScrollSlider maxHeight={360} containerClassName="space-y-3 pr-1">
+            {services.map((service) => (
+              <div
+                key={service.id}
+                className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-orange-300 transition-colors"
+              >
+                {editingServiceId === service.id ? (
+                  <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
+                    <input
+                      type="text"
+                      value={editService.name}
+                      onChange={(e) => setEditService({ ...editService, name: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                    <input
+                      type="number"
+                      value={editService.price}
+                      onChange={(e) => setEditService({ ...editService, price: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                    <input
+                      type="number"
+                      value={editService.duration}
+                      onChange={(e) => setEditService({ ...editService, duration: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={saveEditService}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      >
+                        <Check size={18} />
+                      </button>
+                      <button
+                        onClick={cancelEditService}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-gray-800 truncate">{service.name}</div>
+                      <div className="text-sm text-gray-500">
+                        时长 {service.duration} 分钟
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-gray-800 truncate">{service.name}</div>
-                        <div className="text-sm text-gray-500">
-                          时长 {service.duration} 分钟
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 sm:gap-4 ml-3">
-                        <span className="text-lg sm:text-xl font-bold text-orange-500 whitespace-nowrap">¥{service.price}</span>
-                        <button
-                          onClick={() => startEditService(service)}
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="编辑"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        <button
-                          onClick={() => removeService(service.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          title="删除"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-              {filteredServices.length === 0 && (
-                <div className="text-center text-gray-500 py-8">
-                  {services.length === 0 ? '暂无服务，添加您的第一个服务吧' : '当前价格区间内暂无服务'}
-                </div>
-              )}
-            </div>
-
-            {/* 竖向价格滑块 */}
-            {maxServicePrice > 0 && (
-              <div className="w-10 sm:w-12 flex flex-col items-center justify-start flex-shrink-0 pt-2">
-                <span className="text-[10px] sm:text-xs text-gray-500 mb-1">价格</span>
-                <div className="relative h-36 sm:h-44 w-8 sm:w-10 flex items-center justify-center">
-                  <input
-                    type="range"
-                    min={0}
-                    max={maxServicePrice}
-                    step={10}
-                    value={priceRange > maxServicePrice ? maxServicePrice : priceRange}
-                    onChange={(e) => setPriceRange(Number(e.target.value))}
-                    className="absolute w-36 sm:w-44 h-2 accent-orange-500 origin-center -rotate-90 cursor-pointer"
-                    style={{ accentColor: '#f97316' }}
-                  />
-                </div>
-                <span className="text-[10px] sm:text-xs text-orange-600 font-medium mt-1">
-                  ¥{Math.round(priceRange)}
-                </span>
+                    <div className="flex items-center gap-2 sm:gap-4 ml-3">
+                      <span className="text-lg sm:text-xl font-bold text-orange-500 whitespace-nowrap">¥{service.price}</span>
+                      <button
+                        onClick={() => startEditService(service)}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="编辑"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => removeService(service.id)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="删除"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            )}
-          </div>
+            ))}
+          </VerticalScrollSlider>
+          {services.length === 0 && (
+            <div className="text-center text-gray-500 py-8">
+              暂无服务，添加您的第一个服务吧
+            </div>
+          )}
         </div>
 
         {/* 员工管理 */}

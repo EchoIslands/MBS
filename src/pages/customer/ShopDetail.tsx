@@ -15,6 +15,7 @@ import { Shop, Review, UserRole, Employee } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
 import { getAvatarUrl } from '../../lib/avatar';
+import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -269,7 +270,7 @@ const ShopDetail: React.FC = () => {
         {/* 服务项目 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
           <h3 className="text-lg font-bold text-gray-800 mb-4">服务项目</h3>
-          <div className="space-y-3">
+          <VerticalScrollSlider maxHeight={360} containerClassName="space-y-3 pr-1">
             {shop.services.map((service) => (
               <div
                 key={service.id}
@@ -291,7 +292,7 @@ const ShopDetail: React.FC = () => {
                 </div>
               </div>
             ))}
-          </div>
+          </VerticalScrollSlider>
         </div>
 
         {/* 顾客评价 */}
