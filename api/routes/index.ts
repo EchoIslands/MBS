@@ -577,8 +577,8 @@ bookingsRouter.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// 更新预约状态
-bookingsRouter.put('/:id', async (req: Request, res: Response) => {
+// 更新预约状态（需登录）
+bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status, customerId } = req.body;
@@ -710,8 +710,8 @@ bookingsRouter.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// 调配预约发型师（仅店长/CEO）
-bookingsRouter.put('/:id/barber', async (req: Request, res: Response) => {
+// 调配预约发型师（仅店长/CEO，需登录）
+bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { stylistId, stylistName } = req.body;
