@@ -642,6 +642,8 @@ export const bookingApi = {
       scheduledTime: Date | string;
       barberId?: string;
       barberName?: string;
+      stylistId?: string;
+      stylistName?: string;
       status?: Booking['status'];
       notes?: string;
     },

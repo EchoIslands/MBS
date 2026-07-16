@@ -209,6 +209,8 @@ const Booking: React.FC = () => {
         scheduledTime: scheduledTime.toISOString(), // 明确转换为 ISO 字符串
         barberId: target.id,
         barberName: target.name,
+        stylistId: target.id,
+        stylistName: target.name,
         notes,
       });
       

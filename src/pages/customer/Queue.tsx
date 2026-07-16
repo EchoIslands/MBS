@@ -259,11 +259,11 @@ const Queue: React.FC = () => {
     return () => clearInterval(timer);
   }, [isAppointmentTimeReached, booking]);
 
-  // 当前为您服务的发型师
+  // 当前为您服务的发型师：严格按预约记录里的 barberId 匹配，不匹配则显示“待安排”，避免 fallback 到 CEO 或其他员工
   const currentShop = shop || mockShops.find((s) => s.id === booking?.shopId) || mockShops[0];
   const stylist: Employee | undefined = booking?.barberId
     ? currentShop?.employees.find((e) => e.id === booking.barberId)
-    : currentShop?.employees.find((e) => e.role === 'stylist' || !e.role) || currentShop?.employees[0];
+    : undefined;
 
   // 获取预约时间信息
   const getTimeUntilAppointment = () => {
@@ -397,18 +397,20 @@ const Queue: React.FC = () => {
                 )}
               </div>
               {/* 手艺值徽章 */}
-              <div className="absolute -bottom-2 -right-2 bg-white rounded-full shadow-md border border-orange-100 px-2 py-1">
-                <div className="flex items-center gap-0.5 text-xs font-bold text-yellow-600">
-                  <Star size={12} className="fill-yellow-500 text-yellow-500" />
-                  {stylist?.skillValue || 4.9}
+              {stylist && (
+                <div className="absolute -bottom-2 -right-2 bg-white rounded-full shadow-md border border-orange-100 px-2 py-1">
+                  <div className="flex items-center gap-0.5 text-xs font-bold text-yellow-600">
+                    <Star size={12} className="fill-yellow-500 text-yellow-500" />
+                    {stylist.skillValue || 4.9}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* 发型师信息 */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-lg font-bold text-gray-800">{stylist?.name || '李明'}</h2>
+                <h2 className="text-lg font-bold text-gray-800">{stylist?.name || '待安排'}</h2>
                 {stylist?.title && (
                   <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-medium">
                     {stylist.title}
@@ -417,20 +419,24 @@ const Queue: React.FC = () => {
               </div>
 
               {/* 服务数据行 */}
-              <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
-                <span className="flex items-center gap-1">
-                  <Award size={12} className="text-yellow-500" />
-                  手艺值 {(stylist?.skillValue || 4.9).toFixed(1)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users size={12} />
-                  服务 {stylist?.totalServices || 1250}+ 次
-                </span>
-                <span className="flex items-center gap-1">
-                  <Star size={12} className="fill-yellow-300 text-yellow-400" />
-                  {stylist?.reviewCount || 328} 评价
-                </span>
-              </div>
+              {stylist ? (
+                <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                  <span className="flex items-center gap-1">
+                    <Award size={12} className="text-yellow-500" />
+                    手艺值 {(stylist.skillValue || 4.9).toFixed(1)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Users size={12} />
+                    服务 {stylist.totalServices || 1250}+ 次
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Star size={12} className="fill-yellow-300 text-yellow-400" />
+                    {stylist.reviewCount || 328} 评价
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs text-gray-500 mb-3">系统将在到店后为您安排发型师</div>
+              )}
 
               {/* 擅长标签 */}
               {stylist?.tags && stylist.tags.length > 0 && (
