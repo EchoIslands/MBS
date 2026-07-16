@@ -72,12 +72,19 @@ const BookingManagement: React.FC = () => {
     }
   }, [viewingBooking]);
 
+  // 判断是否为发型师：优先按 role，无 role 时按 title 关键词兜底
+  const isStylist = (e: Employee) => {
+    if (e.role) return e.role === UserRole.STYLIST;
+    const title = e.title || '';
+    return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
+  };
+
   // 加载发型师列表（用于调配）
   useEffect(() => {
     async function loadStylists() {
       try {
         const all = await employeeApi.getAll();
-        setStylists(all.filter((e) => e.role === UserRole.STYLIST && e.isActive));
+        setStylists(all.filter((e) => isStylist(e) && e.isActive !== false));
       } catch {
         setStylists([]);
       }
