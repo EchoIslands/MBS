@@ -2,7 +2,9 @@
 
 > 本文档是 MBS 项目的最高开发规范。它集开发任务书、问题避免清单、踩坑记录、沟通协议、范围管理、技术债务治理于一体。所有参与者（包括 AI 助手）在改动代码前，必须先阅读并遵守本章节的规范。
 >
-> **当前宪章版本：v2.4 | 生效日期：2026-07-14**
+> **远期愿景**：本宪章不仅是 MBS 项目的内部规范，也在逐步沉淀为一套可复用的「AI 智能体协作开发白皮书」——如何让人类与 AI Agent 高效协作、如何控制范围与质量、如何把踩过的坑变成团队资产。宪章中的工作流、协作协议、治理机制，未来可直接迁移到任何 AI 辅助开发的项目中。
+>
+> **当前宪章版本：v2.5 | 生效日期：2026-07-15**
 
 ---
 
@@ -11,6 +13,8 @@
 ## 1.1 宪章宗旨
 
 本宪章旨在把 MBS 项目开发过程中踩过的坑、验证过的流程、隐性约束和协作规则显性化，使之成为项目知识资产。其最终目标是：让任何开发者（包括 AI 助手）在接到任务后，能按统一标准完成开发、验证、部署与交接，减少重复踩坑，降低线上故障率。
+
+**远期定位**：随着 AI 智能体越来越多地参与软件开发，本宪章同时也是一份「人类与 AI 智能体协作开发白皮书」的雏形。它沉淀的不仅是 MBS 项目的经验，更是一套可迁移的方法论——如何给 Agent 下达清晰的指令、如何划定 Agent 的权责边界、如何建立质量门禁、如何让 Agent 从错误中学习而不重复踩坑。未来这些方法论可以独立于 MBS 项目，应用到任何 AI 辅助开发的场景中。
 
 ## 1.2 适用对象
 
@@ -59,6 +63,7 @@
 | 会员管理 500 / referral_records 表 | 3.15.2 |
 | 店铺设置白屏 / openingHours 不完整 | 3.15.3 |
 | 员工自助修改头像 / 手机号 | 3.15.4 |
+| 预约权限控制 / 发型师调配 / 顾客取消 | 3.15.5 |
 | 版本号 / 发布检查 | 4.5 版本与发布 |
 
 ### 坑号快速定位表
@@ -120,6 +125,9 @@
 | 坑 49 | openingHours 字段缺失导致店铺设置白屏 | 严重 | 3.15.3 |
 | 坑 50 | 员工头像只能在店铺设置由店长修改 | 中 | 3.15.4 |
 | 坑 51 | 手机端头像不支持拍照/相册上传 | 中 | 3.15.4 |
+| 坑 52 | 权限判断逻辑散落在各处，新增角色时容易漏改 | 中 | 3.15.5 |
+| 坑 53 | stylistId / barberId 两套命名混用，调配后展示不同步 | 中 | 3.15.5 |
+| 坑 54 | 顾客取消预约时没有传 customerId，后端权限校验报 403 | 中 | 3.15.5 |
 
 ---
 
@@ -1729,6 +1737,119 @@ npm run server:api
 - **相关文件**：`api/routes/index.ts`、`src/api.ts`、`src/store.ts`、`shared/types.ts`、`src/pages/shop/ShopLayout.tsx`、`src/pages/shop/StylistDashboard.tsx`。
 - **相关坑**：3.3 坑 9 Zustand Store 刷新页面后数据丢失、3.3 坑 10 状态管理两层不同步、3.6 坑 18 后端 API 返回格式不统一。
 
+### 3.15.5 预约权限控制与发型师调配
+
+- **新增坑**：坑 52、坑 53、坑 54
+- **场景**：店铺端预约管理需要支持发型师调配、权限分级操作（完成/取消），同时顾客端可自行取消预约。
+- **需求背景**：
+  - 店长或 CEO 可修改预约的发型师（调配）；
+  - 只有对应服务的发型师或 CEO 能点击「已完成」；
+  - 客户未到店时，由客服联系顾客后点击「已取消」，或顾客端自行取消；
+  - CEO 拥有所有操作权限。
+- **实现方案**：
+  1. **后端权限校验**：在 `PUT /bookings/:id` 接口中增加角色校验，区分 CEO、店长、客服、发型师、顾客五种身份；
+  2. **发型师调配接口**：新增 `PUT /bookings/:id/barber`，仅店长/CEO 可调用；
+  3. **顾客取消预约**：状态更新接口支持 `customerId` 参数，允许预约所属顾客自行取消；
+  4. **前端店铺端**：预约详情弹窗根据角色动态显示「调配发型师」「完成服务」「取消预约」按钮；
+  5. **前端顾客端**：个人中心的预约详情增加取消按钮，调用时传递 `currentCustomer.id`。
+
+#### 坑 52：权限判断逻辑散落在各处，新增角色时容易漏改
+
+- **场景**：给预约管理加权限控制时，完成按钮、取消按钮、调配按钮各有各的判断逻辑，散落在不同组件和不同文件里。
+- **现象**：新增一个角色（如前台）或调整权限时，要改好几个地方，容易漏掉某一处。
+- **根因**：权限判断没有统一的封装，每个按钮各自写 `userRole === 'ceo' || userRole === 'shop_manager'` 之类的条件。
+- **解决**：
+  - 在 `BookingManagement.tsx` 顶部集中定义权限判断函数：
+    ```typescript
+    const canReassignBarber = userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
+    const canCompleteService = (booking: Booking) =>
+      userRole === UserRole.CEO ||
+      (userRole === UserRole.STYLIST &&
+        (booking.stylistId === currentEmployee?.id || booking.barberId === currentEmployee?.id));
+    const canCancelBooking = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
+    ```
+  - 按钮渲染时直接引用这些变量，不要内联写判断；
+  - 后端权限校验也集中在路由入口处，不要散落在业务逻辑中间。
+- **教训**：
+  - 权限判断是高频变更点，必须集中管理；
+  - 前端 UI 权限和后端接口权限要双重校验，不能只靠前端隐藏按钮；
+  - 新增角色或调整权限时，前端 UI 和后端接口要同步改，缺一不可。
+- **相关文件**：`src/pages/shop/BookingManagement.tsx`、`api/routes/index.ts`。
+- **相关坑**：3.5 坑 17.5 UI 按钮/功能加不上或显示不出来。
+
+#### 坑 53：`stylistId` / `barberId` 两套命名混用，调配后展示不同步
+
+- **场景**：历史代码中有的地方用 `barberId` / `barberName`，有的地方用 `stylistId` / `stylistName`，字段含义相同但命名不一致。
+- **现象**：调配发型师后，列表里显示的还是旧发型师名字，或者筛选时对不上。
+- **根因**：
+  - `Booking` 类型同时存在 `barberId/barberName` 和 `stylistId/stylistName` 两套字段；
+  - 有的组件读 `barberName`，有的读 `stylistName`；
+  - 调配接口只更新了其中一套，另一套没同步。
+- **解决**：
+  1. 在 `BookingManagement.tsx` 中增加统一的读取函数：
+     ```typescript
+     const getBarberName = (booking: Booking) =>
+       booking.stylistName || booking.barberName || '';
+     ```
+  2. 调配成功后，同时更新两套字段：
+     ```typescript
+     setViewingBooking((prev) =>
+       prev
+         ? { ...prev, stylistId: stylist.id, stylistName: stylist.name, barberId: stylist.id, barberName: stylist.name }
+         : null
+     );
+     ```
+  3. 长期建议：统一字段命名为一套（如全部用 `stylistId/stylistName`），逐步废弃 `barberId/barberName`。
+- **教训**：
+  - 同一个业务概念只能有一套命名，双轨命名是数据不一致的温床；
+  - 历史遗留的双轨字段，过渡期要做兼容读取和双写，不能只改一半；
+  - 类型定义是真相源，字段命名统一应该从 `shared/types.ts` 开始。
+- **相关文件**：`src/pages/shop/BookingManagement.tsx`、`shared/types.ts`、`api/routes/index.ts`。
+- **相关坑**：3.11 坑 37 数据库 Schema 和前端类型不同步、3.14.10 第 4 条驼峰转换大小写问题。
+
+#### 坑 54：顾客取消预约时没有传 `customerId`，后端权限校验报 403
+
+- **场景**：顾客端个人中心取消自己的预约，后端返回 403「无权取消该预约」。
+- **现象**：店铺端客服取消没问题，但顾客端取消报权限不足。
+- **根因**：
+  - 后端 `PUT /bookings/:id` 的取消权限校验最初只考虑了员工角色（CEO、客服），没考虑顾客自己取消的场景；
+  - 顾客端调用时没有传递自己的 `customerId`，后端不知道是谁在取消；
+  - `authMiddleware` 只解析员工 token，顾客 token 走另一套逻辑（或直接传 customerId 参数）。
+- **解决**：
+  1. 后端接口增加 `customerId` 参数支持：
+     ```typescript
+     const { status, customerId } = req.body;
+     const isCustomerSelf = customerId && customerId === originalBooking.customer_id;
+     
+     if (status === 'cancelled') {
+       if (!isCEO && !isCustomerService && !isCustomerSelf) {
+         return res.status(403).json({ success: false, error: '无权取消该预约' });
+       }
+     }
+     ```
+  2. 前端 `bookingApi.updateBookingStatus` 增加可选 `customerId` 参数；
+  3. 顾客端取消时传入 `currentCustomer.id`。
+- **教训**：
+  - 权限设计时要列全所有操作主体：员工（各角色）、顾客本人、系统自动操作，不要只想着后台员工；
+  - 顾客端和员工端的认证方式可能不同，接口要同时支持两种身份校验；
+  - 403 错误要给明确提示，方便排查是哪种权限没通过。
+- **相关文件**：`api/routes/index.ts`、`src/api.ts`、`src/pages/customer/Profile.tsx`。
+- **相关坑**：3.10 安全相关、3.6 坑 18 后端 API 返回格式不统一。
+
+- **关键验证点**：
+  - CEO 登录：能看到调配、完成、取消所有按钮，且都能操作；
+  - 店长登录：能看到调配和取消按钮，看不到完成按钮（除非自己是该预约的发型师）；
+  - 发型师登录：只能完成自己服务的预约，不能调配、不能取消；
+  - 客服登录：能取消预约，不能调配、不能完成；
+  - 顾客端：能取消自己的待确认/已确认预约；
+  - 调配后，列表和详情的发型师名字同步更新；
+  - 无权限用户直接调用 API 时返回 403（用 Postman 或 curl 测试）。
+- **教训**：
+  - 权限控制是多维度的（角色 + 资源归属 + 操作类型），设计时要画权限矩阵；
+  - 前端隐藏按钮只是体验优化，后端接口校验才是安全底线；
+  - 顾客端和员工端是两套身份体系，接口设计时要同时考虑；
+  - 字段命名统一要尽早做，双轨运行越久，改起来越痛。
+
 ---
 
 # 第四卷：治理机制
@@ -1922,6 +2043,9 @@ git push --force               # 强制推送（谨慎！）
 | 财务报表趋势图/排名用随机数 | `src/pages/shop/FinancialReport.tsx` | `Math.random()` 生成假数据 | 经营者无法看到真实经营状况 | ✅ 已偿还（2026-07-14）：改为基于 `settlements` 真实记录聚合计算 |
 | 员工头像用 base64 存在数据库 | `employees.avatar` | 前端图片转 base64 后存字符串 | 单张图片过大时增加数据库体积和传输开销；未来应迁移到对象存储（如 Supabase Storage / 阿里云 OSS） | 🟡 新增债务（2026-07-14）：当前方案满足 MVP，图片限制 2MB；长期建议接入对象存储 |
 | 手机号修改未校验唯一性 | `api/routes/index.ts` `PUT /api/employees/me` | 直接更新 phone 字段 | 可能导致重复手机号，影响登录 | 🟡 新增债务（2026-07-14）：当前满足自助修改需求；生产环境建议加唯一性校验和冲突提示 |
+| `stylistId` / `barberId` 两套命名混用 | `shared/types.ts`、各预约相关组件 | 同时存在两套字段，兼容读取和双写 | 数据不一致来源，新增功能容易只改一套 | 🟡 新增债务（2026-07-15）：过渡期用 getBarberName() 统一读取和双写；长期建议废弃 barber 命名，统一用 stylist |
+| 顾客端与员工端认证体系不统一 | `api/routes/index.ts`、`src/api.ts` | 员工走 JWT token + authMiddleware，顾客走 customerId 参数传递 | 权限校验逻辑分散，顾客身份易伪造（参数传递） | 🔴 新增债务（2026-07-15）：当前演示版可接受；生产环境建议顾客端也接入 JWT 认证，统一 authMiddleware |
+| 预约状态变更缺少操作日志 | `api/routes/index.ts` | 直接更新 status，不记录操作人和操作时间 | 出问题无法追溯是谁、什么时候改的状态 | 🟡 新增债务（2026-07-15）：当前功能满足 MVP；长期建议增加 booking_status_logs 表，记录每次状态变更的操作人、时间、原因 |
 
 ### 4.4.2 债务偿还计划
 
@@ -1940,6 +2064,16 @@ git push --force               # 强制推送（谨慎！）
 - [x] 头像上传同时支持手机拍照/相册选择和电脑文件选择；
 - [ ] 评估并补充手机号修改的唯一性校验（可选，视业务需求）；
 - [ ] 评估头像存储迁移到对象存储的可行性（可选，图片量大时）。
+
+**v2.5（预约权限控制与发型师调配，2026-07-15）**
+- [x] 后端 `PUT /bookings/:id` 增加基于角色的权限校验（CEO/店长/客服/发型师/顾客）；
+- [x] 新增 `PUT /bookings/:id/barber` 发型师调配接口，仅店长/CEO 可调用；
+- [x] 店铺端预约管理页面增加发型师调配下拉框和确认按钮；
+- [x] 店铺端按钮按权限动态显示（调配/完成/取消）；
+- [x] 顾客端支持自行取消预约（传递 customerId 参数）；
+- [ ] 统一 `stylistId/stylistName` 与 `barberId/barberName` 命名，废弃 barber 命名（可选，债务偿还）；
+- [ ] 顾客端接入 JWT 认证，统一 authMiddleware（可选，生产环境建议）；
+- [ ] 预约状态变更增加操作日志表 booking_status_logs（可选，审计需求）。
 
 **v3.0（功能恢复与质量，预计 3-5 天）**
 - [ ] 逐步恢复预约、店铺、技师等核心路由；
@@ -2280,3 +2414,4 @@ npm run seed-db
 | v2.2 | 2026-07-03 | 新增 3.14.10「会员体系与客户管理实战踩坑」；补充 9 条会员/客户管理相关踩坑记录；更新技术债务清单中超时、字段映射、兜底值等已偿还项。 |
 | v2.3 | 2026-07-03 | 在 3.14.10 中继续补充 seed-db 导入失败、Node.js WebSocket、API 超时 fallback 等踩坑记录；细化会员管理阶段收尾经验。 |
 | v2.4 | 2026-07-14 | 版本升级到 v2.4；新增 3.14.11「开发环境约定」和 3.15「近期修复与功能新增专项记录」；新增坑 47-51；更新技术债务清单（财务报表假数据已偿还、头像 base64 和手机号唯一性为新债务）；更新 4.4.2 债务偿还计划，新增 v2.4 阶段。 |
+| v2.5 | 2026-07-15 | 版本升级到 v2.5；在宪章总纲（1.1 节和文首）增加「AI 智能体协作开发白皮书」远期愿景定位；新增 3.15.5「预约权限控制与发型师调配」专项记录；新增坑 52-54（权限判断散落、stylist/barber 命名混用、顾客取消预约 403）；更新快速索引和坑号定位表；更新技术债务清单，新增 stylist/barber 命名混用、顾客端认证不统一、预约状态无操作日志三项债务；更新 4.4.2 债务偿还计划，新增 v2.5 阶段。 |
