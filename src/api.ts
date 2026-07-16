@@ -701,6 +701,15 @@ export const bookingApi = {
 
   updateBookingStatus: async (id: string, status: Booking['status'], customerId?: string): Promise<Booking> => {
     if (USE_REAL_API) {
+      // 顾客自主取消走独立接口，无需员工 token
+      if (status === 'cancelled' && customerId) {
+        const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}/cancel`, {
+          method: 'PUT',
+          body: JSON.stringify({ customerId }),
+        });
+        if (result?.data && result.data.id) return result.data;
+        throw new Error('取消预约失败');
+      }
       const token = getAuthToken();
       const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`, {
         method: 'PUT',
@@ -708,9 +717,7 @@ export const bookingApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.data && result.data.id) return result.data;
-      if (result && !result.success) {
-        throw new Error('更新预约状态失败');
-      }
+      throw new Error('更新预约状态失败');
     }
     await new Promise((r) => setTimeout(r, 200));
     const idx = mockBookings.findIndex((b) => b.id === id);

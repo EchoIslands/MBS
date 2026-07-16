@@ -710,6 +710,65 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
+// 顾客自主取消预约（无需员工登录，仅校验 customerId）
+bookingsRouter.put('/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customerId } = req.body;
+
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: '缺少顾客信息' });
+    }
+
+    const { data: originalBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      console.error('[bookings] 查询预约失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询预约失败' });
+    }
+
+    if (!originalBooking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    if (originalBooking.customer_id !== customerId) {
+      return res.status(403).json({ success: false, error: '无权取消该预约' });
+    }
+
+    if (originalBooking.status === 'cancelled') {
+      return res.status(400).json({ success: false, error: '预约已取消' });
+    }
+
+    if (originalBooking.status === 'completed') {
+      return res.status(400).json({ success: false, error: '已完成的服务无法取消' });
+    }
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 取消预约失败:', error.message);
+      return res.status(500).json({ success: false, error: '取消预约失败' });
+    }
+
+    res.json({
+      success: true,
+      data: bookingFromDb(data),
+    });
+  } catch (error) {
+    console.error('[bookings] 取消预约异常:', (error as Error).message);
+    res.status(500).json({ success: false, error: '取消预约失败' });
+  }
+});
+
 // 调配预约发型师（仅店长/CEO，需登录）
 bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Response) => {
   try {

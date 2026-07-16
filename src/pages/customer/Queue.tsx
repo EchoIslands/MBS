@@ -122,6 +122,8 @@ const Queue: React.FC = () => {
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [selectedSound] = useState('清脆铃声');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const hasNotifiedRef = useRef(false);
   const navigate = useNavigate();
 
@@ -228,10 +230,21 @@ const Queue: React.FC = () => {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         });
+        setLocationError(null);
       })
       .catch((err: Error) => {
         console.log('获取位置失败:', err.message);
+        setLocationError(err.message || '无法获取位置');
       });
+  }, []);
+
+  // 检测浏览器通知权限状态
+  useEffect(() => {
+    if (!('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      return;
+    }
+    setNotificationPermission(Notification.permission);
   }, []);
 
   // 启动服务进度模拟
@@ -641,8 +654,19 @@ const Queue: React.FC = () => {
             <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-500">
               <MapPin size={14} className="text-blue-500" /> 到店距离
             </div>
-            <div className="text-2xl font-bold text-gray-800 mb-1">{distance.toFixed(1)} <span className="text-sm text-gray-500">km</span></div>
-            <div className="text-xs text-gray-500 line-clamp-2">{currentShop?.address || '地址未设置'} · 步行约 {walkTime} 分钟</div>
+            {locationError ? (
+              <>
+                <div className="text-lg font-bold text-orange-600 mb-1">定位未获取</div>
+                <div className="text-xs text-orange-500 line-clamp-2">
+                  请允许浏览器使用位置权限，或通过微信打开本页面
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-gray-800 mb-1">{distance.toFixed(1)} <span className="text-sm text-gray-500">km</span></div>
+                <div className="text-xs text-gray-500 line-clamp-2">{currentShop?.address || '地址未设置'} · 步行约 {walkTime} 分钟</div>
+              </>
+            )}
           </a>
           <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
             <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-500">
@@ -653,7 +677,18 @@ const Queue: React.FC = () => {
                 {reminderEnabled ? '已开启' : '已关闭'}
               </span>
               <button
-                onClick={() => setReminderEnabled(!reminderEnabled)}
+                onClick={async () => {
+                  const next = !reminderEnabled;
+                  setReminderEnabled(next);
+                  if (next && notificationPermission !== 'granted' && notificationPermission !== 'unsupported') {
+                    try {
+                      const permission = await Notification.requestPermission();
+                      setNotificationPermission(permission);
+                    } catch {
+                      // 部分浏览器不支持请求权限，忽略错误
+                    }
+                  }
+                }}
                 className={`w-11 h-6 rounded-full transition-all relative ${
                   reminderEnabled ? 'bg-orange-500' : 'bg-gray-300'
                 }`}
@@ -665,7 +700,13 @@ const Queue: React.FC = () => {
                 />
               </button>
             </div>
-            {reminderEnabled && (
+            {notificationPermission === 'unsupported' && reminderEnabled && (
+              <div className="text-xs text-orange-500 mt-2">当前浏览器不支持系统通知</div>
+            )}
+            {notificationPermission === 'denied' && reminderEnabled && (
+              <div className="text-xs text-orange-500 mt-2">通知权限被拒绝，请前往浏览器设置开启</div>
+            )}
+            {reminderEnabled && notificationPermission !== 'unsupported' && notificationPermission !== 'denied' && (
               <div className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                 <Music size={12} />
                 {selectedSound}
