@@ -701,9 +701,11 @@ export const bookingApi = {
 
   updateBookingStatus: async (id: string, status: Booking['status'], customerId?: string): Promise<Booking> => {
     if (USE_REAL_API) {
+      const token = getAuthToken();
       const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ status, customerId }),
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.data && result.data.id) return result.data;
       if (result && !result.success) {
@@ -723,9 +725,11 @@ export const bookingApi = {
 
   updateBookingBarber: async (id: string, stylistId: string, stylistName: string): Promise<Booking> => {
     if (USE_REAL_API) {
+      const token = getAuthToken();
       const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}/barber`, {
         method: 'PUT',
         body: JSON.stringify({ stylistId, stylistName }),
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.data && result.data.id) return result.data;
       if (result && !result.success) {
