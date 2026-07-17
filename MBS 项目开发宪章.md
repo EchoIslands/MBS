@@ -2457,7 +2457,14 @@ git push --force               # 强制推送（谨慎！）
   - `shared/lib/membership.ts`：会员折扣、积分、VIP 有效期等纯计算逻辑；
   - `shared/lib/avatar.ts`：头像 URL 生成；
   - `src/api.ts`、`src/lib/membership.ts`、`src/lib/avatar.ts` 已改为引用共享层。
-- [ ] 小程序框架搭建、登录、支付接口开发 pending 资质到位。
+- [x] 小程序基础框架已搭建（`/mini-program`）：
+  - 原生小程序 + TypeScript；
+  - 首页、预约、排队、个人中心、结算 5 个基础页面；
+  - tabBar 配置；
+  - 小程序专用请求封装 `mini-program/utils/api.ts`，API 基础地址来自 `shared/api-base.ts`；
+  - 小程序本地存储封装 `mini-program/utils/storage.ts`。
+- [x] 修复构建错误：`src/pages/customer/Booking.tsx` 中组件名 `Booking` 与 `shared/types` 中 `Booking` 类型重名，导致 vite build 报 `Duplicate declaration`。将组件重命名为 `BookingPage` 解决。
+- [ ] 小程序登录（`wx.login`）和支付（`wx.requestPayment`） pending 资质到位。
 
 ### 4.7.8 指向详细指南
 
