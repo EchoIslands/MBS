@@ -1,0 +1,11 @@
+<view class="container">
+  <view class="card">
+    <view class="title">MBS 理发店</view>
+    <view class="subtitle">{{notice}}</view>
+    <view class="btn-primary" bindtap="goToBooking">立即预约</view>
+  </view>
+
+  <view class="card">
+    <view class="subtitle">API 地址：{{apiBase}}</view>
+  </view>
+</view>

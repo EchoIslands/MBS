@@ -1,0 +1,8 @@
+<view class="container">
+  <view class="card">
+    <view class="title">结算</view>
+    <view class="subtitle" wx:if="{{bookingId}}">预约号：{{bookingId}}</view>
+    <view class="subtitle" wx:else>请选择要结算的预约</view>
+    <view class="btn-primary">微信支付</view>
+  </view>
+</view>

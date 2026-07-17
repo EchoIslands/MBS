@@ -1,0 +1,7 @@
+<view class="container">
+  <view class="card">
+    <view class="title">预约服务</view>
+    <view class="subtitle">选择服务、发型师和时间</view>
+    <view class="btn-primary">确认预约</view>
+  </view>
+</view>

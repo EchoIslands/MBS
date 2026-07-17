@@ -1,0 +1,12 @@
+<view class="container">
+  <view class="card">
+    <view class="title">个人中心</view>
+    <view class="subtitle" wx:if="{{customerName}}">{{customerName}}</view>
+    <view class="subtitle" wx:else>未登录</view>
+  </view>
+
+  <view class="card">
+    <view class="subtitle">积分：{{points}}</view>
+    <view class="subtitle">余额：{{balance}}</view>
+  </view>
+</view>

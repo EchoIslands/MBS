@@ -1,0 +1,7 @@
+<view class="container">
+  <view class="card">
+    <view class="title">我的排队</view>
+    <view class="subtitle" wx:if="{{bookingId}}">预约号：{{bookingId}}</view>
+    <view class="subtitle" wx:else>暂无排队信息</view>
+  </view>
+</view>

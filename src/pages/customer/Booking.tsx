@@ -12,7 +12,7 @@ import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 
 type SelectionMode = 'specific' | 'fastest';
 
-const Booking: React.FC = () => {
+const BookingPage: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
   const { currentCustomer } = useAppStore();
 
@@ -665,4 +665,4 @@ const Booking: React.FC = () => {
   );
 };
 
-export default Booking;
+export default BookingPage;
