@@ -4,7 +4,7 @@ import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Us
   Scissors, Sparkles, Award, Zap
 } from 'lucide-react';
 import { mockShops, mockBookings } from '../../../shared/mockData';
-import { Employee, Shop, UserRole } from '../../../shared/types';
+import { Employee, Shop, UserRole, Booking } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
 import { calcDiscountedItemPrice } from '../../lib/membership';
@@ -18,6 +18,16 @@ const Booking: React.FC = () => {
 
   const [shop, setShop] = useState<Shop | null>(null);
   const [loadingShop, setLoadingShop] = useState(true);
+  const [existingBookings, setExistingBookings] = useState<Booking[]>(mockBookings);
+
+  const [selectedService, setSelectedService] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedTime, setSelectedTime] = useState<string>('');
+  const [selectedBarberId, setSelectedBarberId] = useState<string>('');
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('fastest');
+  const [notes, setNotes] = useState<string>('');
+  const [booking, setBooking] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const loadShop = async () => {
@@ -39,14 +49,20 @@ const Booking: React.FC = () => {
     loadShop();
   }, [shopId]);
 
-  const [selectedService, setSelectedService] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedTime, setSelectedTime] = useState<string>('');
-  const [selectedBarberId, setSelectedBarberId] = useState<string>('');
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('fastest');
-  const [notes, setNotes] = useState<string>('');
-  const [booking, setBooking] = useState(false);
-  const navigate = useNavigate();
+  // 加载店铺已有预约，用于自动匹配发型师时判断档期
+  useEffect(() => {
+    async function loadBookings() {
+      if (!shop?.id || !selectedDate) return;
+      try {
+        const data = await bookingApi.getBookingsByShop(shop.id, selectedDate);
+        setExistingBookings(data && data.length > 0 ? data : mockBookings);
+      } catch (error) {
+        console.error('加载店铺预约失败:', error);
+        setExistingBookings(mockBookings);
+      }
+    }
+    loadBookings();
+  }, [shop?.id, selectedDate]);
 
   // 生成未来7天日期
   const dates = useMemo(() => {
@@ -118,8 +134,9 @@ const Booking: React.FC = () => {
 
   // 技师在特定时段是否已被预约
   const isBarberBusy = (barberId: string, date: string, time: string) =>
-    mockBookings.some((bk) => {
-      if (bk.barberId !== barberId) return false;
+    existingBookings.some((bk) => {
+      if (bk.status === 'cancelled') return false;
+      if (bk.barberId !== barberId && bk.stylistId !== barberId) return false;
       const bkDate = new Date(bk.scheduledTime);
       return bkDate.toISOString().split('T')[0] === date
         && bkDate.toTimeString().slice(0, 5) === time;
@@ -131,8 +148,8 @@ const Booking: React.FC = () => {
   const getBarberAvailability = (barber: Employee, date: string, time: string) => {
     if (isBarberBusy(barber.id, date, time)) return { isAvailable: false, waitTime: -1 };
 
-    const sameDayBookings = mockBookings.filter((bk) => {
-      if (bk.barberId !== barber.id) return false;
+    const sameDayBookings = existingBookings.filter((bk) => {
+      if (bk.barberId !== barber.id && bk.stylistId !== barber.id) return false;
       if (bk.status === 'cancelled') return false;
       const bkDate = new Date(bk.scheduledTime);
       return bkDate.toISOString().split('T')[0] === date;
@@ -144,8 +161,7 @@ const Booking: React.FC = () => {
     return { isAvailable: true, waitTime };
   };
 
-  // 找最快可服务的技师
-  // 注意：必须依赖 mockBookings，否则已有预约变化时 fastest 不会重新计算
+  // 找最快可服务的技师（基于真实预约数据）
   const fastest = useMemo(() => {
     if (!stylists || stylists.length === 0 || !selectedDate || !selectedTime) return null;
     let best: Employee | null = null;
@@ -153,8 +169,8 @@ const Booking: React.FC = () => {
     for (const barber of stylists) {
       if (isBarberBusy(barber.id, selectedDate, selectedTime)) continue;
 
-      const sameDayBookings = mockBookings.filter((bk) => {
-        if (bk.barberId !== barber.id) return false;
+      const sameDayBookings = existingBookings.filter((bk) => {
+        if (bk.barberId !== barber.id && bk.stylistId !== barber.id) return false;
         if (bk.status === 'cancelled') return false;
         const bkDate = new Date(bk.scheduledTime);
         return bkDate.toISOString().split('T')[0] === selectedDate;
@@ -169,7 +185,7 @@ const Booking: React.FC = () => {
       }
     }
     return best;
-  }, [stylists, selectedDate, selectedTime, mockBookings]);
+  }, [stylists, selectedDate, selectedTime, existingBookings]);
 
   const handleBooking = async () => {
     if (!selectedService || !selectedDate || !selectedTime) {

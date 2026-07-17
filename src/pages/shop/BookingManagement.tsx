@@ -93,12 +93,19 @@ const BookingManagement: React.FC = () => {
   }, []);
 
   // 权限判断
+  const isCurrentUserStylist = currentEmployee?.role === UserRole.STYLIST;
   const canReassignBarber = userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
   const canCompleteService = (booking: Booking) =>
     userRole === UserRole.CEO ||
     (userRole === UserRole.STYLIST &&
       (booking.stylistId === currentEmployee?.id || booking.barberId === currentEmployee?.id));
   const canCancelBooking = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
+
+  // 判断预约是否属于当前发型师
+  const isAssignedToMe = (booking: Booking) =>
+    !isCurrentUserStylist ||
+    booking.stylistId === currentEmployee?.id ||
+    booking.barberId === currentEmployee?.id;
 
   // 完成服务
   const handleCompleteBooking = async () => {
@@ -256,18 +263,19 @@ const BookingManagement: React.FC = () => {
     },
   };
 
-  // 统计
+  // 统计（发型师只统计分配给自己的）
+  const myBookings = useMemo(() => bookings.filter(isAssignedToMe), [bookings, isAssignedToMe]);
   const stats = useMemo(() => {
     return [
       {
         label: '待确认',
-        value: bookings.filter((b) => b.status === 'pending').length,
+        value: myBookings.filter((b) => b.status === 'pending').length,
         color: 'text-yellow-600',
         bgColor: 'bg-yellow-50',
       },
       {
         label: '今日预约',
-        value: bookings.filter((b) => {
+        value: myBookings.filter((b) => {
           const today = new Date().toDateString();
           return new Date(b.scheduledTime).toDateString() === today;
         }).length,
@@ -276,7 +284,7 @@ const BookingManagement: React.FC = () => {
       },
       {
         label: '本周预约',
-        value: bookings.filter((b) => {
+        value: myBookings.filter((b) => {
           const now = new Date();
           const bookingDate = new Date(b.scheduledTime);
           const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
@@ -289,12 +297,12 @@ const BookingManagement: React.FC = () => {
       },
       {
         label: '本月完成',
-        value: bookings.filter((b) => b.status === 'completed').length,
+        value: myBookings.filter((b) => b.status === 'completed').length,
         color: 'text-green-600',
         bgColor: 'bg-green-50',
       },
     ];
-  }, [bookings]);
+  }, [myBookings]);
 
   // 从所有预约中提取发型师选项（用于下拉筛选）
   const barberOptions = useMemo(() => {
@@ -322,9 +330,9 @@ const BookingManagement: React.FC = () => {
         !dateFilter ||
         new Date(b.scheduledTime).toDateString() === new Date(dateFilter).toDateString();
 
-      return matchesSearch && matchesStatus && matchesBarber && matchesDate;
+      return matchesSearch && matchesStatus && matchesBarber && matchesDate && isAssignedToMe(b);
     });
-  }, [bookings, searchTerm, statusFilter, barberFilter, dateFilter]);
+  }, [bookings, searchTerm, statusFilter, barberFilter, dateFilter, isCurrentUserStylist, currentEmployee?.id]);
 
   // 看板视图用：仅按搜索、日期和发型师筛选，状态用于列内分组
   const boardBookings = useMemo(() => {
@@ -340,9 +348,9 @@ const BookingManagement: React.FC = () => {
         !dateFilter ||
         new Date(b.scheduledTime).toDateString() === new Date(dateFilter).toDateString();
 
-      return matchesSearch && matchesBarber && matchesDate;
+      return matchesSearch && matchesBarber && matchesDate && isAssignedToMe(b);
     });
-  }, [bookings, searchTerm, barberFilter, dateFilter]);
+  }, [bookings, searchTerm, barberFilter, dateFilter, isCurrentUserStylist, currentEmployee?.id]);
 
   // 按状态分组（看板视图用）
   const boardGroups = useMemo(() => {
@@ -425,18 +433,26 @@ const BookingManagement: React.FC = () => {
             <option value="cancelled">已取消</option>
           </select>
 
-          <select
-            value={barberFilter}
-            onChange={(e) => setBarberFilter(e.target.value)}
-            className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-          >
-            <option value="all">全部发型师</option>
-            {barberOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          {!isCurrentUserStylist && (
+            <select
+              value={barberFilter}
+              onChange={(e) => setBarberFilter(e.target.value)}
+              className="px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+            >
+              <option value="all">全部发型师</option>
+              {barberOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {isCurrentUserStylist && (
+            <div className="px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-600 bg-gray-50">
+              仅显示分配给我的预约
+            </div>
+          )}
 
           <input
             type="date"

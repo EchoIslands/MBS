@@ -1,6 +1,7 @@
 import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, OwnerDashboard, StylistPerformance } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
+import { http, getApiBase, isRealApi } from '../shared/api-base';
 
 interface AuthUser extends Employee {
   shopId?: string;
@@ -11,12 +12,9 @@ interface AuthUser extends Employee {
 // ====== 开关：是否使用真实后端 API ======
 // 本地开发默认 false（走 mock + localStorage）
 // 生产环境在 Vercel 中设置 VITE_USE_REAL_API=true 即可连接 Supabase
-const USE_REAL_API =
-  (typeof import.meta !== 'undefined' &&
-    (import.meta as { env?: Record<string, string> }).env?.VITE_USE_REAL_API === 'true') ||
-  false;
+const USE_REAL_API = isRealApi();
 
-const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE) || '/api';
+const API_BASE = getApiBase();
 
 // 认证 Token 存储
 const AUTH_TOKEN_KEY = 'mbs_auth_token';
@@ -390,34 +388,6 @@ export const authApi = {
 // 带有"失败自动回退 mock"的 HTTP 客户端。
 // 当后端没启动、网络超时或任何异常时，不抛错，而是返回 null，
 // 让上层调用方判断并自动 fallback 到 mockData。
-const http = async <T>(url: string, opts: RequestInit = {}): Promise<T | null> => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(url, {
-      ...opts,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(opts.headers || {}),
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      // 404 是预期行为（该路由尚未实现），不打印警告
-      if (res.status !== 404) {
-        console.warn(`[api] ${url} 返回 ${res.status}，将使用 mock 数据`);
-      }
-      return null;
-    }
-    return res.json() as T;
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[api] ${url} 请求失败（${message}），将使用 mock 数据`);
-    return null;
-  }
-};
-
 // 店铺相关 API
 export const shopApi = {
   getNearbyShops: async (lat?: number, lon?: number, level?: string): Promise<Shop[]> => {

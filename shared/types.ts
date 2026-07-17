@@ -233,6 +233,22 @@ export interface Settlement {
   processedBy?: string;          // 操作员
 }
 
+// 支付记录（H5/小程序共用）
+export interface Payment {
+  id: string;
+  shopId: string;
+  customerId: string;
+  bookingId?: string;
+  settlementId?: string;
+  channel: 'wechat_mini' | 'wechat_h5' | 'cash' | 'balance';
+  amount: number;
+  status: 'pending' | 'paid' | 'failed' | 'refunded';
+  transactionId?: string;        // 微信支付订单号
+  prepayId?: string;             // 微信预支付交易会话标识
+  paidAt?: Date;
+  createdAt: Date;
+}
+
 // 满意度回访
 export interface SatisfactionSurvey {
   id: string;
@@ -915,6 +931,12 @@ export interface Customer {
   daysSinceLastVisit?: number;   // 距离上次到店天数（计算字段）
   estimatedNextVisitAt?: Date;   // 预计下次到店时间
   churnRisk?: 'low' | 'medium' | 'high';  // 流失风险
+  // 新增：微信生态身份字段（三端数据打通）
+  openidOa?: string;             // 公众号 H5 openid
+  openidMini?: string;           // 小程序 openid
+  unionid?: string;              // 微信开放平台 unionid（跨端统一标识）
+  wechatAvatar?: string;         // 微信头像
+  wechatNickname?: string;       // 微信昵称
 }
 
 export interface AppState {
