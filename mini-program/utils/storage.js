@@ -7,26 +7,26 @@
 const TOKEN_KEY = 'mbs_token';
 const CUSTOMER_ID_KEY = 'mbs_customer_id';
 
-export function setToken(token: string): void {
+export function setToken(token) {
   wx.setStorageSync(TOKEN_KEY, token);
 }
 
-export function getToken(): string {
+export function getToken() {
   return wx.getStorageSync(TOKEN_KEY) || '';
 }
 
-export function clearToken(): void {
+export function clearToken() {
   wx.removeStorageSync(TOKEN_KEY);
 }
 
-export function setCustomerId(customerId: string): void {
+export function setCustomerId(customerId) {
   wx.setStorageSync(CUSTOMER_ID_KEY, customerId);
 }
 
-export function getCustomerId(): string {
+export function getCustomerId() {
   return wx.getStorageSync(CUSTOMER_ID_KEY) || '';
 }
 
-export function clearCustomerId(): void {
+export function clearCustomerId() {
   wx.removeStorageSync(CUSTOMER_ID_KEY);
 }

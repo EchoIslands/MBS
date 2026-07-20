@@ -1,3 +1,48 @@
 .container {
-  padding-top: 48rpx;
+  padding-top: 24rpx;
+}
+
+.service-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.service-item:last-child {
+  border-bottom: none;
+}
+
+.service-name {
+  font-size: 30rpx;
+  color: var(--primary);
+}
+
+.service-price {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.stylist-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.stylist-item:last-child {
+  border-bottom: none;
+}
+
+.stylist-name {
+  font-size: 28rpx;
+  color: var(--primary);
+}
+
+.stylist-title {
+  font-size: 24rpx;
+  color: var(--secondary);
 }

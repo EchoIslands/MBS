@@ -1,11 +1,49 @@
 <view class="container">
-  <view class="card">
-    <view class="title">MBS 理发店</view>
-    <view class="subtitle">{{notice}}</view>
-    <view class="btn-primary" bindtap="goToBooking">立即预约</view>
+  <view wx:if="{{loading}}" class="card">
+    <view class="subtitle">店铺加载中...</view>
   </view>
 
-  <view class="card">
-    <view class="subtitle">API 地址：{{apiBase}}</view>
+  <view wx:elif="{{error}}" class="card">
+    <view class="subtitle" style="color: var(--danger);">{{error}}</view>
+    <view class="btn-primary" bindtap="loadShop">重新加载</view>
+  </view>
+
+  <view wx:elif="{{shop}}">
+    <!-- 店铺信息 -->
+    <view class="card">
+      <view class="title">{{shop.name}}</view>
+      <view class="subtitle">{{shop.address}}</view>
+      <view class="subtitle" wx:if="{{shop.phone}}">电话：{{shop.phone}}</view>
+      <view class="btn-primary" bindtap="goToBooking">立即预约</view>
+    </view>
+
+    <!-- 服务项目 -->
+    <view class="card" wx:if="{{shop.services && shop.services.length > 0}}">
+      <view class="title">服务项目</view>
+      <view
+        wx:for="{{shop.services}}"
+        wx:key="id"
+        class="service-item"
+        bindtap="onServiceTap"
+        data-id="{{item.id}}"
+      >
+        <view class="service-name">{{item.name}}</view>
+        <view class="service-price">¥{{item.price}}</view>
+      </view>
+    </view>
+
+    <!-- 发型师 -->
+    <view class="card" wx:if="{{shop.employees && shop.employees.length > 0}}">
+      <view class="title">发型师团队</view>
+      <view
+        wx:for="{{shop.employees}}"
+        wx:key="id"
+        class="stylist-item"
+        wx:if="{{item.title && (item.title.includes('发型师') || item.title.includes('总监') || item.title.includes('设计师'))}}"
+      >
+        <view class="stylist-name">{{item.name}}</view>
+        <view class="stylist-title">{{item.title}}</view>
+      </view>
+    </view>
   </view>
 </view>

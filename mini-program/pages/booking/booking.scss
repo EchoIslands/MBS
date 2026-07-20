@@ -1,1 +1,67 @@
-/* 预约页样式 */
+.container {
+  padding-bottom: 48rpx;
+}
+
+.picker-value {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  font-size: 30rpx;
+  color: var(--primary);
+  border-bottom: 1rpx solid var(--border);
+}
+
+.picker-arrow {
+  font-size: 24rpx;
+  color: var(--secondary);
+}
+
+.service-price {
+  margin-top: 16rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.mode-switch {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 20rpx 0;
+  text-align: center;
+  border-radius: 12rpx;
+  background: var(--background);
+  color: var(--secondary);
+  font-size: 28rpx;
+}
+
+.mode-btn-active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.fastest-hint {
+  font-size: 26rpx;
+  color: var(--secondary);
+  padding: 12rpx 0;
+}
+
+.notes-input {
+  width: 100%;
+  min-height: 120rpx;
+  padding: 16rpx;
+  background: var(--background);
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.btn-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}

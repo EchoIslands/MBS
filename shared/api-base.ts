@@ -3,7 +3,7 @@
  *
  * 说明：
  * - 本文件不依赖浏览器 DOM 或 localStorage，可被 H5 和小程序共同 import；
- * - 平台相关的 token 获取、缓存持久化应在各自入口（如 src/api.ts、小程序 app.ts）中实现；
+ * - 平台相关的 token 获取、缓存持久化应在各自入口（如 src/api.ts、小程序 app.js）中实现；
  * - 所有实体类型仍定义在 shared/types.ts，避免两端类型不一致。
  */
 

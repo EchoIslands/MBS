@@ -27,6 +27,8 @@
 ## 1.3 核心原则（铁律）
 
 1. **改动必验证**：任何代码改动完成后，必须依次执行本地构建、本地后端启动、浏览器 Network 检查三步验证。任何一步不通过，禁止直接 push。
+   - **本地构建必须使用 `npm run build`**，而不能只跑 `npm run check`。原因：`tsc --noEmit` 只能发现类型错误，无法发现 Vite 生产构建错误（如 Babel 作用域冲突、组件名与类型重名等）。本次 `Booking.tsx` 的 `Duplicate declaration` 错误就是只跑 check 没跑 build 导致的。
+   - **push 前最后一次验证必须是 `npm run build`**，构建成功后才能推送到 GitHub。
 2. **线上必实测**：本地正常不等于线上正常。Vercel 部署后必须实测登录、添加数据、查看数据等核心流程，尤其要实测 POST/PUT 请求体是否正确解析、字段是否正确入库。
 3. **数据必显式**：写数据库前必须显式字段映射并过滤非法 key，禁止直接把整个对象 `toSnakeCase()` 后塞入数据库。
 4. **需求必落地**：任何新需求（新增字段、新页面、新角色权限）必须先落到任务书/计划书，定义验收标准并评估影响范围后再动手。
@@ -1927,6 +1929,7 @@ npm run server:api
 
 - 用户工作流：**Trae `/workspace` 写代码 → 用户下载到本地 `E:\MBS` → 本地 `git push origin main` → Vercel 自动部署**。
 - AI 多次错误建议“在 Trae 里 push”或“Vercel 自动部署后直接刷新”，导致用户做了一堆无效操作。
+- **push 前必须跑 `npm run build`**，不能只跑 `npm run check`。`tsc` 通过不代表 Vite 生产构建能通过，本次 `Booking.tsx` 的 `Duplicate declaration` 就是血淋淋的教训。
 - 以后任何涉及部署的回复，必须先确认代码是否已经在 GitHub 上，再告诉用户下一步。
 
 ---
@@ -2458,11 +2461,14 @@ git push --force               # 强制推送（谨慎！）
   - `shared/lib/avatar.ts`：头像 URL 生成；
   - `src/api.ts`、`src/lib/membership.ts`、`src/lib/avatar.ts` 已改为引用共享层。
 - [x] 小程序基础框架已搭建（`/mini-program`）：
-  - 原生小程序 + TypeScript；
+  - 原生小程序（JavaScript，测试阶段用 `.js` 直接运行，避免 TypeScript 编译配置问题）；
   - 首页、预约、排队、个人中心、结算 5 个基础页面；
   - tabBar 配置；
-  - 小程序专用请求封装 `mini-program/utils/api.ts`，API 基础地址来自 `shared/api-base.ts`；
-  - 小程序本地存储封装 `mini-program/utils/storage.ts`。
+  - 小程序专用请求封装 `mini-program/utils/api.js`，API 基础地址来自 `shared/api-base.ts`；
+  - 小程序本地存储封装 `mini-program/utils/storage.js`。
+- [x] 小程序首页和预约页已接入真实数据：
+  - `mini-program/api/shop.js`、`booking.js`、`customer.js` 调用后端 `/api` 接口；
+  - 预约页随机发型师匹配算法与 H5 `Booking.tsx` 保持一致，确保两端数据同步。
 - [x] 修复构建错误：`src/pages/customer/Booking.tsx` 中组件名 `Booking` 与 `shared/types` 中 `Booking` 类型重名，导致 vite build 报 `Duplicate declaration`。将组件重命名为 `BookingPage` 解决。
 - [ ] 小程序登录（`wx.login`）和支付（`wx.requestPayment`） pending 资质到位。
 

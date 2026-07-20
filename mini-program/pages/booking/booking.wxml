@@ -1,7 +1,91 @@
 <view class="container">
-  <view class="card">
-    <view class="title">预约服务</view>
-    <view class="subtitle">选择服务、发型师和时间</view>
-    <view class="btn-primary">确认预约</view>
+  <view wx:if="{{loading}}" class="card">
+    <view class="subtitle">加载中...</view>
+  </view>
+
+  <view wx:elif="{{shop}}">
+    <!-- 选择服务 -->
+    <view class="card">
+      <view class="title">选择服务</view>
+      <picker bindchange="onServiceChange" value="0" range="{{shop.services}}" range-key="name">
+        <view class="picker-value">
+          {{selectedServiceName || '请选择服务'}}
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+      <view class="service-price" wx:if="{{selectedService}}">
+        ¥{{selectedServicePrice}}
+      </view>
+    </view>
+
+    <!-- 选择日期 -->
+    <view class="card">
+      <view class="title">选择日期</view>
+      <picker bindchange="onDateChange" value="0" range="{{dates}}" range-key="label">
+        <view class="picker-value">
+          {{selectedDateLabel || '请选择日期'}}
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+    </view>
+
+    <!-- 选择时间 -->
+    <view class="card">
+      <view class="title">选择时间</view>
+      <picker bindchange="onTimeChange" value="0" range="{{timeSlots}}">
+        <view class="picker-value">
+          {{selectedTime || '请选择时间'}}
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+    </view>
+
+    <!-- 发型师选择模式 -->
+    <view class="card">
+      <view class="title">发型师</view>
+      <view class="mode-switch">
+        <view
+          class="mode-btn {{selectionMode === 'fastest' ? 'mode-btn-active' : ''}}"
+          bindtap="onModeChange"
+          data-mode="fastest"
+        >随机匹配</view>
+        <view
+          class="mode-btn {{selectionMode === 'specific' ? 'mode-btn-active' : ''}}"
+          bindtap="onModeChange"
+          data-mode="specific"
+        >指定发型师</view>
+      </view>
+
+      <!-- 指定发型师下拉 -->
+      <view wx:if="{{selectionMode === 'specific'}}">
+        <picker bindchange="onBarberChange" value="0" range="{{stylists}}" range-key="name">
+          <view class="picker-value">
+            {{selectedBarberName || '请选择发型师'}}
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+
+      <!-- 随机匹配提示 -->
+      <view wx:if="{{selectionMode === 'fastest'}}" class="fastest-hint">
+        系统将为您自动匹配当前最快可服务的发型师
+      </view>
+    </view>
+
+    <!-- 备注 -->
+    <view class="card">
+      <view class="title">备注</view>
+      <textarea
+        class="notes-input"
+        placeholder="如有特殊需求请在此填写..."
+        bindinput="onNotesInput"
+        value="{{notes}}"
+      />
+    </view>
+
+    <!-- 提交按钮 -->
+    <view class="btn-primary {{booking ? 'btn-disabled' : ''}}" bindtap="handleBooking">
+      {{booking ? '预约中...' : '确认预约'}}
+    </view>
   </view>
 </view>
