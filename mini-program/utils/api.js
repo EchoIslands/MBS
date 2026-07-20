@@ -33,7 +33,7 @@ export function request(url, options = {}) {
         ...(options.headers || {}),
       },
       data: options.body,
-      timeout: 15000,
+      timeout: 30000,
       success: (res) => {
         if (completed) return;
         completed = true;
@@ -64,7 +64,7 @@ export function request(url, options = {}) {
       requestTask.abort();
       console.warn(`[mini-api] ${fullUrl} 请求超时，将使用 mock 数据`);
       resolve(null);
-    }, 15000);
+    }, 30000);
   });
 }
 
