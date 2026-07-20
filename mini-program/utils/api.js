@@ -13,8 +13,8 @@ function getApiBase() {
   // 允许通过本地缓存覆盖，便于测试环境切换后端地址
   const customBase = wx.getStorageSync('mbs_api_base');
   if (customBase) return customBase;
-  // 默认使用 Vercel Preview 部署地址
-  return 'https://mbs-f5tlu0mha-mybarbershop.vercel.app/api';
+  // 默认使用生产域名（已备案，国内访问稳定）
+  return 'https://www.hfmbs.cn/api';
 }
 
 export function request(url, options = {}) {
