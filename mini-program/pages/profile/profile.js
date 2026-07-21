@@ -1,11 +1,349 @@
+import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
+import { getBooking } from '../../api/booking';
+import { getCustomerId, clearCustomerId, setRouteParams } from '../../utils/storage';
+import {
+  PurchaseVIPLevel,
+  StoredValueLevel,
+  BenefitType,
+  purchaseVIPPlans,
+  storedValuePlans,
+  vipBenefits,
+  storedBenefits,
+  getPurchaseVIPLabel,
+  getStoredValueLabel,
+  getCustomerEffectiveDiscount,
+  isVIPExpiringSoon,
+  isStoredValueExpiringSoon,
+  generateBenefits,
+} from '../../utils/membership';
+
+function toTwoDigits(n) {
+  return String(n).padStart(2, '0');
+}
+
+function formatDate(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  return `${d.getFullYear()}-${toTwoDigits(d.getMonth() + 1)}-${toTwoDigits(d.getDate())}`;
+}
+
+function formatDateTime(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${weekDays[d.getDay()]} ${toTwoDigits(d.getHours())}:${toTwoDigits(d.getMinutes())}`;
+}
+
+function formatShortDate(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  return `${d.getFullYear()}/${toTwoDigits(d.getMonth() + 1)}/${toTwoDigits(d.getDate())}`;
+}
+
 Page({
   data: {
-    customerName: '',
-    points: 0,
+    customer: null,
+    bookings: [],
+    filteredBookings: [],
+    hasFilteredBookings: false,
+    loading: true,
+    error: '',
+    showLogin: false,
+    loginPrompted: false,
+    activeTab: 'current',
+    purchaseVIPPlans,
+    storedValuePlans,
+    vipBenefits,
+    storedBenefits,
+    PurchaseVIPLevel,
+    StoredValueLevel,
+    BenefitType,
+    // 计算字段
+    purchaseLevel: PurchaseVIPLevel.REGULAR,
+    storedLevel: StoredValueLevel.NONE,
+    effectiveDiscount: 1,
+    expiringSoon: false,
+    storedExpiringSoon: false,
+    purchasePlan: null,
+    storedPlan: null,
     balance: 0,
+    withdrawable: 0,
+    points: 0,
+    totalSpent: 0,
+    myBenefits: [],
+    // 预约详情弹窗
+    viewingBooking: null,
+    cancelling: false,
   },
 
-  onLoad() {
-    // 后续加载顾客信息
+  async onLoad() {
+    await this.loadProfile({ autoShowLogin: true });
+  },
+
+  async onShow() {
+    await this.loadProfile({ autoShowLogin: true });
+  },
+
+  openLogin() {
+    this.setData({ showLogin: true });
+  },
+
+  onLoginClose() {
+    this.setData({ showLogin: false });
+  },
+
+  async onLoginSuccess(e) {
+    const loggedInCustomer = e.detail && e.detail.customer;
+    this.setData({ showLogin: false });
+    wx.showToast({ title: '登录成功', icon: 'success' });
+    try {
+      await this.loadProfile({ autoShowLogin: false, prefetchedCustomer: loggedInCustomer });
+    } catch (err) {
+      console.error('[profile] 登录成功后加载资料失败:', err);
+      wx.showToast({ title: '登录成功但加载资料失败，请下拉刷新', icon: 'none' });
+    }
+  },
+
+  async loadProfile({ autoShowLogin = false, prefetchedCustomer = null } = {}) {
+    const customerId = getCustomerId();
+    if (!customerId) {
+      const shouldPrompt = autoShowLogin && !this.data.loginPrompted;
+      this.setData({
+        loading: false,
+        error: '',
+        customer: null,
+        bookings: [],
+        myBenefits: [],
+        showLogin: shouldPrompt,
+        loginPrompted: true,
+      });
+      return;
+    }
+
+    this.setData({ loading: true, error: '', showLogin: false });
+    try {
+      // 登录接口已返回完整顾客信息，优先直接使用，避免生产环境 /customers/:id/public 偶发 401 阻塞登录流程
+      const customer = prefetchedCustomer || await getCustomerPublic(customerId);
+      const bookings = await getCustomerBookings(customerId);
+
+      const purchaseLevel = customer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
+      const storedLevel = customer?.storedValueLevel ?? StoredValueLevel.NONE;
+      const effectiveDiscount = customer ? getCustomerEffectiveDiscount(customer) : 1;
+      const expiringSoon = isVIPExpiringSoon(customer);
+      const storedExpiringSoon = isStoredValueExpiringSoon(customer);
+      const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel);
+      const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
+
+      const allBookings = bookings || [];
+      this.setData({
+        customer,
+        bookings: allBookings,
+        loading: false,
+        purchaseLevel,
+        storedLevel,
+        effectiveDiscount,
+        expiringSoon,
+        storedExpiringSoon,
+        purchasePlan,
+        storedPlan,
+        balance: customer?.storedValueBalance ?? customer?.balance ?? 0,
+        withdrawable: customer?.withdrawableReferralAmount ?? 0,
+        points: customer?.points ?? 0,
+        totalSpent: customer?.totalSpent ?? 0,
+        myBenefits: generateBenefits(customer),
+      });
+      this.refreshFilteredBookings();
+    } catch (err) {
+      console.error('[profile] 加载个人信息失败:', err);
+      if (err.statusCode === 401 || /未登录|请先登录|unauthorized/i.test(err.message)) {
+        clearCustomerId();
+        this.setData({ customer: null, bookings: [], myBenefits: [], loading: false, error: '' });
+        if (autoShowLogin) {
+          this.setData({ showLogin: true });
+        }
+        return;
+      }
+      this.setData({ error: '个人信息加载失败', loading: false });
+    }
+  },
+
+  refreshFilteredBookings() {
+    const { bookings, activeTab } = this.data;
+    const filtered = bookings.filter((b) =>
+      activeTab === 'current'
+        ? b.status === 'pending' || b.status === 'confirmed'
+        : b.status === 'completed' || b.status === 'cancelled'
+    );
+    this.setData({ filteredBookings: filtered, hasFilteredBookings: filtered.length > 0 });
+  },
+
+  switchTab(e) {
+    const { tab } = e.currentTarget.dataset;
+    this.setData({ activeTab: tab });
+    this.refreshFilteredBookings();
+  },
+
+  onRefresh() {
+    this.loadProfile();
+  },
+
+  onBookingTap(e) {
+    const { id } = e.currentTarget.dataset;
+    const booking = this.data.bookings.find((b) => b.id === id);
+    if (booking) {
+      this.setData({ viewingBooking: booking });
+    }
+  },
+
+  closeBookingModal() {
+    this.setData({ viewingBooking: null });
+  },
+
+  stopPropagation() {},
+
+  async handleCancelBooking() {
+    const { viewingBooking } = this.data;
+    if (!viewingBooking) return;
+
+    const res = await wx.showModal({
+      title: '取消预约',
+      content: '确定要取消这次预约吗？',
+    });
+    if (!res.confirm) return;
+
+    this.setData({ cancelling: true });
+    try {
+      await getBooking(viewingBooking.id);
+      wx.showToast({ title: '取消预约功能开发中', icon: 'none' });
+      this.setData({ cancelling: false });
+    } catch (err) {
+      console.error('[profile] 取消预约失败:', err);
+      wx.showToast({ title: '取消失败，请重试', icon: 'none' });
+      this.setData({ cancelling: false });
+    }
+  },
+
+  goToQueue() {
+    const { viewingBooking } = this.data;
+    if (!viewingBooking) return;
+    this.setData({ viewingBooking: null });
+    setRouteParams({ bookingId: viewingBooking.id });
+    wx.navigateTo({ url: '/pages/queue/queue' });
+  },
+
+  goToReview() {
+    this.setData({ viewingBooking: null });
+    wx.showToast({ title: '评价功能开发中', icon: 'none' });
+  },
+
+  goToBooking() {
+    wx.navigateTo({ url: '/pages/booking/booking' });
+  },
+
+  goToFeedback() {
+    wx.showToast({ title: '功能开发中', icon: 'none' });
+  },
+
+  goToRefund() {
+    wx.showToast({ title: '功能开发中', icon: 'none' });
+  },
+
+  goToShop() {
+    wx.navigateTo({ url: '/pages/index/index' });
+  },
+
+  handleLogout() {
+    wx.showModal({
+      title: '退出登录',
+      content: '确定要退出当前账号吗？',
+      success: (res) => {
+        if (res.confirm) {
+          clearCustomerId();
+          this.setData({
+            customer: null,
+            bookings: [],
+            myBenefits: [],
+            activeTab: 'current',
+            viewingBooking: null,
+          });
+        }
+      },
+    });
+  },
+
+  formatDate,
+  formatDateTime,
+  formatShortDate,
+  getPurchaseVIPLabel,
+  getStoredValueLabel,
+
+  formatDiscount(discount) {
+    return (discount * 10).toFixed(2);
+  },
+
+  statusText(status) {
+    const map = {
+      pending: '待店铺确认',
+      confirmed: '已确认',
+      serving: '服务中',
+      completed: '已完成',
+      cancelled: '已取消',
+    };
+    return map[status] || status;
+  },
+
+  statusClass(status) {
+    const map = {
+      pending: 'status-pending',
+      confirmed: 'status-confirmed',
+      serving: 'status-serving',
+      completed: 'status-completed',
+      cancelled: 'status-cancelled',
+    };
+    return map[status] || 'status-pending';
+  },
+
+  bookingModalStatusClass(status) {
+    const map = {
+      pending: 'bg-yellow-light',
+      confirmed: 'bg-blue-light',
+      serving: 'bg-blue-light',
+      completed: 'bg-green-light',
+      cancelled: 'bg-gray-light',
+    };
+    return map[status] || 'bg-gray-light';
+  },
+
+  bookingModalStatusTextClass(status) {
+    const map = {
+      pending: 'text-yellow',
+      confirmed: 'text-blue',
+      serving: 'text-blue',
+      completed: 'text-green',
+      cancelled: 'text-gray',
+    };
+    return map[status] || 'text-gray';
+  },
+
+  benefitIconColor(type) {
+    const map = {
+      [BenefitType.SHAMPOO]: '#3b82f6',
+      [BenefitType.CONDITIONER]: '#ec4899',
+      [BenefitType.FREE_HAIRCUT]: '#a855f7',
+      [BenefitType.DRINK]: '#f97316',
+      [BenefitType.REDO]: '#ef4444',
+    };
+    return map[type] || '#6b7280';
+  },
+
+  benefitIconName(type) {
+    const map = {
+      [BenefitType.SHAMPOO]: 'sparkles',
+      [BenefitType.CONDITIONER]: 'sparkles',
+      [BenefitType.FREE_HAIRCUT]: 'scissors',
+      [BenefitType.DRINK]: 'star',
+      [BenefitType.REDO]: 'alertCircle',
+    };
+    return map[type] || 'gift';
   },
 });

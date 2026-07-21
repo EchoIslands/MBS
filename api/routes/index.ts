@@ -1046,6 +1046,38 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/customers/:id/public
+ * 公开获取单个客户基本信息（顾客端小程序/H5使用，不含敏感字段）
+ */
+customersRouter.get('/:id/public', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('id, name, phone, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[customers] 查询公开客户信息失败:', error.message);
+      res.status(500).json({ success: false, error: '查询客户信息失败' });
+      return;
+    }
+
+    if (!customer) {
+      res.status(404).json({ success: false, error: '客户不存在' });
+      return;
+    }
+
+    res.json({ success: true, data: toCamelCase(customer) });
+  } catch (err: unknown) {
+    console.error('[customers] 获取公开客户信息异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
 // 所有客户接口都需要登录
 customersRouter.use(authMiddleware);
 

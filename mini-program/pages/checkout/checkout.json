@@ -1,4 +1,7 @@
 {
   "navigationBarTitleText": "结算",
-  "usingComponents": {}
+  "usingComponents": {
+    "mbs-icon": "/components/icon/icon",
+    "login-modal": "/components/login-modal/login-modal"
+  }
 }

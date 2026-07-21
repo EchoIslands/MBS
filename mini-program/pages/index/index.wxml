@@ -1,49 +1,147 @@
-<view class="container">
-  <view wx:if="{{loading}}" class="card">
-    <view class="subtitle">店铺加载中...</view>
-  </view>
-
-  <view wx:elif="{{error}}" class="card">
-    <view class="subtitle" style="color: var(--danger);">{{error}}</view>
-    <view class="btn-primary" bindtap="loadShop">重新加载</view>
-  </view>
-
-  <view wx:elif="{{shop}}">
-    <!-- 店铺信息 -->
-    <view class="card">
-      <view class="title">{{shop.name}}</view>
-      <view class="subtitle">{{shop.address}}</view>
-      <view class="subtitle" wx:if="{{shop.phone}}">电话：{{shop.phone}}</view>
-      <view class="btn-primary" bindtap="goToBooking">立即预约</view>
-    </view>
-
-    <!-- 服务项目 -->
-    <view class="card" wx:if="{{shop.services && shop.services.length > 0}}">
-      <view class="title">服务项目</view>
-      <view
-        wx:for="{{shop.services}}"
-        wx:key="id"
-        class="service-item"
-        bindtap="onServiceTap"
-        data-id="{{item.id}}"
-      >
-        <view class="service-name">{{item.name}}</view>
-        <view class="service-price">¥{{item.price}}</view>
+<view class="index-page">
+  <!-- 顶部蓝色渐变头部 -->
+  <view class="gradient-header index-header">
+    <view class="index-header-top">
+      <view>
+        <view class="index-greeting">欢迎光临</view>
+        <view class="index-title">{{shop.name || '皓诗形象设计'}}</view>
+      </view>
+      <view class="index-header-actions">
+        <view class="header-icon-btn" bindtap="goToProfile">
+          <mbs-icon name="user" size="32" color="#fff" />
+        </view>
       </view>
     </view>
 
-    <!-- 发型师 -->
-    <view class="card" wx:if="{{shop.employees && shop.employees.length > 0}}">
-      <view class="title">发型师团队</view>
-      <view
-        wx:for="{{shop.employees}}"
-        wx:key="id"
-        class="stylist-item"
-        wx:if="{{item.title && (item.title.includes('发型师') || item.title.includes('总监') || item.title.includes('设计师'))}}"
-      >
-        <view class="stylist-name">{{item.name}}</view>
-        <view class="stylist-title">{{item.title}}</view>
+    <!-- 个人中心入口卡片 -->
+    <view class="profile-entry-card" bindtap="goToProfile">
+      <view class="profile-entry-info">
+        <view class="profile-entry-avatar">
+          <mbs-icon name="user" size="44" color="#3b82f6" />
+        </view>
+        <view class="profile-entry-text">
+          <view class="profile-entry-title">查看个人中心</view>
+          <view class="profile-entry-subtitle">积分、余额、历史预约</view>
+        </view>
+      </view>
+      <mbs-icon name="chevronRight" size="32" color="#fff" />
+    </view>
+  </view>
+
+  <view class="container">
+    <!-- 加载 / 错误 -->
+    <view wx:if="{{loading}}" class="empty-state">
+      <view class="empty-icon"><mbs-icon name="search" size="56" color="#9ca3af" /></view>
+      <view class="empty-text">店铺加载中...</view>
+    </view>
+
+    <view wx:elif="{{error}}" class="card">
+      <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
+      <view class="btn btn-secondary" bindtap="loadShop">重新加载</view>
+    </view>
+
+    <block wx:elif="{{shop}}">
+      <!-- 店铺主卡片 -->
+      <view class="card shop-card">
+        <view class="shop-image-placeholder">
+          <mbs-icon name="mapPin" size="72" color="#3b82f6" />
+        </view>
+        <view class="shop-info">
+          <view class="shop-name">{{shop.name}}</view>
+          <view class="shop-rating">
+            <mbs-icon name="star" size="24" color="#f59e0b" />
+            <text class="rating-text">{{shop.rating || '4.8'}} 分</text>
+            <text class="rating-count">月售 {{shop.monthlyBookings || 0}}</text>
+          </view>
+          <view class="shop-address">
+            <mbs-icon name="mapPin" size="24" color="#9ca3af" />
+            <text class="address-text">{{shop.address || '暂无地址'}}</text>
+          </view>
+          <view class="shop-phone" wx:if="{{shop.phone}}">
+            <mbs-icon name="phone" size="24" color="#9ca3af" />
+            <text class="phone-text">{{shop.phone}}</text>
+          </view>
+          <view class="shop-hours">
+            <mbs-icon name="clock" size="24" color="#9ca3af" />
+            <text class="hours-text">营业中 · 09:00-21:00</text>
+          </view>
+          <view class="shop-tags" wx:if="{{displayTags && displayTags.length > 0}}">
+            <text wx:for="{{displayTags}}" wx:key="id" class="tag tag-blue">{{item.name}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 服务项目（可滑动，避免页面过长） -->
+      <view class="card" wx:if="{{shop.services && shop.services.length > 0}}">
+        <view class="card-title">
+          <mbs-icon name="scissors" size="32" color="#3b82f6" />
+          服务项目
+          <text class="service-scroll-hint">滑动查看更多</text>
+        </view>
+        <scroll-view class="service-scroll" scroll-y="true" enhanced="true" show-scrollbar="true">
+          <view
+            wx:for="{{shop.services}}"
+            wx:key="id"
+            class="service-item"
+            bindtap="onServiceTap"
+            data-id="{{item.id}}"
+          >
+            <view class="service-icon">
+              <mbs-icon name="sparkles" size="36" color="#f97316" />
+            </view>
+            <view class="service-content">
+              <view class="service-name">{{item.name}}</view>
+              <view class="service-desc" wx:if="{{item.description}}">{{item.description}}</view>
+            </view>
+            <view class="service-price">¥{{item.price}}</view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <!-- 发型师团队 -->
+      <view class="card" wx:if="{{stylists && stylists.length > 0}}">
+        <view class="card-title">
+          <mbs-icon name="award" size="32" color="#3b82f6" />
+          发型师团队
+        </view>
+        <view
+          wx:for="{{stylists}}"
+          wx:key="id"
+          class="stylist-item"
+        >
+          <view class="stylist-avatar">
+            <mbs-icon name="user" size="36" color="#9ca3af" />
+          </view>
+          <view class="stylist-info">
+            <view class="stylist-name">{{item.name}}</view>
+            <view class="stylist-title">{{item.title}}</view>
+          </view>
+          <view class="stylist-rating" wx:if="{{item.rating}}">
+            <mbs-icon name="star" size="20" color="#f59e0b" />
+            <text>{{item.rating}}</text>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 底部固定操作栏（与 H5 ShopDetail 对齐） -->
+  <view class="fixed-bottom-bar" wx:if="{{shop}}">
+    <view class="index-bottom-actions">
+      <view class="btn btn-secondary index-bottom-btn" bindtap="goToProducts">
+        <mbs-icon name="shoppingBag" size="32" color="#f97316" />
+        商品商城
+      </view>
+      <view class="btn btn-primary index-bottom-btn" bindtap="goToBooking">
+        <mbs-icon name="calendar" size="32" color="#fff" />
+        立即预约
       </view>
     </view>
   </view>
+
+  <login-modal
+    visible="{{showLogin}}"
+    bind:success="onLoginSuccess"
+    bind:close="onLoginClose"
+  />
 </view>

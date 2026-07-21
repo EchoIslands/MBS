@@ -30,3 +30,28 @@ export function getCustomerId() {
 export function clearCustomerId() {
   wx.removeStorageSync(CUSTOMER_ID_KEY);
 }
+
+// ========== tabBar 页面间参数传递 ==========
+const ROUTE_PARAMS_KEY = 'mbs_route_params';
+
+/**
+ * 设置要传递给 tabBar 页面的参数
+ * 小程序 switchTab 不支持 URL 传参，因此用本地缓存中转
+ */
+export function setRouteParams(params) {
+  wx.setStorageSync(ROUTE_PARAMS_KEY, JSON.stringify(params || {}));
+}
+
+/**
+ * 获取并清空已保存的路由参数
+ */
+export function takeRouteParams() {
+  try {
+    const raw = wx.getStorageSync(ROUTE_PARAMS_KEY);
+    if (!raw) return null;
+    wx.removeStorageSync(ROUTE_PARAMS_KEY);
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}

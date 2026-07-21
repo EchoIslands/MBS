@@ -3,17 +3,20 @@ import { get } from '../utils/api';
 /**
  * 获取店铺详情
  */
-export function getShop(id) {
-  return get(`/shops/${id}`);
+export async function getShop(id) {
+  const result = await get(`/shops/${id}`);
+  return result?.data || null;
 }
 
 /**
  * 获取附近店铺列表
  */
-export function getNearbyShops(lat, lon, level) {
-  const params = new URLSearchParams();
-  if (lat !== undefined) params.set('lat', String(lat));
-  if (lon !== undefined) params.set('lon', String(lon));
-  if (level) params.set('level', level);
-  return get(`/shops?${params.toString()}`);
+export async function getNearbyShops(lat, lon, level) {
+  const query = [];
+  if (lat !== undefined) query.push(`lat=${encodeURIComponent(String(lat))}`);
+  if (lon !== undefined) query.push(`lon=${encodeURIComponent(String(lon))}`);
+  if (level) query.push(`level=${encodeURIComponent(level)}`);
+  const queryString = query.length > 0 ? `?${query.join('&')}` : '';
+  const result = await get(`/shops${queryString}`);
+  return result?.data || [];
 }

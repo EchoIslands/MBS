@@ -21,7 +21,7 @@ export function request(url, options = {}) {
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let timeoutId = null;
     let completed = false;
 
@@ -41,20 +41,25 @@ export function request(url, options = {}) {
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data);
-        } else {
-          if (res.statusCode !== 404) {
-            console.warn(`[mini-api] ${fullUrl} 返回 ${res.statusCode}，将使用 mock 数据`);
-          }
-          resolve(null);
+          return;
         }
+
+        // 非 2xx 统一按失败处理，便于页面 catch 后给用户提示
+        const errMsg = res.data?.error || res.data?.message || `请求失败（${res.statusCode}）`;
+        if (res.statusCode !== 404) {
+          console.warn(`[mini-api] ${fullUrl} 返回 ${res.statusCode}: ${errMsg}`);
+        }
+        const err = new Error(errMsg);
+        err.statusCode = res.statusCode;
+        reject(err);
       },
       fail: (err) => {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
 
-        console.warn(`[mini-api] ${fullUrl} 请求失败（${err.errMsg}），将使用 mock 数据`);
-        resolve(null);
+        console.warn(`[mini-api] ${fullUrl} 请求失败（${err.errMsg}）`);
+        reject(new Error(err.errMsg || '网络请求失败'));
       },
     });
 
@@ -62,8 +67,8 @@ export function request(url, options = {}) {
       if (completed) return;
       completed = true;
       requestTask.abort();
-      console.warn(`[mini-api] ${fullUrl} 请求超时，将使用 mock 数据`);
-      resolve(null);
+      console.warn(`[mini-api] ${fullUrl} 请求超时`);
+      reject(new Error('请求超时'));
     }, 30000);
   });
 }

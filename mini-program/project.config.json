@@ -40,18 +40,11 @@
     "disableUseStrict": false,
     "minifyWXML": true,
     "showES6CompileOption": false,
-    "useCompilerPlugins": false,
-    "compileWorklet": false,
-    "localPlugins": false,
-    "condition": false,
-    "swc": false,
-    "disableSWC": true
+    "useCompilerPlugins": ["sass"]
   },
   "compileType": "miniprogram",
-  "libVersion": "3.17.0",
-  "appid": "wx9389517b2eb2e5cf",
+  "libVersion": "3.0.0",
+  "appid": "touristappid",
   "projectname": "mbs-mini-program",
-  "condition": {},
-  "simulatorPluginLibVersion": {},
-  "editorSetting": {}
+  "condition": {}
 }

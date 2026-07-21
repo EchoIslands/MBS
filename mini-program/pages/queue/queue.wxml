@@ -1,7 +1,253 @@
-<view class="container">
-  <view class="card">
-    <view class="title">我的排队</view>
-    <view class="subtitle" wx:if="{{bookingId}}">预约号：{{bookingId}}</view>
-    <view class="subtitle" wx:else>暂无排队信息</view>
+<view class="queue-page">
+  <!-- 顶部返回栏 -->
+  <view class="page-top-bar" bindtap="goToShop">
+    <mbs-icon name="arrowLeft" size="32" color="#1f2937" />
+    <text class="page-top-bar-text">返回店铺</text>
+  </view>
+
+  <view class="container">
+    <view wx:if="{{loading}}" class="empty-state">
+      <view class="empty-icon"><mbs-icon name="clock" size="56" color="#9ca3af" /></view>
+      <view class="empty-text">排队信息加载中...</view>
+    </view>
+
+    <view wx:elif="{{error}}" class="card">
+      <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
+      <view class="btn btn-secondary" bindtap="onRefresh">重新加载</view>
+    </view>
+
+    <block wx:elif="{{queue}}">
+      <!-- 当前发型师卡片 -->
+      <view class="card stylist-card" wx:if="{{myBooking}}">
+        <view class="flex items-center gap-2 mb-4">
+          <view wx:if="{{isStarted}}" class="status-badge status-serving">
+            <view class="serving-dot"></view>
+            正在为您服务
+          </view>
+          <view wx:else class="status-badge status-waiting">
+            <mbs-icon name="clock" size="18" color="#2563eb" />
+            等待预约时间
+          </view>
+        </view>
+
+        <view class="flex items-start gap-4">
+          <view class="stylist-avatar-wrap">
+            <view class="stylist-avatar-large">
+              <mbs-icon name="user" size="48" color="#fff" />
+            </view>
+            <view class="stylist-skill-badge">
+              <mbs-icon name="star" size="16" color="#fff" />
+              {{myBooking.stylistRating || '4.9'}}
+            </view>
+          </view>
+          <view class="flex-1 min-w-0">
+            <view class="flex items-center gap-2 mb-2">
+              <text class="stylist-name">{{myBooking.barberName || '待安排'}}</text>
+              <text wx:if="{{myBooking.stylistTitle}}" class="tag tag-orange">{{myBooking.stylistTitle}}</text>
+            </view>
+            <view class="stylist-meta-row">
+              <text class="stylist-meta">
+                <mbs-icon name="award" size="18" color="#f59e0b" />
+                手艺值 {{myBooking.stylistRating || '4.9'}}
+              </text>
+              <text class="stylist-meta">
+                <mbs-icon name="user" size="18" color="#9ca3af" />
+                服务 {{myBooking.stylistServices || '1250'}}+ 次
+              </text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 服务进度可视化 -->
+      <view class="card progress-card" wx:if="{{isStarted && myBooking}}">
+        <view class="flex items-center justify-between mb-4">
+          <view class="card-title" style="margin-bottom: 0;">
+            <mbs-icon name="scissors" size="32" color="#f97316" />
+            服务进度
+          </view>
+          <view class="text-right">
+            <view class="text-2xl font-bold text-orange">{{remainingMinutes}}</view>
+            <view class="text-xs text-gray-500">预计剩余分钟</view>
+          </view>
+        </view>
+
+        <view class="mb-5">
+          <view class="flex items-center justify-between mb-2 text-sm">
+            <text class="text-gray-500">总进度</text>
+            <text class="font-bold text-gray-800">{{overallProgress}}%</text>
+          </view>
+          <view class="progress-track">
+            <view class="progress-bar progress-bar-orange" style="width: {{overallProgress}}%;"></view>
+          </view>
+        </view>
+
+        <view class="space-y-2">
+          <view
+            wx:for="{{serviceSteps}}"
+            wx:key="key"
+            wx:for-item="step"
+            wx:for-index="idx"
+            class="step-row {{idx === currentStep ? 'step-row-active' : ''}} {{idx < currentStep ? 'step-row-done' : ''}}"
+          >
+            <view class="step-icon {{idx < currentStep ? 'step-icon-done' : idx === currentStep ? 'step-icon-active' : 'step-icon-wait'}}">
+              <mbs-icon wx:if="{{idx < currentStep}}" name="checkCircle" size="18" color="#fff" />
+              <mbs-icon wx:elif="{{idx === currentStep}}" name="{{step.key === 'checkin' ? 'checkCircle' : step.key === 'wash' ? 'sparkles' : step.key === 'haircut' ? 'scissors' : 'star'}}" size="18" color="#fff" />
+              <mbs-icon wx:else name="{{step.key === 'checkin' ? 'checkCircle' : step.key === 'wash' ? 'sparkles' : step.key === 'haircut' ? 'scissors' : 'star'}}" size="18" color="#9ca3af" />
+            </view>
+            <view class="flex-1 min-w-0">
+              <view class="step-label {{idx === currentStep ? 'text-orange' : idx < currentStep ? 'text-green' : 'text-gray-500'}}">
+                {{step.label}}
+                <text class="step-duration">· 约 {{step.duration}} 分钟</text>
+              </view>
+              <view wx:if="{{idx === currentStep}}" class="mt-1">
+                <view class="progress-track progress-track-sm">
+                  <view class="progress-bar progress-bar-orange" style="width: {{stepProgress}}%;"></view>
+                </view>
+              </view>
+            </view>
+            <view class="step-status">
+              <text wx:if="{{idx < currentStep}}" class="text-green">完成</text>
+              <text wx:elif="{{idx === currentStep}}" class="text-orange">进行中 {{stepProgress}}%</text>
+              <text wx:else class="text-gray-500">等待</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 预约尚未开始提醒 -->
+      <view class="card appointment-soon-card" wx:if="{{!isStarted && myBooking}}">
+        <view class="flex items-center gap-3 mb-4">
+          <view class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
+            <mbs-icon name="clock" size="32" color="#3b82f6" />
+          </view>
+          <view>
+            <view class="font-bold text-gray-800 text-base">预约尚未开始</view>
+            <view class="text-sm text-gray-500">当前为预计排队状态，到店后将自动切换</view>
+          </view>
+        </view>
+        <view class="bg-white rounded-xl p-4">
+          <view class="flex items-center justify-between mb-2 text-sm">
+            <text class="text-gray-500">预约时间</text>
+            <text class="font-bold text-blue">{{formatDateTime(myBooking.scheduledTime)}}</text>
+          </view>
+          <view class="flex items-center justify-between text-sm">
+            <text class="text-gray-500">距离预约</text>
+            <text class="font-bold text-gray-800">
+              <text wx:if="{{appointmentInfo.days > 0}}">{{appointmentInfo.days}}天 </text>
+              {{appointmentInfo.hours}}小时{{appointmentInfo.minutes}}分钟
+            </text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 排队状态卡片 -->
+      <view class="card queue-status-card">
+        <view class="mb-4">
+          <view class="card-title" style="margin-bottom: 8rpx;">
+            <mbs-icon name="calendar" size="32" color="#3b82f6" />
+            {{myBooking.status === 'pending' ? '待店铺确认' : isStarted ? '实时排队状态' : '预计排队状态'}}
+          </view>
+          <view class="text-xs text-gray-500">
+            {{myBooking.status === 'pending' ? '店铺确认后将生成排队号，请耐心等待' : isStarted ? '服务进行中 · 数据随门店操作实时变化' : '基于当前预约顺序估算 · 到店后将切换为实时状态'}}
+          </view>
+        </view>
+
+        <view wx:if="{{timeSlotLabel}}" class="time-slot-tag">
+          <mbs-icon name="clock" size="22" color="#3b82f6" />
+          预约时段：{{timeSlotLabel}}
+        </view>
+
+        <view class="queue-numbers">
+          <view class="queue-number-box queue-number-blue">
+            <view class="queue-number-label">您的排队号</view>
+            <view class="queue-number-value">#{{position}}</view>
+            <view class="queue-number-hint">前面还有 {{aheadCount}} 位</view>
+          </view>
+          <view class="queue-number-box queue-number-orange">
+            <view class="queue-number-label">预计等待</view>
+            <view class="queue-number-value">{{waitTime}}</view>
+            <view class="queue-number-hint">分钟</view>
+          </view>
+        </view>
+
+        <!-- 该出发了 -->
+        <view wx:if="{{shouldLeaveNow}}" class="leave-now-card" bindtap="openMap">
+          <view class="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center text-white flex-shrink-0">
+            <mbs-icon name="mapPin" size="24" color="#fff" />
+          </view>
+          <view class="flex-1 min-w-0">
+            <view class="font-bold text-green-800 text-sm">该出发了！</view>
+            <view class="text-xs text-green-600 mt-1">步行 {{walkTime}} 分钟到店，距离 {{distance.toFixed(1)}}km</view>
+          </view>
+          <mbs-icon name="chevronRight" size="28" color="#22c55e" />
+        </view>
+
+        <view class="btn btn-secondary mt-4" bindtap="onRefresh">
+          <mbs-icon name="clock" size="28" color="#374151" />
+          刷新排队
+        </view>
+      </view>
+
+      <!-- 位置与提醒 -->
+      <view class="grid grid-cols-2 gap-3 mb-4">
+        <view class="card p-4" bindtap="openMap">
+          <view class="flex items-center gap-1_5 mb-2 text-xs text-gray-500">
+            <mbs-icon name="mapPin" size="22" color="#3b82f6" /> 到店距离
+          </view>
+          <view class="text-2xl font-bold text-gray-800 mb-1">{{distance.toFixed(1)}} <text class="text-sm text-gray-500">km</text></view>
+          <view class="text-xs text-gray-500 line-clamp-2">{{shop.address || '地址未设置'}} · 步行约 {{walkTime}} 分钟</view>
+        </view>
+        <view class="card p-4" bindtap="toggleReminder">
+          <view class="flex items-center gap-1_5 mb-2 text-xs text-gray-500">
+            <mbs-icon name="bell" size="22" color="#f97316" /> 提醒
+          </view>
+          <view class="flex items-center justify-between">
+            <text class="text-sm font-medium {{reminderEnabled ? 'text-green' : 'text-gray-400'}}">{{reminderEnabled ? '已开启' : '已关闭'}}</text>
+            <view class="toggle {{reminderEnabled ? 'toggle-on' : 'toggle-off'}}">
+              <view class="toggle-dot {{reminderEnabled ? 'toggle-dot-on' : ''}}"></view>
+            </view>
+          </view>
+          <view wx:if="{{reminderEnabled}}" class="text-xs text-gray-500 mt-2 flex items-center gap-1">
+            <mbs-icon name="music" size="18" color="#9ca3af" />
+            清脆铃声
+          </view>
+        </view>
+      </view>
+
+      <!-- 预约信息 -->
+      <view class="card" wx:if="{{myBooking}}">
+        <view class="card-title">
+          <mbs-icon name="checkCircle" size="32" color="#3b82f6" />
+          预约信息
+        </view>
+        <view class="info-list">
+          <view class="info-row">
+            <text class="info-label"><mbs-icon name="scissors" size="24" color="#9ca3af" /> 服务项目</text>
+            <text class="info-value">{{myBooking.serviceName}} · ¥{{myBooking.price}}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label"><mbs-icon name="calendar" size="24" color="#9ca3af" /> 预约时间</text>
+            <text class="info-value">{{formatDateTime(myBooking.scheduledTime)}}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label"><mbs-icon name="user" size="24" color="#9ca3af" /> 顾客</text>
+            <text class="info-value">{{myBooking.customerName || '顾客'}}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label"><mbs-icon name="user" size="24" color="#9ca3af" /> 发型师</text>
+            <text class="info-value">{{myBooking.barberName || '待安排'}}</text>
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <view wx:else class="card">
+      <view class="empty-state" style="padding: 32rpx 0;">
+        <view class="empty-icon"><mbs-icon name="calendar" size="56" color="#9ca3af" /></view>
+        <view class="empty-text">暂无排队信息</view>
+        <view class="btn btn-primary" bindtap="goToBooking">去预约</view>
+      </view>
+    </view>
   </view>
 </view>

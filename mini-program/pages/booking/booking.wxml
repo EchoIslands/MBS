@@ -1,91 +1,218 @@
-<view class="container">
-  <view wx:if="{{loading}}" class="card">
-    <view class="subtitle">加载中...</view>
+<view class="booking-page">
+  <!-- 顶部返回栏 -->
+  <view class="page-top-bar" bindtap="goToShop">
+    <mbs-icon name="arrowLeft" size="32" color="#1f2937" />
+    <text class="page-top-bar-text">返回店铺</text>
   </view>
 
-  <view wx:elif="{{shop}}">
-    <!-- 选择服务 -->
-    <view class="card">
-      <view class="title">选择服务</view>
-      <picker bindchange="onServiceChange" value="0" range="{{shop.services}}" range-key="name">
-        <view class="picker-value">
-          {{selectedServiceName || '请选择服务'}}
-          <text class="picker-arrow">▼</text>
-        </view>
-      </picker>
-      <view class="service-price" wx:if="{{selectedService}}">
-        ¥{{selectedServicePrice}}
-      </view>
+  <view class="container">
+    <view wx:if="{{loading}}" class="empty-state">
+      <view class="empty-icon"><mbs-icon name="search" size="56" color="#9ca3af" /></view>
+      <view class="empty-text">店铺加载中...</view>
     </view>
 
-    <!-- 选择日期 -->
-    <view class="card">
-      <view class="title">选择日期</view>
-      <picker bindchange="onDateChange" value="0" range="{{dates}}" range-key="label">
-        <view class="picker-value">
-          {{selectedDateLabel || '请选择日期'}}
-          <text class="picker-arrow">▼</text>
-        </view>
-      </picker>
+    <view wx:elif="{{error}}" class="card">
+      <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
+      <view class="btn btn-secondary" bindtap="loadShop">重新加载</view>
     </view>
 
-    <!-- 选择时间 -->
-    <view class="card">
-      <view class="title">选择时间</view>
-      <picker bindchange="onTimeChange" value="0" range="{{timeSlots}}">
-        <view class="picker-value">
-          {{selectedTime || '请选择时间'}}
-          <text class="picker-arrow">▼</text>
+    <block wx:elif="{{shop}}">
+      <!-- 店铺信息 -->
+      <view class="card shop-mini-card">
+        <view class="shop-mini-image">
+          <mbs-icon name="mapPin" size="48" color="#3b82f6" />
         </view>
-      </picker>
-    </view>
-
-    <!-- 发型师选择模式 -->
-    <view class="card">
-      <view class="title">发型师</view>
-      <view class="mode-switch">
-        <view
-          class="mode-btn {{selectionMode === 'fastest' ? 'mode-btn-active' : ''}}"
-          bindtap="onModeChange"
-          data-mode="fastest"
-        >随机匹配</view>
-        <view
-          class="mode-btn {{selectionMode === 'specific' ? 'mode-btn-active' : ''}}"
-          bindtap="onModeChange"
-          data-mode="specific"
-        >指定发型师</view>
+        <view class="shop-mini-info">
+          <view class="shop-mini-name">{{shop.name}}</view>
+          <view class="shop-mini-address">{{shop.address || '暂无地址'}}</view>
+        </view>
       </view>
 
-      <!-- 指定发型师下拉 -->
-      <view wx:if="{{selectionMode === 'specific'}}">
-        <picker bindchange="onBarberChange" value="0" range="{{stylists}}" range-key="name">
-          <view class="picker-value">
-            {{selectedBarberName || '请选择发型师'}}
-            <text class="picker-arrow">▼</text>
+      <!-- 选择服务（可滑动，与 H5 Booking 对齐） -->
+      <view class="card">
+        <view class="card-title">
+          <mbs-icon name="scissors" size="32" color="#f97316" />
+          选择服务
+          <text class="service-scroll-hint">滑动查看更多</text>
+        </view>
+        <view class="service-select-scroll-wrapper">
+          <scroll-view
+            id="serviceScroll"
+            class="service-select-scroll"
+            scroll-y="true"
+            enhanced="true"
+            show-scrollbar="false"
+            bindscroll="onServiceScroll"
+          >
+            <view
+              wx:for="{{shop.services}}"
+              wx:key="id"
+              class="service-select-item {{selectedService === item.id ? 'service-select-item-active' : ''}}"
+              bindtap="onServiceSelect"
+              data-id="{{item.id}}"
+            >
+              <view class="service-select-radio">
+                <view wx:if="{{selectedService === item.id}}" class="service-select-radio-inner"></view>
+              </view>
+              <view class="service-select-content">
+                <view class="service-select-name">{{item.name}}</view>
+                <view wx:if="{{item.duration}}" class="service-select-desc">约 {{item.duration}} 分钟</view>
+              </view>
+              <view class="service-select-price-wrap">
+                <view wx:if="{{item.hasDiscount}}" class="service-select-original-price">¥{{item.originalPriceStr}}</view>
+                <view class="service-select-price-row">
+                  <view wx:if="{{item.hasDiscount}}" class="service-select-tag">会员价</view>
+                  <view class="service-select-price">¥{{item.priceStr}}</view>
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+          <view class="service-select-scrollbar" wx:if="{{showServiceScrollbar}}">
+            <view class="service-select-scrollbar-track">
+              <view class="service-select-scrollbar-thumb" style="top: {{serviceThumbTop}}px; height: {{serviceThumbHeight}}px;"></view>
+            </view>
           </view>
-        </picker>
+        </view>
+        <view wx:if="{{!shop.services || shop.services.length === 0}}" class="empty-text">暂无可用服务</view>
       </view>
 
-      <!-- 随机匹配提示 -->
-      <view wx:if="{{selectionMode === 'fastest'}}" class="fastest-hint">
-        系统将为您自动匹配当前最快可服务的发型师
+      <!-- 选择日期 -->
+      <view class="card">
+        <view class="card-title">
+          <mbs-icon name="calendar" size="32" color="#f97316" />
+          选择日期
+        </view>
+        <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false">
+          <view
+            wx:for="{{dates}}"
+            wx:key="value"
+            class="date-item {{selectedDate === item.value ? 'date-item-active' : ''}}"
+            bindtap="onDateSelect"
+            data-value="{{item.value}}"
+          >
+            <view class="date-label">{{item.label}}</view>
+            <view class="date-week">{{item.weekDay}}</view>
+          </view>
+        </scroll-view>
       </view>
-    </view>
 
-    <!-- 备注 -->
-    <view class="card">
-      <view class="title">备注</view>
-      <textarea
-        class="notes-input"
-        placeholder="如有特殊需求请在此填写..."
-        bindinput="onNotesInput"
-        value="{{notes}}"
-      />
-    </view>
+      <!-- 选择时间 -->
+      <view class="card">
+        <view class="card-title">
+          <mbs-icon name="clock" size="32" color="#f97316" />
+          选择时间
+        </view>
+        <view class="time-grid">
+          <view
+          wx:for="{{timeSlots}}"
+          wx:key="time"
+          class="time-item {{selectedTime === item.time ? 'time-item-active' : ''}} {{item.full ? 'time-item-disabled' : ''}}"
+          bindtap="onTimeSelect"
+          data-value="{{item.time}}"
+        >
+          {{item.time}}
+          <view wx:if="{{item.full}}" class="time-item-tag">已满</view>
+        </view>
+        </view>
+      </view>
 
-    <!-- 提交按钮 -->
-    <view class="btn-primary {{booking ? 'btn-disabled' : ''}}" bindtap="handleBooking">
-      {{booking ? '预约中...' : '确认预约'}}
+      <!-- 选择发型师 -->
+      <view class="card">
+        <view class="card-title">
+          <mbs-icon name="award" size="32" color="#f97316" />
+          选择发型师
+        </view>
+
+        <!-- 智能匹配 -->
+        <view
+          class="barber-card {{selectionMode === 'fastest' ? 'barber-card-green' : ''}}"
+          bindtap="onModeSelect"
+          data-mode="fastest"
+        >
+          <view class="barber-radio">
+            <view wx:if="{{selectionMode === 'fastest'}}" class="barber-radio-inner barber-radio-inner-green"></view>
+          </view>
+          <view class="barber-avatar barber-avatar-green">
+            <mbs-icon name="zap" size="36" color="#16a34a" />
+          </view>
+          <view class="barber-content">
+            <view class="barber-name-row">
+              <text class="barber-name">智能匹配 · 最快服务</text>
+              <text class="tag tag-green">推荐</text>
+            </view>
+            <view class="barber-desc">系统为您匹配当前最空闲的发型师，节省等待时间</view>
+            <view wx:if="{{fastest}}" class="barber-meta">
+              <text class="tag tag-gray">{{fastest.name}}</text>
+              <text class="text-green">等待 {{fastestWaitTime}} 分钟</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="barber-divider">或选择指定发型师</view>
+
+        <!-- 发型师列表 -->
+        <view
+          wx:for="{{stylists}}"
+          wx:key="id"
+          class="barber-card {{(selectionMode === 'specific' && selectedBarberId === item.id) ? 'barber-card-active' : ''}} {{!item.isAvailable ? 'barber-card-disabled' : ''}}"
+          bindtap="onBarberSelect"
+          data-id="{{item.id}}"
+        >
+          <view class="barber-radio">
+            <view wx:if="{{selectionMode === 'specific' && selectedBarberId === item.id}}" class="barber-radio-inner"></view>
+          </view>
+          <view class="barber-avatar">
+            <mbs-icon name="user" size="36" color="#9ca3af" />
+          </view>
+          <view class="barber-content">
+            <view class="barber-name-row">
+              <text class="barber-name">{{item.name}}</text>
+              <text wx:if="{{item.title}}" class="tag tag-orange">{{item.title}}</text>
+              <text wx:if="{{!item.isAvailable}}" class="tag tag-gray">已约</text>
+            </view>
+            <view class="barber-meta">
+              <text class="barber-rating"><mbs-icon name="star" size="18" color="#f59e0b" /> {{item.displayRating}}</text>
+              <text class="barber-services">{{item.totalServices || 200}}+次</text>
+            </view>
+            <view wx:if="{{item.tagsDisplay && item.tagsDisplay.length > 0}}" class="barber-tags">
+              <text wx:for="{{item.tagsDisplay}}" wx:key="*this" wx:for-item="tag" class="tag tag-gray">#{{tag}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 备注 -->
+      <view class="card">
+        <view class="card-title">
+          <mbs-icon name="messageSquare" size="32" color="#f97316" />
+          备注
+        </view>
+        <textarea
+          class="textarea"
+          placeholder="如有特殊需求，请在此填写"
+          value="{{notes}}"
+          bindinput="onNotesInput"
+        />
+      </view>
+    </block>
+  </view>
+
+  <!-- 底部固定栏 -->
+  <view class="fixed-bottom-bar" wx:if="{{shop}}">
+    <view class="booking-summary">
+      <view>
+        <view class="booking-total-label">合计</view>
+        <view class="booking-total-price">¥{{selectedServicePrice}}</view>
+      </view>
+      <view class="btn btn-primary booking-submit {{booking ? 'btn-disabled' : ''}}" bindtap="handleBooking">
+        {{booking ? '预约中...' : '确认预约'}}
+      </view>
     </view>
   </view>
+
+  <login-modal
+    visible="{{showLogin}}"
+    bind:success="onLoginSuccess"
+    bind:close="onLoginClose"
+  />
 </view>

@@ -1,8 +1,224 @@
-<view class="container">
-  <view class="card">
-    <view class="title">结算</view>
-    <view class="subtitle" wx:if="{{bookingId}}">预约号：{{bookingId}}</view>
-    <view class="subtitle" wx:else>请选择要结算的预约</view>
-    <view class="btn-primary">微信支付</view>
+<view class="checkout-page">
+  <!-- 顶部返回栏 -->
+  <view class="page-top-bar checkout-top-bar" bindtap="goBack">
+    <mbs-icon name="arrowLeft" size="32" color="#1f2937" />
+    <text class="page-top-bar-text">返回</text>
   </view>
+
+  <!-- 顶部标题区 -->
+  <view class="checkout-header gradient-header-orange">
+    <view class="checkout-header-inner">
+      <view class="checkout-header-title">
+        <mbs-icon name="creditCard" size="40" color="#fff" />
+        <text>结算</text>
+      </view>
+      <view class="checkout-header-subtitle">到店服务完成后由店员确认收款</view>
+    </view>
+  </view>
+
+  <view class="container checkout-content">
+    <!-- 加载中 -->
+    <view wx:if="{{loading}}" class="empty-state">
+      <view class="empty-icon"><mbs-icon name="clock" size="56" color="#9ca3af" /></view>
+      <view class="empty-text">预约信息加载中...</view>
+    </view>
+
+    <!-- 错误 -->
+    <view wx:elif="{{error}}" class="card">
+      <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
+      <view class="btn btn-secondary" bindtap="loadBooking">重新加载</view>
+    </view>
+
+    <!-- 缺少预约 -->
+    <view wx:elif="{{!booking}}" class="card">
+      <view class="empty-state" style="padding: 32rpx 0;">
+        <view class="empty-icon"><mbs-icon name="calendar" size="56" color="#9ca3af" /></view>
+        <view class="empty-text">请选择要结算的预约</view>
+        <view class="btn btn-primary" bindtap="onViewProfile">查看我的预约</view>
+      </view>
+    </view>
+
+    <block wx:else>
+      <!-- 预约信息卡片 -->
+      <view class="card checkout-booking-card">
+        <view class="flex items-center justify-between mb-4">
+          <view class="card-title" style="margin-bottom: 0;">
+            <mbs-icon name="scissors" size="32" color="#f97316" />
+            预约信息
+          </view>
+          <view class="booking-status {{statusClass(booking.status)}}">{{statusText(booking.status)}}</view>
+        </view>
+
+        <view class="checkout-info-list">
+          <view class="checkout-info-row">
+            <text class="checkout-info-label"><mbs-icon name="scissors" size="24" color="#9ca3af" /> 服务项目</text>
+            <text class="checkout-info-value">{{booking.serviceName}}</text>
+          </view>
+          <view class="checkout-info-row">
+            <text class="checkout-info-label"><mbs-icon name="calendar" size="24" color="#9ca3af" /> 预约时间</text>
+            <text class="checkout-info-value">{{formatDateTime(booking.scheduledTime)}}</text>
+          </view>
+          <view class="checkout-info-row">
+            <text class="checkout-info-label"><mbs-icon name="user" size="24" color="#9ca3af" /> 发型师</text>
+            <text class="checkout-info-value">{{booking.stylistName || booking.barberName || '待安排'}}</text>
+          </view>
+          <view class="checkout-info-row">
+            <text class="checkout-info-label"><mbs-icon name="mapPin" size="24" color="#9ca3af" /> 店铺</text>
+            <text class="checkout-info-value">{{booking.shopName || '门店'}}</text>
+          </view>
+          <view wx:if="{{booking.queueNumber}}" class="checkout-info-row">
+            <text class="checkout-info-label"># 排队号</text>
+            <text class="checkout-info-value">{{booking.queueNumber}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 会员身份卡片（未登录也展示引导） -->
+      <view wx:if="{{!customer}}" class="card login-tip-card">
+        <view class="flex items-center gap-3">
+          <view class="login-tip-icon">
+            <mbs-icon name="user" size="40" color="#3b82f6" />
+          </view>
+          <view class="flex-1">
+            <view class="font-bold text-base text-gray-800">登录后查看会员价</view>
+            <view class="text-sm text-gray-500 mt-1">开通 VIP 或储值卡可享受专属折扣</view>
+          </view>
+          <view class="btn btn-small btn-primary-plain" bindtap="openLogin">登录</view>
+        </view>
+      </view>
+
+      <!-- 会员权益与价格 -->
+      <view wx:if="{{customer}}" class="card checkout-price-card">
+        <view class="card-title">
+          <mbs-icon name="crown" size="32" color="#f97316" />
+          会员优惠
+        </view>
+
+        <!-- 当前会员等级 -->
+        <view class="checkout-vip-tags">
+          <view class="tag tag-orange">
+            <mbs-icon name="crown" size="18" color="#ea580c" />
+            {{getPurchaseVIPLabel(purchaseLevel)}}
+          </view>
+          <view wx:if="{{storedLevel !== StoredValueLevel.NONE}}" class="tag tag-green">
+            <mbs-icon name="wallet" size="18" color="#16a34a" />
+            {{getStoredValueLabel(storedLevel)}}
+          </view>
+        </view>
+
+        <!-- 折扣明细 -->
+        <view class="checkout-price-rows">
+          <view class="checkout-price-row">
+            <text class="checkout-price-label">服务原价</text>
+            <text class="checkout-price-value {{hasDiscount ? 'checkout-price-original' : ''}}">¥{{originalPriceStr}}</text>
+          </view>
+          <view wx:if="{{hasPurchaseDiscount}}" class="checkout-price-row">
+            <text class="checkout-price-label">{{getPurchaseVIPLabel(purchaseLevel)}} ×{{purchaseVIPDiscountStr}} 折</text>
+            <text class="checkout-price-value text-orange">-¥{{vipDiscountAmountStr}}</text>
+          </view>
+          <view wx:if="{{hasStoredDiscount}}" class="checkout-price-row">
+            <text class="checkout-price-label">{{getStoredValueLabel(storedLevel)}} 折上折 ×{{storedValueDiscountStr}} 折</text>
+            <text class="checkout-price-value text-orange">-¥{{storedDiscountAmountStr}}</text>
+          </view>
+          <view wx:if="{{hasDiscount}}" class="checkout-price-row checkout-price-total">
+            <text class="checkout-price-label">预计实付</text>
+            <text class="checkout-price-value price">¥{{memberPriceStr}}</text>
+          </view>
+        </view>
+
+        <!-- 综合折扣提示 -->
+        <view wx:if="{{hasDiscount}}" class="checkout-discount-hint">
+          <mbs-icon name="sparkles" size="24" color="#f97316" />
+          <text>当前综合折扣 {{effectiveDiscountStr}} 折，到店结算时自动生效</text>
+        </view>
+
+        <!-- 储值余额提示 -->
+        <view wx:if="{{balance > 0}}" class="checkout-balance-hint">
+          <mbs-icon name="wallet" size="24" color="#3b82f6" />
+          <text>储值余额 ¥{{balanceStr}}，到店可选择储值支付</text>
+        </view>
+
+        <!-- 到期提醒 -->
+        <view wx:if="{{expiringSoon && customer.purchaseVIPExpiresAt}}" class="checkout-alert checkout-alert-yellow">
+          <mbs-icon name="alertCircle" size="28" color="#ca8a04" />
+          <text>您的 {{getPurchaseVIPLabel(purchaseLevel)}} 将于 {{formatShortDate(customer.purchaseVIPExpiresAt)}} 到期，请及时续费</text>
+        </view>
+        <view wx:if="{{storedExpiringSoon && customer.storedValueExpiresAt}}" class="checkout-alert checkout-alert-orange">
+          <mbs-icon name="alertCircle" size="28" color="#ea580c" />
+          <text>您的 {{getStoredValueLabel(storedLevel)}} 将于 {{formatShortDate(customer.storedValueExpiresAt)}} 到期</text>
+        </view>
+      </view>
+
+      <!-- 支付方式说明 -->
+      <view class="card checkout-payment-card">
+        <view class="card-title">
+          <mbs-icon name="creditCard" size="32" color="#3b82f6" />
+          支付方式
+        </view>
+        <view class="payment-methods">
+          <view class="payment-method-item">
+            <view class="payment-method-icon payment-method-wechat">
+              <mbs-icon name="creditCard" size="28" color="#fff" />
+            </view>
+            <view class="payment-method-info">
+              <view class="payment-method-name">微信支付</view>
+              <view class="payment-method-desc">小程序支付待微信商户号开通后接入</view>
+            </view>
+            <view class="payment-method-status">待开通</view>
+          </view>
+          <view class="payment-method-item">
+            <view class="payment-method-icon payment-method-balance">
+              <mbs-icon name="wallet" size="28" color="#fff" />
+            </view>
+            <view class="payment-method-info">
+              <view class="payment-method-name">储值余额</view>
+              <view class="payment-method-desc">到店后由店员扫码或收银台扣款</view>
+            </view>
+            <view class="payment-method-status">到店支付</view>
+          </view>
+          <view class="payment-method-item">
+            <view class="payment-method-icon payment-method-cash">
+              <mbs-icon name="checkCircle" size="28" color="#fff" />
+            </view>
+            <view class="payment-method-info">
+              <view class="payment-method-name">现金/刷卡</view>
+              <view class="payment-method-desc">到店后由店员扫码或收银台完成结算</view>
+            </view>
+            <view class="payment-method-status">到店支付</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 温馨提示 -->
+      <view class="card checkout-notice-card">
+        <view class="flex items-start gap-3">
+          <mbs-icon name="alertCircle" size="32" color="#f97316" />
+          <view class="flex-1">
+            <view class="font-bold text-base text-gray-800 mb-1">温馨提示</view>
+            <view class="text-sm text-gray-500 leading-relaxed">
+              当前页面仅用于查看预约与预估金额。实际结算、收款由门店店员在确认服务完成后操作，您也可到店后出示会员码完成支付。
+            </view>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 底部固定操作栏 -->
+  <view wx:if="{{booking}}" class="fixed-bottom-bar checkout-bottom-bar">
+    <view class="checkout-bottom-info">
+      <view class="text-sm text-gray-500">预计实付</view>
+      <view class="checkout-bottom-price">
+        <text wx:if="{{hasDiscount}}" class="checkout-bottom-original">¥{{originalPriceStr}}</text>
+        <text class="checkout-bottom-actual">¥{{memberPriceStr}}</text>
+      </view>
+    </view>
+    <view class="btn btn-primary checkout-bottom-btn" bindtap="onViewQueue">
+      <mbs-icon name="clock" size="28" color="#fff" />
+      查看排队
+    </view>
+  </view>
+
+  <!-- 登录弹窗 -->
+  <login-modal visible="{{showLogin}}" bind:close="onLoginClose" bind:success="onLoginSuccess" />
 </view>

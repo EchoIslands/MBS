@@ -1,1 +1,350 @@
-/* 排队页样式 */
+/* 排队页样式 —— 与 H5 Queue.tsx 视觉统一 */
+
+.queue-page {
+  min-height: 100vh;
+  background: var(--background);
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom, 0));
+}
+
+/* 状态徽章 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 9999rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.status-waiting {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-serving {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.serving-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 发型师卡片 */
+.stylist-card {
+  border: 1rpx solid var(--orange-50);
+  box-shadow: 0 4rpx 16rpx rgba(249, 115, 22, 0.08);
+}
+
+.stylist-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.stylist-avatar-large {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, var(--orange-500), var(--yellow-500));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+}
+
+.stylist-skill-badge {
+  position: absolute;
+  bottom: -10rpx;
+  right: -10rpx;
+  background: linear-gradient(135deg, #facc15, #eab308);
+  color: #fff;
+  font-size: 20rpx;
+  font-weight: 700;
+  padding: 4rpx 12rpx;
+  border-radius: 9999rpx;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+}
+
+.stylist-name {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stylist-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+
+.stylist-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+/* 进度条 */
+.progress-card {
+  border: 1rpx solid var(--orange-50);
+}
+
+.progress-track {
+  height: 16rpx;
+  background: var(--gray-100);
+  border-radius: 9999rpx;
+  overflow: hidden;
+}
+
+.progress-track-sm {
+  height: 12rpx;
+  border: 1rpx solid #ffedd5;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 9999rpx;
+  transition: width 0.3s ease;
+}
+
+.progress-bar-orange {
+  background: linear-gradient(90deg, var(--orange-400), var(--orange-500), var(--yellow-400));
+}
+
+/* 服务步骤 */
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 20rpx;
+  border-radius: 20rpx;
+  background: var(--gray-50);
+  transition: all 0.2s;
+}
+
+.step-row-active {
+  background: linear-gradient(90deg, #fff7ed, #fffbeb);
+  border: 1rpx solid #fed7aa;
+  box-shadow: 0 2rpx 10rpx rgba(249, 115, 22, 0.08);
+}
+
+.step-row-done {
+  background: #f0fdf4;
+}
+
+.step-icon {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-icon-done {
+  background: var(--green-500);
+}
+
+.step-icon-active {
+  background: var(--orange-500);
+  box-shadow: 0 4rpx 12rpx rgba(249, 115, 22, 0.3);
+}
+
+.step-icon-wait {
+  background: var(--gray-200);
+}
+
+.step-label {
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.step-duration {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  font-weight: 400;
+  margin-left: 8rpx;
+}
+
+.step-status {
+  font-size: 22rpx;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* 预约尚未开始 */
+.appointment-soon-card {
+  background: linear-gradient(135deg, #eff6ff, #eef2ff);
+  border: 1rpx solid #dbeafe;
+}
+
+/* 排队状态卡片 */
+.queue-status-card {
+  border: 1rpx solid #dbeafe;
+}
+
+.time-slot-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 18rpx;
+  background: var(--gray-50);
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  color: var(--gray-600);
+  margin-bottom: 24rpx;
+}
+
+.queue-numbers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.queue-number-box {
+  border-radius: 24rpx;
+  padding: 28rpx 20rpx;
+  text-align: center;
+}
+
+.queue-number-blue {
+  background: #eff6ff;
+}
+
+.queue-number-orange {
+  background: #fff7ed;
+}
+
+.queue-number-label {
+  font-size: 24rpx;
+  color: var(--blue-600);
+  margin-bottom: 8rpx;
+}
+
+.queue-number-orange .queue-number-label {
+  color: var(--orange-600);
+}
+
+.queue-number-value {
+  font-size: 64rpx;
+  font-weight: 700;
+  color: var(--blue-700);
+  line-height: 1.1;
+}
+
+.queue-number-orange .queue-number-value {
+  color: var(--orange-700);
+}
+
+.queue-number-hint {
+  font-size: 22rpx;
+  color: var(--blue-500);
+  margin-top: 8rpx;
+}
+
+.queue-number-orange .queue-number-hint {
+  color: var(--orange-500);
+}
+
+/* 该出发了 */
+.leave-now-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  background: linear-gradient(90deg, #f0fdf4, #ecfdf5);
+  border: 1rpx solid #a7f3d0;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  margin-top: 24rpx;
+}
+
+/* 开关 */
+.toggle {
+  width: 80rpx;
+  height: 44rpx;
+  border-radius: 9999rpx;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.toggle-on {
+  background: var(--orange-500);
+}
+
+.toggle-off {
+  background: var(--gray-300);
+}
+
+.toggle-dot {
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+}
+
+.toggle-dot-on {
+  transform: translateX(36rpx);
+}
+
+/* 信息列表 */
+.info-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 28rpx;
+  color: var(--text-secondary);
+}
+
+.info-value {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+/* 行截断 */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "排队状态",
+  "component": true,
   "usingComponents": {
     "mbs-icon": "/components/icon/icon"
   }

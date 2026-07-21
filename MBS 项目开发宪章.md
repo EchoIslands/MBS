@@ -33,6 +33,7 @@
 3. **数据必显式**：写数据库前必须显式字段映射并过滤非法 key，禁止直接把整个对象 `toSnakeCase()` 后塞入数据库。
 4. **需求必落地**：任何新需求（新增字段、新页面、新角色权限）必须先落到任务书/计划书，定义验收标准并评估影响范围后再动手。
 5. **问题必记录**：踩过的坑、临时方案、隐性约束必须补充到本宪章对应章节，避免团队重复踩坑。
+6. **UI 三端一致**：网页端、公众号 H5、微信小程序面向顾客的可视元素（颜色、字体、按钮、卡片、图标、布局、状态徽章、空状态）必须统一。任何一端的界面调整，必须同步评估并改造另外两端，禁止各自为政。设计 Token、通用图标、页面结构应以 H5 顾客端为基准，小程序通过 CSS 变量与通用组件复刻。
 
 ## 1.4 快速索引
 
@@ -69,6 +70,7 @@
 | 定位失败 / 到店距离 1km / 浏览器定位权限 | 3.15.6 |
 | 网页提醒 / 手机浏览器通知 / 铃声限制 | 3.15.6 |
 | 微信渠道 / 小程序 / 公众号 / H5 支付 / unionid | 4.7 微信生态接入决策与规范、微信渠道接入规划与指南.md |
+| UI 统一 / 三端视觉一致 / 设计 Token / 小程序图标 | 1.3 核心原则、2.5.4 小程序 UI 统一规范 |
 | 版本号 / 发布检查 | 4.5 版本与发布 |
 
 ### 坑号快速定位表
@@ -312,6 +314,118 @@ npm run server:api
 2. 若属于本宪章未覆盖的新坑，补充到第三卷对应章节；
 3. 评估是否需要增加监控、测试或流程改进。
 
+## 2.5 小程序与 H5 协同开发工作流
+
+> MBS 项目同时维护 H5/网页端（`src/`）和微信小程序端（`mini-program/`），两端共用同一套后端 API 和 Supabase 数据库。本工作流确保两端代码来源一致、数据同步、不互相干扰。
+
+### 2.5.1 代码来源与工作流
+
+当前采用以下开发-部署工作流：
+
+1. **Trae 远程环境（`/workspace`）**：AI 助手在此修改代码，作为代码源头；
+2. **开发者本地下载**：开发者从 Trae 将最新代码下载到本地目录（如 `E:\MBS`）；
+3. **本地提交到 GitHub**：在本地执行 `git add / commit / push`；
+4. **Vercel 自动部署**：Vercel 监听 GitHub 仓库自动部署到生产域名（如 `www.hfmbs.cn`）；
+5. **微信开发者工具测试**：导入本地 `E:\MBS\mini-program` 目录进行小程序预览和调试。
+
+**注意事项**：
+
+- `/workspace` 与本地 `E:\MBS` 必须保持同步，否则会出现"远程已修复、本地仍报错"的情况；
+- 每次 Trae 修改涉及 `mini-program/` 后，开发者需重新下载相关文件到本地；
+- 微信开发者工具导入的是 `mini-program` 子目录，不是仓库根目录；
+- **后端修改必须 push 到 GitHub 并等 Vercel 部署完成后，小程序才能访问到最新接口**：小程序默认请求生产域名 `www.hfmbs.cn/api`，如果只在 Trae 改了 `api/` 但没 push，Vercel 上跑的还是旧后端，会导致小程序出现 401、404 或数据不一致等问题。
+
+### 2.5.2 三方协同原则
+
+- **共用后端**：H5 和小程序都请求同一套 `/api/*` 接口，禁止为小程序单独维护一套 API；
+- **共用数据库**：顾客、预约、店铺等数据全部存储在 Supabase，两端通过相同的 `customerId`、`shopId`、`bookingId` 关联；
+- **共用类型与业务逻辑**：`shared/types.ts`、`shared/lib/` 中的纯计算逻辑由两端共享；平台相关代码（网络请求、本地存储、页面路由）各自实现；
+- **字段命名一致**：小程序提交给后端的字段名、数据格式必须与 H5 完全一致，避免后端需要兼容两套格式；
+- **登录态统一但交互按需触发**：顾客身份（`customerId`）是 H5/小程序数据打通的关键，小程序应在需要登录的交互点（如点击预约、查看个人中心）自动唤起登录弹窗，而不是依赖用户主动找到登录入口。
+
+### 2.5.3 H5 与小程序环境差异清单
+
+| H5/浏览器可用 | 小程序不可用 | 小程序替代方案 |
+|---|---|---|
+| `fetch` | ❌ | `wx.request` |
+| `localStorage` | ❌ | `wx.setStorageSync` / `wx.getStorageSync` |
+| `URLSearchParams` | ❌ | 手动 `encodeURIComponent` 拼接 query string |
+| `window` / `document` | ❌ | 小程序自有 API |
+| `.find()` / `.filter()` / 箭头函数 / `?.` 在模板中 | ❌（WXML 不支持） | 在 `.js` 中预计算后绑定到 WXML |
+| `navigateTo` 跳转到 tabBar 页面 | ❌ | 跳 tabBar 页面用 `switchTab` |
+| `switchTab` URL 传参 | ❌ | 用本地缓存中转参数（如 `setRouteParams` / `takeRouteParams`） |
+| Promise 错误静默吞掉 | 应避免 | `wx.request` 封装在失败时 `reject`，页面 `try/catch` 处理 |
+| ES Module `import/export` | ✅ | 微信开发者工具支持 |
+
+**回归验证**：
+
+- [ ] `npm run build` 通过；
+- [ ] 微信开发者工具无报错；
+- [ ] 小程序关键流程（首页加载、预约创建）与 H5 数据一致；
+- [ ] tabBar 页面间跳转参数不丢失（首页选服务 → 预约页、预约成功 → 排队页、我的预约 → 排队页、结算页 → 排队页）；
+- [ ] 个人中心未登录时显示登录表单，登录后正确展示顾客信息与预约列表；
+- [ ] API 失败时页面有明确错误提示，不静默显示空数据。
+
+### 2.5.4 小程序 UI 统一规范（新增）
+
+> 顾客端同时存在 H5/网页端（`src/pages/customer/`）与微信小程序（`mini-program/pages/`）。两端的视觉语言必须一致，任何一端的界面调整必须同步评估另一端。本节规定小程序侧的统一改造标准与后续调整纪律。
+
+#### 设计 Token 统一
+
+- **唯一来源**：`mini-program/app.scss` 中的 CSS 变量是小程序全部颜色的唯一来源，禁止在页面样式中硬编码色值（除渐变、半透明装饰外）。
+- **与 H5 对齐**：变量命名与取值直接对应 H5 顾客端 Tailwind 色板，例如：
+  - `--primary: #2563eb` 对应 `blue-600`；
+  - `--accent: #f97316` 对应 `orange-500`；
+  - `--background: #f9fafb` 对应 `gray-50`；
+  - `--text-primary: #1f2937` 对应 `gray-800`。
+- **扩展流程**：若业务需要新增颜色，必须先在 `app.scss` 定义变量，并同步确认 H5 端是否已有对应色值；若 H5 没有，则两端同时新增，禁止只在小程序新增。
+
+#### 通用组件与图标
+
+- **通用图标组件**：`mini-program/components/icon/icon` 统一封装 lucide 风格 SVG 图标，页面通过 `<mbs-icon name="xxx" size="" color="" />` 引用。
+- **图标名称对齐**：图标 `name` 与 H5 中使用的 lucide-react 图标名保持一致（如 `mapPin`、`scissors`、`creditCard`、`alertCircle`）。新增图标必须同时在 `components/icon/icon.wxml` 中补充 SVG，并确认 H5 端图标库中存在同名图标。
+- **通用 UI 类**：`app.scss` 统一提供 `.card`、`.btn`、`.btn-primary`、`.btn-secondary`、`.tag`、`.badge`、`.empty-state`、`.booking-item`、`.fixed-bottom-bar`、`.gradient-header-*` 等基础类。页面私有样式仅用于布局微调，禁止重新定义按钮、卡片、标签的圆角/阴影/主色。
+
+#### 页面结构统一
+
+每个顾客端页面按以下结构组织，与 H5 对应页面对齐：
+
+1. **顶部渐变头部**：使用 `.gradient-header` 或 `.gradient-header-orange/blue/purple`，包含页面标题与一句话说明；
+2. **内容区**：使用 `.container`，内部以 `.card` 堆叠展示信息；
+3. **卡片标题**：使用 `.card-title`，左侧配合 `<mbs-icon>`；
+4. **状态徽章**：预约/订单状态统一使用 `.status-*` / `.badge-*`，文案统一为“待店铺确认、已确认、服务中、已完成、已取消”；
+5. **底部固定操作栏**：需要主操作的页面使用 `.fixed-bottom-bar`，价格展示与主按钮分居左右；
+6. **登录弹窗**：需要登录的场景统一调用 `components/login-modal/login-modal`，自动弹窗，不另写登录表单。
+
+#### 状态与文案统一
+
+| 状态值 | 中文文案 | 徽章颜色 |
+|---|---|---|
+| `pending` | 待店铺确认 | 黄色 `#fef3c7` / `#92400e` |
+| `confirmed` | 已确认 | 蓝色 `#dbeafe` / `#1e40af` |
+| `serving` | 服务中 | 靛蓝 `#e0e7ff` / `#4338ca` |
+| `completed` | 已完成 | 绿色 `#d1fae5` / `#065f46` |
+| `cancelled` | 已取消 | 红色 `#fee2e2` / `#991b1b` |
+
+- 小程序 `.js` 与 H5 工具函数必须返回相同文案与类名，禁止两端各自维护映射表。
+
+#### 登录体验统一
+
+- 需要登录才可见/可操作的场景（如点击“我的”、点击服务项目、确认预约、查看结算会员价），应在交互点自动唤起 `login-modal`；
+- 登录成功后立即刷新当前页面数据（`loadProfile`、`loadBooking`、`loadQueue` 等），确保用户无感进入已登录状态；
+- 登录组件与业务页面解耦，禁止在每个页面内重复写登录表单。
+
+#### 后续界面调整纪律
+
+- **任何顾客端界面改动，必须同时评估 H5/小程序/后端 API 三端**：
+  - 改颜色/字体/圆角 → 同步改 `app.scss` 与 H5 Tailwind 配置/样式；
+  - 改图标 → 同步改 `components/icon` 与 H5 图标引用；
+  - 改页面结构/新增卡片 → 同步改 H5 对应页面；
+  - 改状态文案/会员权益 → 同步改 `shared/lib/membership.ts` 与两端映射函数；
+  - 需要新字段 → 同步改后端接口、`shared/types.ts`、H5、小程序。
+- **新增页面前**：先查看 H5 顾客端页面映射表（见 4.7.5 / 微信渠道接入指南 10.10.3），确认是否需要两端同时新增；若只新增一端，必须记录原因。
+- **回归验证**：UI 改动完成后，必须两端同时目测比对关键页面（首页、预约、排队、个人中心、结算），确保颜色、字号、间距、图标、按钮视觉一致。
+
 ---
 
 # 第三卷：踩坑百科（核心卷）
@@ -376,8 +490,53 @@ npm run server:api
   .vercel/
   ```
 - **教训**：创建项目时第一时间写好 .gitignore，参考 GitHub 的语言模板；提交前用 `git status` 检查。
-- **相关文件**：`.gitignore`。
-- **相关坑**：无。
+
+### 坑 5：直接把 H5 代码搬到小程序运行时报错（中）
+
+- **场景**：把 H5 的 API 调用、模板表达式、本地存储逻辑直接复制到小程序。
+- **现象**：
+  - `URLSearchParams is not defined`；
+  - `localStorage is not defined`；
+  - WXML 报错 `unexpected '>'` 或模板不渲染；
+  - API 返回 `{ success: true, data: ... }` 但页面没数据。
+- **根因**：H5 浏览器环境与微信小程序 Runtime 存在差异，且后端响应格式需要解包。
+- **解决**：
+  - `fetch` → `wx.request`（已在 `mini-program/utils/api.js` 封装）；
+  - `localStorage` → `wx.setStorageSync` / `wx.getStorageSync`；
+  - `URLSearchParams` → 手动 `encodeURIComponent` 拼接；
+  - WXML 中避免 `.find()` / 箭头函数 / `?.` 可选链，改在 `.js` 中预计算；
+  - 后端返回统一解包 `result.data`。
+- **教训**：小程序不是"缩小版 H5"，平台相关代码必须单独实现；业务逻辑尽量抽到 `shared/lib/`，平台适配层各自维护。
+- **相关文件**：`mini-program/utils/api.js`、`mini-program/api/*.js`、`mini-program/pages/**/*.wxml`。
+- **相关坑**：2.5 小程序与 H5 协同开发工作流。
+
+### 坑 5.1：tabBar 页面间跳转参数丢失（中）
+
+- **场景**：小程序中从首页点击服务项跳转到预约页并携带 `serviceId`，或预约成功后跳转到排队页并携带 `bookingId`。
+- **现象**：
+  - 使用 `wx.navigateTo({ url: '/pages/queue/queue?id=xxx' })` 跳转到 tabBar 页面报错 `navigateTo:fail can not navigate to a tabbar page`；
+  - 使用 `wx.switchTab({ url: '/pages/queue/queue?id=xxx' })` 不报错，但目标页面 `onLoad(options)` 中 `options.id` 为空，参数丢失。
+- **根因**：
+  - 小程序 `navigateTo` 不能跳转到在 `app.json` tabBar 中注册的页面；
+  - `switchTab` 虽然可以跳 tabBar 页面，但会忽略 URL 参数。
+- **解决**：用本地缓存中转参数。在 `mini-program/utils/storage.js` 中封装 `setRouteParams(params)` 和 `takeRouteParams()`：
+  - 跳转前调用 `setRouteParams({ bookingId: 'xxx' })`；
+  - 跳转后目标页面在 `onLoad` / `onShow` 中调用 `takeRouteParams()` 读取并清空参数。
+- **教训**：tabBar 页面传参不要用 URL，必须用全局状态或本地缓存中转；涉及 tabBar 跳转的场景要在真机和开发者工具都验证参数是否携带成功。
+- **相关文件**：`mini-program/utils/storage.js`、`mini-program/pages/queue/queue.js`、`mini-program/pages/booking/booking.js`、`mini-program/pages/index/index.js`、`mini-program/pages/profile/profile.js`、`mini-program/pages/checkout/checkout.js`。
+- **相关坑**：2.5 小程序与 H5 协同开发工作流。
+
+### 坑 5.2：小程序请求封装静默吞掉错误（中）
+
+- **场景**：后端接口返回 4xx/5xx、网络断开或请求超时，但页面只显示空白或"暂无数据"，没有错误提示。
+- **现象**：`wx.request` 封装在 `fail` 或非 2xx 时 `resolve(null)`，调用方无法区分"成功但无数据"和"请求失败"。
+- **根因**：为了兼容 mock 数据，早期封装把所有失败都 resolve 成 `null`，导致页面丢失错误处理机会。
+- **解决**：
+  - `mini-program/utils/api.js` 的 `request` 在失败时统一 `reject(new Error(message))`；
+  - 页面级调用用 `try/catch` 捕获，给用户明确的 `wx.showToast` 或错误文案；
+  - 需要 mock 兜底时，在页面或 API 层显式处理，而不是在请求封装层静默吞错。
+- **教训**：网络请求封装应该忠实传递成功/失败状态，mock 逻辑应该在更高层处理；否则线上接口异常会被掩盖，增加排查难度。
+- **相关文件**：`mini-program/utils/api.js`、`mini-program/api/*.js`、`mini-program/pages/**/*.js`。
 
 ### 坑 27：代理/VPN 导致开发环境异常（轻微）
 
@@ -2470,6 +2629,14 @@ git push --force               # 强制推送（谨慎！）
   - `mini-program/api/shop.js`、`booking.js`、`customer.js` 调用后端 `/api` 接口；
   - 预约页随机发型师匹配算法与 H5 `Booking.tsx` 保持一致，确保两端数据同步。
 - [x] 修复构建错误：`src/pages/customer/Booking.tsx` 中组件名 `Booking` 与 `shared/types` 中 `Booking` 类型重名，导致 vite build 报 `Duplicate declaration`。将组件重命名为 `BookingPage` 解决。
+- [x] 小程序 UI 与 H5 统一改造完成（2026-07-21）：
+  - 建立 `mini-program/app.scss` 设计 Token，颜色、字体、圆角、阴影、按钮、卡片与 H5 顾客端对齐；
+  - 重构首页、预约页、排队页、个人中心、结算页，统一使用渐变头部、卡片式布局、底部固定操作栏、状态徽章、空状态、登录弹窗；
+  - 新增通用图标组件 `mini-program/components/icon/icon`，图标名与 H5 lucide-react 图标保持一致；
+  - 新增 `mini-program/utils/membership.js` 统一会员折扣、有效期、权益计算，供个人中心和结算页复用；
+  - 登录体验统一：未登录场景自动唤起 `login-modal`，登录成功后刷新当前页面数据；
+  - 完成 3 轮自测并修复问题：补齐 `app.scss` 通用工具类、修复 `queue.js` 参数名不一致、修复 `queue.wxml` `<span>`/`gap-1.5` 不兼容写法、修复 `booking.js`/`booking.wxml` 时间格渲染与 serviceId 传递 bug、`npm run build` 通过；
+  - 根据真机调试反馈继续对齐 H5：修复 icon 组件 wxss 标签选择器警告、首页标题改为店铺名、服务项目改为带自定义橙色滑块的 `scroll-view` 以复刻 H5 `VerticalScrollSlider`、修复 `loadShop`/`loadCustomer` 竞态导致会员价可能未生效的问题、修复登录成功后仍停留在登录界面的问题、删除 tabBar 改为页面内导航、首页底部操作栏与 H5 ShopDetail 对齐。
 - [ ] 小程序登录（`wx.login`）和支付（`wx.requestPayment`） pending 资质到位。
 
 ### 4.7.8 指向详细指南

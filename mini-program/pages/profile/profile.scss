@@ -1,1 +1,523 @@
-/* 个人中心样式 */
+/* 个人中心 —— 与 H5 Profile.tsx 视觉统一 */
+
+.profile-page {
+  min-height: 100vh;
+  background: var(--background);
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom, 0));
+}
+
+/* 顶部会员卡 */
+.vip-header {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  padding: 48rpx 24rpx calc(48rpx + env(safe-area-inset-top, 0));
+}
+
+.vip-decor {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vip-decor-1 {
+  width: 320rpx;
+  height: 320rpx;
+  right: -80rpx;
+  top: -80rpx;
+}
+
+.vip-decor-2 {
+  width: 256rpx;
+  height: 256rpx;
+  right: -128rpx;
+  top: 80rpx;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.vip-decor-3 {
+  width: 160rpx;
+  height: 160rpx;
+  left: 32rpx;
+  bottom: 32rpx;
+  background: rgba(255, 255, 255, 0.1);
+  filter: blur(16rpx);
+}
+
+.vip-header-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.vip-avatar {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vip-name {
+  font-size: 36rpx;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.vip-phone {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4rpx;
+}
+
+.vip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 20rpx;
+  border-radius: 9999rpx;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8rpx);
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.vip-badge-sub {
+  padding: 8rpx 16rpx;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 24rpx;
+}
+
+.vip-discount-card {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 32rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.vip-discount-label {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 12rpx;
+}
+
+.vip-discount-value {
+  font-size: 72rpx;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 8rpx;
+}
+
+.vip-discount-hint {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.vip-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+}
+
+.vip-stat-item {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 24rpx;
+  padding: 20rpx;
+}
+
+.vip-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8rpx;
+}
+
+.vip-stat-value {
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.vip-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  margin-top: 24rpx;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.vip-alert-yellow {
+  background: rgba(250, 204, 21, 0.2);
+  border: 1rpx solid rgba(254, 240, 138, 0.3);
+}
+
+.vip-alert-orange {
+  background: rgba(251, 146, 60, 0.2);
+  border: 1rpx solid rgba(254, 215, 170, 0.3);
+}
+
+.vip-stockholder {
+  margin-top: 24rpx;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 24rpx;
+  padding: 24rpx;
+}
+
+.vip-stockholder-label {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 12rpx;
+}
+
+.vip-stockholder-value {
+  font-size: 44rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.vip-stockholder-hint {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 4rpx;
+}
+
+.vip-stockholder-crown {
+  font-size: 80rpx;
+  opacity: 0.3;
+  line-height: 1;
+}
+
+/* 主内容区负 margin，与头部重叠 */
+.profile-content {
+  margin-top: -24rpx;
+  position: relative;
+  z-index: 2;
+}
+
+/* 未登录占位 */
+.login-placeholder-card {
+  margin-top: 24rpx;
+}
+
+.login-placeholder {
+  text-align: center;
+  padding: 48rpx 0 32rpx;
+}
+
+.login-placeholder-avatar {
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24rpx;
+}
+
+.placeholder-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.placeholder-hint {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  margin-bottom: 32rpx;
+}
+
+/* 可用权益 */
+.benefit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.benefit-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx;
+  background: var(--gray-50);
+  border-radius: 24rpx;
+}
+
+.benefit-name {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.benefit-desc {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+/* 权益对比表格 */
+.benefits-table-wrap {
+  overflow-x: auto;
+  margin: 0 -8rpx;
+}
+
+.benefits-table {
+  display: table;
+  width: 100%;
+  min-width: 640rpx;
+  font-size: 24rpx;
+}
+
+.benefits-row {
+  display: table-row;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.benefits-row:last-child {
+  border-bottom: none;
+}
+
+.benefits-header {
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 1rpx solid var(--gray-200);
+}
+
+.benefits-cell {
+  display: table-cell;
+  padding: 18rpx 8rpx;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.benefits-feature {
+  text-align: left;
+  color: var(--text-primary);
+  font-weight: 500;
+  padding-left: 12rpx;
+}
+
+/* 表格高亮背景 */
+.bg-orange-light { background: rgba(249, 115, 22, 0.06); }
+.bg-blue-light { background: rgba(59, 130, 246, 0.06); }
+.bg-yellow-light { background: rgba(234, 179, 8, 0.06); }
+.bg-purple-light { background: rgba(168, 85, 247, 0.06); }
+.bg-green-light { background: rgba(34, 197, 94, 0.08); }
+.bg-cyan-light { background: rgba(6, 182, 212, 0.06); }
+.bg-indigo-light { background: rgba(99, 102, 241, 0.06); }
+.bg-red-light { background: rgba(239, 68, 68, 0.06); }
+.bg-gray-light { background: var(--gray-100); }
+
+/* 表格文字颜色 */
+.text-orange { color: var(--orange-600); }
+.text-blue { color: var(--blue-600); }
+.text-yellow { color: #b45309; }
+.text-purple { color: var(--purple-600); }
+.text-cyan { color: #0891b2; }
+.text-indigo { color: #4f46e5; }
+.text-green { color: var(--green-600); }
+.text-red { color: var(--danger); }
+.text-gray { color: var(--text-secondary); }
+
+/* 当前会员卡片 */
+.vip-current-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-top: 24rpx;
+  border-radius: 24rpx;
+  padding: 24rpx;
+}
+
+.vip-current-orange {
+  background: linear-gradient(90deg, #fff7ed, #fefce8);
+  border: 1rpx solid #fed7aa;
+}
+
+.vip-current-green {
+  background: linear-gradient(90deg, #f0fdf4, #ecfdf5);
+  border: 1rpx solid #bbf7d0;
+}
+
+.vip-current-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  margin-bottom: 6rpx;
+}
+
+.vip-current-orange .vip-current-title { color: #c2410c; }
+.vip-current-green .vip-current-title { color: #15803d; }
+
+.vip-current-desc {
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.vip-current-orange .vip-current-desc { color: #ea580c; }
+.vip-current-green .vip-current-desc { color: #16a34a; }
+
+/* Tab 切换 */
+.tab-switcher {
+  display: inline-flex;
+  background: var(--gray-100);
+  border-radius: 16rpx;
+  padding: 6rpx;
+}
+
+.tab-item {
+  padding: 10rpx 28rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+  border-radius: 12rpx;
+  color: var(--text-secondary);
+}
+
+.tab-active {
+  background: #fff;
+  color: var(--text-primary);
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+}
+
+/* 预约列表（个人中心复用 app.scss 基础，补充差异化） */
+.booking-shop {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.booking-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16rpx;
+}
+
+.booking-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.booking-price {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* 快捷功能 */
+.quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.quick-item {
+  background: var(--card-bg);
+  border-radius: 32rpx;
+  padding: 24rpx;
+  border: 1rpx solid var(--border);
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+  min-height: 160rpx;
+}
+
+.quick-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 16rpx;
+}
+
+.quick-hint {
+  font-size: 22rpx;
+  color: var(--text-secondary);
+  margin-top: 6rpx;
+}
+
+/* 弹窗 */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 48rpx 32rpx;
+}
+
+.modal-dialog {
+  background: #fff;
+  border-radius: 32rpx;
+  width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.modal-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  padding: 8rpx;
+}
+
+.modal-body {
+  padding: 24rpx 32rpx;
+  overflow-y: auto;
+}
+
+.modal-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx;
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.modal-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom, 0));
+  border-top: 1rpx solid var(--border);
+}
+
+/* 工具类补充 */
+.min-w-0 { min-width: 0; }

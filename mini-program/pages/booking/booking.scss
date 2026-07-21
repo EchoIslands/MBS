@@ -1,67 +1,429 @@
-.container {
-  padding-bottom: 48rpx;
+.booking-page {
+  min-height: 100vh;
+  padding-bottom: 180rpx;
+  background: var(--background);
 }
 
-.picker-value {
+/* 店铺小卡片 */
+.shop-mini-card {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 20rpx 0;
-  font-size: 30rpx;
-  color: var(--primary);
-  border-bottom: 1rpx solid var(--border);
+  gap: 20rpx;
 }
 
-.picker-arrow {
-  font-size: 24rpx;
-  color: var(--secondary);
-}
-
-.service-price {
-  margin-top: 16rpx;
-  font-size: 32rpx;
-  font-weight: 600;
-  color: var(--primary);
-}
-
-.mode-switch {
+.shop-mini-image {
+  width: 96rpx;
+  height: 96rpx;
+  background: #eff6ff;
+  border-radius: 20rpx;
   display: flex;
-  gap: 16rpx;
-  margin-bottom: 20rpx;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.mode-btn {
-  flex: 1;
-  padding: 20rpx 0;
-  text-align: center;
-  border-radius: 12rpx;
-  background: var(--background);
-  color: var(--secondary);
-  font-size: 28rpx;
+.shop-mini-name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8rpx;
 }
 
-.mode-btn-active {
-  background: var(--primary);
-  color: #fff;
-}
-
-.fastest-hint {
+.shop-mini-address {
   font-size: 26rpx;
-  color: var(--secondary);
-  padding: 12rpx 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.notes-input {
+/* 服务选择 */
+.service-select-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  border: 2rpx solid var(--gray-200);
+  border-radius: 24rpx;
+  background: #fff;
+  transition: all 0.15s;
+}
+
+.service-select-item:last-child {
+  margin-bottom: 0;
+}
+
+.service-select-item-active {
+  border-color: var(--orange-500);
+  background: var(--orange-50);
+}
+
+.service-select-radio {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.service-select-item-active .service-select-radio {
+  border-color: var(--orange-500);
+}
+
+.service-select-radio-inner {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: var(--orange-500);
+}
+
+.service-select-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.service-select-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6rpx;
+}
+
+.service-select-desc {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.service-select-price {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.service-select-scroll-wrapper {
+  display: flex;
+  gap: 12rpx;
+}
+
+.service-select-scroll {
+  flex: 1;
+  min-width: 0;
+  max-height: 480rpx;
+}
+
+.service-select-scrollbar {
+  width: 8rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8rpx 0;
+}
+
+.service-select-scrollbar-track {
+  width: 6rpx;
+  height: 100%;
+  background: var(--gray-200);
+  border-radius: 6rpx;
+  position: relative;
+}
+
+.service-select-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  width: 6rpx;
+  background: var(--orange-500);
+  border-radius: 6rpx;
+}
+
+.service-scroll-hint {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+}
+
+.service-select-price-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4rpx;
+  flex-shrink: 0;
+}
+
+.service-select-original-price {
+  font-size: 24rpx;
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.service-select-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.service-select-tag {
+  font-size: 20rpx;
+  color: var(--orange-600);
+  background: var(--orange-100);
+  padding: 2rpx 8rpx;
+  border-radius: 8rpx;
+}
+
+/* 日期横向滚动 */
+.date-scroll {
+  white-space: nowrap;
   width: 100%;
-  min-height: 120rpx;
-  padding: 16rpx;
-  background: var(--background);
-  border-radius: 12rpx;
+}
+
+.date-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 132rpx;
+  padding: 18rpx 0;
+  margin-right: 16rpx;
+  background: var(--gray-100);
+  border-radius: 20rpx;
+  transition: all 0.15s;
+}
+
+.date-item-active {
+  background: var(--orange-500);
+  color: #fff;
+  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+}
+
+.date-label {
   font-size: 28rpx;
+  font-weight: 600;
+}
+
+.date-week {
+  font-size: 22rpx;
+  margin-top: 4rpx;
+  opacity: 0.85;
+}
+
+/* 时间网格 */
+.time-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.time-item {
+  width: calc(25% - 12rpx);
+  padding: 18rpx 0;
+  text-align: center;
+  background: var(--gray-100);
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  color: var(--text-primary);
+  transition: all 0.15s;
   box-sizing: border-box;
 }
 
-.btn-disabled {
-  opacity: 0.6;
-  pointer-events: none;
+.time-item-active {
+  background: var(--orange-500);
+  color: #fff;
+  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+}
+
+.time-item-disabled {
+  background: var(--gray-200);
+  color: var(--gray-400);
+  text-decoration: line-through;
+}
+
+.time-item-tag {
+  font-size: 18rpx;
+  margin-top: 2rpx;
+}
+
+/* 发型师卡片 */
+.barber-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+  border: 2rpx solid var(--gray-200);
+  border-radius: 24rpx;
+  background: #fff;
+  transition: all 0.15s;
+}
+
+.barber-card:last-child {
+  margin-bottom: 0;
+}
+
+.barber-card-active {
+  border-color: var(--orange-500);
+  background: var(--orange-50);
+}
+
+.barber-card-green {
+  border-color: var(--green-500);
+  background: var(--green-50);
+}
+
+.barber-card-disabled {
+  opacity: 0.55;
+  background: var(--gray-50);
+}
+
+.barber-radio {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 8rpx;
+}
+
+.barber-card-active .barber-radio,
+.barber-card-green .barber-radio {
+  border-color: var(--orange-500);
+}
+
+.barber-card-green .barber-radio {
+  border-color: var(--green-500);
+}
+
+.barber-radio-inner {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: var(--orange-500);
+}
+
+.barber-radio-inner-green {
+  background: var(--green-500);
+}
+
+.barber-avatar {
+  width: 80rpx;
+  height: 80rpx;
+  background: var(--gray-100);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.barber-avatar-green {
+  background: #dcfce7;
+}
+
+.barber-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.barber-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+  margin-bottom: 8rpx;
+}
+
+.barber-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.barber-desc {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-bottom: 12rpx;
+}
+
+.barber-meta {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  flex-wrap: wrap;
+  margin-bottom: 8rpx;
+}
+
+.barber-rating {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.barber-services {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.barber-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.barber-divider {
+  position: relative;
+  text-align: center;
+  margin: 24rpx 0;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.barber-divider::before,
+.barber-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 30%;
+  height: 1rpx;
+  background: var(--border);
+}
+
+.barber-divider::before {
+  left: 0;
+}
+
+.barber-divider::after {
+  right: 0;
+}
+
+/* 底部固定栏 */
+.booking-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.booking-total-label {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-bottom: 4rpx;
+}
+
+.booking-total-price {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.booking-submit {
+  min-width: 280rpx;
 }
