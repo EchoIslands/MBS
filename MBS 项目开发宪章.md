@@ -415,6 +415,16 @@ npm run server:api
 - 登录成功后立即刷新当前页面数据（`loadProfile`、`loadBooking`、`loadQueue` 等），确保用户无感进入已登录状态；
 - 登录组件与业务页面解耦，禁止在每个页面内重复写登录表单。
 
+#### WXML 表达式限制与 WXS 格式化层
+
+> 微信小程序 WXML 的 `{{}}` 表达式能力远小于完整 JavaScript，直接调用页面 JS 方法（如 `{{formatDateTime(...)}}`、`{{distance.toFixed(1)}}`、`{{getPurchaseVIPLabel(...)}}`）在真机上会渲染异常或空白。必须把展示格式化逻辑下沉到 WXS 或在 JS 中预计算。
+
+- **禁止在 WXML 中直接调用页面方法**：包括日期格式化、数字 `toFixed`、会员标签映射、权益图标计算等；
+- **统一格式化层**：新增 `mini-program/utils/format.wxs`，集中提供 `formatDate`、`formatDateTime`、`formatShortDate`、`formatDiscount`、`getPurchaseVIPLabel`、`getStoredValueLabel`、`benefitIconName`、`benefitIconColor` 等纯函数；
+- **页面接入方式**：在需要格式化的 WXML 顶部引入 `<wxs src="../../utils/format.wxs" module="fmt" />`，模板中使用 `{{fmt.formatDateTime(booking.scheduledTime)}}`；
+- **数字/状态类预计算**：如排队页距离 `distance.toFixed(1)` 改为 `distanceStr`，在 `queue.js` 的 `refreshComputed` 中预计算后绑定到 data；
+- **新增格式化需求时**：先判断是否能放进 `format.wxs`；若涉及业务状态或需访问 data，改为在 JS 中预计算展示字段；禁止在 WXML 中写 `.find()`、`.filter()`、箭头函数、`?.` 可选链等高级表达式。
+
 #### 后续界面调整纪律
 
 - **任何顾客端界面改动，必须同时评估 H5/小程序/后端 API 三端**：
@@ -955,13 +965,16 @@ npm run server:api
 
 ### 坑 22：环境变量未在部署平台设置（中）
 
-- **场景**：本地 `.env` 有配置，但 Vercel 上没有，部署后 API 不通。
-- **现象**：本地 `npm run dev` 能连上 Supabase，Vercel 部署后 API 返回 500 或空数据。
-- **根因**：.env 文件不在 Git 中，部署平台读不到。
+- **场景**：本地 `.env` 有配置，但 Vercel 上没有，部署后 API 不通或 H5 仍走 mock。
+- **现象**：
+  - 本地 `npm run dev` 能连上 Supabase，Vercel 部署后 API 返回 500 或空数据；
+  - 小程序已成功创建预约/顾客，但 H5 店铺端（如预约管理页面）看不到新数据。
+- **根因**：.env 文件不在 Git 中，部署平台读不到；H5 前端 `src/api.ts` 通过 `VITE_USE_REAL_API` 控制是否调用真实 API，未设置时默认回退 mock。
 - **解决**：在 Vercel 项目 Settings → Environment Variables 中手动添加：
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
-- **教训**：.env 不提交到 Git，但部署时要在平台重新配置；本地和线上环境变量是两套东西，缺一不可。
+  - `VITE_USE_REAL_API=true`（必须加，否则 H5 仍走 mock 数据）
+- **教训**：.env 不提交到 Git，但部署时要在平台重新配置；本地和线上环境变量是两套东西，缺一不可；H5 真实数据开关必须显式配置。
 - **相关文件**：`.env`、Vercel 项目设置。
 - **相关坑**：3.14.4 环境变量配置。
 
@@ -1448,13 +1461,16 @@ npm run server:api
 ### 3.14.4 环境变量配置：环境变量未在 Vercel 配置
 
 - **参考坑**：坑 22
-- **场景**：第二阶段接入 Supabase，本地 `.env` 已配置但忘记在 Vercel 配置。
-- **现象**：本地 `npm run dev` 能连上 Supabase，Vercel 部署后 API 返回 500 或空数据。
-- **根因**：`.env` 文件没有提交到 Git，Vercel 上缺少 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。
+- **场景**：第二阶段接入 Supabase，本地 `.env` 已配置但忘记在 Vercel 配置；或前端真实 API 开关未打开。
+- **现象**：
+  - 本地 `npm run dev` 能连上 Supabase，Vercel 部署后 API 返回 500 或空数据；
+  - 小程序端创建的数据在 H5 店铺端看不到。
+- **根因**：`.env` 文件没有提交到 Git，Vercel 上缺少 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`；H5 前端 `VITE_USE_REAL_API` 未设为 `true` 时会回退 mock。
 - **解决**：在 Vercel 项目 Settings → Environment Variables 中添加：
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
-- **教训**：本地 `.env` 和部署平台环境变量是两套东西，接数据库后第一时间在平台配置。
+  - `VITE_USE_REAL_API=true`
+- **教训**：本地 `.env` 和部署平台环境变量是两套东西，接数据库后第一时间在平台配置；部署后应验证 H5 Network 是否真实请求 `/api/...`。
 - **相关文件**：`.env`、Vercel 项目设置。
 - **相关坑**：3.7 坑 22 环境变量未在部署平台设置。
 
@@ -2636,7 +2652,7 @@ git push --force               # 强制推送（谨慎！）
   - 新增 `mini-program/utils/membership.js` 统一会员折扣、有效期、权益计算，供个人中心和结算页复用；
   - 登录体验统一：未登录场景自动唤起 `login-modal`，登录成功后刷新当前页面数据；
   - 完成 3 轮自测并修复问题：补齐 `app.scss` 通用工具类、修复 `queue.js` 参数名不一致、修复 `queue.wxml` `<span>`/`gap-1.5` 不兼容写法、修复 `booking.js`/`booking.wxml` 时间格渲染与 serviceId 传递 bug、`npm run build` 通过；
-  - 根据真机调试反馈继续对齐 H5：修复 icon 组件 wxss 标签选择器警告、首页标题改为店铺名、服务项目改为带自定义橙色滑块的 `scroll-view` 以复刻 H5 `VerticalScrollSlider`、修复 `loadShop`/`loadCustomer` 竞态导致会员价可能未生效的问题、修复登录成功后仍停留在登录界面的问题、删除 tabBar 改为页面内导航、首页底部操作栏与 H5 ShopDetail 对齐。
+  - 根据真机调试反馈继续对齐 H5：修复 icon 组件 wxss 标签选择器警告、首页标题改为店铺名、服务项目改为带自定义橙色滑块的 `scroll-view` 以复刻 H5 `VerticalScrollSlider`、修复 `loadShop`/`loadCustomer` 竞态导致会员价可能未生效的问题、修复登录成功后仍停留在登录界面的问题（根因是生产环境 `/customers/:id/public` 仍被 `authMiddleware` 拦截，已加客户端兜底并需重新部署后端）、删除 tabBar 改为页面内导航、首页底部操作栏与 H5 ShopDetail 对齐。
 - [ ] 小程序登录（`wx.login`）和支付（`wx.requestPayment`） pending 资质到位。
 
 ### 4.7.8 指向详细指南

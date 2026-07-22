@@ -1,7 +1,8 @@
+<wxs src="../../utils/format.wxs" module="fmt" />
 <view class="checkout-page">
   <!-- 顶部返回栏 -->
   <view class="page-top-bar checkout-top-bar" bindtap="goBack">
-    <mbs-icon name="arrowLeft" size="32" color="#1f2937" />
+    <mbs-icon name="arrowLeft" size="32" color="var(--text-primary)" />
     <text class="page-top-bar-text">返回</text>
   </view>
 
@@ -9,7 +10,7 @@
   <view class="checkout-header gradient-header-orange">
     <view class="checkout-header-inner">
       <view class="checkout-header-title">
-        <mbs-icon name="creditCard" size="40" color="#fff" />
+        <mbs-icon name="creditCard" size="40" color="var(--card-bg)" />
         <text>结算</text>
       </view>
       <view class="checkout-header-subtitle">到店服务完成后由店员确认收款</view>
@@ -19,7 +20,7 @@
   <view class="container checkout-content">
     <!-- 加载中 -->
     <view wx:if="{{loading}}" class="empty-state">
-      <view class="empty-icon"><mbs-icon name="clock" size="56" color="#9ca3af" /></view>
+      <view class="empty-icon"><mbs-icon name="clock" size="56" color="var(--text-tertiary)" /></view>
       <view class="empty-text">预约信息加载中...</view>
     </view>
 
@@ -32,7 +33,7 @@
     <!-- 缺少预约 -->
     <view wx:elif="{{!booking}}" class="card">
       <view class="empty-state" style="padding: 32rpx 0;">
-        <view class="empty-icon"><mbs-icon name="calendar" size="56" color="#9ca3af" /></view>
+        <view class="empty-icon"><mbs-icon name="calendar" size="56" color="var(--text-tertiary)" /></view>
         <view class="empty-text">请选择要结算的预约</view>
         <view class="btn btn-primary" bindtap="onViewProfile">查看我的预约</view>
       </view>
@@ -43,27 +44,27 @@
       <view class="card checkout-booking-card">
         <view class="flex items-center justify-between mb-4">
           <view class="card-title" style="margin-bottom: 0;">
-            <mbs-icon name="scissors" size="32" color="#f97316" />
+            <mbs-icon name="scissors" size="32" color="var(--accent)" />
             预约信息
           </view>
-          <view class="booking-status {{statusClass(booking.status)}}">{{statusText(booking.status)}}</view>
+          <mbs-status-badge status="{{booking.status}}" />
         </view>
 
         <view class="checkout-info-list">
           <view class="checkout-info-row">
-            <text class="checkout-info-label"><mbs-icon name="scissors" size="24" color="#9ca3af" /> 服务项目</text>
+            <text class="checkout-info-label"><mbs-icon name="scissors" size="24" color="var(--text-tertiary)" /> 服务项目</text>
             <text class="checkout-info-value">{{booking.serviceName}}</text>
           </view>
           <view class="checkout-info-row">
-            <text class="checkout-info-label"><mbs-icon name="calendar" size="24" color="#9ca3af" /> 预约时间</text>
-            <text class="checkout-info-value">{{formatDateTime(booking.scheduledTime)}}</text>
+            <text class="checkout-info-label"><mbs-icon name="calendar" size="24" color="var(--text-tertiary)" /> 预约时间</text>
+            <text class="checkout-info-value">{{fmt.formatDateTime(booking.scheduledTime)}}</text>
           </view>
           <view class="checkout-info-row">
-            <text class="checkout-info-label"><mbs-icon name="user" size="24" color="#9ca3af" /> 发型师</text>
+            <text class="checkout-info-label"><mbs-icon name="user" size="24" color="var(--text-tertiary)" /> 发型师</text>
             <text class="checkout-info-value">{{booking.stylistName || booking.barberName || '待安排'}}</text>
           </view>
           <view class="checkout-info-row">
-            <text class="checkout-info-label"><mbs-icon name="mapPin" size="24" color="#9ca3af" /> 店铺</text>
+            <text class="checkout-info-label"><mbs-icon name="mapPin" size="24" color="var(--text-tertiary)" /> 店铺</text>
             <text class="checkout-info-value">{{booking.shopName || '门店'}}</text>
           </view>
           <view wx:if="{{booking.queueNumber}}" class="checkout-info-row">
@@ -77,7 +78,7 @@
       <view wx:if="{{!customer}}" class="card login-tip-card">
         <view class="flex items-center gap-3">
           <view class="login-tip-icon">
-            <mbs-icon name="user" size="40" color="#3b82f6" />
+            <mbs-icon name="user" size="40" color="var(--primary)" />
           </view>
           <view class="flex-1">
             <view class="font-bold text-base text-gray-800">登录后查看会员价</view>
@@ -90,19 +91,19 @@
       <!-- 会员权益与价格 -->
       <view wx:if="{{customer}}" class="card checkout-price-card">
         <view class="card-title">
-          <mbs-icon name="crown" size="32" color="#f97316" />
+          <mbs-icon name="crown" size="32" color="var(--accent)" />
           会员优惠
         </view>
 
         <!-- 当前会员等级 -->
         <view class="checkout-vip-tags">
           <view class="tag tag-orange">
-            <mbs-icon name="crown" size="18" color="#ea580c" />
-            {{getPurchaseVIPLabel(purchaseLevel)}}
+            <mbs-icon name="crown" size="18" color="var(--accent-dark)" />
+            {{fmt.getPurchaseVIPLabel(purchaseLevel)}}
           </view>
           <view wx:if="{{storedLevel !== StoredValueLevel.NONE}}" class="tag tag-green">
-            <mbs-icon name="wallet" size="18" color="#16a34a" />
-            {{getStoredValueLabel(storedLevel)}}
+            <mbs-icon name="wallet" size="18" color="var(--success)" />
+            {{fmt.getStoredValueLabel(storedLevel)}}
           </view>
         </view>
 
@@ -113,11 +114,11 @@
             <text class="checkout-price-value {{hasDiscount ? 'checkout-price-original' : ''}}">¥{{originalPriceStr}}</text>
           </view>
           <view wx:if="{{hasPurchaseDiscount}}" class="checkout-price-row">
-            <text class="checkout-price-label">{{getPurchaseVIPLabel(purchaseLevel)}} ×{{purchaseVIPDiscountStr}} 折</text>
+            <text class="checkout-price-label">{{fmt.getPurchaseVIPLabel(purchaseLevel)}} ×{{purchaseVIPDiscountStr}} 折</text>
             <text class="checkout-price-value text-orange">-¥{{vipDiscountAmountStr}}</text>
           </view>
           <view wx:if="{{hasStoredDiscount}}" class="checkout-price-row">
-            <text class="checkout-price-label">{{getStoredValueLabel(storedLevel)}} 折上折 ×{{storedValueDiscountStr}} 折</text>
+            <text class="checkout-price-label">{{fmt.getStoredValueLabel(storedLevel)}} 折上折 ×{{storedValueDiscountStr}} 折</text>
             <text class="checkout-price-value text-orange">-¥{{storedDiscountAmountStr}}</text>
           </view>
           <view wx:if="{{hasDiscount}}" class="checkout-price-row checkout-price-total">
@@ -128,37 +129,37 @@
 
         <!-- 综合折扣提示 -->
         <view wx:if="{{hasDiscount}}" class="checkout-discount-hint">
-          <mbs-icon name="sparkles" size="24" color="#f97316" />
+          <mbs-icon name="sparkles" size="24" color="var(--accent)" />
           <text>当前综合折扣 {{effectiveDiscountStr}} 折，到店结算时自动生效</text>
         </view>
 
         <!-- 储值余额提示 -->
         <view wx:if="{{balance > 0}}" class="checkout-balance-hint">
-          <mbs-icon name="wallet" size="24" color="#3b82f6" />
+          <mbs-icon name="wallet" size="24" color="var(--primary)" />
           <text>储值余额 ¥{{balanceStr}}，到店可选择储值支付</text>
         </view>
 
         <!-- 到期提醒 -->
         <view wx:if="{{expiringSoon && customer.purchaseVIPExpiresAt}}" class="checkout-alert checkout-alert-yellow">
-          <mbs-icon name="alertCircle" size="28" color="#ca8a04" />
-          <text>您的 {{getPurchaseVIPLabel(purchaseLevel)}} 将于 {{formatShortDate(customer.purchaseVIPExpiresAt)}} 到期，请及时续费</text>
+          <mbs-icon name="alertCircle" size="28" color="var(--yellow-700)" />
+          <text>您的 {{fmt.getPurchaseVIPLabel(purchaseLevel)}} 将于 {{fmt.formatShortDate(customer.purchaseVIPExpiresAt)}} 到期，请及时续费</text>
         </view>
         <view wx:if="{{storedExpiringSoon && customer.storedValueExpiresAt}}" class="checkout-alert checkout-alert-orange">
-          <mbs-icon name="alertCircle" size="28" color="#ea580c" />
-          <text>您的 {{getStoredValueLabel(storedLevel)}} 将于 {{formatShortDate(customer.storedValueExpiresAt)}} 到期</text>
+          <mbs-icon name="alertCircle" size="28" color="var(--accent-dark)" />
+          <text>您的 {{fmt.getStoredValueLabel(storedLevel)}} 将于 {{fmt.formatShortDate(customer.storedValueExpiresAt)}} 到期</text>
         </view>
       </view>
 
       <!-- 支付方式说明 -->
       <view class="card checkout-payment-card">
         <view class="card-title">
-          <mbs-icon name="creditCard" size="32" color="#3b82f6" />
+          <mbs-icon name="creditCard" size="32" color="var(--primary)" />
           支付方式
         </view>
         <view class="payment-methods">
           <view class="payment-method-item">
             <view class="payment-method-icon payment-method-wechat">
-              <mbs-icon name="creditCard" size="28" color="#fff" />
+              <mbs-icon name="creditCard" size="28" color="var(--card-bg)" />
             </view>
             <view class="payment-method-info">
               <view class="payment-method-name">微信支付</view>
@@ -168,7 +169,7 @@
           </view>
           <view class="payment-method-item">
             <view class="payment-method-icon payment-method-balance">
-              <mbs-icon name="wallet" size="28" color="#fff" />
+              <mbs-icon name="wallet" size="28" color="var(--card-bg)" />
             </view>
             <view class="payment-method-info">
               <view class="payment-method-name">储值余额</view>
@@ -178,7 +179,7 @@
           </view>
           <view class="payment-method-item">
             <view class="payment-method-icon payment-method-cash">
-              <mbs-icon name="checkCircle" size="28" color="#fff" />
+              <mbs-icon name="checkCircle" size="28" color="var(--card-bg)" />
             </view>
             <view class="payment-method-info">
               <view class="payment-method-name">现金/刷卡</view>
@@ -192,7 +193,7 @@
       <!-- 温馨提示 -->
       <view class="card checkout-notice-card">
         <view class="flex items-start gap-3">
-          <mbs-icon name="alertCircle" size="32" color="#f97316" />
+          <mbs-icon name="alertCircle" size="32" color="var(--accent)" />
           <view class="flex-1">
             <view class="font-bold text-base text-gray-800 mb-1">温馨提示</view>
             <view class="text-sm text-gray-500 leading-relaxed">
@@ -214,7 +215,7 @@
       </view>
     </view>
     <view class="btn btn-primary checkout-bottom-btn" bindtap="onViewQueue">
-      <mbs-icon name="clock" size="28" color="#fff" />
+      <mbs-icon name="clock" size="28" color="var(--card-bg)" />
       查看排队
     </view>
   </view>
