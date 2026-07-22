@@ -254,7 +254,7 @@ const BookingPage: React.FC = () => {
           <Star
             key={i}
             size={13}
-            className={i <= Math.round(skillValue) ? 'text-yellow-500 fill-yellow-500' : 'text-gray-200'}
+            className={i <= Math.round(skillValue) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'}
           />
         ))}
       </div>
@@ -292,7 +292,11 @@ const BookingPage: React.FC = () => {
 
         {/* 选择服务 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4">选择服务</h3>
+          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+            <Scissors size={18} className="sm:hidden text-amber-600" />
+            <Scissors size={20} className="hidden sm:inline text-amber-600" />
+            选择服务
+          </h3>
           <VerticalScrollSlider maxHeight={320} containerClassName="space-y-2 sm:space-y-3 pr-1">
             {shop.services.map((service) => {
               const memberPrice = calcDiscountedItemPrice(
@@ -305,36 +309,44 @@ const BookingPage: React.FC = () => {
               return (
                 <label
                   key={service.id}
-                  className={`flex items-center justify-between p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                  className={`flex items-center gap-3 sm:gap-4 p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
                     selectedService === service.id
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-gray-200 hover:border-orange-200'
+                      ? 'border-amber-500 bg-amber-50'
+                      : 'border-gray-200 hover:border-amber-200'
                   }`}
                 >
-                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                    <input
-                      type="radio"
-                      name="service"
-                      checked={selectedService === service.id}
-                      onChange={() => setSelectedService(service.id)}
-                      className="accent-orange-500 flex-shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-medium text-gray-800 text-sm sm:text-base">{service.name}</div>
-                      <div className="text-xs sm:text-sm text-gray-500">约 {service.duration} 分钟</div>
+                  <input
+                    type="radio"
+                    name="service"
+                    checked={selectedService === service.id}
+                    onChange={() => setSelectedService(service.id)}
+                    className="accent-amber-500 flex-shrink-0"
+                  />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center flex-shrink-0">
+                    <Scissors size={18} className="sm:hidden text-amber-600" />
+                    <Scissors size={22} className="hidden sm:inline text-amber-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-gray-800 text-sm sm:text-base">{service.name}</div>
+                    {service.description && (
+                      <div className="text-xs sm:text-sm text-gray-500 line-clamp-1">{service.description}</div>
+                    )}
+                    <div className="inline-flex items-center gap-1 mt-1.5 text-xs text-amber-700 bg-orange-50 px-2 py-0.5 rounded-full">
+                      <Clock size={12} />
+                      约 {service.duration} 分钟
                     </div>
                   </div>
-                  <div className="text-right flex-shrink-0 ml-2">
+                  <div className="text-right flex-shrink-0 ml-2 bg-white px-2 py-1.5 rounded-lg border border-gray-100">
                     {hasDiscount && (
                       <div className="text-xs text-gray-400 line-through">¥{service.price}</div>
                     )}
                     <div className="flex items-center gap-1.5 justify-end">
                       {hasDiscount && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded font-medium">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-amber-700 rounded font-medium">
                           会员价
                         </span>
                       )}
-                      <span className="text-orange-500 font-bold text-base sm:text-lg">
+                      <span className="text-amber-600 font-bold text-base sm:text-lg">
                         ¥{memberPrice.toFixed(2)}
                       </span>
                     </div>
@@ -362,7 +374,7 @@ const BookingPage: React.FC = () => {
                 onClick={() => setSelectedDate(d.value)}
                 className={`flex-shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl text-center transition-all min-w-[72px] sm:min-w-[78px] ${
                   selectedDate === d.value
-                    ? 'bg-orange-500 text-white shadow'
+                    ? 'bg-amber-500 text-white shadow'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -390,7 +402,7 @@ const BookingPage: React.FC = () => {
                   disabled={allBusy}
                   className={`py-2.5 sm:py-3 rounded-xl text-center transition-all text-sm ${
                     selectedTime === time
-                      ? 'bg-orange-500 text-white shadow'
+                      ? 'bg-amber-500 text-white shadow'
                       : allBusy
                         ? 'bg-gray-200 text-gray-400 line-through cursor-not-allowed'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -407,14 +419,14 @@ const BookingPage: React.FC = () => {
         {/* 选择发型师 —— 核心改造 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
           <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Scissors size={20} className="text-orange-500" />
+            <Scissors size={20} className="text-amber-600" />
             选择发型师
           </h3>
 
           {/* 智能匹配卡片 */}
           <div className={`p-3 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all mb-3 sm:mb-4 ${
             selectionMode === 'fastest'
-              ? 'border-green-500 bg-green-50'
+              ? 'border-emerald-500 bg-green-50'
               : 'border-gray-200 hover:border-green-300'
           }`}
           >
@@ -424,7 +436,7 @@ const BookingPage: React.FC = () => {
                 name="barberSelection"
                 checked={selectionMode === 'fastest'}
                 onChange={() => setSelectionMode('fastest')}
-                className="mt-2 sm:mt-3 accent-green-500 flex-shrink-0"
+                className="mt-2 sm:mt-3 accent-emerald-500 flex-shrink-0"
               />
               <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
@@ -478,7 +490,7 @@ const BookingPage: React.FC = () => {
                   key={stylist.id}
                   className={`flex items-start p-3 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all ${
                     isSelected
-                      ? 'border-orange-500 bg-orange-50'
+                      ? 'border-amber-500 bg-orange-50'
                       : av.isAvailable
                         ? 'border-gray-200 hover:border-orange-200'
                         : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
@@ -495,7 +507,7 @@ const BookingPage: React.FC = () => {
                         setSelectedBarberId(stylist.id);
                       }
                     }}
-                    className="mt-3 sm:mt-4 accent-orange-500 mr-2 sm:mr-3 flex-shrink-0"
+                    className="mt-3 sm:mt-4 accent-amber-500 mr-2 sm:mr-3 flex-shrink-0"
                   />
 
                   {/* 头像 —— 手机端小一点 */}
@@ -529,8 +541,8 @@ const BookingPage: React.FC = () => {
                     {/* 手艺值行 —— 手机端只展示关键数据，桌面端完整显示 */}
                     <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600 mb-1.5 sm:mb-2 flex-wrap">
                       <div className="flex items-center gap-1">
-                        <Award size={12} className="sm:hidden text-yellow-500" />
-                        <Award size={14} className="hidden sm:inline text-yellow-500" />
+                        <Award size={12} className="sm:hidden text-amber-400" />
+                        <Award size={14} className="hidden sm:inline text-amber-400" />
                         <span className="font-bold text-gray-800 text-xs sm:text-sm">
                           {(stylist.skillValue || stylist.rating || 4.5).toFixed(1)}
                         </span>
@@ -567,7 +579,7 @@ const BookingPage: React.FC = () => {
 
                     {/* 等待时间 */}
                     <div className={`text-xs sm:text-sm font-semibold ${
-                      av.isAvailable ? 'text-green-600' : 'text-red-500'
+                      av.isAvailable ? 'text-green-600' : 'text-rose-500'
                     }`}>
                       {av.isAvailable ? `预计等待 ${av.waitTime} 分钟` : '当前时段已满'}
                     </div>
@@ -589,7 +601,7 @@ const BookingPage: React.FC = () => {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="您的发型偏好、特殊需求等..."
-            className="w-full px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none text-sm sm:text-base"
+            className="w-full px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none text-sm sm:text-base"
             rows={3}
           />
         </div>
@@ -653,7 +665,7 @@ const BookingPage: React.FC = () => {
           <button
             onClick={handleBooking}
             disabled={booking}
-            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg transition-all flex items-center justify-center gap-2"
+            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg transition-all flex items-center justify-center gap-2"
           >
             <CheckCircle size={18} className="sm:hidden" />
             <CheckCircle size={20} className="hidden sm:inline" />

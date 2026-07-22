@@ -65,7 +65,7 @@
 .profile-entry-avatar {
   width: 80rpx;
   height: 80rpx;
-  background: #fff;
+  background: var(--card-bg);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -93,7 +93,7 @@
 .shop-image-placeholder {
   width: 160rpx;
   height: 160rpx;
-  background: #eff6ff;
+  background: var(--blue-100);
   border-radius: 24rpx;
   display: flex;
   align-items: center;
@@ -205,13 +205,6 @@
   white-space: nowrap;
 }
 
-.service-price {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
 .service-scroll-hint {
   margin-left: auto;
   font-size: 22rpx;
@@ -221,6 +214,228 @@
 
 .service-scroll {
   max-height: 480rpx;
+}
+
+.service-item-h5 {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
+  background: var(--gray-50);
+  border-radius: 24rpx;
+  margin-bottom: 16rpx;
+  border: 1rpx solid var(--border);
+}
+
+.service-item-h5:last-child {
+  margin-bottom: 0;
+}
+
+.service-icon-h5 {
+  width: 72rpx;
+  height: 72rpx;
+  background: linear-gradient(135deg, var(--orange-100), #ffdcc2);
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.service-content-h5 {
+  flex: 1;
+  min-width: 0;
+}
+
+.service-name-h5 {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8rpx;
+  line-height: 1.35;
+}
+
+.service-desc-h5 {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 8rpx;
+  line-height: 1.4;
+}
+
+.service-duration-h5 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  color: var(--accent-dark);
+  background: var(--orange-50);
+  padding: 4rpx 12rpx;
+  border-radius: 9999rpx;
+  font-weight: 500;
+}
+
+.service-price-h5 {
+  text-align: right;
+  margin-left: 16rpx;
+  padding: 12rpx 16rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  border: 1rpx solid var(--border);
+}
+
+/* 商品商城 */
+.product-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+}
+
+.product-item {
+  background: var(--gray-50);
+  border-radius: 24rpx;
+  overflow: hidden;
+}
+
+.product-image {
+  width: 100%;
+  height: 160rpx;
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-image-img {
+  width: 100%;
+  height: 100%;
+}
+
+.product-name {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+  padding: 16rpx 16rpx 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  padding: 0 16rpx 16rpx;
+}
+
+.product-original-price {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.product-price {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* 顾客评价 */
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.review-item {
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.review-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.review-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.review-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-name {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.review-date {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  margin-top: 4rpx;
+}
+
+.review-stars {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.review-comment {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.review-reply {
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  background: var(--gray-50);
+  border-radius: 20rpx;
+  border-left: 6rpx solid var(--accent);
+}
+
+.review-reply-header {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 8rpx;
+}
+
+.review-reply-by {
+  font-size: 24rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.review-reply-date {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+}
+
+.review-reply-text {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 /* 发型师 */

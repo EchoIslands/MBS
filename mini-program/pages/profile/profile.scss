@@ -10,7 +10,7 @@
 .vip-header {
   position: relative;
   overflow: hidden;
-  color: #fff;
+  color: var(--card-bg);
   padding: 48rpx 24rpx calc(48rpx + env(safe-area-inset-top, 0));
 }
 
@@ -313,26 +313,15 @@
 }
 
 /* 表格高亮背景 */
-.bg-orange-light { background: rgba(249, 115, 22, 0.06); }
-.bg-blue-light { background: rgba(59, 130, 246, 0.06); }
-.bg-yellow-light { background: rgba(234, 179, 8, 0.06); }
+.bg-orange-light { background: rgba(217, 122, 69, 0.06); }
+.bg-blue-light { background: rgba(107, 163, 250, 0.06); }
+.bg-yellow-light { background: rgba(212, 167, 58, 0.06); }
 .bg-purple-light { background: rgba(168, 85, 247, 0.06); }
-.bg-green-light { background: rgba(34, 197, 94, 0.08); }
+.bg-green-light { background: rgba(82, 179, 126, 0.08); }
 .bg-cyan-light { background: rgba(6, 182, 212, 0.06); }
 .bg-indigo-light { background: rgba(99, 102, 241, 0.06); }
-.bg-red-light { background: rgba(239, 68, 68, 0.06); }
+.bg-red-light { background: rgba(217, 108, 108, 0.06); }
 .bg-gray-light { background: var(--gray-100); }
-
-/* 表格文字颜色 */
-.text-orange { color: var(--orange-600); }
-.text-blue { color: var(--blue-600); }
-.text-yellow { color: #b45309; }
-.text-purple { color: var(--purple-600); }
-.text-cyan { color: #0891b2; }
-.text-indigo { color: #4f46e5; }
-.text-green { color: var(--green-600); }
-.text-red { color: var(--danger); }
-.text-gray { color: var(--text-secondary); }
 
 /* 当前会员卡片 */
 .vip-current-card {
@@ -346,13 +335,13 @@
 }
 
 .vip-current-orange {
-  background: linear-gradient(90deg, #fff7ed, #fefce8);
-  border: 1rpx solid #fed7aa;
+  background: linear-gradient(90deg, var(--orange-50), var(--yellow-50));
+  border: 1rpx solid var(--orange-200);
 }
 
 .vip-current-green {
-  background: linear-gradient(90deg, #f0fdf4, #ecfdf5);
-  border: 1rpx solid #bbf7d0;
+  background: linear-gradient(90deg, var(--green-50), var(--green-100));
+  border: 1rpx solid var(--green-200);
 }
 
 .vip-current-title {
@@ -361,16 +350,16 @@
   margin-bottom: 6rpx;
 }
 
-.vip-current-orange .vip-current-title { color: #c2410c; }
-.vip-current-green .vip-current-title { color: #15803d; }
+.vip-current-orange .vip-current-title { color: var(--orange-700); }
+.vip-current-green .vip-current-title { color: var(--green-700); }
 
 .vip-current-desc {
   font-size: 24rpx;
   line-height: 1.4;
 }
 
-.vip-current-orange .vip-current-desc { color: #ea580c; }
-.vip-current-green .vip-current-desc { color: #16a34a; }
+.vip-current-orange .vip-current-desc { color: var(--orange-600); }
+.vip-current-green .vip-current-desc { color: var(--green-600); }
 
 /* Tab 切换 */
 .tab-switcher {
@@ -389,7 +378,7 @@
 }
 
 .tab-active {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--text-primary);
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
 }
@@ -469,7 +458,7 @@
 }
 
 .modal-dialog {
-  background: #fff;
+  background: var(--card-bg);
   border-radius: 32rpx;
   width: 100%;
   max-height: 86vh;

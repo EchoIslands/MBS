@@ -10,6 +10,7 @@ import {
   MessageSquare,
   MessageCircle,
   LogOut,
+  Scissors,
 } from 'lucide-react';
 import { Shop, Review, UserRole, Employee } from '../../../shared/types';
 import { shopApi } from '../../api';
@@ -90,7 +91,7 @@ const ShopDetail: React.FC = () => {
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => navigate('/customer/profile')}
-              className="flex items-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-xl font-medium text-sm shadow transition-colors"
+              className="flex items-center gap-1.5 bg-slate-500 hover:bg-slate-600 text-white px-3 sm:px-4 py-2 rounded-xl font-medium text-sm shadow transition-colors"
             >
               <User size={16} className="sm:hidden" />
               <User size={18} className="hidden sm:inline" />
@@ -101,7 +102,7 @@ const ShopDetail: React.FC = () => {
                 logout();
                 navigate('/customer/login');
               }}
-              className="flex items-center gap-1.5 border border-red-300 text-red-500 hover:bg-red-50 px-3 sm:px-4 py-2 rounded-xl font-medium text-sm transition-colors"
+              className="flex items-center gap-1.5 border border-rose-300 text-rose-500 hover:bg-rose-50 px-3 sm:px-4 py-2 rounded-xl font-medium text-sm transition-colors"
             >
               <LogOut size={16} className="sm:hidden" />
               <LogOut size={18} className="hidden sm:inline" />
@@ -149,7 +150,7 @@ const ShopDetail: React.FC = () => {
                       size={14}
                       className={
                         star <= Math.round(shop.rating || 0)
-                          ? 'text-yellow-500 fill-yellow-500'
+                          ? 'text-amber-400 fill-amber-400'
                           : 'text-gray-300'
                       }
                     />
@@ -163,15 +164,15 @@ const ShopDetail: React.FC = () => {
 
           <div className="space-y-3 text-gray-600">
             <div className="flex items-center gap-3">
-              <MapPin size={20} className="text-blue-500" />
+              <MapPin size={20} className="text-slate-500" />
               <span>{shop.address}</span>
             </div>
             <div className="flex items-center gap-3">
-              <Phone size={20} className="text-blue-500" />
+              <Phone size={20} className="text-slate-500" />
               <span>{shop.phone}</span>
             </div>
             <div className="flex items-center gap-3">
-              <Clock size={20} className="text-blue-500" />
+              <Clock size={20} className="text-slate-500" />
               <span>营业中 · 09:00-21:00</span>
             </div>
           </div>
@@ -198,13 +199,13 @@ const ShopDetail: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-gray-800">{employee.name}</div>
                         {employee.title && (
-                          <div className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                          <div className="text-xs px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full">
                             {employee.title}
                           </div>
                         )}
                       </div>
                       <div className="flex items-center gap-1 text-sm text-gray-500 mt-1">
-                        <Star size={14} className="text-yellow-500 fill-yellow-500" />
+                        <Star size={14} className="text-amber-400 fill-amber-400" />
                         <span>{employee.rating}</span>
                       </div>
                       {employee.specialty && (
@@ -226,7 +227,7 @@ const ShopDetail: React.FC = () => {
               <h3 className="text-lg font-bold text-gray-800">商品商城</h3>
               <button
                 onClick={() => navigate(`/customer/products/${shop.id}`)}
-                className="text-orange-500 text-sm font-medium hover:text-orange-600"
+                className="text-amber-600 text-sm font-medium hover:text-amber-700"
               >
                 查看全部 →
               </button>
@@ -251,7 +252,7 @@ const ShopDetail: React.FC = () => {
                         {product.name}
                       </h4>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-bold text-red-500">
+                        <span className="text-lg font-bold text-amber-600">
                           ¥{product.price}
                         </span>
                         {product.originalPrice && (
@@ -269,24 +270,32 @@ const ShopDetail: React.FC = () => {
 
         {/* 服务项目 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">服务项目</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Scissors size={20} className="text-amber-600" />
+            服务项目
+          </h3>
           <VerticalScrollSlider maxHeight={360} containerClassName="space-y-3 pr-1">
             {shop.services.map((service) => (
               <div
                 key={service.id}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-xl"
+                className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100"
               >
-                <div>
-                  <div className="font-medium text-gray-800">{service.name}</div>
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center flex-shrink-0">
+                  <Scissors size={22} className="sm:hidden text-amber-600" />
+                  <Scissors size={26} className="hidden sm:inline text-amber-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-gray-800 text-sm sm:text-base">{service.name}</div>
                   {service.description && (
-                    <div className="text-sm text-gray-500">{service.description}</div>
+                    <div className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-1">{service.description}</div>
                   )}
-                  <div className="text-sm text-gray-400 mt-1">
-                    时长 {service.duration} 分钟
+                  <div className="inline-flex items-center gap-1 mt-2 text-xs text-amber-700 bg-orange-50 px-2 py-0.5 rounded-full">
+                    <Clock size={12} />
+                    约 {service.duration} 分钟
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-bold text-orange-500">
+                <div className="text-right flex-shrink-0 ml-2 bg-white px-3 py-2 rounded-lg border border-gray-100">
+                  <div className="text-lg sm:text-xl font-bold text-amber-600">
                     ¥{service.price}
                   </div>
                 </div>
@@ -299,7 +308,7 @@ const ShopDetail: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-              <MessageSquare size={20} className="text-orange-500" />
+              <MessageSquare size={20} className="text-amber-600" />
               顾客评价
             </h3>
             <span className="text-sm text-gray-400">{reviews.length} 条</span>
@@ -330,7 +339,7 @@ const ShopDetail: React.FC = () => {
                           size={12}
                           className={
                             star <= Math.round(review.overallScore)
-                              ? 'text-yellow-500 fill-yellow-500'
+                              ? 'text-amber-400 fill-amber-400'
                               : 'text-gray-300'
                           }
                         />
@@ -340,9 +349,9 @@ const ShopDetail: React.FC = () => {
                   <p className="text-sm text-gray-700">{review.comment || '用户未填写文字评价'}</p>
 
                   {review.reply && (
-                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border-l-4 border-orange-400">
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border-l-4 border-amber-400">
                       <div className="flex items-center gap-2 mb-1">
-                        <MessageCircle size={14} className="text-orange-500" />
+                        <MessageCircle size={14} className="text-amber-600" />
                         <span className="text-sm font-medium text-gray-700">{review.replyBy || '店铺回复'}</span>
                         <span className="text-xs text-gray-400">
                           {review.replyAt && new Date(review.replyAt).toLocaleDateString()}
@@ -369,15 +378,16 @@ const ShopDetail: React.FC = () => {
         <div className="max-w-4xl mx-auto flex gap-3">
           <button
             onClick={() => navigate(`/customer/products/${shop.id}`)}
-            className="flex-1 bg-orange-50 hover:bg-orange-100 text-orange-600 py-4 px-6 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2"
+            className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-4 px-6 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2 border border-amber-200"
           >
             <ShoppingBag size={20} />
             商品商城
           </button>
           <button
             onClick={() => navigate(`/customer/booking/${shop.id}`)}
-            className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all"
+            className="flex-1 bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
           >
+            <Clock size={20} />
             立即预约
           </button>
         </div>

@@ -1,9 +1,10 @@
 {
   "navigationBarTitleText": "MBS 理发店",
   "navigationBarTextStyle": "white",
-  "navigationBarBackgroundColor": "#2563eb",
+  "navigationBarBackgroundColor": "#4f8ef7",
   "usingComponents": {
     "login-modal": "/components/login-modal/login-modal",
-    "mbs-icon": "/components/icon/icon"
+    "mbs-icon": "/components/icon/icon",
+    "mbs-price": "/components/mbs-price/mbs-price"
   }
 }

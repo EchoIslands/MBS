@@ -2,7 +2,7 @@
 
 .queue-page {
   min-height: 100vh;
-  background: var(--background);
+  background: linear-gradient(135deg, var(--orange-50) 0%, var(--card-bg) 50%, var(--yellow-50) 100%);
   padding-bottom: calc(24rpx + env(safe-area-inset-bottom, 0));
 }
 
@@ -18,20 +18,20 @@
 }
 
 .status-waiting {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--blue-100);
+  color: var(--blue-700);
 }
 
 .status-serving {
-  background: #d1fae5;
-  color: #065f46;
+  background: var(--green-100);
+  color: var(--green-800);
 }
 
 .serving-dot {
   width: 16rpx;
   height: 16rpx;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--green-500);
   animation: pulse 1.5s infinite;
 }
 
@@ -43,7 +43,7 @@
 /* 发型师卡片 */
 .stylist-card {
   border: 1rpx solid var(--orange-50);
-  box-shadow: 0 4rpx 16rpx rgba(249, 115, 22, 0.08);
+  box-shadow: 0 4rpx 16rpx rgba(217, 122, 69, 0.08);
 }
 
 .stylist-avatar-wrap {
@@ -59,15 +59,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+  box-shadow: 0 8rpx 20rpx rgba(217, 122, 69, 0.25);
 }
 
 .stylist-skill-badge {
   position: absolute;
   bottom: -10rpx;
   right: -10rpx;
-  background: linear-gradient(135deg, #facc15, #eab308);
-  color: #fff;
+  background: linear-gradient(135deg, var(--yellow-400), var(--yellow-500));
+  color: var(--card-bg);
   font-size: 20rpx;
   font-weight: 700;
   padding: 4rpx 12rpx;
@@ -113,7 +113,7 @@
 
 .progress-track-sm {
   height: 12rpx;
-  border: 1rpx solid #ffedd5;
+  border: 1rpx solid var(--orange-100);
 }
 
 .progress-bar {
@@ -138,13 +138,13 @@
 }
 
 .step-row-active {
-  background: linear-gradient(90deg, #fff7ed, #fffbeb);
-  border: 1rpx solid #fed7aa;
-  box-shadow: 0 2rpx 10rpx rgba(249, 115, 22, 0.08);
+  background: linear-gradient(90deg, var(--orange-50), var(--yellow-50));
+  border: 1rpx solid var(--orange-200);
+  box-shadow: 0 2rpx 10rpx rgba(217, 122, 69, 0.08);
 }
 
 .step-row-done {
-  background: #f0fdf4;
+  background: var(--green-50);
 }
 
 .step-icon {
@@ -163,7 +163,7 @@
 
 .step-icon-active {
   background: var(--orange-500);
-  box-shadow: 0 4rpx 12rpx rgba(249, 115, 22, 0.3);
+  box-shadow: 0 4rpx 12rpx rgba(217, 122, 69, 0.3);
 }
 
 .step-icon-wait {
@@ -190,13 +190,13 @@
 
 /* 预约尚未开始 */
 .appointment-soon-card {
-  background: linear-gradient(135deg, #eff6ff, #eef2ff);
-  border: 1rpx solid #dbeafe;
+  background: linear-gradient(135deg, var(--blue-50), var(--blue-100));
+  border: 1rpx solid var(--blue-100);
 }
 
 /* 排队状态卡片 */
 .queue-status-card {
-  border: 1rpx solid #dbeafe;
+  border: 1rpx solid var(--blue-100);
 }
 
 .time-slot-tag {
@@ -225,11 +225,11 @@
 }
 
 .queue-number-blue {
-  background: #eff6ff;
+  background: var(--blue-50);
 }
 
 .queue-number-orange {
-  background: #fff7ed;
+  background: var(--orange-50);
 }
 
 .queue-number-label {
@@ -268,8 +268,8 @@
   display: flex;
   align-items: center;
   gap: 20rpx;
-  background: linear-gradient(90deg, #f0fdf4, #ecfdf5);
-  border: 1rpx solid #a7f3d0;
+  background: linear-gradient(90deg, var(--green-50), var(--green-100));
+  border: 1rpx solid var(--green-200);
   border-radius: 24rpx;
   padding: 24rpx;
   margin-top: 24rpx;
@@ -299,7 +299,7 @@
   width: 36rpx;
   height: 36rpx;
   border-radius: 50%;
-  background: #fff;
+  background: var(--card-bg);
   box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.1);
   transition: transform 0.2s;
 }

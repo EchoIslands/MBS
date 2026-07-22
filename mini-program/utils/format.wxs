@@ -3,17 +3,24 @@
 
 function toTwoDigits(n) {
   n = Number(n);
-  return n < 10 ? '0' + n : '' + n;
+  if (n < 10) {
+    return '0' + n;
+  }
+  return '' + n;
 }
 
 function formatDate(isoString) {
-  if (!isoString) return '';
+  if (!isoString) {
+    return '';
+  }
   var d = getDate(isoString);
   return d.getFullYear() + '-' + toTwoDigits(d.getMonth() + 1) + '-' + toTwoDigits(d.getDate());
 }
 
 function formatDateTime(isoString) {
-  if (!isoString) return '';
+  if (!isoString) {
+    return '';
+  }
   var d = getDate(isoString);
   var weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   return (
@@ -24,13 +31,21 @@ function formatDateTime(isoString) {
 }
 
 function formatShortDate(isoString) {
-  if (!isoString) return '';
+  if (!isoString) {
+    return '';
+  }
   var d = getDate(isoString);
   return d.getFullYear() + '/' + toTwoDigits(d.getMonth() + 1) + '/' + toTwoDigits(d.getDate());
 }
 
 function formatDiscount(discount) {
-  discount = Number(discount) || 1;
+  discount = parseFloat(discount);
+  if (discount != discount) {
+    discount = 1;
+  }
+  if (discount == 0) {
+    discount = 1;
+  }
   return (discount * 10).toFixed(2);
 }
 
@@ -52,7 +67,9 @@ var storedValuePlans = [
 
 function findPlanName(plans, level, fallback) {
   for (var i = 0; i < plans.length; i++) {
-    if (plans[i].level === level) return plans[i].name;
+    if (plans[i].level === level) {
+      return plans[i].name;
+    }
   }
   return fallback;
 }
@@ -73,7 +90,11 @@ function benefitIconName(type) {
     drink: 'coffee',
     redo: 'refreshCw',
   };
-  return map[type] || 'gift';
+  var result = map[type];
+  if (!result) {
+    result = 'gift';
+  }
+  return result;
 }
 
 function benefitIconColor(type) {
@@ -84,7 +105,11 @@ function benefitIconColor(type) {
     drink: '#f97316',
     redo: '#ef4444',
   };
-  return map[type] || '#9ca3af';
+  var result = map[type];
+  if (!result) {
+    result = '#9ca3af';
+  }
+  return result;
 }
 
 module.exports = {

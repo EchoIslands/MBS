@@ -14,7 +14,7 @@
 .shop-mini-image {
   width: 96rpx;
   height: 96rpx;
-  background: #eff6ff;
+  background: var(--blue-100);
   border-radius: 20rpx;
   display: flex;
   align-items: center;
@@ -46,7 +46,7 @@
   margin-bottom: 16rpx;
   border: 2rpx solid var(--gray-200);
   border-radius: 24rpx;
-  background: #fff;
+  background: var(--card-bg);
   transition: all 0.15s;
 }
 
@@ -55,7 +55,7 @@
 }
 
 .service-select-item-active {
-  border-color: var(--orange-500);
+  border-color: var(--accent);
   background: var(--orange-50);
 }
 
@@ -71,14 +71,14 @@
 }
 
 .service-select-item-active .service-select-radio {
-  border-color: var(--orange-500);
+  border-color: var(--accent);
 }
 
 .service-select-radio-inner {
   width: 18rpx;
   height: 18rpx;
   border-radius: 50%;
-  background: var(--orange-500);
+  background: var(--accent);
 }
 
 .service-select-content {
@@ -88,32 +88,35 @@
 
 .service-select-name {
   font-size: 30rpx;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 6rpx;
+  margin-bottom: 8rpx;
+  line-height: 1.35;
 }
 
 .service-select-desc {
-  font-size: 24rpx;
-  color: var(--text-secondary);
-}
-
-.service-select-price {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: var(--accent);
-  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  color: var(--accent-dark);
+  background: var(--orange-50);
+  padding: 4rpx 12rpx;
+  border-radius: 9999rpx;
+  font-weight: 500;
 }
 
 .service-select-scroll-wrapper {
   display: flex;
+  align-items: stretch;
   gap: 12rpx;
+  height: 480rpx;
 }
 
 .service-select-scroll {
   flex: 1;
   min-width: 0;
-  max-height: 480rpx;
+  height: 100%;
 }
 
 .service-select-scrollbar {
@@ -136,7 +139,7 @@
   position: absolute;
   left: 0;
   width: 6rpx;
-  background: var(--orange-500);
+  background: var(--accent);
   border-radius: 6rpx;
 }
 
@@ -144,34 +147,6 @@
   margin-left: auto;
   font-size: 22rpx;
   color: var(--text-tertiary);
-}
-
-.service-select-price-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4rpx;
-  flex-shrink: 0;
-}
-
-.service-select-original-price {
-  font-size: 24rpx;
-  color: var(--text-tertiary);
-  text-decoration: line-through;
-}
-
-.service-select-price-row {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.service-select-tag {
-  font-size: 20rpx;
-  color: var(--orange-600);
-  background: var(--orange-100);
-  padding: 2rpx 8rpx;
-  border-radius: 8rpx;
 }
 
 /* 日期横向滚动 */
@@ -194,9 +169,9 @@
 }
 
 .date-item-active {
-  background: var(--orange-500);
-  color: #fff;
-  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+  background: var(--accent);
+  color: var(--card-bg);
+  box-shadow: 0 8rpx 20rpx rgba(217, 122, 69, 0.25);
 }
 
 .date-label {
@@ -230,9 +205,9 @@
 }
 
 .time-item-active {
-  background: var(--orange-500);
-  color: #fff;
-  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+  background: var(--accent);
+  color: var(--card-bg);
+  box-shadow: 0 8rpx 20rpx rgba(217, 122, 69, 0.25);
 }
 
 .time-item-disabled {
@@ -255,7 +230,7 @@
   margin-bottom: 16rpx;
   border: 2rpx solid var(--gray-200);
   border-radius: 24rpx;
-  background: #fff;
+  background: var(--card-bg);
   transition: all 0.15s;
 }
 
@@ -264,12 +239,12 @@
 }
 
 .barber-card-active {
-  border-color: var(--orange-500);
+  border-color: var(--accent);
   background: var(--orange-50);
 }
 
 .barber-card-green {
-  border-color: var(--green-500);
+  border-color: var(--success);
   background: var(--green-50);
 }
 
@@ -292,22 +267,22 @@
 
 .barber-card-active .barber-radio,
 .barber-card-green .barber-radio {
-  border-color: var(--orange-500);
+  border-color: var(--accent);
 }
 
 .barber-card-green .barber-radio {
-  border-color: var(--green-500);
+  border-color: var(--success);
 }
 
 .barber-radio-inner {
   width: 18rpx;
   height: 18rpx;
   border-radius: 50%;
-  background: var(--orange-500);
+  background: var(--accent);
 }
 
 .barber-radio-inner-green {
-  background: var(--green-500);
+  background: var(--success);
 }
 
 .barber-avatar {
@@ -322,7 +297,7 @@
 }
 
 .barber-avatar-green {
-  background: #dcfce7;
+  background: var(--green-100);
 }
 
 .barber-content {

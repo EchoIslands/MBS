@@ -119,10 +119,16 @@
             bindtap="onServiceTap"
             data-id="{{item.id}}"
           >
+            <view class="service-icon-h5">
+              <mbs-icon name="scissors" size="36" color="var(--accent)" />
+            </view>
             <view class="service-content-h5">
               <view class="service-name-h5">{{item.name}}</view>
               <view wx:if="{{item.description}}" class="service-desc-h5">{{item.description}}</view>
-              <view wx:if="{{item.duration}}" class="service-duration-h5">时长 {{item.duration}} 分钟</view>
+              <view wx:if="{{item.duration}}" class="service-duration-h5">
+                <mbs-icon name="clock" size="18" color="var(--accent-dark)" />
+                约 {{item.duration}} 分钟
+              </view>
             </view>
             <view class="service-price-h5">
               <mbs-price current="{{item.price}}" size="sm" />

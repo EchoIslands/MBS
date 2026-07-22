@@ -1,12 +1,12 @@
 <view class="login-mask" wx:if="{{visible}}" catchtap="onMaskTap">
   <view class="login-dialog" catchtap="onDialogTap">
     <view class="login-close" catchtap="onClose">
-      <mbs-icon name="close" size="28" color="#9ca3af" />
+      <mbs-icon name="close" size="28" color="var(--text-tertiary)" />
     </view>
 
     <view class="login-brand">
       <view class="login-avatar">
-        <mbs-icon name="user" size="48" color="#3b82f6" />
+        <mbs-icon name="user" size="48" color="var(--primary)" />
       </view>
       <view class="login-title">顾客登录</view>
       <view class="login-hint">登录后可预约服务、查看排队进度</view>
@@ -14,7 +14,7 @@
 
     <view class="login-field">
       <view class="login-input-wrap">
-        <mbs-icon name="user" size="32" color="#9ca3af" />
+        <mbs-icon name="user" size="32" color="var(--text-tertiary)" />
         <input
           class="login-input"
           type="text"
@@ -29,7 +29,7 @@
 
     <view class="login-field">
       <view class="login-input-wrap">
-        <mbs-icon name="phone" size="32" color="#9ca3af" />
+        <mbs-icon name="phone" size="32" color="var(--text-tertiary)" />
         <input
           class="login-input"
           type="number"
@@ -43,8 +43,9 @@
 
     <view class="login-error" wx:if="{{error}}">{{error}}</view>
 
-    <view class="btn btn-primary {{loggingIn ? 'btn-disabled' : ''}}" catchtap="onLogin">
-      {{loggingIn ? '登录中...' : '登录'}}
+    <view class="login-submit-btn {{loggingIn ? 'login-submit-btn-disabled' : ''}}" catchtap="onLogin">
+      <mbs-icon wx:if="{{!loggingIn}}" name="phone" size="32" color="#ffffff" />
+      <text>{{loggingIn ? '登录中...' : '立即登录'}}</text>
     </view>
 
     <view class="login-demo">试用账号：13900000001</view>

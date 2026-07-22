@@ -2,19 +2,44 @@
 
 page {
   /* 品牌色 */
-  --blue-500: #3b82f6;
-  --blue-600: #2563eb;
-  --blue-700: #1d4ed8;
-  --orange-500: #f97316;
-  --orange-600: #ea580c;
-  --orange-50: #fff7ed;
-  --green-500: #22c55e;
-  --green-600: #16a34a;
-  --green-50: #f0fdf4;
+  --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-500: #6ba3fa;
+  --blue-600: #4f8ef7;
+  --blue-700: #3b78d8;
+  --blue-800: #2f65b8;
+  --cyan-600: #0891b2;
+  --indigo-600: #4f46e5;
+  --orange-100: #ffead4;
+  --orange-200: #ffd4b3;
+  --orange-400: #e89a68;
+  --orange-500: #d97a45;
+  --orange-600: #c06a39;
+  --orange-700: #a3582f;
+  --orange-50: #fff8f3;
+  --green-100: #d5f5e3;
+  --green-200: #b9eccf;
+  --green-500: #52b37e;
+  --green-600: #4a9f6c;
+  --green-700: #3d855a;
+  --green-800: #326d4a;
+  --green-50: #f2fbf6;
+  --purple-100: #f3e8ff;
   --purple-500: #a855f7;
   --purple-600: #9333ea;
-  --red-500: #ef4444;
-  --yellow-500: #eab308;
+  --purple-700: #7e22ce;
+  --red-100: #fde5e5;
+  --red-500: #d96c6c;
+  --red-600: #c95c5c;
+  --red-700: #a84b4b;
+  --yellow-50: #fffbea;
+  --yellow-100: #fef3c7;
+  --yellow-200: #fae6a1;
+  --yellow-400: #e6bd5c;
+  --yellow-500: #d4a73a;
+  --yellow-600: #b8922e;
+  --yellow-700: #967826;
+  --pink-500: #ec4899;
 
   /* 灰阶 */
   --gray-50: #f9fafb;
@@ -28,7 +53,7 @@ page {
   --gray-800: #1f2937;
   --gray-900: #111827;
 
-  /* 语义色 */
+  /* 语义色 —— 使用半饱和色，降低视觉刺激 */
   --primary: var(--blue-600);
   --primary-light: var(--blue-500);
   --accent: var(--orange-500);
@@ -121,15 +146,21 @@ page {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--orange-500), var(--orange-600));
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: #fff;
-  box-shadow: 0 8rpx 20rpx rgba(249, 115, 22, 0.25);
+  box-shadow: 0 8rpx 20rpx rgba(217, 122, 69, 0.22);
 }
 
 .btn-primary-plain {
   background: var(--orange-50);
-  color: var(--orange-600);
-  border: 2rpx solid var(--orange-500);
+  color: var(--accent-dark);
+  border: 2rpx solid var(--accent);
+}
+
+.btn-blue {
+  background: linear-gradient(135deg, var(--primary-light), var(--primary));
+  color: #fff;
+  box-shadow: 0 8rpx 20rpx rgba(79, 142, 247, 0.22);
 }
 
 .btn-secondary {
@@ -215,23 +246,28 @@ page {
 }
 
 .tag-blue {
-  background: #eff6ff;
+  background: var(--blue-100);
   color: var(--blue-600);
+}
+
+.tag-red {
+  background: var(--red-100);
+  color: var(--red-700);
 }
 
 /* 渐变头部 */
 .gradient-header {
-  background: linear-gradient(135deg, var(--blue-600), var(--blue-700));
+  background: linear-gradient(135deg, var(--primary), #3b78d8);
   color: #fff;
   padding: 32rpx 24rpx calc(32rpx + env(safe-area-inset-top, 0));
 }
 
 .gradient-header-blue {
-  background: linear-gradient(135deg, var(--blue-500), var(--blue-600));
+  background: linear-gradient(135deg, var(--primary-light), var(--primary));
 }
 
 .gradient-header-orange {
-  background: linear-gradient(135deg, var(--orange-500), var(--orange-600));
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
 }
 
 .gradient-header-purple {
@@ -251,7 +287,7 @@ page {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #fff;
+  background: var(--card-bg);
   border-top: 1rpx solid var(--border);
   padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom, 0));
   box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.05);
@@ -322,11 +358,11 @@ page {
   font-weight: 500;
 }
 
-.badge-pending { background: #fef3c7; color: #92400e; }
-.badge-confirmed { background: #dbeafe; color: #1e40af; }
-.badge-serving { background: #e0e7ff; color: #4338ca; }
-.badge-completed { background: #d1fae5; color: #065f46; }
-.badge-cancelled { background: #fee2e2; color: #991b1b; }
+.badge-pending { background: var(--yellow-100); color: var(--yellow-700); }
+.badge-confirmed { background: var(--blue-100); color: var(--blue-700); }
+.badge-serving { background: var(--purple-100); color: var(--purple-700); }
+.badge-completed { background: var(--green-100); color: var(--green-700); }
+.badge-cancelled { background: var(--red-100); color: var(--red-700); }
 
 /* 通用 flex 工具 */
 .flex { display: flex; }
@@ -356,6 +392,7 @@ page {
 .text-green { color: var(--success); }
 .text-red { color: var(--danger); }
 .text-white { color: #fff; }
+.text-yellow { color: var(--yellow-500); }
 
 /* 间距工具（与 Tailwind 常用值对齐） */
 .m-0 { margin: 0; }
@@ -427,14 +464,41 @@ page {
 .rounded-lg { border-radius: 20rpx; }
 .rounded-xl { border-radius: 24rpx; }
 .rounded-full { border-radius: 9999rpx; }
-.bg-white { background: #fff; }
+.bg-white { background: var(--card-bg); }
 .bg-gray-100 { background: var(--gray-100); }
-.bg-blue-100 { background: #dbeafe; }
+.bg-blue-100 { background: var(--blue-100); }
+.bg-orange-100 { background: var(--orange-100); }
+.bg-green-100 { background: var(--green-100); }
 .bg-green-500 { background: var(--green-500); }
 .text-gray-400 { color: var(--gray-400); }
 .text-gray-800 { color: var(--text-primary); }
-.text-green-600 { color: #16a34a; }
-.text-green-800 { color: #166534; }
+.text-green-600 { color: var(--green-600); }
+.text-green-800 { color: var(--green-800); }
+.text-orange-600 { color: var(--orange-600); }
+.text-yellow { color: var(--yellow-500); }
+.text-yellow-600 { color: var(--yellow-600); }
+.text-yellow-700 { color: var(--yellow-700); }
+.text-red-600 { color: var(--red-600); }
+.text-purple { color: var(--purple-500); }
+.text-purple-600 { color: var(--purple-600); }
+.text-cyan { color: var(--cyan-600); }
+.text-cyan-600 { color: var(--cyan-600); }
+.text-indigo { color: var(--indigo-600); }
+.text-indigo-600 { color: var(--indigo-600); }
+.text-pink { color: var(--pink-500); }
+.text-pink-500 { color: var(--pink-500); }
+.bg-yellow-50 { background: var(--yellow-50); }
+.bg-yellow-100 { background: var(--yellow-100); }
+.bg-purple-50 { background: var(--purple-100); }
+.bg-purple-100 { background: var(--purple-100); }
+.bg-cyan-50 { background: rgba(6, 182, 212, 0.08); }
+.bg-cyan-100 { background: rgba(6, 182, 212, 0.12); }
+.bg-indigo-50 { background: rgba(99, 102, 241, 0.08); }
+.bg-indigo-100 { background: rgba(99, 102, 241, 0.12); }
+.bg-pink-50 { background: rgba(236, 72, 153, 0.08); }
+.bg-pink-100 { background: rgba(236, 72, 153, 0.12); }
+.rounded-2xl { border-radius: 32rpx; }
+.shadow-sm { box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04); }
 .leading-relaxed { line-height: 1.625; }
 
 /* 页面顶部返回栏 */
@@ -450,6 +514,18 @@ page {
   font-size: 28rpx;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.page-top-bar-title {
+  flex: 1;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.page-top-bar-spacer {
+  width: 40rpx;
 }
 
 /* 预约列表卡片（queue / profile 复用） */
@@ -513,8 +589,8 @@ page {
   text-transform: capitalize;
 }
 
-.status-pending { background: #fef3c7; color: #92400e; }
-.status-confirmed { background: #dbeafe; color: #1e40af; }
-.status-serving { background: #e0e7ff; color: #4338ca; }
-.status-completed { background: #d1fae5; color: #065f46; }
-.status-cancelled { background: #fee2e2; color: #991b1b; }
+.status-pending { background: var(--yellow-100); color: var(--yellow-700); }
+.status-confirmed { background: var(--blue-100); color: var(--blue-700); }
+.status-serving { background: var(--purple-100); color: var(--purple-700); }
+.status-completed { background: var(--green-100); color: var(--green-700); }
+.status-cancelled { background: var(--red-100); color: var(--red-700); }

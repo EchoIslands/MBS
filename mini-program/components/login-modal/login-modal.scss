@@ -17,7 +17,7 @@
   position: relative;
   width: 84%;
   max-width: 620rpx;
-  background: #fff;
+  background: var(--card-bg);
   border-radius: 36rpx;
   padding: 48rpx 40rpx;
   box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.16);
@@ -45,7 +45,7 @@
   width: 112rpx;
   height: 112rpx;
   margin: 0 auto 20rpx;
-  background: #eff6ff;
+  background: var(--blue-50);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -97,12 +97,38 @@
 }
 
 .login-error {
-  background: #fef2f2;
+  background: var(--red-100);
   color: var(--danger);
   font-size: 24rpx;
   padding: 16rpx 20rpx;
   border-radius: 16rpx;
   margin-bottom: 24rpx;
+}
+
+.login-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  width: 100%;
+  height: 100rpx;
+  margin-top: 32rpx;
+  background: linear-gradient(135deg, var(--primary-light), var(--primary));
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 700;
+  border-radius: 28rpx;
+  box-shadow: 0 12rpx 32rpx rgba(79, 142, 247, 0.25);
+  transition: opacity 0.15s;
+}
+
+.login-submit-btn:active {
+  opacity: 0.92;
+}
+
+.login-submit-btn-disabled {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .login-demo {
