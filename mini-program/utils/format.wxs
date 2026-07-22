@@ -1,0 +1,99 @@
+// WXS 纯函数格式化工具 —— 供 WXML 调用
+// WXML 不支持直接调用页面 JS 方法，因此把常用展示格式化逻辑下沉到 WXS
+
+function toTwoDigits(n) {
+  n = Number(n);
+  return n < 10 ? '0' + n : '' + n;
+}
+
+function formatDate(isoString) {
+  if (!isoString) return '';
+  var d = getDate(isoString);
+  return d.getFullYear() + '-' + toTwoDigits(d.getMonth() + 1) + '-' + toTwoDigits(d.getDate());
+}
+
+function formatDateTime(isoString) {
+  if (!isoString) return '';
+  var d = getDate(isoString);
+  var weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  return (
+    (d.getMonth() + 1) + '月' + d.getDate() + '日 ' +
+    weekDays[d.getDay()] + ' ' +
+    toTwoDigits(d.getHours()) + ':' + toTwoDigits(d.getMinutes())
+  );
+}
+
+function formatShortDate(isoString) {
+  if (!isoString) return '';
+  var d = getDate(isoString);
+  return d.getFullYear() + '/' + toTwoDigits(d.getMonth() + 1) + '/' + toTwoDigits(d.getDate());
+}
+
+function formatDiscount(discount) {
+  discount = Number(discount) || 1;
+  return (discount * 10).toFixed(2);
+}
+
+var purchaseVIPPlans = [
+  { level: 'regular', name: '普通用户' },
+  { level: 'bronze', name: '普卡 VIP' },
+  { level: 'silver', name: '银卡 VIP' },
+  { level: 'gold', name: '金卡 VIP' },
+  { level: 'diamond', name: '钻石 VIP' },
+];
+
+var storedValuePlans = [
+  { level: 'none', name: '未储值' },
+  { level: 'store_500', name: '储值卡' },
+  { level: 'store_1000', name: '安心卡' },
+  { level: 'store_2000', name: '顺心卡' },
+  { level: 'store_5000', name: '随心卡' },
+];
+
+function findPlanName(plans, level, fallback) {
+  for (var i = 0; i < plans.length; i++) {
+    if (plans[i].level === level) return plans[i].name;
+  }
+  return fallback;
+}
+
+function getPurchaseVIPLabel(level) {
+  return findPlanName(purchaseVIPPlans, level, '普通用户');
+}
+
+function getStoredValueLabel(level) {
+  return findPlanName(storedValuePlans, level, '未储值');
+}
+
+function benefitIconName(type) {
+  var map = {
+    shampoo: 'sparkles',
+    conditioner: 'heart',
+    free_haircut: 'scissors',
+    drink: 'coffee',
+    redo: 'refreshCw',
+  };
+  return map[type] || 'gift';
+}
+
+function benefitIconColor(type) {
+  var map = {
+    shampoo: '#3b82f6',
+    conditioner: '#ec4899',
+    free_haircut: '#a855f7',
+    drink: '#f97316',
+    redo: '#ef4444',
+  };
+  return map[type] || '#9ca3af';
+}
+
+module.exports = {
+  formatDate: formatDate,
+  formatDateTime: formatDateTime,
+  formatShortDate: formatShortDate,
+  formatDiscount: formatDiscount,
+  getPurchaseVIPLabel: getPurchaseVIPLabel,
+  getStoredValueLabel: getStoredValueLabel,
+  benefitIconName: benefitIconName,
+  benefitIconColor: benefitIconColor,
+};
