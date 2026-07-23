@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2 } from 'lucide-react';
+import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2, Award } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours, UserRole, StockholderBenefitConfig } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
