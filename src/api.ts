@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, OwnerDashboard, StylistPerformance } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -983,6 +983,77 @@ export const membershipApi = {
     mockCustomers[idx] = customer;
     saveCustomersToCache();
     return { customer, vipAddAmount, storedAddAmount };
+  },
+};
+
+// 提现申请 API
+export const withdrawalApi = {
+  getByShop: async (shopId: string): Promise<WithdrawalRequest[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: WithdrawalRequest[] }>(
+        `${API_BASE}/withdrawals?shopId=${shopId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  create: async (data: {
+    shopId: string;
+    customerId: string;
+    customerName?: string;
+    customerPhone?: string;
+    amount: number;
+    channel: 'wechat' | 'consume';
+  }): Promise<WithdrawalRequest | null> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: WithdrawalRequest }>(`${API_BASE}/withdrawals`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      if (result?.success && result.data) return result.data;
+      throw new Error('提交提现申请失败');
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const customer = mockCustomers.find((c) => c.id === data.customerId);
+    if (!customer) return null;
+    if ((customer.withdrawableReferralAmount || 0) < data.amount) {
+      throw new Error('可提现余额不足');
+    }
+    const req: WithdrawalRequest = {
+      id: `wd_${Date.now()}`,
+      shopId: data.shopId,
+      customerId: data.customerId,
+      customerName: data.customerName || customer.name,
+      customerPhone: data.customerPhone || customer.phone,
+      amount: data.amount,
+      channel: data.channel,
+      status: data.channel === 'consume' ? WithdrawalStatus.PAID : WithdrawalStatus.PENDING,
+      createdAt: new Date(),
+      paidAt: data.channel === 'consume' ? new Date() : undefined,
+      transactionId: data.channel === 'consume' ? `consume_${Date.now()}` : undefined,
+    };
+    customer.withdrawableReferralAmount = Math.round(
+      ((customer.withdrawableReferralAmount || 0) - data.amount) * 100
+    ) / 100;
+    saveCustomersToCache();
+    return req;
+  },
+  updateStatus: async (id: string, status: string, payload?: { rejectReason?: string }): Promise<WithdrawalRequest | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: WithdrawalRequest }>(
+        `${API_BASE}/withdrawals/${id}/status`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ status, ...(payload || {}) }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
   },
 };
 

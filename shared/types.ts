@@ -226,6 +226,32 @@ export enum StoredValueTxType {
   WITHDRAW = 'withdraw',           // 提现
 }
 
+// 提现申请状态
+export enum WithdrawalStatus {
+  PENDING = 'pending',             // 待审核
+  APPROVED = 'approved',           // 已审核通过（待打款）
+  PAID = 'paid',                   // 已打款
+  REJECTED = 'rejected',           // 已拒绝
+}
+
+// 提现申请
+export interface WithdrawalRequest {
+  id: string;
+  shopId: string;
+  customerId: string;
+  customerName?: string;
+  customerPhone?: string;
+  amount: number;
+  channel: 'wechat' | 'consume';  // wechat: 提现到微信, consume: 抵扣消费
+  status: WithdrawalStatus;
+  rejectReason?: string;
+  paidAt?: Date;
+  paidBy?: string;
+  transactionId?: string;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
 // 扩展客户信息 - 完整定义见文件末尾（CustomerProfile、Reviews等已加入
 // 占位（稍后删除 - 保留以保证结构）
 // 客户信息详细定义见下方 Customer 接口
@@ -911,6 +937,7 @@ export interface FollowUpRecord {
 // 扩展Customer，添加技师关联（该客户由哪些技师服务过
 export interface Customer {
   id: string;
+  shopId?: string;               // 所属店铺
   name: string;
   phone: string;
   wechat?: string;               // 微信

@@ -1196,6 +1196,17 @@ const CustomerTableManagement: React.FC = () => {
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
+                    <label className="block text-sm text-gray-600 mb-1">股东身份</label>
+                    <select
+                      id="edit-is-stockholder"
+                      defaultValue={showEdit?.isStockholder ? 'true' : 'false'}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm bg-white"
+                    >
+                      <option value="false">非股东</option>
+                      <option value="true">股东</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-sm text-gray-600 mb-1">是否转介绍</label>
                     <select
                       id="edit-is-referred"
@@ -1206,6 +1217,8 @@ const CustomerTableManagement: React.FC = () => {
                       <option value="yes">是</option>
                     </select>
                   </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-sm text-gray-600 mb-1">转介绍人员姓名</label>
                     <input
@@ -1313,6 +1326,7 @@ const CustomerTableManagement: React.FC = () => {
                   const sharedFundInput = document.getElementById('edit-shared-fund') as HTMLInputElement;
                   const totalSharedFundInput = document.getElementById('edit-total-shared') as HTMLInputElement;
                   const withdrawableInput = document.getElementById('edit-withdrawable') as HTMLInputElement;
+                  const isStockholderInput = document.getElementById('edit-is-stockholder') as HTMLSelectElement;
 
                   if (!nameInput.value || !phoneInput.value) {
                     alert('请填写客户姓名和电话！');
@@ -1322,11 +1336,12 @@ const CustomerTableManagement: React.FC = () => {
                   const purchaseVIPLevel = purchaseVIPInput.value as PurchaseVIPLevel;
                   const storedValueLevel = storedValueInput.value as StoredValueLevel;
                   const storedValueBalance = parseFloat(storedBalanceInput.value) || 0;
-                  const isMember = purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || storedValueLevel !== StoredValueLevel.NONE;
+                  const isStockholder = isStockholderInput.value === 'true';
+                  const isMember = purchaseVIPLevel !== PurchaseVIPLevel.REGULAR || storedValueLevel !== StoredValueLevel.NONE || isStockholder;
 
                   if (showEdit) {
                     // 更新客户
-                    const membershipLevel = showEdit.isStockholder
+                    const membershipLevel = isStockholder
                       ? MembershipLevel.STOCKHOLDER
                       : isMember
                       ? MembershipLevel.PREMIUM
@@ -1355,6 +1370,8 @@ const CustomerTableManagement: React.FC = () => {
                       totalSpent: parseFloat(totalInput.value) || 0,
                       lastVisitAt: visitDateInput.value ? new Date(visitDateInput.value) : undefined,
                       hasBooking: bookingInput.checked,
+                      isStockholder,
+                      stockholderSince: isStockholder && !showEdit.isStockholder ? new Date() : showEdit.stockholderSince,
                       isReferred: referredInput.value === 'yes',
                       referrerName: referrerNameInput.value,
                       referrerPhone: referrerPhoneInput.value,

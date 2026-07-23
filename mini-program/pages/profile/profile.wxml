@@ -59,6 +59,7 @@
             <mbs-icon name="gift" size="20" color="var(--card-bg)" /> 可提现返现
           </view>
           <view class="vip-stat-value">¥{{withdrawable}}</view>
+          <view wx:if="{{withdrawable > 0}}" class="vip-stat-action" bindtap="openWithdrawModal">申请提现</view>
         </view>
         <view class="vip-stat-item">
           <view class="vip-stat-label">
@@ -282,6 +283,70 @@
     <view class="btn btn-danger" bindtap="handleLogout">
       <mbs-icon name="logOut" size="28" color="var(--danger)" />
       退出登录
+    </view>
+  </view>
+
+  <!-- 提现申请弹窗 -->
+  <view wx:if="{{withdrawModalOpen}}" class="modal-mask" catchtap="closeWithdrawModal">
+    <view class="modal-dialog" catchtap="stopPropagation">
+      <view class="modal-header">
+        <view class="modal-title">申请提现</view>
+        <view class="modal-close" catchtap="closeWithdrawModal">
+          <mbs-icon name="close" size="32" color="var(--text-tertiary)" />
+        </view>
+      </view>
+
+      <view class="modal-body">
+        <view class="withdraw-balance-card">
+          <view class="withdraw-balance-label">当前可提现余额</view>
+          <view class="withdraw-balance-value">¥{{withdrawable}}</view>
+        </view>
+
+        <view class="withdraw-section">
+          <view class="withdraw-section-title">提现方式</view>
+          <view class="withdraw-channel-grid">
+            <view
+              class="withdraw-channel-item {{withdrawChannel === 'consume' ? 'withdraw-channel-active' : ''}}"
+              data-channel="consume"
+              bindtap="setWithdrawChannel"
+            >
+              <text class="withdraw-channel-name">抵扣消费</text>
+            </view>
+            <view
+              class="withdraw-channel-item {{withdrawChannel === 'wechat' ? 'withdraw-channel-active' : ''}}"
+              data-channel="wechat"
+              bindtap="setWithdrawChannel"
+            >
+              <text class="withdraw-channel-name">提现到微信</text>
+            </view>
+          </view>
+          <view class="withdraw-channel-hint">
+            {{withdrawChannel === 'consume' ? '提现金额将转入储值账户，用于下次消费抵扣' : '提现金额将原路返回至您的微信零钱，需店铺审核'}}
+          </view>
+        </view>
+
+        <view class="withdraw-section">
+          <view class="withdraw-section-title">提现金额</view>
+          <view class="withdraw-amount-input-wrap">
+            <text class="withdraw-amount-symbol">¥</text>
+            <input
+              class="withdraw-amount-input"
+              type="digit"
+              value="{{withdrawAmount}}"
+              bindinput="onWithdrawAmountInput"
+              placeholder="请输入提现金额"
+            />
+          </view>
+          <view class="withdraw-amount-all" bindtap="setWithdrawAll">全部提现</view>
+        </view>
+      </view>
+
+      <view class="modal-footer">
+        <view class="btn btn-primary {{withdrawLoading ? 'btn-disabled' : ''}}" bindtap="submitWithdraw">
+          {{withdrawLoading ? '处理中...' : (withdrawChannel === 'wechat' ? '提交提现申请' : '立即抵扣')}}
+        </view>
+        <view class="btn btn-secondary" bindtap="closeWithdrawModal">取消</view>
+      </view>
     </view>
   </view>
 

@@ -25,6 +25,7 @@ import StylistDashboard from "./pages/shop/StylistDashboard";
 import FinancialReport from "./pages/shop/FinancialReport";
 import OwnerDashboard from "./pages/shop/OwnerDashboard";
 import RefundManagement from "./pages/shop/RefundManagement";
+import WithdrawalManagement from "./pages/shop/WithdrawalManagement";
 import ProductManagement from "./pages/shop/ProductManagement";
 import CustomerManagement from "./pages/shop/CustomerManagement";
 import CustomerTableManagement from "./pages/shop/CustomerTableManagement";
@@ -172,6 +173,7 @@ export default function App() {
           <Route path="/shop/financial" element={<FinancialReport />} />
           <Route path="/shop/owner" element={<OwnerDashboard />} />
           <Route path="/shop/refunds" element={<RefundManagement />} />
+          <Route path="/shop/withdrawals" element={<WithdrawalManagement />} />
           <Route path="/shop/customers" element={<CustomerManagement />} />
           <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
           <Route path="/shop/bookings" element={<BookingManagement />} />

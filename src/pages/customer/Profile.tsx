@@ -8,7 +8,7 @@ import {
 import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType } from '../../../shared/types';
 import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
 import { useAppStore } from '../../store';
-import { bookingApi, reviewApi } from '../../api';
+import { bookingApi, reviewApi, withdrawalApi } from '../../api';
 import {
   getPurchaseVIPLabel,
   getStoredValueLabel,
@@ -51,8 +51,12 @@ const Profile: React.FC = () => {
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawChannel, setWithdrawChannel] = useState<'wechat' | 'consume'>('consume');
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
   const navigate = useNavigate();
-  const { currentCustomer, logout } = useAppStore();
+  const { currentCustomer, setCurrentCustomer, logout } = useAppStore();
 
   const bookingReviewMap = useMemo(() => {
     const map = new Map<string, Review>();
@@ -116,6 +120,44 @@ const Profile: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const handleWithdraw = async () => {
+    if (!currentCustomer) return;
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount <= 0) {
+      alert('请输入有效金额');
+      return;
+    }
+    if (amount > withdrawable) {
+      alert('可提现余额不足');
+      return;
+    }
+
+    setWithdrawLoading(true);
+    try {
+      await withdrawalApi.create({
+        shopId: currentCustomer.shopId || mockShops[0]?.id || '',
+        customerId: currentCustomer.id,
+        customerName: currentCustomer.name,
+        customerPhone: currentCustomer.phone,
+        amount,
+        channel: withdrawChannel,
+      });
+      // 更新本地 customer 余额显示
+      setCurrentCustomer({
+        ...currentCustomer,
+        withdrawableReferralAmount: Math.round((withdrawable - amount) * 100) / 100,
+      });
+      alert(withdrawChannel === 'wechat' ? '提现申请已提交，请等待审核' : '已转为消费抵扣余额');
+      setWithdrawModalOpen(false);
+      setWithdrawAmount('');
+    } catch (error: unknown) {
+      console.error('提现申请失败:', error);
+      alert(error instanceof Error ? error.message : '提现申请失败');
+    } finally {
+      setWithdrawLoading(false);
+    }
   };
 
   // 会员等级
@@ -213,6 +255,14 @@ const Profile: React.FC = () => {
                 <Gift size={12} /> 可提现返现
               </div>
               <div className="text-lg sm:text-xl font-bold">¥{withdrawable}</div>
+              {withdrawable > 0 && (
+                <button
+                  onClick={() => setWithdrawModalOpen(true)}
+                  className="mt-1.5 text-[10px] sm:text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-1 rounded-full transition-colors"
+                >
+                  申请提现
+                </button>
+              )}
             </div>
             <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3">
               <div className="text-[11px] sm:text-xs text-white/70 mb-1 flex items-center gap-1">
@@ -584,6 +634,92 @@ const Profile: React.FC = () => {
         </button>
 
       </div>
+
+      {/* 提现申请弹窗 */}
+      {withdrawModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-4 sm:mb-5">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800">申请提现</h3>
+              <button
+                onClick={() => setWithdrawModalOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-orange-50 rounded-xl p-4">
+                <div className="text-sm text-orange-700 mb-1">当前可提现余额</div>
+                <div className="text-2xl font-bold text-orange-600">¥{withdrawable}</div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1.5">提现方式</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawChannel('consume')}
+                    className={`px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
+                      withdrawChannel === 'consume'
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    抵扣消费
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawChannel('wechat')}
+                    className={`px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
+                      withdrawChannel === 'wechat'
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    提现到微信
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-gray-500">
+                  {withdrawChannel === 'consume'
+                    ? '提现金额将转入储值账户，用于下次消费抵扣'
+                    : '提现金额将原路返回至您的微信零钱，需店铺审核'}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1.5">提现金额</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">¥</span>
+                  <input
+                    type="number"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    placeholder="请输入提现金额"
+                    className="w-full pl-8 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+                <button
+                  onClick={() => setWithdrawAmount(withdrawable.toString())}
+                  className="mt-1.5 text-xs text-orange-600 hover:text-orange-700"
+                >
+                  全部提现
+                </button>
+              </div>
+
+              <button
+                onClick={handleWithdraw}
+                disabled={withdrawLoading}
+                className="w-full py-3.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {withdrawLoading ? <Loader2 size={18} className="animate-spin" /> : null}
+                {withdrawChannel === 'wechat' ? '提交提现申请' : '立即抵扣'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 预约详情弹窗 */}
       {viewingBooking && (

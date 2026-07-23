@@ -76,6 +76,11 @@ Page({
     // 预约详情弹窗
     viewingBooking: null,
     cancelling: false,
+    // 提现弹窗
+    withdrawModalOpen: false,
+    withdrawAmount: '',
+    withdrawChannel: 'consume',
+    withdrawLoading: false,
   },
 
   async onLoad() {
@@ -254,6 +259,75 @@ Page({
 
   goToRefund() {
     wx.showToast({ title: '功能开发中', icon: 'none' });
+  },
+
+  openWithdrawModal() {
+    this.setData({ withdrawModalOpen: true, withdrawAmount: '', withdrawChannel: 'consume' });
+  },
+
+  closeWithdrawModal() {
+    this.setData({ withdrawModalOpen: false });
+  },
+
+  setWithdrawChannel(e) {
+    const { channel } = e.currentTarget.dataset;
+    this.setData({ withdrawChannel: channel });
+  },
+
+  onWithdrawAmountInput(e) {
+    this.setData({ withdrawAmount: e.detail.value });
+  },
+
+  setWithdrawAll() {
+    this.setData({ withdrawAmount: String(this.data.withdrawable || 0) });
+  },
+
+  async submitWithdraw() {
+    const { customer, withdrawAmount, withdrawChannel, withdrawLoading, withdrawable } = this.data;
+    if (!customer || withdrawLoading) return;
+
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount <= 0) {
+      wx.showToast({ title: '请输入有效金额', icon: 'none' });
+      return;
+    }
+    if (amount > withdrawable) {
+      wx.showToast({ title: '可提现余额不足', icon: 'none' });
+      return;
+    }
+
+    this.setData({ withdrawLoading: true });
+    try {
+      const { post } = await import('../../utils/api');
+      const res = await post('/withdrawals', {
+        shopId: customer.shopId,
+        customerId: customer.id,
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        amount,
+        channel: withdrawChannel,
+      });
+      if (res && res.success) {
+        const newWithdrawable = Math.round((withdrawable - amount) * 100) / 100;
+        this.setData({
+          'customer.withdrawableReferralAmount': newWithdrawable,
+          withdrawable: newWithdrawable,
+          withdrawModalOpen: false,
+          withdrawAmount: '',
+        });
+        wx.showToast({
+          title: withdrawChannel === 'wechat' ? '提现申请已提交' : '已转为消费抵扣',
+          icon: 'success',
+        });
+      } else {
+        throw new Error(res?.error || '提交失败');
+      }
+    } catch (err) {
+      console.error('[profile] 提现申请失败:', err);
+      wx.showToast({ title: err.message || '提现申请失败', icon: 'none' });
+    } finally {
+      this.setData({ withdrawLoading: false });
+    }
   },
 
   goToShop() {

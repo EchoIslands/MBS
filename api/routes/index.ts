@@ -529,11 +529,146 @@ async function grantStockholderBenefits(
         );
       }
 
-    // 3. 免费服务使用记录（自然月重置，D专家建议）
+    // 5. 免费服务使用记录（自然月重置，D专家建议）
     // 注意：当前未在预约数据中标记"是否使用免费服务"，此处预留框架。
     // 若后续支持"使用免费次数抵扣"，可在此扣除当月配额。
   } catch (err: unknown) {
     console.error('[股东权益] 自动发放异常:', (err as Error).message);
+  }
+}
+
+/**
+ * 处理推荐人自动升级股东并发放推荐奖励
+ * 业务规则：被推荐人首次消费完成后，推荐人自动成为股东，并获得首次消费金额 × 10% 的奖励
+ */
+async function processReferralPromotion(
+  shopId: string,
+  referredCustomerId: string,
+  firstSpentAmount: number,
+  sourceBookingId: string | null
+) {
+  try {
+    if (firstSpentAmount <= 0) return;
+
+    // 1. 查询被推荐人的推荐记录（referral_records 正式表）
+    const { data: referralRecords, error: refError } = await supabase
+      .from('referral_records')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('referred_id', referredCustomerId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    let referralRecord: unknown | null = referralRecords && referralRecords.length > 0 ? referralRecords[0] : null;
+
+    // 2. 如果没找到正式推荐记录，尝试用 customers 表的 source/referrer 字段兜底
+    if (!referralRecord) {
+      const { data: referredCustomer } = await supabase
+        .from('customers')
+        .select('referrer_name, referrer_phone, is_referred')
+        .eq('id', referredCustomerId)
+        .eq('shop_id', shopId)
+        .single();
+
+      if (referredCustomer?.is_referred && referredCustomer.referrer_phone) {
+        // 根据推荐人手机号找到推荐人
+        const { data: referrerList } = await supabase
+          .from('customers')
+          .select('id, name, phone, referral_bonus_rate, is_stockholder, withdrawable_referral_amount')
+          .eq('phone', referredCustomer.referrer_phone)
+          .eq('shop_id', shopId)
+          .limit(1);
+
+        if (referrerList && referrerList.length > 0) {
+          const referrer = referrerList[0];
+          referralRecord = {
+            id: `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            shop_id: shopId,
+            referrer_id: referrer.id,
+            referrer_name: referrer.name,
+            referred_id: referredCustomerId,
+            referred_name: referredCustomer.referrer_name,
+            referred_phone: referredCustomer.referrer_phone,
+            bonus_amount: 0,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+          };
+          // 创建一条推荐记录
+          await supabase.from('referral_records').insert(referralRecord);
+        }
+      }
+    }
+
+    if (!referralRecord) return;
+
+    const record = referralRecord as Record<string, unknown>;
+    const referrerId = record.referrer_id as string;
+    if (!referrerId) return;
+
+    // 3. 幂等性保护：检查该推荐记录是否已处理过
+    if (record.status !== 'pending') {
+      console.log(`[推荐转化] 推荐记录 ${record.id} 已处理，跳过`);
+      return;
+    }
+
+    // 4. 查询推荐人信息
+    const { data: referrer } = await supabase
+      .from('customers')
+      .select('id, is_stockholder, withdrawable_referral_amount, referral_bonus_rate')
+      .eq('id', referrerId)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (!referrer) return;
+
+    // 5. 计算推荐奖励金额：默认 10%，可被 referral_bonus_rate 覆盖
+    const bonusRate = typeof referrer.referral_bonus_rate === 'number' && referrer.referral_bonus_rate > 0
+      ? referrer.referral_bonus_rate
+      : 0.1;
+    const bonusAmount = Math.round(firstSpentAmount * bonusRate * 100) / 100;
+
+    // 6. 自动升级推荐人为股东（如果还不是）
+    const updatePayload: Record<string, unknown> = {
+      withdrawable_referral_amount: Math.round(((referrer.withdrawable_referral_amount || 0) + bonusAmount) * 100) / 100,
+      referral_earnings: Math.round((bonusAmount) * 100) / 100,
+    };
+    if (!referrer.is_stockholder) {
+      updatePayload.is_stockholder = true;
+      updatePayload.stockholder_since = new Date().toISOString();
+      updatePayload.membership_level = 'stockholder';
+    }
+
+    await supabase.from('customers').update(updatePayload).eq('id', referrerId).eq('shop_id', shopId);
+
+    // 7. 更新推荐记录状态
+    await supabase
+      .from('referral_records')
+      .update({
+        status: 'confirmed',
+        confirmed_at: new Date().toISOString(),
+        bonus_amount: bonusAmount,
+      })
+      .eq('id', record.id)
+      .eq('shop_id', shopId);
+
+    // 8. 写入股东权益变动记录
+    await supabase.from('stockholder_benefit_records').insert({
+      id: `shr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      shop_id: shopId,
+      customer_id: referrerId,
+      type: 'referral_bonus',
+      amount: bonusAmount,
+      source_booking_id: sourceBookingId,
+      status: 'granted',
+      granted_at: new Date().toISOString(),
+    });
+
+    console.log(
+      `[推荐转化] 推荐人 ${referrerId} 因被推荐人 ${referredCustomerId} 首次消费 ${firstSpentAmount} 元，获得奖励 ${bonusAmount} 元并已自动转为股东`
+    );
+  } catch (err: unknown) {
+    console.error('[推荐转化] 自动处理异常:', (err as Error).message);
   }
 }
 
@@ -847,6 +982,13 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
       // 自动发放股东权益（三方协同）
       if (originalBooking.customer_id) {
         await grantStockholderBenefits(
+          originalBooking.shop_id,
+          originalBooking.customer_id,
+          originalBooking.price || 0,
+          originalBooking.id
+        );
+        // 处理推荐人自动升级股东并发放推荐奖励
+        await processReferralPromotion(
           originalBooking.shop_id,
           originalBooking.customer_id,
           originalBooking.price || 0,
@@ -2810,6 +2952,9 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     // 自动发放股东权益（三方协同）
     await grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null);
 
+    // 处理推荐人自动升级股东并发放推荐奖励
+    await processReferralPromotion(shopId, customerId, total || 0, bookingId || null);
+
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {
     console.error('[settlements] 创建结算异常:', error);
@@ -3393,6 +3538,220 @@ refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
 });
 
 mainRouter.use('/refunds', refundsRouter);
+
+// ===================== withdrawals =====================
+const withdrawalsRouter = Router();
+
+const withdrawalFromDb = (w: unknown): unknown => ({
+  id: w.id,
+  shopId: w.shop_id,
+  customerId: w.customer_id,
+  customerName: w.customer_name || '顾客',
+  customerPhone: w.customer_phone || '',
+  amount: Number(w.amount) || 0,
+  channel: w.channel || 'wechat',
+  status: w.status,
+  rejectReason: w.reject_reason,
+  paidAt: w.paid_at,
+  paidBy: w.paid_by,
+  transactionId: w.transaction_id,
+  createdAt: w.created_at,
+  updatedAt: w.updated_at,
+});
+
+// 获取店铺提现申请列表
+withdrawalsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { data, error } = await supabase
+      .from('withdrawal_requests')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[withdrawals] 查询提现申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询提现申请失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(withdrawalFromDb) });
+  } catch (error) {
+    console.error('[withdrawals] 获取提现申请异常:', error);
+    res.status(500).json({ success: false, error: '获取提现申请失败' });
+  }
+});
+
+// 顾客创建提现申请（无需员工登录，但校验顾客身份）
+withdrawalsRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const { shopId, customerId, customerName, customerPhone, amount, channel } = req.body || {};
+
+    if (!shopId || !customerId || amount === undefined || amount <= 0) {
+      return res.status(400).json({ success: false, error: '缺少必要字段或金额无效' });
+    }
+
+    // 校验顾客身份和可提现余额
+    const { data: customer, error: custError } = await supabase
+      .from('customers')
+      .select('shop_id, withdrawable_referral_amount, name, phone')
+      .eq('id', customerId)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (custError || !customer) {
+      return res.status(404).json({ success: false, error: '客户不存在' });
+    }
+
+    if (Number(customer.withdrawable_referral_amount || 0) < Number(amount)) {
+      return res.status(400).json({ success: false, error: '可提现余额不足' });
+    }
+
+    const id = `wd_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+    // 如果是消费抵扣，直接扣减余额并标记为已完成
+    if (channel === 'consume') {
+      const { data, error } = await supabase
+        .from('withdrawal_requests')
+        .insert({
+          id,
+          shop_id: shopId,
+          customer_id: customerId,
+          customer_name: customerName || customer.name || '顾客',
+          customer_phone: customerPhone || customer.phone || '',
+          amount: Number(amount),
+          channel: 'consume',
+          status: 'paid',
+          paid_at: new Date().toISOString(),
+          paid_by: 'system',
+          transaction_id: `consume_${Date.now()}`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[withdrawals] 创建抵扣记录失败:', error.message);
+        return res.status(500).json({ success: false, error: '创建抵扣记录失败' });
+      }
+
+      // 扣减可提现余额
+      const newWithdrawable = Math.round((Number(customer.withdrawable_referral_amount || 0) - Number(amount)) * 100) / 100;
+      await supabase
+        .from('customers')
+        .update({ withdrawable_referral_amount: newWithdrawable })
+        .eq('id', customerId)
+        .eq('shop_id', shopId);
+
+      return res.status(201).json({ success: true, data: withdrawalFromDb(data) });
+    }
+
+    // 微信提现：创建待审核记录，余额暂时冻结
+    const { data, error } = await supabase
+      .from('withdrawal_requests')
+      .insert({
+        id,
+        shop_id: shopId,
+        customer_id: customerId,
+        customer_name: customerName || customer.name || '顾客',
+        customer_phone: customerPhone || customer.phone || '',
+        amount: Number(amount),
+        channel: 'wechat',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[withdrawals] 创建提现申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '创建提现申请失败' });
+    }
+
+    res.status(201).json({ success: true, data: withdrawalFromDb(data) });
+  } catch (error) {
+    console.error('[withdrawals] 创建提现申请异常:', error);
+    res.status(500).json({ success: false, error: '创建提现申请失败' });
+  }
+});
+
+// 处理提现申请（审核/拒绝/标记已打款）
+withdrawalsRouter.put('/:id/status', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, rejectReason } = req.body || {};
+
+    if (!status || !['approved', 'rejected', 'paid'].includes(status)) {
+      return res.status(400).json({ success: false, error: '无效的状态值' });
+    }
+
+    const { data: existing, error: findError } = await supabase
+      .from('withdrawal_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
+      return res.status(404).json({ success: false, error: '提现申请不存在' });
+    }
+
+    if (existing.status !== 'pending' && existing.status !== 'approved') {
+      return res.status(400).json({ success: false, error: '该提现申请已处理' });
+    }
+
+    const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    if (status === 'rejected' && rejectReason) {
+      updatePayload.reject_reason = rejectReason;
+    }
+    if (status === 'paid') {
+      updatePayload.paid_at = new Date().toISOString();
+      updatePayload.paid_by = req.employee!.id;
+    }
+
+    const { data, error } = await supabase
+      .from('withdrawal_requests')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[withdrawals] 更新提现申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新提现申请失败' });
+    }
+
+    // 拒绝或打款完成时，需要实际扣减/回退余额
+    // 微信提现：pending 时未扣款，paid 时扣款；rejected 时不扣款
+    if (existing.channel === 'wechat') {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('withdrawable_referral_amount')
+        .eq('id', existing.customer_id)
+        .eq('shop_id', existing.shop_id)
+        .single();
+
+      if (customer) {
+        const current = Number(customer.withdrawable_referral_amount || 0);
+        if (status === 'paid') {
+          await supabase
+            .from('customers')
+            .update({ withdrawable_referral_amount: Math.round((current - Number(existing.amount)) * 100) / 100 })
+            .eq('id', existing.customer_id)
+            .eq('shop_id', existing.shop_id);
+        }
+        // rejected 不需要回退，因为 pending 时没扣
+      }
+    }
+
+    res.json({ success: true, data: withdrawalFromDb(data) });
+  } catch (error) {
+    console.error('[withdrawals] 处理提现申请异常:', error);
+    res.status(500).json({ success: false, error: '处理提现申请失败' });
+  }
+});
+
+mainRouter.use('/withdrawals', withdrawalsRouter);
 
 // ===================== owner dashboard =====================
 const ownerRouter = Router();
