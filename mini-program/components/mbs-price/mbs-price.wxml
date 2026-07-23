@@ -1,0 +1,7 @@
+<view class="mbs-price mbs-price-{{size}} mbs-price-{{align}}">
+  <view wx:if="{{hasDiscount}}" class="mbs-price-original">¥{{originalStr}}</view>
+  <view class="mbs-price-row">
+    <view wx:if="{{hasDiscount && showTag}}" class="mbs-price-tag">会员价</view>
+    <view class="mbs-price-current">¥{{currentStr}}</view>
+  </view>
+</view>

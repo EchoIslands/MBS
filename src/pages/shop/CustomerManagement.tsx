@@ -1278,9 +1278,18 @@ const CustomerManagement: React.FC = () => {
                   <input id="cm-stored-balance" type="number" defaultValue={showEdit?.storedValueBalance ?? ''} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">客户来源</label>
-                <input id="cm-source" defaultValue={showEdit?.source || ''} placeholder="如：朋友推荐、线上推广、路过等" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">客户来源</label>
+                  <input id="cm-source" defaultValue={showEdit?.source || ''} placeholder="如：朋友推荐、线上推广、路过等" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">股东身份</label>
+                  <select id="cm-stockholder" defaultValue={showEdit?.isStockholder ? 'true' : 'false'} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-white">
+                    <option value="false">非股东</option>
+                    <option value="true">股东</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1296,6 +1305,7 @@ const CustomerManagement: React.FC = () => {
                   const name = (document.getElementById('cm-name') as HTMLInputElement)?.value;
                   const phone = (document.getElementById('cm-phone') as HTMLInputElement)?.value;
                   if (!name || !phone) { alert('请填写客户姓名和电话！'); return; }
+                  const isStockholder = (document.getElementById('cm-stockholder') as HTMLSelectElement)?.value === 'true';
                   const data: Partial<Customer> = {
                     name,
                     phone,
@@ -1306,6 +1316,8 @@ const CustomerManagement: React.FC = () => {
                     storedValueLevel: (document.getElementById('cm-stored-value') as HTMLSelectElement)?.value as StoredValueLevel,
                     storedValueBalance: parseFloat((document.getElementById('cm-stored-balance') as HTMLInputElement)?.value) || 0,
                     source: (document.getElementById('cm-source') as HTMLInputElement)?.value,
+                    isStockholder,
+                    stockholderSince: isStockholder && !showEdit?.isStockholder ? new Date() : showEdit?.stockholderSince,
                   };
                   if (showEdit) {
                     await handleUpdateCustomer({ ...showEdit, ...data });

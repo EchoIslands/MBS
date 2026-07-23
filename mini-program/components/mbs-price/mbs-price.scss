@@ -1,0 +1,56 @@
+.mbs-price {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.mbs-price-right {
+  align-items: flex-end;
+}
+
+.mbs-price-left {
+  align-items: flex-start;
+}
+
+.mbs-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.mbs-price-original {
+  font-size: 24rpx;
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.mbs-price-tag {
+  font-size: 20rpx;
+  color: var(--orange-600);
+  background: var(--orange-100);
+  padding: 2rpx 8rpx;
+  border-radius: 8rpx;
+}
+
+.mbs-price-current {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* 尺寸变体 */
+.mbs-price-sm .mbs-price-current {
+  font-size: 30rpx;
+}
+
+.mbs-price-sm .mbs-price-original {
+  font-size: 22rpx;
+}
+
+.mbs-price-lg .mbs-price-current {
+  font-size: 40rpx;
+}
+
+.mbs-price-lg .mbs-price-original {
+  font-size: 26rpx;
+}
