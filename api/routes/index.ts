@@ -622,10 +622,10 @@ async function processReferralPromotion(
 
     if (!referrer) return;
 
-    // 5. 计算推荐奖励金额：默认 10%，可被 referral_bonus_rate 覆盖
+    // 5. 计算推荐奖励金额：默认 5%，可被 referral_bonus_rate 覆盖
     const bonusRate = typeof referrer.referral_bonus_rate === 'number' && referrer.referral_bonus_rate > 0
       ? referrer.referral_bonus_rate
-      : 0.1;
+      : 0.05;
     const bonusAmount = Math.round(firstSpentAmount * bonusRate * 100) / 100;
 
     // 6. 自动升级推荐人为股东（如果还不是）
@@ -3563,6 +3563,10 @@ const withdrawalFromDb = (w: unknown): unknown => ({
 withdrawalsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
+    if (!shopId) {
+      return res.status(400).json({ success: false, error: '缺少店铺ID' });
+    }
+
     const { data, error } = await supabase
       .from('withdrawal_requests')
       .select('*')
@@ -3570,8 +3574,14 @@ withdrawalsRouter.get('/', authMiddleware, async (req: Request, res: Response) =
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('[withdrawals] 查询提现申请失败:', error.message);
-      return res.status(500).json({ success: false, error: '查询提现申请失败' });
+      console.error('[withdrawals] 查询提现申请失败:', error.message, error.code, error.details);
+      const isTableMissing = error.code === '42P01' || /withdrawal_requests/.test(error.message || '');
+      return res.status(500).json({
+        success: false,
+        error: isTableMissing
+          ? '提现申请表 withdrawal_requests 不存在，请先在 Supabase 执行 schema_complete.sql'
+          : `查询提现申请失败: ${error.message}`,
+      });
     }
 
     res.json({ success: true, data: (data || []).map(withdrawalFromDb) });

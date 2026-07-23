@@ -379,7 +379,7 @@ const ShopManage: React.FC = () => {
               <div className="bg-white p-4 rounded-xl">
                 {/* 使用二维码API生成店铺专属二维码 */}
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+                  src={`https://quickchart.io/qr?size=150x150&text=${encodeURIComponent(
                     `${window.location.origin}/customer/shop/${currentShop.id}`
                   )}`}
                   alt="店铺二维码"

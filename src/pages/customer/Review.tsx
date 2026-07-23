@@ -528,7 +528,7 @@ const ReviewPage: React.FC = () => {
                 <div className="text-gray-700 font-medium mb-2 text-sm sm:text-base">微信扫码打开店铺</div>
                 <div className="w-36 h-36 sm:w-44 sm:h-44 mx-auto bg-white p-2 rounded-lg shadow-sm">
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(shareUrl)}&size=200x200`}
+                    src={`https://quickchart.io/qr?size=200x200&text=${encodeURIComponent(shareUrl)}`}
                     alt="店铺二维码"
                     className="w-full h-full object-contain"
                   />

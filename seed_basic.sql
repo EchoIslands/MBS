@@ -93,7 +93,7 @@ insert into customers (
 (
   'cust3', 'shop1', '王五', '13800138102', 'male', 45, null, array['股东会员'],
   35, 12800, 'stockholder', 2000, 3200,
-  true, 0.1, 1500,
+  true, 0.05, 1500,
   'diamond', (now() + interval '10 months'), 'store_5000',
   5000, (now() + interval '2 years'), 800, 2500,
   now(), now()
