@@ -15,6 +15,7 @@ import {
   getCustomerEffectiveDiscount,
   isVIPExpiringSoon,
   isStoredValueExpiringSoon,
+  getStockholderBenefitSummary,
 } from '../../lib/membership';
 
 // 旧的会员等级标签与颜色（兼容股东展示）
@@ -132,6 +133,9 @@ const Profile: React.FC = () => {
 
   // 当前店铺信息（默认取第一个）
   const shop = mockShops[0];
+
+  // 股东权益摘要
+  const stockholderSummary = getStockholderBenefitSummary(currentCustomer, shop);
 
   // 我的可用权益
   const myBenefits = currentCustomer
@@ -268,6 +272,27 @@ const Profile: React.FC = () => {
 
       {/* 主内容区 —— 手机端减少 padding */}
       <div className="max-w-4xl mx-auto px-3 sm:px-4 -mt-2 sm:-mt-3 pb-6">
+
+        {/* 股东会员权益说明 */}
+        {stockholderSummary.isStockholder && stockholderSummary.enabled && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-amber-100">
+            <h2 className="text-sm sm:text-base font-bold text-amber-800 mb-3 flex items-center gap-2">
+              <Award size={18} className="sm:hidden text-amber-600" />
+              <Award size={20} className="hidden sm:inline text-amber-600" />
+              股东会员专享权益
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {stockholderSummary.benefits.map((benefit) => (
+                <span
+                  key={benefit}
+                  className="text-xs sm:text-sm px-2.5 py-1 bg-white/70 text-amber-700 rounded-full border border-amber-200"
+                >
+                  {benefit}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 我的可用权益 */}
         {myBenefits.length > 0 && (

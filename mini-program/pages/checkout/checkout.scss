@@ -13,7 +13,7 @@
 /* 顶部标题区 */
 .checkout-header {
   padding: 48rpx 24rpx calc(48rpx + env(safe-area-inset-top, 0));
-  color: #fff;
+  color: var(--card-bg);
 }
 
 .checkout-header-inner {
@@ -143,6 +143,10 @@
   color: var(--accent);
 }
 
+.checkout-price-value.text-amber {
+  color: var(--amber-600);
+}
+
 .checkout-price-original {
   color: var(--text-tertiary);
   text-decoration: line-through;
@@ -173,7 +177,7 @@
 }
 
 .checkout-balance-hint {
-  background: #eff6ff;
+  background: var(--blue-50);
   color: var(--primary);
 }
 
@@ -190,13 +194,13 @@
 }
 
 .checkout-alert-yellow {
-  background: rgba(250, 204, 21, 0.12);
-  color: #a16207;
+  background: var(--yellow-100);
+  color: var(--yellow-700);
 }
 
 .checkout-alert-orange {
-  background: rgba(251, 146, 60, 0.12);
-  color: #c2410c;
+  background: var(--orange-100);
+  color: var(--orange-700);
 }
 
 /* 支付方式 */

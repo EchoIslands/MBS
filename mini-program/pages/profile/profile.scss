@@ -510,3 +510,33 @@
 
 /* 工具类补充 */
 .min-w-0 { min-width: 0; }
+
+/* 股东权益标签 */
+.vip-stockholder-benefits {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 20rpx;
+}
+
+.vip-stockholder-benefit-title {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 12rpx;
+}
+
+.vip-stockholder-benefit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.vip-stockholder-benefit-tag {
+  font-size: 22rpx;
+  padding: 6rpx 16rpx;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border-radius: 20rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.2);
+}

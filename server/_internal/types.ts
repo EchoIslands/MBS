@@ -85,6 +85,45 @@ export interface OpeningHours {
   };
 }
 
+// 股东会员权益规则（按店铺配置）
+export interface StockholderBenefitConfig {
+  enabled: boolean;
+  serviceDiscountRate: number;
+  productDiscountRate: number;
+  cashbackRate: number;
+  freeServicesPerMonth: number;
+  priorityBooking: boolean;
+  birthdayGift: string;
+}
+
+// 股东权益变动类型
+export type StockholderBenefitType = 'discount' | 'cashback' | 'free_service' | 'birthday_gift';
+
+// 股东权益变动记录
+export interface StockholderBenefitRecord {
+  id: string;
+  shopId: string;
+  customerId: string;
+  type: StockholderBenefitType;
+  amount: number;
+  sourceBookingId?: string;
+  status: 'pending' | 'granted' | 'used' | 'expired';
+  grantedAt: Date;
+  expiresAt?: Date;
+  notifiedAt?: Date;
+}
+
+// 股东客户每月免费服务使用记录
+export interface StockholderFreeServiceUsage {
+  id: string;
+  shopId: string;
+  customerId: string;
+  yearMonth: string;
+  totalQuota: number;
+  usedCount: number;
+  updatedAt: Date;
+}
+
 export interface Shop {
   id: string;
   name: string;
@@ -105,6 +144,7 @@ export interface Shop {
   distance?: number; // 计算的距离（公里）
   rating?: number; // 店铺评分
   reviewCount?: number; // 店铺评价数量
+  stockholderConfig?: StockholderBenefitConfig; // 股东会员权益配置
 }
 
 // 客户标签类型
@@ -738,6 +778,13 @@ export interface Customer {
   lastServiceAmount?: number;    // 上次消费金额
   hasBooking?: boolean;          // 是否预约
   lastStylist?: string;          // 上次服务设计师
+  // ===== 新版会员体系（双轨并行）=====
+  purchaseVIPLevel?: string;     // 购买型 VIP 等级
+  purchaseVIPExpiresAt?: Date;   // VIP 到期时间
+  storedValueLevel?: string;     // 储值会员等级
+  storedValueBalance?: number;   // 储值总余额
+  storedValueExpiresAt?: Date;   // 储值到期时间
+  // ===== 兼容旧字段 =====
   membershipLevel: MembershipLevel;
   isMember?: boolean;             // 是否会员
   hasRecharged?: boolean;        // 是否充值
@@ -751,6 +798,7 @@ export interface Customer {
   sharedFund?: number;           // 共享基金
   totalSharedFund?: number;      // 合计共享基金
   withdrawableAmount?: number;   // 可取现金额
+  withdrawableReferralAmount?: number; // 可提现返现余额（股东消费返现等）
   joinedAt: Date;
   lastVisitAt?: Date;
   preferences?: string[];

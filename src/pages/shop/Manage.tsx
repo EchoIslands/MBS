@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { Service, Employee, OpeningHours, UserRole } from '../../../shared/types';
+import { Service, Employee, OpeningHours, UserRole, StockholderBenefitConfig } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
 import { shopApi, employeeApi } from '../../api';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
@@ -76,6 +76,17 @@ const ShopManage: React.FC = () => {
   });
   const [openingHours, setOpeningHours] = useState<OpeningHours>(normalizeOpeningHours(currentShop?.openingHours));
   const [bookingConfirmMode, setBookingConfirmMode] = useState<'auto' | 'manual'>(currentShop?.bookingConfirmMode || 'auto');
+  const [stockholderConfig, setStockholderConfig] = useState<StockholderBenefitConfig>(
+    currentShop?.stockholderConfig || {
+      enabled: false,
+      serviceDiscountRate: 0.8,
+      productDiscountRate: 0.85,
+      cashbackRate: 0.05,
+      freeServicesPerMonth: 1,
+      priorityBooking: true,
+      birthdayGift: '生日当月免费护理一次',
+    }
+  );
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
@@ -90,6 +101,15 @@ const ShopManage: React.FC = () => {
     setServices(currentShop.services || []);
     setOpeningHours(normalizeOpeningHours(currentShop.openingHours));
     setBookingConfirmMode(currentShop.bookingConfirmMode || 'auto');
+    setStockholderConfig(currentShop.stockholderConfig || {
+      enabled: false,
+      serviceDiscountRate: 0.8,
+      productDiscountRate: 0.85,
+      cashbackRate: 0.05,
+      freeServicesPerMonth: 1,
+      priorityBooking: true,
+      birthdayGift: '生日当月免费护理一次',
+    });
   }, [currentShop]);
 
   // 加载员工列表
@@ -261,6 +281,7 @@ const ShopManage: React.FC = () => {
         services,
         openingHours,
         bookingConfirmMode,
+        stockholderConfig,
       };
       const updated = await shopApi.updateShop(currentShop.id, shopData);
       if (updated) {
@@ -742,6 +763,112 @@ const ShopManage: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* 股东会员权益设置 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Award size={20} className="text-amber-600" />
+              股东会员权益设置
+            </h2>
+            <button
+              onClick={() => setStockholderConfig({ ...stockholderConfig, enabled: !stockholderConfig.enabled })}
+              className={`w-12 h-7 rounded-full relative transition-colors ${
+                stockholderConfig.enabled ? 'bg-amber-500' : 'bg-gray-300'
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${
+                  stockholderConfig.enabled ? 'left-6' : 'left-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
+          {stockholderConfig.enabled ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">服务折扣率</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0.1}
+                      max={1}
+                      step={0.05}
+                      value={stockholderConfig.serviceDiscountRate}
+                      onChange={(e) => setStockholderConfig({ ...stockholderConfig, serviceDiscountRate: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                    />
+                    <span className="text-sm text-gray-500 w-12">{Math.round(stockholderConfig.serviceDiscountRate * 10)}折</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">商品折扣率</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0.1}
+                      max={1}
+                      step={0.05}
+                      value={stockholderConfig.productDiscountRate}
+                      onChange={(e) => setStockholderConfig({ ...stockholderConfig, productDiscountRate: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                    />
+                    <span className="text-sm text-gray-500 w-12">{Math.round(stockholderConfig.productDiscountRate * 10)}折</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">消费返现比例</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={stockholderConfig.cashbackRate}
+                      onChange={(e) => setStockholderConfig({ ...stockholderConfig, cashbackRate: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                    />
+                    <span className="text-sm text-gray-500 w-12">{Math.round(stockholderConfig.cashbackRate * 100)}%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">每月免费服务次数</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={stockholderConfig.freeServicesPerMonth}
+                    onChange={(e) => setStockholderConfig({ ...stockholderConfig, freeServicesPerMonth: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">生日礼描述</label>
+                <input
+                  type="text"
+                  value={stockholderConfig.birthdayGift}
+                  onChange={(e) => setStockholderConfig({ ...stockholderConfig, birthdayGift: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="priorityBooking"
+                  checked={stockholderConfig.priorityBooking}
+                  onChange={(e) => setStockholderConfig({ ...stockholderConfig, priorityBooking: e.target.checked })}
+                  className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                />
+                <label htmlFor="priorityBooking" className="text-sm text-gray-700">启用优先预约</label>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">开启后，股东会员将享受专属折扣、返现及优先预约等权益。</p>
+          )}
         </div>
 
         {/* 营业时间设置 */}

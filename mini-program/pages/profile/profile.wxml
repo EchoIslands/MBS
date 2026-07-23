@@ -99,6 +99,14 @@
           <view class="vip-stockholder-crown">👑</view>
         </view>
       </view>
+
+      <!-- 股东权益标签 -->
+      <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="vip-stockholder-benefits">
+        <view class="vip-stockholder-benefit-title">股东会员专享权益</view>
+        <view class="vip-stockholder-benefit-tags">
+          <view wx:for="{{stockholderSummary.benefits}}" wx:key="*this" class="vip-stockholder-benefit-tag">{{item}}</view>
+        </view>
+      </view>
     </view>
   </view>
 

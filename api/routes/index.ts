@@ -390,6 +390,153 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
 mainRouter.use('/employees', employeesRouter);
 
 // ===================== bookings =====================
+// ==================== 股东权益自动发放（三方协同：与 shared/lib/membership.ts 计算逻辑一致）====================
+
+interface StockholderBenefitConfig {
+  enabled: boolean;
+  serviceDiscountRate: number;
+  productDiscountRate: number;
+  cashbackRate: number;
+  freeServicesPerMonth: number;
+  priorityBooking: boolean;
+  birthdayGift: string;
+}
+
+function getEffectiveStockholderConfig(stockholderConfig: unknown): StockholderBenefitConfig {
+  if (stockholderConfig && typeof stockholderConfig === 'object') {
+    const cfg = stockholderConfig as Record<string, unknown>;
+    return {
+      enabled: cfg.enabled === true,
+      serviceDiscountRate: typeof cfg.serviceDiscountRate === 'number' ? cfg.serviceDiscountRate : 0.8,
+      productDiscountRate: typeof cfg.productDiscountRate === 'number' ? cfg.productDiscountRate : 0.85,
+      cashbackRate: typeof cfg.cashbackRate === 'number' ? cfg.cashbackRate : 0.05,
+      freeServicesPerMonth: typeof cfg.freeServicesPerMonth === 'number' ? cfg.freeServicesPerMonth : 1,
+      priorityBooking: !!cfg.priorityBooking,
+      birthdayGift: typeof cfg.birthdayGift === 'string' ? cfg.birthdayGift : '生日当月免费护理一次',
+    };
+  }
+  return {
+    enabled: true,
+    serviceDiscountRate: 0.8,
+    productDiscountRate: 0.85,
+    cashbackRate: 0.05,
+    freeServicesPerMonth: 1,
+    priorityBooking: true,
+    birthdayGift: '生日当月免费护理一次',
+  };
+}
+
+function calcStockholderCashback(totalAmount: number, isStockholder: boolean, stockholderConfig: unknown): number {
+  if (!isStockholder) return 0;
+  const config = getEffectiveStockholderConfig(stockholderConfig);
+  if (!config.enabled || config.cashbackRate <= 0) return 0;
+  return Math.round(totalAmount * config.cashbackRate * 100) / 100;
+}
+
+/**
+ * 检查是否已针对该预约发放过股东返现（幂等性保护）
+ */
+async function hasCashbackGrantedForBooking(bookingId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('stockholder_benefit_records')
+    .select('id')
+    .eq('source_booking_id', bookingId)
+    .eq('type', 'cashback')
+    .limit(1);
+  return !!(data && data.length > 0);
+}
+
+/**
+ * 检查最近 1 分钟内是否有相同条件的返现记录（无预约关联时的幂等性保护）
+ */
+async function hasRecentCashback(shopId: string, customerId: string, amount: number): Promise<boolean> {
+  const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from('stockholder_benefit_records')
+    .select('id')
+    .eq('shop_id', shopId)
+    .eq('customer_id', customerId)
+    .eq('amount', amount)
+    .eq('type', 'cashback')
+    .gte('granted_at', oneMinuteAgo)
+    .limit(1);
+  return !!(data && data.length > 0);
+}
+
+/**
+ * 预约完成/结算时自动发放股东权益
+ * D专家建议：返现到可提现余额；免费服务按自然月重置
+ */
+async function grantStockholderBenefits(
+  shopId: string,
+  customerId: string,
+  totalAmount: number,
+  sourceBookingId: string | null
+) {
+  try {
+    // 1. 查询店铺配置和客户信息
+    const [{ data: shopData }, { data: customerData }] = await Promise.all([
+      supabase.from('shops').select('stockholder_config').eq('id', shopId).single(),
+      supabase.from('customers').select('is_stockholder, withdrawable_referral_amount').eq('id', customerId).single(),
+    ]);
+
+    if (!customerData?.is_stockholder) return;
+
+    const config = getEffectiveStockholderConfig(shopData?.stockholder_config);
+    if (!config.enabled) return;
+
+    // 2. 计算返现金额
+    const cashbackAmount = calcStockholderCashback(totalAmount, true, shopData?.stockholder_config);
+    if (cashbackAmount <= 0) return;
+
+    // 3. 幂等性保护
+    if (sourceBookingId) {
+      if (await hasCashbackGrantedForBooking(sourceBookingId)) {
+        console.log(`[股东权益] 预约 ${sourceBookingId} 已发放过返现，跳过`);
+        return;
+      }
+    } else {
+      // 无预约关联时，检查最近 1 分钟内是否有相同金额返现（防止重复结算）
+      if (await hasRecentCashback(shopId, customerId, cashbackAmount)) {
+        console.log(`[股东权益] 最近已发放过相同金额返现，跳过`);
+        return;
+      }
+    }
+
+    // 4. 写入权益记录并更新余额
+    const { error: insertError } = await supabase.from('stockholder_benefit_records').insert({
+        id: `shr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        shop_id: shopId,
+        customer_id: customerId,
+        type: 'cashback',
+        amount: cashbackAmount,
+        source_booking_id: sourceBookingId,
+        status: 'granted',
+        granted_at: new Date().toISOString(),
+      });
+
+      if (insertError) {
+        console.error('[股东权益] 写入返现记录失败:', insertError.message);
+      } else {
+        // 更新客户可提现余额
+        const oldAmount = customerData.withdrawable_referral_amount || 0;
+        const newAmount = Math.round((oldAmount + cashbackAmount) * 100) / 100;
+        await supabase.from('customers').update({ withdrawable_referral_amount: newAmount }).eq('id', customerId);
+
+        // 站内通知占位（后续可替换为微信模板消息或短信）
+        console.log(
+          `[股东权益通知占位] 客户 ${customerId} 获得消费返现 ${cashbackAmount} 元，已计入可提现余额`
+        );
+      }
+
+    // 3. 免费服务使用记录（自然月重置，D专家建议）
+    // 注意：当前未在预约数据中标记"是否使用免费服务"，此处预留框架。
+    // 若后续支持"使用免费次数抵扣"，可在此扣除当月配额。
+  } catch (err: unknown) {
+    console.error('[股东权益] 自动发放异常:', (err as Error).message);
+  }
+}
+
 const bookingsRouter = Router();
 
 const generateBookingId = () => `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -429,7 +576,8 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const shopId = String(req.query.shopId || 'shop1');
     const status = req.query.status as string | undefined;
-    const dateStart = req.query.dateStart as string | undefined;
+    // 兼容小程序传入 date=YYYY-MM-DD 与 H5 传入 dateStart=YYYY-MM-DD
+    const dateStart = (req.query.dateStart || req.query.date) as string | undefined;
     const page = String(req.query.page || '1');
     const pageSize = String(req.query.pageSize || '20');
 
@@ -694,6 +842,16 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
             })
             .eq('id', originalBooking.customer_id);
         }
+      }
+
+      // 自动发放股东权益（三方协同）
+      if (originalBooking.customer_id) {
+        await grantStockholderBenefits(
+          originalBooking.shop_id,
+          originalBooking.customer_id,
+          originalBooking.price || 0,
+          originalBooking.id
+        );
       }
     }
 
@@ -1730,11 +1888,10 @@ const getQueueServiceDuration = async (shopId: string, serviceId: string): Promi
         return svc.duration;
       }
     }
-  } catch (_e) {
+  } catch (e) {
     console.error('[queues] 查询服务时长失败:', e);
-  }
-  return DEFAULT_QUEUE_SERVICE_MINUTES;
-};
+    return DEFAULT_QUEUE_SERVICE_MINUTES;
+  }};
 
 // 获取店铺当天排队状态（按同一时段分组）
 // GET /api/queues/:shopId?date=YYYY-MM-DD
@@ -2239,6 +2396,7 @@ const shopFromDb = (s: unknown): unknown => ({
   openingHours: s.opening_hours || {},
   employees: s.employees || [],
   bookingConfirmMode: s.booking_confirm_mode || 'auto',
+  stockholderConfig: s.stockholder_config || null,
   rating: s.rating || 5,
   reviewCount: s.review_count || 0,
   createdAt: s.created_at,
@@ -2354,6 +2512,7 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
       employees,
       openingHours,
       bookingConfirmMode,
+      stockholderConfig,
       isActive,
     } = req.body || {};
 
@@ -2373,6 +2532,7 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
     if (employees !== undefined) updatePayload.employees = employees;
     if (openingHours !== undefined) updatePayload.opening_hours = openingHours;
     if (bookingConfirmMode !== undefined) updatePayload.booking_confirm_mode = bookingConfirmMode;
+    if (stockholderConfig !== undefined) updatePayload.stockholder_config = stockholderConfig;
     if (isActive !== undefined) updatePayload.is_active = isActive;
 
     const { data, error } = await supabase
@@ -2646,6 +2806,9 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       created_at: new Date().toISOString(),
     };
     await supabase.from('customer_visit_records').insert(visitRecord);
+
+    // 自动发放股东权益（三方协同）
+    await grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null);
 
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {

@@ -1,13 +1,13 @@
 <view class="booking-page">
   <!-- 顶部返回栏 -->
   <view class="page-top-bar" bindtap="goToShop">
-    <mbs-icon name="arrowLeft" size="32" color="#1f2937" />
+    <mbs-icon name="arrowLeft" size="32" color="var(--text-primary)" />
     <text class="page-top-bar-text">返回店铺</text>
   </view>
 
   <view class="container">
     <view wx:if="{{loading}}" class="empty-state">
-      <view class="empty-icon"><mbs-icon name="search" size="56" color="#9ca3af" /></view>
+      <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
       <view class="empty-text">店铺加载中...</view>
     </view>
 
@@ -20,7 +20,7 @@
       <!-- 店铺信息 -->
       <view class="card shop-mini-card">
         <view class="shop-mini-image">
-          <mbs-icon name="mapPin" size="48" color="#3b82f6" />
+          <mbs-icon name="mapPin" size="48" color="var(--primary)" />
         </view>
         <view class="shop-mini-info">
           <view class="shop-mini-name">{{shop.name}}</view>
@@ -28,10 +28,23 @@
         </view>
       </view>
 
+      <!-- 股东会员权益展示 -->
+      <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-benefit-card">
+        <view class="card-title">
+          <mbs-icon name="award" size="32" color="var(--amber-500)" />
+          股东会员专享权益
+        </view>
+        <view class="stockholder-benefit-tags">
+          <view wx:for="{{stockholderSummary.benefits}}" wx:key="*this" class="stockholder-benefit-tag">
+            {{item}}
+          </view>
+        </view>
+      </view>
+
       <!-- 选择服务（可滑动，与 H5 Booking 对齐） -->
       <view class="card">
         <view class="card-title">
-          <mbs-icon name="scissors" size="32" color="#f97316" />
+          <mbs-icon name="scissors" size="32" color="var(--accent)" />
           选择服务
           <text class="service-scroll-hint">滑动查看更多</text>
         </view>
@@ -58,13 +71,20 @@
                 <view class="service-select-name">{{item.name}}</view>
                 <view wx:if="{{item.duration}}" class="service-select-desc">约 {{item.duration}} 分钟</view>
               </view>
-              <view class="service-select-price-wrap">
-                <view wx:if="{{item.hasDiscount}}" class="service-select-original-price">¥{{item.originalPriceStr}}</view>
-                <view class="service-select-price-row">
-                  <view wx:if="{{item.hasDiscount}}" class="service-select-tag">会员价</view>
-                  <view class="service-select-price">¥{{item.priceStr}}</view>
+              <view wx:if="{{item.isStockholderDiscount}}" class="stockholder-price-wrapper">
+                <view wx:if="{{item.hasDiscount}}" class="stockholder-price-original">¥{{item.originalPriceStr}}</view>
+                <view class="stockholder-price-row">
+                  <view class="stockholder-price-tag">股东价</view>
+                  <view class="stockholder-price-current">¥{{item.priceStr}}</view>
                 </view>
               </view>
+              <mbs-price
+                wx:else
+                original="{{item.originalPrice}}"
+                current="{{item.memberPrice}}"
+                show-tag="{{item.hasDiscount}}"
+                size="sm"
+              />
             </view>
           </scroll-view>
           <view class="service-select-scrollbar" wx:if="{{showServiceScrollbar}}">
@@ -79,7 +99,7 @@
       <!-- 选择日期 -->
       <view class="card">
         <view class="card-title">
-          <mbs-icon name="calendar" size="32" color="#f97316" />
+          <mbs-icon name="calendar" size="32" color="var(--accent)" />
           选择日期
         </view>
         <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false">
@@ -99,7 +119,7 @@
       <!-- 选择时间 -->
       <view class="card">
         <view class="card-title">
-          <mbs-icon name="clock" size="32" color="#f97316" />
+          <mbs-icon name="clock" size="32" color="var(--accent)" />
           选择时间
         </view>
         <view class="time-grid">
@@ -119,7 +139,7 @@
       <!-- 选择发型师 -->
       <view class="card">
         <view class="card-title">
-          <mbs-icon name="award" size="32" color="#f97316" />
+          <mbs-icon name="award" size="32" color="var(--accent)" />
           选择发型师
         </view>
 
@@ -133,7 +153,7 @@
             <view wx:if="{{selectionMode === 'fastest'}}" class="barber-radio-inner barber-radio-inner-green"></view>
           </view>
           <view class="barber-avatar barber-avatar-green">
-            <mbs-icon name="zap" size="36" color="#16a34a" />
+            <mbs-icon name="zap" size="36" color="var(--success)" />
           </view>
           <view class="barber-content">
             <view class="barber-name-row">
@@ -162,7 +182,7 @@
             <view wx:if="{{selectionMode === 'specific' && selectedBarberId === item.id}}" class="barber-radio-inner"></view>
           </view>
           <view class="barber-avatar">
-            <mbs-icon name="user" size="36" color="#9ca3af" />
+            <mbs-icon name="user" size="36" color="var(--text-tertiary)" />
           </view>
           <view class="barber-content">
             <view class="barber-name-row">
@@ -171,7 +191,7 @@
               <text wx:if="{{!item.isAvailable}}" class="tag tag-gray">已约</text>
             </view>
             <view class="barber-meta">
-              <text class="barber-rating"><mbs-icon name="star" size="18" color="#f59e0b" /> {{item.displayRating}}</text>
+              <text class="barber-rating"><mbs-icon name="star" size="18" color="var(--warning)" /> {{item.displayRating}}</text>
               <text class="barber-services">{{item.totalServices || 200}}+次</text>
             </view>
             <view wx:if="{{item.tagsDisplay && item.tagsDisplay.length > 0}}" class="barber-tags">
@@ -184,7 +204,7 @@
       <!-- 备注 -->
       <view class="card">
         <view class="card-title">
-          <mbs-icon name="messageSquare" size="32" color="#f97316" />
+          <mbs-icon name="messageSquare" size="32" color="var(--accent)" />
           备注
         </view>
         <textarea
@@ -202,7 +222,7 @@
     <view class="booking-summary">
       <view>
         <view class="booking-total-label">合计</view>
-        <view class="booking-total-price">¥{{selectedServicePrice}}</view>
+        <mbs-price current="{{selectedServicePrice}}" size="lg" show-tag="{{false}}" align="left" />
       </view>
       <view class="btn btn-primary booking-submit {{booking ? 'btn-disabled' : ''}}" bindtap="handleBooking">
         {{booking ? '预约中...' : '确认预约'}}

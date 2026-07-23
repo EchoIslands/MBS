@@ -9,6 +9,109 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 // 存储到店记录（内存存储，实际项目中应该用数据库）
 const visitRecords: CustomerVisitRecord[] = [];
 
+// ==================== 股东权益内存存储（与 bookings.ts 共享单例）====================
+declare global {
+  var __stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> | undefined;
+}
+const stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> =
+  globalThis.__stockholderBenefitRecordsDb || (globalThis.__stockholderBenefitRecordsDb = new Map());
+
+// ==================== 股东权益计算（与 shared/lib/membership.ts 保持一致）====================
+
+function isActiveStockholder(customer: any): boolean {
+  return !!customer?.isStockholder;
+}
+
+function getEffectiveStockholderConfig(shop: any): any {
+  if (shop?.stockholderConfig) {
+    return shop.stockholderConfig;
+  }
+  return {
+    enabled: true,
+    serviceDiscountRate: 0.8,
+    productDiscountRate: 0.85,
+    cashbackRate: 0.05,
+    freeServicesPerMonth: 1,
+    priorityBooking: true,
+    birthdayGift: '生日当月免费护理一次',
+  };
+}
+
+function calcStockholderCashback(totalAmount: number, customer: any, shop: any): number {
+  if (!isActiveStockholder(customer)) return 0;
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled || config.cashbackRate <= 0) return 0;
+  return Math.round(totalAmount * config.cashbackRate * 100) / 100;
+}
+
+/**
+ * 检查是否已针对该预约发放过股东返现（幂等性保护）
+ */
+function hasCashbackGrantedForBooking(bookingId: string): boolean {
+  for (const record of stockholderBenefitRecordsDb.values()) {
+    if (record.type === 'cashback' && record.source_booking_id === bookingId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 离店结算时自动发放股东权益
+ * 三方协同：计算逻辑与 H5/小程序 shared/lib/membership.ts 完全一致
+ */
+function processStockholderBenefitsOnCheckout(record: CustomerVisitRecord) {
+  const customer = mockCustomers.find((c: any) => c.id === record.customerId);
+  const shop = mockShops.find((s: any) => s.id === record.shopId);
+  if (!customer || !shop) return;
+
+  if (!isActiveStockholder(customer)) return;
+
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled) return;
+
+  // 幂等性保护：若该预约/到店记录已发放过返现，则跳过
+  const idempotencyKey = record.bookingId || record.id;
+  if (hasCashbackGrantedForBooking(idempotencyKey)) {
+    console.log(`[股东权益] 记录 ${idempotencyKey} 已发放过返现，跳过`);
+    return;
+  }
+
+  // 消费返现 -> 可提现余额（D专家建议：返现到可提现余额）
+  const cashbackAmount = calcStockholderCashback(record.totalAmount, customer, shop);
+  if (cashbackAmount > 0) {
+    const benefitId = generateId();
+    stockholderBenefitRecordsDb.set(benefitId, {
+      id: benefitId,
+      shop_id: record.shopId,
+      customer_id: record.customerId,
+      type: 'cashback',
+      amount: cashbackAmount,
+      source_booking_id: idempotencyKey,
+      status: 'granted',
+      granted_at: new Date().toISOString(),
+      expires_at: null,
+      notified_at: null,
+    });
+
+    // 更新客户可提现余额（优先 withdrawableReferralAmount，兼容旧字段）
+    const oldWithdrawable =
+      (customer as any).withdrawableReferralAmount ??
+      (customer as any).withdrawableAmount ??
+      customer.referralEarnings ??
+      0;
+    const newWithdrawable = Math.round((oldWithdrawable + cashbackAmount) * 100) / 100;
+    (customer as any).withdrawableReferralAmount = newWithdrawable;
+    (customer as any).withdrawableAmount = newWithdrawable;
+    customer.referralEarnings = newWithdrawable;
+
+    // 站内通知占位（后续可替换为微信模板消息或短信）
+    console.log(
+      `[股东权益通知占位] 客户 ${customer.name} 离店结算获得返现 ${cashbackAmount} 元，已计入可提现余额`
+    );
+  }
+}
+
 // ==================== 到店记录 API ====================
 
 // 客户到店打卡（check-in）
@@ -106,6 +209,9 @@ router.post('/checkout', (req: Request, res: Response) => {
     customer.totalSpent = (customer.totalSpent || 0) + updated.totalAmount;
     customer.lastVisitAt = new Date();
   }
+
+  // 离店结算时自动发放股东权益
+  processStockholderBenefitsOnCheckout(updated);
 
   res.json({ success: true, data: updated });
 });

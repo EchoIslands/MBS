@@ -147,3 +147,95 @@ export function calcDiscountedItemPrice(price, customer, category = 'service') {
   const discount = customer ? getCustomerEffectiveDiscount(customer) : 1;
   return Math.round(effectivePrice * discount * 100) / 100;
 }
+
+// ==================== 股东会员权益计算（与 H5 shared/lib/membership.ts 保持一致） ====================
+
+export function getDefaultStockholderConfig() {
+  return {
+    enabled: true,
+    serviceDiscountRate: 0.8,
+    productDiscountRate: 0.85,
+    cashbackRate: 0.05,
+    freeServicesPerMonth: 1,
+    priorityBooking: true,
+    birthdayGift: '生日当月免费护理一次',
+  };
+}
+
+export function isActiveStockholder(customer) {
+  return !!(customer && customer.isStockholder);
+}
+
+export function getEffectiveStockholderConfig(shop) {
+  if (shop && shop.stockholderConfig) {
+    return shop.stockholderConfig;
+  }
+  return getDefaultStockholderConfig();
+}
+
+export function calcStockholderDiscountedPrice(originalPrice, customer, shop, category = 'service') {
+  const price = Number(originalPrice) || 0;
+  if (!isActiveStockholder(customer)) {
+    return { price, hasDiscount: false, discountRate: 1 };
+  }
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled) {
+    return { price, hasDiscount: false, discountRate: 1 };
+  }
+  const rate = category === 'service' ? config.serviceDiscountRate : config.productDiscountRate;
+  const discounted = Math.round(price * rate * 100) / 100;
+  return {
+    price: discounted,
+    hasDiscount: discounted < price,
+    discountRate: rate,
+  };
+}
+
+export function calcStockholderCashback(totalAmount, customer, shop) {
+  if (!isActiveStockholder(customer)) return 0;
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled || config.cashbackRate <= 0) return 0;
+  return Math.round(totalAmount * config.cashbackRate * 100) / 100;
+}
+
+export function getCurrentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function getStockholderBenefitSummary(customer, shop) {
+  const config = getEffectiveStockholderConfig(shop);
+  const isStockholder = isActiveStockholder(customer);
+  const benefits = [];
+  if (isStockholder && config.enabled) {
+    if (config.serviceDiscountRate < 1) {
+      benefits.push('服务享' + Math.round(config.serviceDiscountRate * 10) + '折');
+    }
+    if (config.productDiscountRate < 1) {
+      benefits.push('商品享' + Math.round(config.productDiscountRate * 10) + '折');
+    }
+    if (config.freeServicesPerMonth > 0) {
+      benefits.push('每月' + config.freeServicesPerMonth + '次免费服务');
+    }
+    if (config.cashbackRate > 0) {
+      benefits.push('消费返现' + Math.round(config.cashbackRate * 100) + '%');
+    }
+    if (config.priorityBooking) {
+      benefits.push('优先预约');
+    }
+    if (config.birthdayGift) {
+      benefits.push(config.birthdayGift);
+    }
+  }
+  return {
+    isStockholder,
+    enabled: config.enabled,
+    serviceDiscountRate: config.serviceDiscountRate,
+    productDiscountRate: config.productDiscountRate,
+    cashbackRate: config.cashbackRate,
+    freeServicesPerMonth: config.freeServicesPerMonth,
+    priorityBooking: config.priorityBooking,
+    birthdayGift: config.birthdayGift,
+    benefits,
+  };
+}

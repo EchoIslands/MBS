@@ -1,5 +1,6 @@
 import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
-import { getBooking } from '../../api/booking';
+import { getShop } from '../../api/shop';
+import { cancelBooking } from '../../api/booking';
 import { getCustomerId, clearCustomerId, setRouteParams } from '../../utils/storage';
 import {
   PurchaseVIPLevel,
@@ -15,6 +16,7 @@ import {
   isVIPExpiringSoon,
   isStoredValueExpiringSoon,
   generateBenefits,
+  getStockholderBenefitSummary,
 } from '../../utils/membership';
 
 function toTwoDigits(n) {
@@ -135,6 +137,10 @@ Page({
       const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
 
       const allBookings = bookings || [];
+      // 三方协同：优先从最近预约获取店铺配置，与 H5 保持一致
+      const recentShopId = allBookings[0]?.shopId;
+      const shop = recentShopId ? await getShop(recentShopId) : null;
+      const stockholderSummary = getStockholderBenefitSummary(customer, shop);
       this.setData({
         customer,
         bookings: allBookings,
@@ -150,7 +156,8 @@ Page({
         withdrawable: customer?.withdrawableReferralAmount ?? 0,
         points: customer?.points ?? 0,
         totalSpent: customer?.totalSpent ?? 0,
-        myBenefits: generateBenefits(customer),
+        myBenefits: this.computeMyBenefits(customer),
+        stockholderSummary,
       });
       this.refreshFilteredBookings();
     } catch (err) {
@@ -202,23 +209,24 @@ Page({
   stopPropagation() {},
 
   async handleCancelBooking() {
-    const { viewingBooking } = this.data;
-    if (!viewingBooking) return;
+    const { viewingBooking, customer } = this.data;
+    if (!viewingBooking || !customer) return;
 
     const res = await wx.showModal({
       title: '取消预约',
-      content: '确定要取消这次预约吗？',
+      content: '确定要取消这次预约吗？取消后无法恢复。',
     });
     if (!res.confirm) return;
 
     this.setData({ cancelling: true });
     try {
-      await getBooking(viewingBooking.id);
-      wx.showToast({ title: '取消预约功能开发中', icon: 'none' });
-      this.setData({ cancelling: false });
+      await cancelBooking(viewingBooking.id, customer.id);
+      wx.showToast({ title: '已取消预约', icon: 'success' });
+      this.setData({ viewingBooking: null, cancelling: false });
+      await this.loadProfile({ autoShowLogin: false });
     } catch (err) {
       console.error('[profile] 取消预约失败:', err);
-      wx.showToast({ title: '取消失败，请重试', icon: 'none' });
+      wx.showToast({ title: err.message || '取消失败，请重试', icon: 'none' });
       this.setData({ cancelling: false });
     }
   },
@@ -281,59 +289,38 @@ Page({
     return (discount * 10).toFixed(2);
   },
 
-  statusText(status) {
-    const map = {
-      pending: '待店铺确认',
-      confirmed: '已确认',
-      serving: '服务中',
-      completed: '已完成',
-      cancelled: '已取消',
-    };
-    return map[status] || status;
-  },
-
-  statusClass(status) {
-    const map = {
-      pending: 'status-pending',
-      confirmed: 'status-confirmed',
-      serving: 'status-serving',
-      completed: 'status-completed',
-      cancelled: 'status-cancelled',
-    };
-    return map[status] || 'status-pending';
-  },
-
-  bookingModalStatusClass(status) {
-    const map = {
-      pending: 'bg-yellow-light',
-      confirmed: 'bg-blue-light',
-      serving: 'bg-blue-light',
-      completed: 'bg-green-light',
-      cancelled: 'bg-gray-light',
-    };
-    return map[status] || 'bg-gray-light';
-  },
-
-  bookingModalStatusTextClass(status) {
-    const map = {
-      pending: 'text-yellow',
-      confirmed: 'text-blue',
-      serving: 'text-blue',
-      completed: 'text-green',
-      cancelled: 'text-gray',
-    };
-    return map[status] || 'text-gray';
-  },
-
   benefitIconColor(type) {
     const map = {
-      [BenefitType.SHAMPOO]: '#3b82f6',
-      [BenefitType.CONDITIONER]: '#ec4899',
-      [BenefitType.FREE_HAIRCUT]: '#a855f7',
-      [BenefitType.DRINK]: '#f97316',
-      [BenefitType.REDO]: '#ef4444',
+      [BenefitType.SHAMPOO]: 'var(--blue-500)',
+      [BenefitType.CONDITIONER]: 'var(--pink-500)',
+      [BenefitType.FREE_HAIRCUT]: 'var(--purple-500)',
+      [BenefitType.DRINK]: 'var(--accent)',
+      [BenefitType.REDO]: 'var(--danger)',
     };
-    return map[type] || '#6b7280';
+    return map[type] || 'var(--text-tertiary)';
+  },
+
+  computeMyBenefits(customer) {
+    if (!customer) return [];
+    // 优先与 H5 保持一致：使用后端返回的可用权益记录
+    const records = customer.memberBenefitRecords || customer.benefits;
+    if (Array.isArray(records) && records.length > 0) {
+      return records
+        .filter((b) => b.status === 'available')
+        .map((b) => ({
+          type: b.type || BenefitType.SHAMPOO,
+          name: b.name || '会员权益',
+          description: b.expiresAt
+            ? `有效期至 ${formatShortDate(b.expiresAt)}`
+            : '无固定期限',
+          expiresAt: b.expiresAt,
+        }));
+    }
+    // 兜底：根据购买 VIP 等级生成权益
+    return generateBenefits(customer).map((b) => ({
+      ...b,
+      description: '无固定期限',
+    }));
   },
 
   benefitIconName(type) {

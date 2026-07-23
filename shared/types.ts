@@ -106,6 +106,7 @@ export interface Shop {
   rating?: number; // 店铺评分
   reviewCount?: number; // 店铺评价数量
   bookingConfirmMode?: 'auto' | 'manual'; // 预约确认方式：auto 自动确认（默认），manual 手动确认
+  stockholderConfig?: StockholderBenefitConfig; // 股东会员权益配置
 }
 
 // 客户标签类型
@@ -173,6 +174,47 @@ export enum BenefitType {
 
 // 权益记录状态
 export type BenefitStatus = 'available' | 'used' | 'expired';
+
+// ==================== 股东会员权益类型 ====================
+
+// 股东会员权益规则（按店铺配置）
+export interface StockholderBenefitConfig {
+  enabled: boolean;                // 是否启用股东权益
+  serviceDiscountRate: number;     // 服务折扣率，如 0.8 表示 8 折
+  productDiscountRate: number;     // 商品折扣率
+  cashbackRate: number;            // 消费返现比例，如 0.05 表示返 5%
+  freeServicesPerMonth: number;    // 每月免费服务次数
+  priorityBooking: boolean;        // 是否优先预约
+  birthdayGift: string;            // 生日礼描述
+}
+
+// 股东权益变动类型
+export type StockholderBenefitType = 'discount' | 'cashback' | 'free_service' | 'birthday_gift';
+
+// 股东权益变动记录
+export interface StockholderBenefitRecord {
+  id: string;
+  shopId: string;
+  customerId: string;
+  type: StockholderBenefitType;
+  amount: number;                  // 折扣/返现金额
+  sourceBookingId?: string;        // 关联预约
+  status: 'pending' | 'granted' | 'used' | 'expired';
+  grantedAt: Date;
+  expiresAt?: Date;
+  notifiedAt?: Date;               // 通知客户时间
+}
+
+// 股东客户每月免费服务使用记录
+export interface StockholderFreeServiceUsage {
+  id: string;
+  shopId: string;
+  customerId: string;
+  yearMonth: string;               // 格式 YYYY-MM
+  totalQuota: number;              // 当月总次数
+  usedCount: number;               // 已使用次数
+  updatedAt: Date;
+}
 
 // 储值流水类型
 export enum StoredValueTxType {

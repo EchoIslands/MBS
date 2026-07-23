@@ -8,6 +8,8 @@ import {
   Customer,
   MemberBenefitRecord,
   SettlementDiscountDetail,
+  StockholderBenefitConfig,
+  Shop,
 } from '../types';
 import { purchaseVIPPlans, storedValuePlans } from '../membershipPlans';
 
@@ -233,4 +235,139 @@ export function getCustomerEffectiveDiscount(customer: Customer): number {
   const purchaseLevel = getEffectivePurchaseVIPLevel(customer);
   const storedLevel = getEffectiveStoredValueLevel(customer);
   return getFinalDiscount(purchaseLevel, storedLevel);
+}
+
+// ==================== 股东会员权益计算 ====================
+
+/**
+ * 默认股东权益配置（未配置时回退）
+ */
+export function getDefaultStockholderConfig(): StockholderBenefitConfig {
+  return {
+    enabled: true,
+    serviceDiscountRate: 0.8,
+    productDiscountRate: 0.85,
+    cashbackRate: 0.05,
+    freeServicesPerMonth: 1,
+    priorityBooking: true,
+    birthdayGift: '生日当月免费护理一次',
+  };
+}
+
+/**
+ * 判断客户是否为有效股东（isStockholder=true）
+ */
+export function isActiveStockholder(customer?: Customer | null): boolean {
+  return !!customer?.isStockholder;
+}
+
+/**
+ * 获取店铺实际生效的股东权益配置
+ */
+export function getEffectiveStockholderConfig(shop?: Shop | null): StockholderBenefitConfig {
+  if (shop?.stockholderConfig) {
+    return shop.stockholderConfig;
+  }
+  return getDefaultStockholderConfig();
+}
+
+/**
+ * 计算股东服务折扣价
+ * 注意：股东折扣与 VIP/储值折扣是独立的，取最优惠（最小折扣率）
+ */
+export function calcStockholderDiscountedPrice(
+  originalPrice: number,
+  customer: Customer | null | undefined,
+  shop: Shop | null | undefined,
+  category: ProductCategory | 'service' = 'service'
+): { price: number; hasDiscount: boolean; discountRate: number } {
+  if (!isActiveStockholder(customer)) {
+    return { price: originalPrice, hasDiscount: false, discountRate: 1 };
+  }
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled) {
+    return { price: originalPrice, hasDiscount: false, discountRate: 1 };
+  }
+  const rate = category === 'service' ? config.serviceDiscountRate : config.productDiscountRate;
+  const discounted = Math.round(originalPrice * rate * 100) / 100;
+  return {
+    price: discounted,
+    hasDiscount: discounted < originalPrice,
+    discountRate: rate,
+  };
+}
+
+/**
+ * 计算消费返现金额
+ */
+export function calcStockholderCashback(
+  totalAmount: number,
+  customer: Customer | null | undefined,
+  shop: Shop | null | undefined
+): number {
+  if (!isActiveStockholder(customer)) return 0;
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled || config.cashbackRate <= 0) return 0;
+  return Math.round(totalAmount * config.cashbackRate * 100) / 100;
+}
+
+/**
+ * 获取股东权益摘要（用于前端展示）
+ */
+export function getStockholderBenefitSummary(
+  customer: Customer | null | undefined,
+  shop: Shop | null | undefined
+): {
+  isStockholder: boolean;
+  enabled: boolean;
+  serviceDiscountRate: number;
+  productDiscountRate: number;
+  cashbackRate: number;
+  freeServicesPerMonth: number;
+  priorityBooking: boolean;
+  birthdayGift: string;
+  benefits: string[];
+} {
+  const config = getEffectiveStockholderConfig(shop);
+  const isStockholder = isActiveStockholder(customer);
+  const benefits: string[] = [];
+  if (isStockholder && config.enabled) {
+    if (config.serviceDiscountRate < 1) {
+      benefits.push(`服务享${Math.round(config.serviceDiscountRate * 10)}折`);
+    }
+    if (config.productDiscountRate < 1) {
+      benefits.push(`商品享${Math.round(config.productDiscountRate * 10)}折`);
+    }
+    if (config.freeServicesPerMonth > 0) {
+      benefits.push(`每月${config.freeServicesPerMonth}次免费服务`);
+    }
+    if (config.cashbackRate > 0) {
+      benefits.push(`消费返现${Math.round(config.cashbackRate * 100)}%`);
+    }
+    if (config.priorityBooking) {
+      benefits.push('优先预约');
+    }
+    if (config.birthdayGift) {
+      benefits.push(config.birthdayGift);
+    }
+  }
+  return {
+    isStockholder,
+    enabled: config.enabled,
+    serviceDiscountRate: config.serviceDiscountRate,
+    productDiscountRate: config.productDiscountRate,
+    cashbackRate: config.cashbackRate,
+    freeServicesPerMonth: config.freeServicesPerMonth,
+    priorityBooking: config.priorityBooking,
+    birthdayGift: config.birthdayGift,
+    benefits,
+  };
+}
+
+/**
+ * 获取当前年月字符串 YYYY-MM
+ */
+export function getCurrentYearMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }

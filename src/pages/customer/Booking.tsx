@@ -7,7 +7,7 @@ import { mockShops, mockBookings } from '../../../shared/mockData';
 import { Employee, Shop, UserRole, Booking } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
-import { calcDiscountedItemPrice } from '../../lib/membership';
+import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../lib/membership';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 
 type SelectionMode = 'specific' | 'fastest';
@@ -241,6 +241,12 @@ const BookingPage: React.FC = () => {
 
   const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
 
+  // 股东权益摘要
+  const stockholderSummary = useMemo(
+    () => getStockholderBenefitSummary(currentCustomer, shop),
+    [currentCustomer, shop]
+  );
+
   if (loadingShop || !shop) {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">店铺加载中...</div>;
   }
@@ -290,6 +296,26 @@ const BookingPage: React.FC = () => {
           </div>
         </div>
 
+        {/* 股东权益展示 */}
+        {stockholderSummary.isStockholder && stockholderSummary.enabled && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl shadow-sm p-4 sm:p-5 mt-4 border border-amber-100">
+            <h3 className="font-bold text-amber-800 mb-2 sm:mb-3 flex items-center gap-2 text-sm sm:text-base">
+              <Award size={18} className="text-amber-600" />
+              股东会员专享权益
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {stockholderSummary.benefits.map((benefit) => (
+                <span
+                  key={benefit}
+                  className="text-xs sm:text-sm px-2.5 py-1 bg-white/70 text-amber-700 rounded-full border border-amber-200"
+                >
+                  {benefit}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 选择服务 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
           <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
@@ -305,7 +331,16 @@ const BookingPage: React.FC = () => {
                 currentCustomer?.storedValueLevel,
                 'service'
               );
-              const hasDiscount = memberPrice < service.price;
+              const stockholderPrice = calcStockholderDiscountedPrice(
+                service.price,
+                currentCustomer,
+                shop,
+                'service'
+              );
+              // 取最优惠价格
+              const finalPrice = Math.min(memberPrice, stockholderPrice.price);
+              const hasDiscount = finalPrice < service.price;
+              const isStockholderDiscount = stockholderPrice.hasDiscount && stockholderPrice.price <= memberPrice;
               return (
                 <label
                   key={service.id}
@@ -342,12 +377,16 @@ const BookingPage: React.FC = () => {
                     )}
                     <div className="flex items-center gap-1.5 justify-end">
                       {hasDiscount && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-amber-700 rounded font-medium">
-                          会员价
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          isStockholderDiscount
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-orange-100 text-amber-700'
+                        }`}>
+                          {isStockholderDiscount ? '股东价' : '会员价'}
                         </span>
                       )}
                       <span className="text-amber-600 font-bold text-base sm:text-lg">
-                        ¥{memberPrice.toFixed(2)}
+                        ¥{finalPrice.toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -637,15 +676,26 @@ const BookingPage: React.FC = () => {
                       currentCustomer?.storedValueLevel,
                       'service'
                     );
-                    const hasDiscount = memberPrice < selectedServiceData.price;
+                    const stockholderPrice = calcStockholderDiscountedPrice(
+                      selectedServiceData.price,
+                      currentCustomer,
+                      shop,
+                      'service'
+                    );
+                    const finalPrice = Math.min(memberPrice, stockholderPrice.price);
+                    const hasDiscount = finalPrice < selectedServiceData.price;
+                    const isStockholderDiscount = stockholderPrice.hasDiscount && stockholderPrice.price <= memberPrice;
                     return (
                       <>
                         {hasDiscount && (
                           <span className="block text-xs text-gray-400 line-through">¥{selectedServiceData.price}</span>
                         )}
                         <span className={`font-bold ${hasDiscount ? 'text-orange-600' : 'text-gray-800'}`}>
-                          ¥{memberPrice.toFixed(2)}
+                          ¥{finalPrice.toFixed(2)}
                         </span>
+                        {isStockholderDiscount && (
+                          <span className="block text-[10px] text-amber-600 mt-0.5">股东专享价</span>
+                        )}
                       </>
                     );
                   })()}

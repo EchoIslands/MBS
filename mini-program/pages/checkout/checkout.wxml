@@ -121,6 +121,10 @@
             <text class="checkout-price-label">{{fmt.getStoredValueLabel(storedLevel)}} 折上折 ×{{storedValueDiscountStr}} 折</text>
             <text class="checkout-price-value text-orange">-¥{{storedDiscountAmountStr}}</text>
           </view>
+          <view wx:if="{{isStockholderDiscount}}" class="checkout-price-row">
+            <text class="checkout-price-label">股东折扣</text>
+            <text class="checkout-price-value text-amber">已享股东价</text>
+          </view>
           <view wx:if="{{hasDiscount}}" class="checkout-price-row checkout-price-total">
             <text class="checkout-price-label">预计实付</text>
             <text class="checkout-price-value price">¥{{memberPriceStr}}</text>
@@ -130,7 +134,8 @@
         <!-- 综合折扣提示 -->
         <view wx:if="{{hasDiscount}}" class="checkout-discount-hint">
           <mbs-icon name="sparkles" size="24" color="var(--accent)" />
-          <text>当前综合折扣 {{effectiveDiscountStr}} 折，到店结算时自动生效</text>
+          <text wx:if="{{isStockholderDiscount}}">股东权益已生效，到店结算时自动应用</text>
+          <text wx:else>当前综合折扣 {{effectiveDiscountStr}} 折，到店结算时自动生效</text>
         </view>
 
         <!-- 储值余额提示 -->

@@ -402,3 +402,60 @@
 .booking-submit {
   min-width: 280rpx;
 }
+
+/* 股东会员权益卡片 */
+.stockholder-benefit-card {
+  background: linear-gradient(135deg, #fff8f0, #fff0e0);
+  border: 1rpx solid var(--amber-200);
+}
+
+.stockholder-benefit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.stockholder-benefit-tag {
+  font-size: 24rpx;
+  padding: 8rpx 20rpx;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--amber-700);
+  border-radius: 24rpx;
+  border: 1rpx solid var(--amber-200);
+}
+
+/* 股东价格展示 */
+.stockholder-price-wrapper {
+  text-align: right;
+  margin-left: 16rpx;
+  flex-shrink: 0;
+}
+
+.stockholder-price-original {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  margin-bottom: 4rpx;
+}
+
+.stockholder-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  justify-content: flex-end;
+}
+
+.stockholder-price-tag {
+  font-size: 18rpx;
+  padding: 2rpx 10rpx;
+  background: var(--amber-100);
+  color: var(--amber-800);
+  border-radius: 8rpx;
+  font-weight: 500;
+}
+
+.stockholder-price-current {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--accent);
+}

@@ -1,5 +1,6 @@
 import { getBooking } from '../../api/booking';
 import { getCustomerPublic } from '../../api/customer';
+import { getShop } from '../../api/shop';
 import { getCustomerId, setRouteParams, takeRouteParams } from '../../utils/storage';
 import {
   PurchaseVIPLevel,
@@ -12,6 +13,7 @@ import {
   getEffectiveStoredValueLevel,
   getCustomerEffectiveDiscount,
   calcDiscountedItemPrice,
+  calcStockholderDiscountedPrice,
   isVIPExpiringSoon,
   isStoredValueExpiringSoon,
 } from '../../utils/membership';
@@ -37,30 +39,9 @@ function formatDiscount(discount) {
   return (discount * 10).toFixed(2);
 }
 
-function statusText(status) {
-  const map = {
-    pending: '待店铺确认',
-    confirmed: '已确认',
-    serving: '服务中',
-    completed: '已完成',
-    cancelled: '已取消',
-  };
-  return map[status] || status;
-}
-
-function statusClass(status) {
-  const map = {
-    pending: 'status-pending',
-    confirmed: 'status-confirmed',
-    serving: 'status-serving',
-    completed: 'status-completed',
-    cancelled: 'status-cancelled',
-  };
-  return map[status] || 'status-pending';
-}
-
 Page({
   data: {
+    bookingId: '',
     booking: null,
     customer: null,
     loading: true,
@@ -208,7 +189,15 @@ Page({
     this.setData({ loading: true, error: '' });
     try {
       const booking = await getBooking(id);
-      this.setData({ booking, loading: false });
+      let shop = null;
+      if (booking && booking.shopId) {
+        try {
+          shop = await getShop(booking.shopId);
+        } catch (e) {
+          console.warn('[checkout] 获取店铺信息失败:', e);
+        }
+      }
+      this.setData({ booking, shop, loading: false });
       this.refreshPrice();
     } catch (err) {
       console.error('[checkout] 加载预约失败:', err);
@@ -217,28 +206,33 @@ Page({
   },
 
   refreshPrice() {
-    const { booking, customer, purchaseVIPDiscount } = this.data;
+    const { booking, customer, shop, purchaseVIPDiscount } = this.data;
     if (!booking) return;
 
     const originalPrice = Number(booking.price) || 0;
     const memberPrice = calcDiscountedItemPrice(originalPrice, customer, 'service');
-    const discountAmount = Math.round((originalPrice - memberPrice) * 100) / 100;
+    // 三方协同：同时计算股东折扣价，取最优惠价格
+    const stockholderPrice = calcStockholderDiscountedPrice(originalPrice, customer, shop, 'service');
+    const finalPrice = Math.min(memberPrice, stockholderPrice.price);
+    const discountAmount = Math.round((originalPrice - finalPrice) * 100) / 100;
     const hasDiscount = discountAmount > 0;
+    const isStockholderDiscount = stockholderPrice.hasDiscount && stockholderPrice.price <= memberPrice;
 
     const vipDiscountAmount = Math.round((originalPrice - originalPrice * purchaseVIPDiscount) * 100) / 100;
     const storedDiscountAmount = Math.round((originalPrice * purchaseVIPDiscount - memberPrice) * 100) / 100;
 
     this.setData({
       originalPrice,
-      memberPrice,
+      memberPrice: finalPrice,
       discountAmount,
       hasDiscount,
       hasPurchaseDiscount: vipDiscountAmount > 0,
       hasStoredDiscount: storedDiscountAmount > 0,
+      isStockholderDiscount,
       vipDiscountAmount,
       storedDiscountAmount,
       originalPriceStr: originalPrice.toFixed(2),
-      memberPriceStr: memberPrice.toFixed(2),
+      memberPriceStr: finalPrice.toFixed(2),
       vipDiscountAmountStr: vipDiscountAmount.toFixed(2),
       storedDiscountAmountStr: storedDiscountAmount.toFixed(2),
       purchaseVIPDiscountStr: formatDiscount(purchaseVIPDiscount),
@@ -264,8 +258,6 @@ Page({
   formatDateTime,
   formatShortDate,
   formatDiscount,
-  statusText,
-  statusClass,
   getPurchaseVIPLabel,
   getStoredValueLabel,
 });

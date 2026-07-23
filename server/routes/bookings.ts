@@ -1,7 +1,126 @@
 import { Router, Request, Response } from 'express';
-import { mockBookings, mockShops } from '../_internal/mockData.js';
+import { mockBookings, mockShops, mockCustomers } from '../_internal/mockData.js';
 
 const router = Router();
+
+// ==================== 股东权益内存存储（实际项目应使用数据库）====================
+declare global {
+  var __stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> | undefined;
+  var __stockholderFreeServiceUsageDb: Map<string, Record<string, unknown>> | undefined;
+}
+const stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> =
+  globalThis.__stockholderBenefitRecordsDb || (globalThis.__stockholderBenefitRecordsDb = new Map());
+const stockholderFreeServiceUsageDb: Map<string, Record<string, unknown>> =
+  globalThis.__stockholderFreeServiceUsageDb || (globalThis.__stockholderFreeServiceUsageDb = new Map());
+
+// ==================== 股东权益计算（与 shared/lib/membership.ts 保持一致）====================
+
+function isActiveStockholder(customer: any): boolean {
+  return !!customer?.isStockholder;
+}
+
+function getEffectiveStockholderConfig(shop: any): any {
+  if (shop?.stockholderConfig) {
+    return shop.stockholderConfig;
+  }
+  return {
+    enabled: true,
+    serviceDiscountRate: 0.8,
+    productDiscountRate: 0.85,
+    cashbackRate: 0.05,
+    freeServicesPerMonth: 1,
+    priorityBooking: true,
+    birthdayGift: '生日当月免费护理一次',
+  };
+}
+
+function calcStockholderCashback(totalAmount: number, customer: any, shop: any): number {
+  if (!isActiveStockholder(customer)) return 0;
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled || config.cashbackRate <= 0) return 0;
+  return Math.round(totalAmount * config.cashbackRate * 100) / 100;
+}
+
+function getCurrentYearMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * 检查是否已针对该预约发放过股东返现（幂等性保护）
+ */
+function hasCashbackGrantedForBooking(bookingId: string): boolean {
+  for (const record of stockholderBenefitRecordsDb.values()) {
+    if (record.type === 'cashback' && record.source_booking_id === bookingId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 预约完成时自动发放股东权益
+ * 三方协同：计算逻辑与 H5/小程序 shared/lib/membership.ts 完全一致
+ */
+function processStockholderBenefitsOnComplete(booking: BookingRecord) {
+  const customer = mockCustomers.find((c: any) => c.id === booking.customer_id);
+  const shop = mockShops.find((s: any) => s.id === booking.shop_id);
+  if (!customer || !shop) return;
+
+  if (!isActiveStockholder(customer)) return;
+
+  const config = getEffectiveStockholderConfig(shop);
+  if (!config.enabled) return;
+
+  // 幂等性保护：若该预约已发放过返现，则跳过
+  if (hasCashbackGrantedForBooking(booking.id)) {
+    console.log(`[股东权益] 预约 ${booking.id} 已发放过返现，跳过`);
+    return;
+  }
+
+  // 1. 消费返现 -> 可提现余额（D专家建议：返现到可提现余额）
+  const cashbackAmount = calcStockholderCashback(booking.price, customer, shop);
+  if (cashbackAmount > 0) {
+    // 写入权益记录表（内存模拟）
+    const recordId = generateId();
+    stockholderBenefitRecordsDb.set(recordId, {
+      id: recordId,
+      shop_id: booking.shop_id,
+      customer_id: booking.customer_id,
+      type: 'cashback',
+      amount: cashbackAmount,
+      source_booking_id: booking.id,
+      status: 'granted',
+      granted_at: new Date().toISOString(),
+      expires_at: null,
+      notified_at: null,
+    });
+
+    // 更新客户可提现余额（优先 withdrawableReferralAmount，兼容旧字段）
+    const oldWithdrawable =
+      (customer as any).withdrawableReferralAmount ??
+      (customer as any).withdrawableAmount ??
+      customer.referralEarnings ??
+      0;
+    const newWithdrawable = Math.round((oldWithdrawable + cashbackAmount) * 100) / 100;
+    (customer as any).withdrawableReferralAmount = newWithdrawable;
+    (customer as any).withdrawableAmount = newWithdrawable;
+    customer.referralEarnings = newWithdrawable;
+
+    // 站内通知占位（后续可替换为微信模板消息或短信）
+    console.log(
+      `[股东权益通知占位] 客户 ${customer.name} 获得消费返现 ${cashbackAmount} 元，已计入可提现余额`
+    );
+  }
+
+  // 2. 免费服务使用记录（自然月重置，D专家建议）
+  // 注意：当前预约数据结构未标记"是否使用免费服务"，此处预留框架。
+  // 实际使用时，应在预约创建/结算时传入 useFreeService 标记。
+  // 若本次服务使用了免费额度，则扣除当月配额：
+  // const yearMonth = getCurrentYearMonth();
+  // const usageKey = `${booking.shop_id}_${booking.customer_id}_${yearMonth}`;
+  // ...
+}
 
 interface BookingRecord {
   id: string;
@@ -138,8 +257,25 @@ router.get('/', async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
     const stylistId = req.query.stylistId as string | undefined;
     const customerId = req.query.customerId as string | undefined;
-    const dateStart = req.query.dateStart as string | undefined;
-    const dateEnd = req.query.dateEnd as string | undefined;
+    let dateStart = req.query.dateStart as string | undefined;
+    let dateEnd = req.query.dateEnd as string | undefined;
+    // 兼容小程序/H5 按日期筛选（如 getBookingsByShop 传入 date=YYYY-MM-DD）
+    const date = req.query.date as string | undefined;
+    if (date && !dateStart && !dateEnd) {
+      const d = new Date(date);
+      if (!isNaN(d.getTime())) {
+        dateStart = date;
+        // 让下方统一逻辑处理 +1 天作为排他边界
+        dateEnd = date;
+      }
+    }
+    // H5 getBookingsByShop 只传 dateStart（选定日期），语义为查询当天，补齐 dateEnd
+    if (dateStart && !dateEnd && /^\d{4}-\d{2}-\d{2}$/.test(dateStart)) {
+      const d = new Date(dateStart);
+      if (!isNaN(d.getTime())) {
+        dateEnd = dateStart;
+      }
+    }
     const page = String(req.query.page || '1');
     const pageSize = String(req.query.pageSize || '20');
     const sortBy = String(req.query.sortBy || 'scheduledTime');
@@ -253,6 +389,12 @@ router.put('/:id', async (req: Request, res: Response) => {
   if (existing) {
     const updated = { ...existing, status, updated_at: new Date().toISOString() };
     bookingsDb.set(req.params.id, updated);
+
+    // 预约完成时自动发放股东权益
+    if (status === 'completed' && existing.status !== 'completed') {
+      processStockholderBenefitsOnComplete(updated);
+    }
+
     res.json(bookingFromDb(updated));
     return;
   }
@@ -261,8 +403,50 @@ router.put('/:id', async (req: Request, res: Response) => {
   if (idx === -1) {
     return res.status(404).json({ message: '预约不存在' });
   }
+  const oldStatus = mockBookings[idx].status;
   mockBookings[idx] = { ...mockBookings[idx], status } as typeof mockBookings[0];
+
+  // 预约完成时自动发放股东权益
+  if (status === 'completed' && oldStatus !== 'completed') {
+    processStockholderBenefitsOnComplete(mockBookings[idx] as unknown as BookingRecord);
+  }
+
   res.json(mockBookings[idx]);
+});
+
+// 顾客取消预约（与 H5 顾客端保持一致，不经过 authMiddleware）
+router.put('/:id/cancel', async (req: Request, res: Response) => {
+  const { customerId } = req.body;
+  if (!customerId) {
+    return res.status(400).json({ message: '缺少 customerId' });
+  }
+
+  const existing = bookingsDb.get(req.params.id);
+  if (existing) {
+    if (existing.customer_id !== customerId) {
+      return res.status(403).json({ message: '无权取消该预约' });
+    }
+    if (existing.status === 'cancelled') {
+      return res.status(400).json({ message: '预约已取消' });
+    }
+    const updated = { ...existing, status: 'cancelled', updated_at: new Date().toISOString() };
+    bookingsDb.set(req.params.id, updated);
+    return res.json(bookingFromDb(updated));
+  }
+
+  const idx = mockBookings.findIndex((b: unknown) => (b as Record<string, unknown>).id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ message: '预约不存在' });
+  }
+  const booking = mockBookings[idx] as unknown as Record<string, unknown>;
+  if (booking.customerId !== customerId) {
+    return res.status(403).json({ message: '无权取消该预约' });
+  }
+  if (booking.status === 'cancelled') {
+    return res.status(400).json({ message: '预约已取消' });
+  }
+  mockBookings[idx] = { ...mockBookings[idx], status: 'cancelled' } as typeof mockBookings[0];
+  return res.json(mockBookings[idx]);
 });
 
 // 获取顾客的预约

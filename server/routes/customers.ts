@@ -349,4 +349,96 @@ router.put('/:customerId/profile', (req: Request, res: Response) => {
   res.json({ success: true, data: updated });
 });
 
+// ==================== 顾客端小程序/H5 登录与公开信息 API ====================
+
+/**
+ * 将旧版会员字段映射为新版双轨会员字段，供小程序/H5 顾客端使用。
+ * 这里不修改 server/_internal/types.ts 中的 Customer 接口，避免影响店铺端其他路由。
+ */
+function enrichCustomerForClient(customer: Customer) {
+  const balance = typeof customer.balance === 'number' ? customer.balance : 0;
+  const withdrawable =
+    (customer as Record<string, unknown>).withdrawableReferralAmount ??
+    (customer as Record<string, unknown>).withdrawableAmount ??
+    customer.referralEarnings ??
+    0;
+
+  let storedValueLevel = 'none';
+  if (balance >= 5000) storedValueLevel = 'store_5000';
+  else if (balance >= 2000) storedValueLevel = 'store_2000';
+  else if (balance >= 1000) storedValueLevel = 'store_1000';
+  else if (balance >= 500) storedValueLevel = 'store_500';
+
+  let purchaseVIPLevel = 'regular';
+  if (customer.isStockholder || customer.membershipLevel === MembershipLevel.STOCKHOLDER) {
+    purchaseVIPLevel = 'diamond';
+  } else if (customer.membershipLevel === MembershipLevel.PREMIUM) {
+    purchaseVIPLevel = 'gold';
+  } else if (customer.membershipLevel === MembershipLevel.SILVER) {
+    purchaseVIPLevel = 'silver';
+  } else if (customer.membershipLevel === MembershipLevel.GOLD) {
+    purchaseVIPLevel = 'gold';
+  } else if (customer.membershipLevel === MembershipLevel.PLATINUM) {
+    purchaseVIPLevel = 'diamond';
+  }
+
+  // 默认给现有会员一个远期过期时间，避免小程序会员逻辑将其判定为失效
+  const farFuture = new Date(Date.now() + 365 * 2 * 86400000).toISOString();
+
+  return {
+    ...customer,
+    purchaseVIPLevel,
+    purchaseVIPExpiresAt: (customer as Record<string, unknown>).purchaseVIPExpiresAt || farFuture,
+    storedValueLevel,
+    storedValueBalance: balance,
+    storedValueExpiresAt: (customer as Record<string, unknown>).storedValueExpiresAt || farFuture,
+    withdrawableReferralAmount: withdrawable,
+  } as unknown as Customer;
+}
+
+// 顾客手机号登录/自动注册（小程序 & H5 顾客端共用）
+router.post('/login', (req: Request, res: Response) => {
+  const { phone, name } = req.body;
+  if (!phone || !/^1\d{10}$/.test(String(phone))) {
+    return res.status(400).json({ success: false, error: '手机号格式不正确' });
+  }
+
+  let customer = mockCustomers.find((c) => c.phone === phone);
+
+  if (!customer) {
+    // 自动注册新客户
+    const newCustomer: Customer = {
+      id: generateId(),
+      name: name || '顾客',
+      phone,
+      tags: [],
+      visitCount: 0,
+      totalSpent: 0,
+      membershipLevel: MembershipLevel.REGULAR,
+      balance: 0,
+      points: 0,
+      joinedAt: new Date(),
+      isStockholder: false,
+      source: '小程序登录',
+    };
+    (mockCustomers as Customer[]).push(newCustomer);
+    customer = newCustomer;
+  } else if (name && customer.name !== name) {
+    // 更新昵称
+    customer.name = name;
+  }
+
+  res.json({ success: true, data: enrichCustomerForClient(customer) });
+});
+
+// 获取顾客公开信息（小程序顾客端使用，无需店铺端认证）
+router.get('/:id/public', (req: Request, res: Response) => {
+  const customer = mockCustomers.find((c) => c.id === req.params.id);
+  if (!customer) {
+    return res.status(404).json({ success: false, error: '客户不存在' });
+  }
+
+  res.json({ success: true, data: enrichCustomerForClient(customer) });
+});
+
 export default router;

@@ -2,7 +2,7 @@ import { getShop } from '../../api/shop';
 import { createBooking, getBookingsByShop } from '../../api/booking';
 import { getCustomerPublic } from '../../api/customer';
 import { getCustomerId, setRouteParams, takeRouteParams } from '../../utils/storage';
-import { calcDiscountedItemPrice } from '../../utils/membership';
+import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../utils/membership';
 
 // 与 H5 的 shared/types.ts 中 UserRole.STYLIST 保持一致
 const STYLIST_ROLE = 'stylist';
@@ -136,6 +136,7 @@ Page({
     serviceThumbTop: 0,
     serviceThumbHeight: 40,
     serviceScrollbarClientHeight: 0,
+    stockholderSummary: null,
   },
 
   async onLoad(options) {
@@ -231,33 +232,39 @@ Page({
   },
 
   enrichServices(services) {
-    const { customer } = this.data;
+    const { customer, shop } = this.data;
     return services.map((s) => {
       const originalPrice = Number(s.price) || 0;
       const memberPrice = calcDiscountedItemPrice(originalPrice, customer, 'service');
-      const hasDiscount = memberPrice < originalPrice;
+      const stockholderPrice = calcStockholderDiscountedPrice(originalPrice, customer, shop, 'service');
+      const finalPrice = Math.min(memberPrice, stockholderPrice.price);
+      const hasDiscount = finalPrice < originalPrice;
+      const isStockholderDiscount = stockholderPrice.hasDiscount && stockholderPrice.price <= memberPrice;
       return {
         ...s,
         originalPrice,
-        memberPrice,
+        memberPrice: finalPrice,
         hasDiscount,
+        isStockholderDiscount,
         originalPriceStr: originalPrice.toFixed(2),
-        priceStr: memberPrice.toFixed(2),
+        priceStr: finalPrice.toFixed(2),
       };
     });
   },
 
   // 顾客信息加载完成后重新 enrich 服务价格，并刷新滑块尺寸
   refreshServicesWithCustomer() {
-    const { shop, selectedService } = this.data;
+    const { shop, customer, selectedService } = this.data;
     if (!shop) return;
     const services = this.enrichServices(shop.services || []);
     const service = getServiceById(services, selectedService) || services[0] || null;
+    const stockholderSummary = getStockholderBenefitSummary(customer, shop);
     this.setData({
       shop: { ...shop, services },
       selectedService: service?.id || '',
       selectedServiceName: service?.name || '',
       selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
+      stockholderSummary,
     }, () => {
       this.updateServiceScrollbar();
     });
