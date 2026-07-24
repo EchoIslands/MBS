@@ -173,7 +173,7 @@ export const mockCustomers: Customer[] = [
     preferences: ['精剪', '烫染'],
     isStockholder: true,
     stockholderSince: new Date(Date.now() - 180 * 86400000),
-    referralBonusRate: 0.05,
+    referralBonusRate: 0.10,
     referralEarnings: 1280,
     source: '朋友推荐',
     servedByStylistIds: ['e1', 'e2'],
@@ -328,7 +328,7 @@ export const mockCustomers: Customer[] = [
     preferences: ['精剪', '假发'],
     isStockholder: true,
     stockholderSince: new Date(Date.now() - 365 * 86400000),
-    referralBonusRate: 0.05,
+    referralBonusRate: 0.10,
     referralEarnings: 3560,
     source: '网络搜索',
     servedByStylistIds: ['e1', 'e3'],
@@ -975,7 +975,7 @@ export const membershipBenefits: MembershipBenefit[] = [
     pointsRate: 2,
     gifts: ['专属发型师', '优先预约', '生日派对'],
     canBecomeStockholder: true,
-    referralBonusRate: 0.05,
+    referralBonusRate: 0.10,
   },
 ];
 

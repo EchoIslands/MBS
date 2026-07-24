@@ -508,6 +508,100 @@
   border-top: 1rpx solid var(--border);
 }
 
+/* 提现弹窗样式 —— 与 H5 Profile.tsx 视觉统一 */
+.withdraw-balance-card {
+  background: rgba(217, 122, 69, 0.08);
+  border: 1rpx solid rgba(217, 122, 69, 0.2);
+  border-radius: 24rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.withdraw-balance-label {
+  font-size: 24rpx;
+  color: var(--orange-700);
+  margin-bottom: 8rpx;
+}
+
+.withdraw-balance-value {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.withdraw-section {
+  margin-bottom: 24rpx;
+}
+
+.withdraw-section-title {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 16rpx;
+}
+
+.withdraw-channel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+}
+
+.withdraw-channel-item {
+  padding: 24rpx;
+  border-radius: 24rpx;
+  border: 2rpx solid var(--border);
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.withdraw-channel-active {
+  border-color: var(--accent);
+  background: rgba(217, 122, 69, 0.06);
+}
+
+.withdraw-channel-name {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.withdraw-channel-hint {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  margin-top: 12rpx;
+  line-height: 1.4;
+}
+
+.withdraw-amount-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 2rpx solid var(--border);
+  border-radius: 24rpx;
+  padding: 20rpx 24rpx;
+  background: var(--gray-50);
+}
+
+.withdraw-amount-symbol {
+  font-size: 32rpx;
+  color: var(--text-tertiary);
+  margin-right: 12rpx;
+}
+
+.withdraw-amount-input {
+  flex: 1;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.withdraw-amount-all {
+  font-size: 24rpx;
+  color: var(--accent);
+  text-align: right;
+  margin-top: 12rpx;
+}
+
 /* 工具类补充 */
 .min-w-0 { min-width: 0; }
 

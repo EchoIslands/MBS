@@ -73,7 +73,7 @@ const CustomerTableManagement: React.FC = () => {
         referrerName: c.referrerName || '',
         referrerPhone: c.referrerPhone || '',
         referralConsumption: c.referralConsumption || 0,
-        sharedFund: c.sharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.05) : 0),
+        sharedFund: c.sharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.10) : 0),
         totalSharedFund: c.totalSharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.1) : 0),
         withdrawableAmount: c.withdrawableAmount ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.08) : 0),
       }));

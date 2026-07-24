@@ -77,7 +77,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     console.log(`[auth] 员工 ${employee.name} (${employee.phone}) 登录成功`);
     res.json({ success: true, data: { token, user } });
   } catch (err: unknown) {
-    console.error('[auth] 登录异常:', err.message);
+    console.error('[auth] 登录异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -114,7 +114,7 @@ authRouter.get('/me', authMiddleware, async (req: Request, res: Response) => {
 
     res.json({ success: true, data: user });
   } catch (err: unknown) {
-    console.error('[auth] 获取当前用户异常:', err.message);
+    console.error('[auth] 获取当前用户异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -280,7 +280,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Record<string, any> = {};
     if (name !== undefined) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
@@ -358,7 +358,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
     const { id: currentId, shopId } = req.employee!;
     const { name, phone, title, specialty, avatar, password } = req.body || {};
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Record<string, any> = {};
     if (name !== undefined) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
@@ -402,9 +402,9 @@ interface StockholderBenefitConfig {
   birthdayGift: string;
 }
 
-function getEffectiveStockholderConfig(stockholderConfig: unknown): StockholderBenefitConfig {
+function getEffectiveStockholderConfig(stockholderConfig: Record<string, any>): StockholderBenefitConfig {
   if (stockholderConfig && typeof stockholderConfig === 'object') {
-    const cfg = stockholderConfig as Record<string, unknown>;
+    const cfg = stockholderConfig as Record<string, any>;
     return {
       enabled: cfg.enabled === true,
       serviceDiscountRate: typeof cfg.serviceDiscountRate === 'number' ? cfg.serviceDiscountRate : 0.8,
@@ -426,7 +426,7 @@ function getEffectiveStockholderConfig(stockholderConfig: unknown): StockholderB
   };
 }
 
-function calcStockholderCashback(totalAmount: number, isStockholder: boolean, stockholderConfig: unknown): number {
+function calcStockholderCashback(totalAmount: number, isStockholder: boolean, stockholderConfig: Record<string, any>): number {
   if (!isStockholder) return 0;
   const config = getEffectiveStockholderConfig(stockholderConfig);
   if (!config.enabled || config.cashbackRate <= 0) return 0;
@@ -564,6 +564,20 @@ async function processReferralPromotion(
 
     // 2. 如果没找到正式推荐记录，尝试用 customers 表的 source/referrer 字段兜底
     if (!referralRecord) {
+      // 先检查该被推荐人是否已有已确认的推荐记录（防止重复发放）
+      const { data: confirmedRecords } = await supabase
+        .from('referral_records')
+        .select('id')
+        .eq('shop_id', shopId)
+        .eq('referred_id', referredCustomerId)
+        .eq('status', 'confirmed')
+        .limit(1);
+
+      if (confirmedRecords && confirmedRecords.length > 0) {
+        console.log(`[推荐转化] 被推荐人 ${referredCustomerId} 已有已确认推荐记录，跳过`);
+        return;
+      }
+
       const { data: referredCustomer } = await supabase
         .from('customers')
         .select('referrer_name, referrer_phone, is_referred')
@@ -602,7 +616,7 @@ async function processReferralPromotion(
 
     if (!referralRecord) return;
 
-    const record = referralRecord as Record<string, unknown>;
+    const record = referralRecord as Record<string, any>;
     const referrerId = record.referrer_id as string;
     if (!referrerId) return;
 
@@ -615,23 +629,23 @@ async function processReferralPromotion(
     // 4. 查询推荐人信息
     const { data: referrer } = await supabase
       .from('customers')
-      .select('id, is_stockholder, withdrawable_referral_amount, referral_bonus_rate')
+      .select('id, is_stockholder, withdrawable_referral_amount, referral_bonus_rate, referral_earnings')
       .eq('id', referrerId)
       .eq('shop_id', shopId)
       .single();
 
     if (!referrer) return;
 
-    // 5. 计算推荐奖励金额：默认 5%，可被 referral_bonus_rate 覆盖
+    // 5. 计算推荐奖励金额：默认 10%，可被 referral_bonus_rate 覆盖
     const bonusRate = typeof referrer.referral_bonus_rate === 'number' && referrer.referral_bonus_rate > 0
       ? referrer.referral_bonus_rate
-      : 0.05;
+      : 0.10;
     const bonusAmount = Math.round(firstSpentAmount * bonusRate * 100) / 100;
 
     // 6. 自动升级推荐人为股东（如果还不是）
-    const updatePayload: Record<string, unknown> = {
+    const updatePayload: Record<string, any> = {
       withdrawable_referral_amount: Math.round(((referrer.withdrawable_referral_amount || 0) + bonusAmount) * 100) / 100,
-      referral_earnings: Math.round((bonusAmount) * 100) / 100,
+      referral_earnings: Math.round(((referrer.referral_earnings || 0) + bonusAmount) * 100) / 100,
     };
     if (!referrer.is_stockholder) {
       updatePayload.is_stockholder = true;
@@ -688,7 +702,7 @@ const getBookingTimeSlotStart = (date: Date, slotMinutes: number = BOOKING_TIME_
   return d;
 };
 
-const bookingFromDb = (b: unknown): unknown => ({
+const bookingFromDb = (b: Record<string, any>): Record<string, any> => ({
   id: b.id,
   shopId: b.shop_id,
   customerId: b.customer_id,
@@ -1169,8 +1183,8 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
         .eq('id', shopId)
         .maybeSingle();
       if (shopData?.services) {
-        const services = shopData.services as unknown[];
-        const svc = services.find((s: unknown) => s.id === serviceId);
+        const services = shopData.services as Record<string, any>[];
+        const svc = services.find((s: Record<string, any>) => s.id === serviceId);
         if (svc) {
           finalServiceName = svc.name || finalServiceName;
           finalPrice = svc.price || finalPrice;
@@ -1410,7 +1424,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
 
     // 批量查询客户画像与到店记录，按 customer_id 聚合
     const customerIds = customers.map((c) => c.id).filter(Boolean);
-    let profilesMap: Record<string, unknown> = {};
+    let profilesMap: Record<string, any> = {};
     let visitsMap: Record<string, unknown[]> = {};
 
     if (customerIds.length > 0) {
@@ -1426,14 +1440,14 @@ customersRouter.get('/', async (req: Request, res: Response) => {
       profilesMap = (profiles || []).reduce((acc, p) => {
         acc[p.customer_id] = toCamelCase(p);
         return acc;
-      }, {} as Record<string, unknown>);
+      }, {} as Record<string, any>);
 
       visitsMap = (visits || []).reduce((acc, v) => {
         const camel = toCamelCase(v);
         if (!acc[camel.customerId]) acc[camel.customerId] = [];
         acc[camel.customerId].push(camel);
         return acc;
-      }, {} as Record<string, unknown[]>);
+      }, {} as Record<string, any[]>);
     }
 
     const enriched = customers.map((c) => ({
@@ -1444,7 +1458,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: enriched });
   } catch (err: unknown) {
-    console.error('[customers] 获取客户列表异常:', err.message);
+    console.error('[customers] 获取客户列表异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1493,7 +1507,7 @@ customersRouter.post('/', async (req: Request, res: Response) => {
     console.log(`[customers] 客户创建成功 id=${data.id}`);
     res.json({ success: true, data: toCamelCase(data) });
   } catch (err: unknown) {
-    console.error('[customers] 创建客户异常:', err.message);
+    console.error('[customers] 创建客户异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1549,7 +1563,7 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
     console.log(`[customers] 客户 ${data.name} 更新成功`);
     res.json({ success: true, data: toCamelCase(data) });
   } catch (err: unknown) {
-    console.error('[customers] 更新客户异常:', err.message);
+    console.error('[customers] 更新客户异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1577,7 +1591,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
       return;
     }
 
-    const updatePayload: unknown = {};
+    const updatePayload: Record<string, any> = {};
     const now = new Date().toISOString();
 
     // 购买型 VIP 升级/续费
@@ -1603,7 +1617,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
     }
 
     // 储值会员升级/办理
-    let storedValueTx: unknown = null;
+    let storedValueTx: Record<string, any> | null = null;
     let storedAddAmount = 0;
     if (storedValueLevel && typeof storedValueLevel === 'string') {
       const planAmounts: Record<string, number> = {
@@ -1737,7 +1751,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
       },
     });
   } catch (err: unknown) {
-    console.error('[customers] 更新会员状态异常:', err.message);
+    console.error('[customers] 更新会员状态异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1766,7 +1780,7 @@ customersRouter.delete('/:id', async (req: Request, res: Response) => {
     console.log(`[customers] 客户 ${id} 删除成功`);
     res.json({ success: true });
   } catch (err: unknown) {
-    console.error('[customers] 删除客户异常:', err.message);
+    console.error('[customers] 删除客户异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1818,7 +1832,7 @@ customersRouter.get('/:id', async (req: Request, res: Response) => {
       },
     });
   } catch (err: unknown) {
-    console.error('[customers] 获取客户详情异常:', err.message);
+    console.error('[customers] 获取客户详情异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1859,7 +1873,7 @@ customersRouter.get('/:id/profile', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: data ? toCamelCase(data) : null });
   } catch (err: unknown) {
-    console.error('[customers] 获取客户画像异常:', err.message);
+    console.error('[customers] 获取客户画像异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1888,7 +1902,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
 
     const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const snakeBody = toSnakeCase(req.body || {});
-    const insertData: Record<string, unknown> = {
+    const insertData: Record<string, any> = {
       id: profileId,
       customer_id: id,
     };
@@ -1913,7 +1927,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: toCamelCase(data) });
   } catch (err: unknown) {
-    console.error('[customers] 创建客户画像异常:', err.message);
+    console.error('[customers] 创建客户画像异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -1941,7 +1955,7 @@ customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
     }
 
     const snakeBody = toSnakeCase(req.body || {});
-    const upsertData: Record<string, unknown> = { customer_id: id };
+    const upsertData: Record<string, any> = { customer_id: id };
 
     for (const [key, value] of Object.entries(snakeBody)) {
       if (key === 'id' || key === 'customer_id') continue;
@@ -1980,7 +1994,7 @@ customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: toCamelCase(result.data) });
   } catch (err: unknown) {
-    console.error('[customers] 更新客户画像异常:', err.message);
+    console.error('[customers] 更新客户画像异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
@@ -2024,8 +2038,8 @@ const getQueueServiceDuration = async (shopId: string, serviceId: string): Promi
       .maybeSingle();
 
     if (data?.services) {
-      const services = data.services as unknown[];
-      const svc = services.find((s: unknown) => s.id === serviceId);
+      const services = data.services as Record<string, any>[];
+      const svc = services.find((s: Record<string, any>) => s.id === serviceId);
       if (svc && typeof svc.duration === 'number' && svc.duration > 0) {
         return svc.duration;
       }
@@ -2060,7 +2074,7 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
 
     // 为每个 booking 补充服务时长
     const list = await Promise.all(
-      (bookings || []).map(async (b: unknown) => {
+      (bookings || []).map(async (b: Record<string, any>) => {
         const duration = await getQueueServiceDuration(shopId, b.service_id);
         return {
           id: b.id,
@@ -2106,11 +2120,11 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
       }
 
       const completedInCurrentSlot = (completed || []).filter(
-        (b: unknown) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
+        (b: Record<string, any>) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
       );
       const maxCompleted =
         completedInCurrentSlot.length > 0
-          ? Math.max(...completedInCurrentSlot.map((b: unknown) => b.queue_number || 0))
+          ? Math.max(...completedInCurrentSlot.map((b: Record<string, any>) => b.queue_number || 0))
           : 0;
       currentNumber = maxCompleted + 1;
     }
@@ -2166,7 +2180,7 @@ queuesRouter.put('/:shopId', async (req: Request, res: Response) => {
     }
 
     const list = await Promise.all(
-      (bookings || []).map(async (b: unknown) => {
+      (bookings || []).map(async (b: Record<string, any>) => {
         const duration = await getQueueServiceDuration(shopId, b.service_id);
         return {
           id: b.id,
@@ -2208,7 +2222,7 @@ mainRouter.use('/queues', queuesRouter);
 // ===================== reviews =====================
 const reviewsRouter = Router();
 
-const reviewFromDb = (r: unknown): unknown => ({
+const reviewFromDb = (r: Record<string, any>): unknown => ({
   id: r.id,
   shopId: r.shop_id,
   customerId: r.customer_id,
@@ -2316,7 +2330,7 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
       .select('overall_score')
       .eq('shop_id', shopId);
 
-    const scores = (reviewStats || []).map((r: unknown) => Number(r.overall_score)).filter((s: number) => !isNaN(s));
+    const scores = (reviewStats || []).map((r: Record<string, any>) => Number(r.overall_score)).filter((s: number) => !isNaN(s));
     const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 5;
 
     await supabase
@@ -2521,7 +2535,7 @@ mainRouter.use('/reviews', reviewsRouter);
 // ===================== shops =====================
 const shopsRouter = Router();
 
-const shopFromDb = (s: unknown): unknown => ({
+const shopFromDb = (s: Record<string, any>): Record<string, any> => ({
   id: s.id,
   name: s.name,
   description: s.description || '',
@@ -2616,7 +2630,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: {
         ...shopFromDb(data),
-        employees: (employees || []).map((e: unknown) => ({
+        employees: (employees || []).map((e: Record<string, any>) => ({
           id: e.id,
           name: e.name,
           phone: e.phone,
@@ -2658,7 +2672,7 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
       isActive,
     } = req.body || {};
 
-    const updatePayload: unknown = {
+    const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
 
@@ -2762,7 +2776,7 @@ shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request,
       return res.status(500).json({ success: false, error: '查询店铺失败' });
     }
 
-    const products = (shop?.products || []).map((p: unknown) =>
+    const products = (shop?.products || []).map((p: Record<string, any>) =>
       p.id === productId ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
     );
 
@@ -2772,7 +2786,7 @@ shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request,
       return res.status(500).json({ success: false, error: '更新商品失败' });
     }
 
-    const updated = products.find((p: unknown) => p.id === productId);
+    const updated = products.find((p: Record<string, any>) => p.id === productId);
     res.json({ success: true, data: updated });
   } catch (error) {
     console.error('[shops] 更新商品异常:', error);
@@ -2789,7 +2803,7 @@ shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Reque
       return res.status(500).json({ success: false, error: '查询店铺失败' });
     }
 
-    const products = (shop?.products || []).filter((p: unknown) => p.id !== productId);
+    const products = (shop?.products || []).filter((p: Record<string, any>) => p.id !== productId);
     const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
     if (updateError) {
       console.error('[shops] 删除商品失败:', updateError.message);
@@ -2808,7 +2822,7 @@ mainRouter.use('/shops', shopsRouter);
 // ===================== settlements =====================
 const settlementsRouter = Router();
 
-const settlementFromDb = (s: unknown): unknown => ({
+const settlementFromDb = (s: Record<string, any>): Record<string, any> => ({
   id: s.id,
   shopId: s.shop_id,
   customerId: s.customer_id,
@@ -2892,7 +2906,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       const newVisitCount = (customer.visit_count || 0) + 1;
       const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
       const earnedPoints = Math.round(Number(total || 0));
-      const updatePayload: unknown = {
+      const updatePayload: Record<string, any> = {
         visit_count: newVisitCount,
         total_spent: newTotalSpent,
         last_visit_at: new Date().toISOString(),
@@ -2941,8 +2955,8 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       booking_id: bookingId || null,
       stylist_id: null,
       stylist_name: req.employee!.name,
-      service_ids: items.filter((i: unknown) => i.type === 'service').map((i: unknown) => i.id),
-      service_names: items.filter((i: unknown) => i.type === 'service').map((i: unknown) => i.name),
+      service_ids: items.filter((i: Record<string, any>) => i.type === 'service').map((i: Record<string, any>) => i.id),
+      service_names: items.filter((i: Record<string, any>) => i.type === 'service').map((i: Record<string, any>) => i.name),
       total_amount: total || 0,
       check_in_time: new Date().toISOString(),
       created_at: new Date().toISOString(),
@@ -3022,13 +3036,13 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
     }
 
     // 关联结算明细（ Supabase 不会自动返回关联表）
-    const settlementIds = (settlements || []).map((s: unknown) => s.id).filter(Boolean) as string[];
+    const settlementIds = (settlements || []).map((s: Record<string, any>) => s.id).filter(Boolean) as string[];
     const { data: itemsData } = await supabase
       .from('settlement_items')
       .select('*')
       .in('settlement_id', settlementIds.length > 0 ? settlementIds : ['__none__']);
     const itemsBySettlement = new Map<string, unknown[]>();
-    (itemsData || []).forEach((item: unknown) => {
+    (itemsData || []).forEach((item: Record<string, any>) => {
       const sid = item.settlement_id as string;
       if (!itemsBySettlement.has(sid)) itemsBySettlement.set(sid, []);
       itemsBySettlement.get(sid)!.push(item);
@@ -3044,7 +3058,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
       { name: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
     > = {};
 
-    (settlements || []).forEach((s: unknown) => {
+    (settlements || []).forEach((s: Record<string, any>) => {
       const createdAt = new Date(s.created_at);
       const isToday = createdAt >= today;
       const isWeek = createdAt >= weekStart;
@@ -3073,7 +3087,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
         ticketCount.year += 1;
       }
 
-      (itemsBySettlement.get(s.id) || []).forEach((item: unknown) => {
+      (itemsBySettlement.get(s.id) || []).forEach((item: Record<string, any>) => {
         const itemTotal = Number(item.total) || 0;
         const qty = Number(item.quantity) || 1;
         const empId = item.employee_id || item.employeeId;
@@ -3107,7 +3121,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
     });
 
     const { data: reviews } = await supabase.from('reviews').select('*').eq('shop_id', shopId);
-    (reviews || []).forEach((r: unknown) => {
+    (reviews || []).forEach((r: Record<string, any>) => {
       if (r.stylist_id && stylistMap[r.stylist_id]) {
         stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
         stylistMap[r.stylist_id].ratingCount += 1;
@@ -3176,20 +3190,20 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
       supabase.from('reviews').select('*').eq('shop_id', shopId),
     ]);
 
-    const performances = (employees || []).map((emp: unknown) => {
+    const performances = (employees || []).map((emp: Record<string, any>) => {
       const stylistId = emp.id;
 
       const revenue = { today: 0, week: 0, month: 0, year: 0 };
       const services = { total: 0, byType: {} as Record<string, number> };
 
-      (settlements || []).forEach((s: unknown) => {
+      (settlements || []).forEach((s: Record<string, any>) => {
         const createdAt = new Date(s.created_at);
         const isToday = createdAt >= today;
         const isWeek = createdAt >= weekStart;
         const isMonth = createdAt >= monthStart;
         const isYear = createdAt >= yearStart;
 
-        (s.items || []).forEach((item: unknown) => {
+        (s.items || []).forEach((item: Record<string, any>) => {
           if (item.employeeId !== stylistId) return;
           const itemTotal = Number(item.total) || 0;
           const qty = Number(item.quantity) || 1;
@@ -3207,7 +3221,7 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
         });
       });
 
-      const stylistReviews = (reviews || []).filter((r: unknown) => r.stylist_id === stylistId);
+      const stylistReviews = (reviews || []).filter((r: Record<string, any>) => r.stylist_id === stylistId);
       const avgRating =
         stylistReviews.length > 0
           ? stylistReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / stylistReviews.length
@@ -3246,7 +3260,7 @@ mainRouter.use('/stylists', stylistsRouter);
 // ===================== member_benefits =====================
 const memberBenefitsRouter = Router();
 
-const benefitFromDb = (b: unknown): unknown => ({
+const benefitFromDb = (b: Record<string, any>): Record<string, any> => ({
   id: b.id,
   customerId: b.customer_id,
   shopId: b.shop_id,
@@ -3296,7 +3310,7 @@ const referralsRouter = Router();
 
 referralsRouter.use(authMiddleware);
 
-const referralFromDb = (r: unknown): unknown => ({
+const referralFromDb = (r: Record<string, any>): unknown => ({
   id: r.id,
   referrerId: r.referrer_id,
   referrerName: r.referrer_name,
@@ -3339,7 +3353,7 @@ const surveysRouter = Router();
 
 surveysRouter.use(authMiddleware);
 
-const surveyFromDb = (s: unknown): unknown => ({
+const surveyFromDb = (s: Record<string, any>): Record<string, any> => ({
   id: s.id,
   shopId: s.shop_id,
   bookingId: s.booking_id,
@@ -3419,7 +3433,7 @@ const refundsRouter = Router();
 
 refundsRouter.use(authMiddleware);
 
-const refundFromDb = (r: unknown): unknown => ({
+const refundFromDb = (r: Record<string, any>): unknown => ({
   id: r.id,
   shopId: r.shop_id,
   bookingId: r.booking_id,
@@ -3507,7 +3521,7 @@ refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '无效的状态值' });
     }
 
-    const updatePayload: unknown = { status };
+    const updatePayload: Record<string, any> = { status };
     if (status === 'rejected' && rejectReason) {
       updatePayload.reject_reason = rejectReason;
     }
@@ -3542,7 +3556,7 @@ mainRouter.use('/refunds', refundsRouter);
 // ===================== withdrawals =====================
 const withdrawalsRouter = Router();
 
-const withdrawalFromDb = (w: unknown): unknown => ({
+const withdrawalFromDb = (w: Record<string, any>): unknown => ({
   id: w.id,
   shopId: w.shop_id,
   customerId: w.customer_id,
@@ -3656,7 +3670,7 @@ withdrawalsRouter.post('/', async (req: Request, res: Response) => {
       return res.status(201).json({ success: true, data: withdrawalFromDb(data) });
     }
 
-    // 微信提现：创建待审核记录，余额暂时冻结
+    // 微信提现：创建待审核记录，并冻结可提现余额
     const { data, error } = await supabase
       .from('withdrawal_requests')
       .insert({
@@ -3678,6 +3692,14 @@ withdrawalsRouter.post('/', async (req: Request, res: Response) => {
       console.error('[withdrawals] 创建提现申请失败:', error.message);
       return res.status(500).json({ success: false, error: '创建提现申请失败' });
     }
+
+    // 冻结可提现余额（与前端展示保持一致）
+    const newWithdrawable = Math.round((Number(customer.withdrawable_referral_amount || 0) - Number(amount)) * 100) / 100;
+    await supabase
+      .from('customers')
+      .update({ withdrawable_referral_amount: newWithdrawable })
+      .eq('id', customerId)
+      .eq('shop_id', shopId);
 
     res.status(201).json({ success: true, data: withdrawalFromDb(data) });
   } catch (error) {
@@ -3710,7 +3732,7 @@ withdrawalsRouter.put('/:id/status', authMiddleware, async (req: Request, res: R
       return res.status(400).json({ success: false, error: '该提现申请已处理' });
     }
 
-    const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    const updatePayload: Record<string, any> = { status, updated_at: new Date().toISOString() };
     if (status === 'rejected' && rejectReason) {
       updatePayload.reject_reason = rejectReason;
     }
@@ -3731,9 +3753,9 @@ withdrawalsRouter.put('/:id/status', authMiddleware, async (req: Request, res: R
       return res.status(500).json({ success: false, error: '更新提现申请失败' });
     }
 
-    // 拒绝或打款完成时，需要实际扣减/回退余额
-    // 微信提现：pending 时未扣款，paid 时扣款；rejected 时不扣款
-    if (existing.channel === 'wechat') {
+    // 余额处理：微信提现在创建 pending 时已冻结余额
+    // rejected：回退余额；paid：确认完成（不再二次扣减）；approved：无需操作
+    if (existing.channel === 'wechat' && status === 'rejected') {
       const { data: customer } = await supabase
         .from('customers')
         .select('withdrawable_referral_amount')
@@ -3743,14 +3765,11 @@ withdrawalsRouter.put('/:id/status', authMiddleware, async (req: Request, res: R
 
       if (customer) {
         const current = Number(customer.withdrawable_referral_amount || 0);
-        if (status === 'paid') {
-          await supabase
-            .from('customers')
-            .update({ withdrawable_referral_amount: Math.round((current - Number(existing.amount)) * 100) / 100 })
-            .eq('id', existing.customer_id)
-            .eq('shop_id', existing.shop_id);
-        }
-        // rejected 不需要回退，因为 pending 时没扣
+        await supabase
+          .from('customers')
+          .update({ withdrawable_referral_amount: Math.round((current + Number(existing.amount)) * 100) / 100 })
+          .eq('id', existing.customer_id)
+          .eq('shop_id', existing.shop_id);
       }
     }
 
@@ -3798,19 +3817,19 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       { shopName: string; revenue: number; services: number; customers: Set<string>; employees: number }
     > = {};
 
-    (shops || []).forEach((s: unknown) => {
+    (shops || []).forEach((s: Record<string, any>) => {
       shopStatsMap[s.id] = {
         shopName: s.name,
         revenue: 0,
         services: 0,
         customers: new Set(),
-        employees: (s.employees || []).filter((e: unknown) => e.is_active !== false).length,
+        employees: (s.employees || []).filter((e: Record<string, any>) => e.is_active !== false).length,
       };
     });
 
     const customerPeriodSet = { today: new Set<string>(), week: new Set<string>(), month: new Set<string>(), year: new Set<string>() };
 
-    (settlements || []).forEach((s: unknown) => {
+    (settlements || []).forEach((s: Record<string, any>) => {
       const createdAt = new Date(s.created_at);
       const isToday = createdAt >= today;
       const isWeek = createdAt >= weekStart;
@@ -3828,7 +3847,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
         if (isMonth) shopStatsMap[shopId].revenue += total;
       }
 
-      (s.items || []).forEach((item: unknown) => {
+      (s.items || []).forEach((item: Record<string, any>) => {
         const qty = Number(item.quantity) || 1;
         if (isMonth && (item.type === 'service' || item.type === undefined)) {
           totalServices.month += qty;
@@ -3846,7 +3865,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       });
     });
 
-    (bookings || []).forEach((b: unknown) => {
+    (bookings || []).forEach((b: Record<string, any>) => {
       const scheduledAt = new Date(b.scheduled_time);
       const customerId = b.customer_id;
       if (!customerId) return;
@@ -3869,10 +3888,10 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       { name: string; shopId: string; shopName: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
     > = {};
 
-    (settlements || []).forEach((s: unknown) => {
+    (settlements || []).forEach((s: Record<string, any>) => {
       const createdAt = new Date(s.created_at);
       if (createdAt < monthStart) return;
-      (s.items || []).forEach((item: unknown) => {
+      (s.items || []).forEach((item: Record<string, any>) => {
         const empId = item.employee_id || item.employeeId;
         const empName = item.employee_name || item.employeeName || '发型师';
         if (!empId) return;
@@ -3894,7 +3913,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       });
     });
 
-    (reviews || []).forEach((r: unknown) => {
+    (reviews || []).forEach((r: Record<string, any>) => {
       if (r.stylist_id && stylistMap[r.stylist_id]) {
         stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
         stylistMap[r.stylist_id].ratingCount += 1;

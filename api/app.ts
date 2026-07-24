@@ -26,8 +26,8 @@ const getRawBody = (req: Request): Promise<string> => {
 };
 
 const jsonBodyParser = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-  // 已经解析过就不再处理
-  if (req._body) {
+  // 已经解析过就不再处理（_body 是 express 内部属性，类型定义未暴露，用 any 断言）
+  if ((req as any)._body) {
     return next();
   }
 
@@ -40,7 +40,7 @@ const jsonBodyParser = async (req: Request, _res: Response, next: NextFunction):
     const raw = await getRawBody(req);
     console.log('[body-parser] raw body:', raw);
     req.body = raw ? JSON.parse(raw) : {};
-    req._body = true;
+    (req as any)._body = true;
     next();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

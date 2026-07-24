@@ -310,7 +310,7 @@ const Profile: React.FC = () => {
                 <div>
                   <div className="text-2xl font-bold">¥{currentCustomer.referralEarnings || 0}</div>
                   <div className="text-xs text-white/70 mt-0.5">
-                    已推荐客户到店 · 提成比例 {(currentCustomer.referralBonusRate || 0.05) * 100}%
+                    已推荐客户到店 · 提成比例 {(currentCustomer.referralBonusRate || 0.10) * 100}%
                   </div>
                 </div>
                 <div className="text-4xl opacity-30">👑</div>
@@ -683,7 +683,7 @@ const Profile: React.FC = () => {
                 </div>
                 <div className="mt-2 text-xs text-gray-500">
                   {withdrawChannel === 'consume'
-                    ? '提现金额将转入储值账户，用于下次消费抵扣'
+                    ? '申请金额将从可提现余额扣除，已记录为消费抵扣'
                     : '提现金额将原路返回至您的微信零钱，需店铺审核'}
                 </div>
               </div>

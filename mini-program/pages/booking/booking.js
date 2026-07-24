@@ -296,16 +296,17 @@ Page({
   onServiceScroll(e) {
     if (this._serviceScrollLock) return;
     this._serviceScrollLock = true;
-    requestAnimationFrame(() => {
+    const { scrollTop, scrollHeight } = e.detail || {};
+    // 小程序不支持 requestAnimationFrame，用 setTimeout 16ms 模拟 60fps 节流
+    setTimeout(() => {
       this._serviceScrollLock = false;
-      const { scrollTop, scrollHeight } = e.detail;
       const { serviceScrollbarClientHeight, serviceThumbHeight } = this.data;
       const clientHeight = serviceScrollbarClientHeight;
       if (!clientHeight || scrollHeight <= clientHeight) return;
       const maxThumbTop = Math.max(0, clientHeight - serviceThumbHeight);
       const ratio = Math.max(0, Math.min(1, scrollTop / (scrollHeight - clientHeight)));
       this.setData({ serviceThumbTop: ratio * maxThumbTop });
-    });
+    }, 16);
   },
 
   updateStylists(rawStylists) {

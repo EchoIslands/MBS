@@ -95,7 +95,7 @@
         <view class="flex items-center justify-between">
           <view>
             <view class="vip-stockholder-value">¥{{customer.referralEarnings || 0}}</view>
-            <view class="vip-stockholder-hint">已推荐客户到店 · 提成比例 {{(customer.referralBonusRate || 0.05) * 100}}%</view>
+            <view class="vip-stockholder-hint">已推荐客户到店 · 提成比例 {{(customer.referralBonusRate || 0.10) * 100}}%</view>
           </view>
           <view class="vip-stockholder-crown">👑</view>
         </view>
@@ -321,7 +321,7 @@
             </view>
           </view>
           <view class="withdraw-channel-hint">
-            {{withdrawChannel === 'consume' ? '提现金额将转入储值账户，用于下次消费抵扣' : '提现金额将原路返回至您的微信零钱，需店铺审核'}}
+            {{withdrawChannel === 'consume' ? '申请金额将从可提现余额扣除，已记录为消费抵扣' : '提现金额将原路返回至您的微信零钱，需店铺审核'}}
           </view>
         </view>
 

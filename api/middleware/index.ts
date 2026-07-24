@@ -36,7 +36,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     req.employee = decoded;
     next();
   } catch (err: unknown) {
-    console.error('[middleware] JWT 验证失败:', err.message);
+    console.error('[middleware] JWT 验证失败:', (err as Error).message);
     res.status(401).json({ success: false, error: '登录已过期，请重新登录' });
   }
 }

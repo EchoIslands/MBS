@@ -336,6 +336,23 @@ create index if not exists idx_withdrawal_requests_customer_id on withdrawal_req
 create index if not exists idx_withdrawal_requests_shop_id on withdrawal_requests(shop_id);
 create index if not exists idx_withdrawal_requests_status on withdrawal_requests(status);
 
+-- ========== 14.5 股东权益变动记录表【新增】 ==========
+create table if not exists stockholder_benefit_records (
+  id text primary key,
+  shop_id text references shops(id) on delete cascade,
+  customer_id text references customers(id) on delete cascade,
+  type text not null default 'cashback', -- cashback: 消费返现, referral_bonus: 推荐奖励
+  amount numeric(12,2) not null default 0,
+  source_booking_id text references bookings(id) on delete set null,
+  status text not null default 'granted', -- granted: 已发放
+  granted_at timestamptz default now(),
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_stockholder_records_customer_id on stockholder_benefit_records(customer_id);
+create index if not exists idx_stockholder_records_shop_id on stockholder_benefit_records(shop_id);
+create index if not exists idx_stockholder_records_booking_id on stockholder_benefit_records(source_booking_id);
+
 -- ========== 15. 满意度回访表【新增】 ==========
 create table if not exists satisfaction_surveys (
   id text primary key,

@@ -69,7 +69,7 @@
 | 预约权限控制 / 发型师调配 / 顾客取消 | 3.15.5、3.15.6 |
 | 定位失败 / 到店距离 1km / 浏览器定位权限 | 3.15.6 |
 | 网页提醒 / 手机浏览器通知 / 铃声限制 | 3.15.6 |
-| 股东自动转化 / 推荐奖励 5% / 提现管理 | 3.15.7 |
+| 股东自动转化 / 推荐奖励 10% / 提现管理 | 3.15.7 |
 | 微信渠道 / 小程序 / 公众号 / H5 支付 / unionid | 4.7 微信生态接入决策与规范、微信渠道接入规划与指南.md |
 | UI 统一 / 三端视觉一致 / 设计 Token / 小程序图标 | 1.3 核心原则、2.5.4 小程序 UI 统一规范 |
 | 版本号 / 发布检查 | 4.5 版本与发布 |
@@ -139,6 +139,10 @@
 | 坑 55 | 股东身份需要店铺端手动开启，未实现自动转化 | 严重 | 3.15.7 |
 | 坑 56 | 顾客端无提现入口，推荐奖励无法变现 | 严重 | 3.15.7 |
 | 坑 57 | 提现状态流转与余额扣减不同步，可能导致重复发放 | 严重 | 3.15.7 |
+| 坑 58 | `stockholder_benefit_records` 表缺失、`referral_earnings` 被覆盖、兜底重复发放 | 严重 | 3.15.7 |
+| 坑 59 | 小程序提现弹窗样式缺失，三方视觉不一致 | 中 | 3.15.7 |
+| 坑 60 | Vercel 部署报 `TS2339`/`TS2538`，`unknown` 类型上直接访问属性 | 严重 | 3.15.8 |
+| 坑 61 | 本地 `npm run build` 不检查 `api/` 目录，Vercel 构建时才暴露后端类型错误 | 严重 | 3.15.8 |
 
 ---
 
@@ -2113,7 +2117,7 @@ npm run server:api
 
 ### 3.15.7 股东自动转化与提现管理（2026-07-24）
 
-> 本阶段实现股东权益的“获得—到账—变现”全链路自动化，并在 H5/小程序/店铺管理三端保持逻辑一致。核心规则：顾客推荐的新客户完成首次消费后，推荐人自动升级为股东，并按新客户首次消费金额的 **5%** 发放推荐奖励；奖励余额可在顾客端申请提现，支持“抵扣消费”（即时到账）或“微信提现”（待审核）。
+> 本阶段实现股东权益的“获得—到账—变现”全链路自动化，并在 H5/小程序/店铺管理三端保持逻辑一致。核心规则：顾客推荐的新客户完成首次消费后，推荐人自动升级为股东，并按新客户首次消费金额的 **10%** 发放推荐奖励；奖励余额可在顾客端申请提现，支持“抵扣消费”（即时到账）或“微信提现”（待审核）。
 
 #### 1. 股东自动转化规则（坑 55）
 
@@ -2121,16 +2125,16 @@ npm run server:api
 - **根因**：
   - 股东身份与推荐记录（`referral_records` 表）未打通；
   - 预约完成/结算流程中没有触发推荐人升级和奖励发放的钩子；
-  - 奖励比例（5%）只在口头需求中提及，未写入代码和宪章。
+  - 奖励比例（10%）只在口头需求中提及，未写入代码和宪章。
 - **解决**：
   - 在后端 `api/routes/index.ts` 新增 `processReferralPromotion(shopId, referredCustomerId, firstSpentAmount, sourceBookingId)`；
   - 该函数在顾客预约完成或结算时调用，查找 `referral_records` 中 `referred_customer_id` 匹配的记录；
-  - 将推荐人 `customers.is_stockholder` 置为 `true`，按新客户首次消费金额的 **5%** 增加 `withdrawable_referral_amount`；
+  - 将推荐人 `customers.is_stockholder` 置为 `true`，按新客户首次消费金额的 **10%** 增加 `withdrawable_referral_amount`；
   - 通过 `source_booking_id` 和 30 天时间窗口做幂等保护，防止同一笔消费重复发放奖励；
   - 写入权益变动记录，便于后续对账。
 - **关键验证点**：
   - 推荐的新客户完成首次消费后，推荐人自动变成股东，无需人工开启；
-  - 奖励金额 = 新客户首次消费金额 × 5%，保留两位小数；
+  - 奖励金额 = 新客户首次消费金额 × 10%，保留两位小数；
   - 同一笔预约重复结算不会重复发放奖励；
   - 店铺端仍可手动编辑股东身份，用于历史数据修正。
 - **教训**：
@@ -2171,16 +2175,18 @@ npm run server:api
 - **解决**：
   - 新增 `withdrawal_requests` 数据表，字段包括 `id`、`shop_id`、`customer_id`、`amount`、`channel`、`status`、`reject_reason`、`paid_at`、`paid_by`、`transaction_id` 等；
   - 后端新增 `GET /api/withdrawals`（店铺端查询）、`POST /api/withdrawals`（顾客创建）、`PUT /api/withdrawals/:id/status`（店铺处理）；
-  - 状态流转：
-    - `pending` → `approved`：店铺审核通过，余额暂不扣减；
-    - `approved` → `paid`：店铺确认已通过“商家转账到零钱”完成打款，此时扣减顾客 `withdrawable_referral_amount`；
-    - `pending` → `rejected`：店铺拒绝，余额不扣减；
-    - `consume` 渠道直接创建为 `paid` 并即时扣减余额。
+  - 状态流转（经 2026-07-24 晚间检查修正后）：
+    - `consume` 渠道：直接创建为 `paid`，即时扣减 `withdrawable_referral_amount`；
+    - `wechat` 渠道：创建为 `pending`，**同时冻结** `withdrawable_referral_amount`（与前端展示保持一致）；
+    - `pending` → `approved`：店铺审核通过，无需余额操作（已冻结）；
+    - `approved` → `paid`：店铺确认已打款，无需二次扣减，仅标记 `paid_at` 和 `paid_by`；
+    - `pending` → `rejected`：店铺拒绝，**回退**已冻结的 `withdrawable_referral_amount`。
   - 店铺端新增“提现管理”页面（`src/pages/shop/WithdrawalManagement.tsx`），支持查看待审核/待打款/已处理申请，并提供“审核通过”“拒绝”“标记已打款”按钮；
   - 页面加入 `ShopLayout` 菜单，路径 `/shop/withdrawals`，仅 CEO/店长可见。
 - **关键验证点**：
-  - 微信提现只有在标记 `paid` 时才真正扣减余额；
-  - 拒绝提现后顾客余额不变；
+  - 微信提现创建 pending 时即冻结余额，前端展示与后端数据一致；
+  - 拒绝提现后余额回退，顾客可再次申请；
+  - 标记 `paid` 时不会二次扣减余额；
   - 店铺端能看到所有申请的当前状态和操作历史；
   - 消费抵扣记录自动完成，不进入审核流程。
 - **待后续完善**：
@@ -2188,6 +2194,7 @@ npm run server:api
   - 后续接入微信支付后，`paid` 状态可由系统自动触发，无需店铺手动标记。
 - **教训**：
   - 涉及资金的状态流转必须显式设计，扣款时机写进代码和文档；
+  - 前端扣减余额必须与后端同步，否则刷新页面后数据会“回弹”，引发用户信任危机；
   - 顾客端和店铺端是同一流程的两面，必须同时交付；
   - 第三方支付能力缺失时，先完成业务闭环和状态机，支付集成作为独立阶段推进。
 - **相关文件**：`api/routes/index.ts`、`schema_complete.sql`、`shared/types.ts`、`src/pages/shop/WithdrawalManagement.tsx`、`src/App.tsx`、`src/pages/shop/ShopLayout.tsx`、`src/api.ts`。
@@ -2198,6 +2205,51 @@ npm run server:api
 - 涉及三端（H5、小程序、店铺管理）的功能，要按“后端接口 → H5 → 小程序 → 店铺端”顺序推进，每完成一环就验证一环；
 - 资金相关功能必须本地 `npm run build` + 类型检查通过后再提交；
 - 新增页面后必须同步更新 `App.tsx` 路由和 `ShopLayout.tsx` 菜单，否则菜单无法进入。
+
+### 3.15.8 Vercel 部署 TypeScript 类型报错兜底修复（2026-07-24）
+
+> 本地 `npm run build` 只编译 `src/` 和 `shared/`，不检查 `api/` 目录；Vercel 构建 Serverless Function 时会编译 `api/index.ts`，此前积累的大量 `unknown` 类型属性访问错误在推送后才暴露。
+
+#### 4. Vercel 部署 TS 类型报错（坑 60）
+
+- **场景**：前一次推送后 Vercel Build Logs 报大量 `TS2339: Property 'xxx' does not exist on type 'unknown'` 和 `TS2538: Type 'unknown' cannot be used as an index type`，涉及 `api/middleware/index.ts`、`api/routes/index.ts` 等多个文件。
+- **根因**：
+  - `catch (err: unknown)` 中直接访问 `err.message`；
+  - Supabase 返回的行数据未定义类型，大量使用了 `unknown` 后直接访问 `.id`、`.shop_id` 等属性；
+  - mapper 函数如 `bookingFromDb`、`shopFromDb` 等参数声明为 `unknown`；
+  - `updatePayload` 等变量声明为 `unknown` 后动态添加属性。
+- **解决**：
+  - `catch` 块中统一改为 `(err as Error).message`；
+  - 将数据库动态对象类型从 `unknown` 统一调整为 `Record<string, any>`，包括 mapper 参数、数组回调参数、`toCamelCase` / `toCamelCaseList` 默认泛型；
+  - `updatePayload` 等动态构建对象声明为 `Record<string, any>`；
+  - 修复 `processReferralPromotion` 中 `referral_earnings` 字段未在 Supabase `select` 中声明的问题；
+  - `api/app.ts` 中访问 express 内部属性 `req._body` 时使用 `(req as any)._body` 断言。
+- **关键验证点**：
+  - 本地执行 `npx tsc --noEmit api/index.ts` 通过；
+  - `npm run build` 通过；
+  - Vercel 重新部署后 Build Logs 不再出现 `TS2339`/`TS2538`。
+- **教训**：
+  - 后端代码不能只靠运行时通过，必须在提交前做类型检查；
+  - 对 Supabase 这种返回动态结构的外部数据，统一使用 `Record<string, any>` 比反复 `as` 断言更可控；
+  - `catch (err)` 默认就是 `unknown`，不要假设它是 `Error`。
+- **相关文件**：`api/middleware/index.ts`、`api/routes/index.ts`、`api/app.ts`、`api/utils/case.ts`。
+
+#### 5. 本地构建未覆盖后端目录（坑 61）
+
+- **场景**：开发者在 Trae 中运行 `npm run build` 显示成功，但推送到 Vercel 后后端构建失败，原因暴露太晚。
+- **根因**：
+  - 根目录 `tsconfig.json` 的 `include` 只包含 `src` 和 `shared`，不包含 `api`；
+  - Vercel 通过 `@vercel/node` 单独编译 `api/index.ts`，配置比本地更严格（或至少会检查 api）。
+- **解决**：
+  - 在本次修复中直接修掉所有 api 目录的类型错误；
+  - 临时验证命令：`npx tsc --noEmit --esModuleInterop --skipLibCheck --module ESNext --moduleResolution bundler --target ES2020 --resolveJsonModule api/index.ts`。
+- **待后续完善**：
+  - 建议为 `api/` 单独创建 `api/tsconfig.json` 并在根 `tsconfig.json` 中通过 `references` 引用，使 `npm run build` 和 `npm run check` 自动覆盖后端；
+  - 或在 CI/Vercel 构建脚本中显式加入 api 类型检查命令。
+- **教训**：
+  - “本地构建通过”必须包含前后端；
+  - 项目初始化时就应配置好全量类型检查，不能依赖 Vercel 当类型检查器。
+- **相关文件**：`tsconfig.json`、`package.json`。
 
 ---
 
@@ -2648,6 +2700,7 @@ git push --force               # 强制推送（谨慎！）
 > **与《微信渠道接入规划与指南.md》的分工**：
 > - **本宪章（4.7）**：记"为什么做、必须遵守什么、关键风险是什么、当前状态是什么"；
 > - **指南文档**：记"怎么做、具体步骤、接口说明、推进清单"。
+> - **新增重点**：因小程序申请、账户开通、API 审批等事宜现由业主/店铺端直接负责，指南已新增第 12 节《业主/店铺端资质申请操作路径》，提供按表推进的申请入口、材料、周期、产出物及与开发端的交接清单。
 > 两文档方向必须一致：宪章定原则，指南给路径。
 
 ### 4.7.1 总体策略
@@ -2898,4 +2951,4 @@ npm run seed-db
 | v2.4 | 2026-07-14 | 版本升级到 v2.4；新增 3.14.11「开发环境约定」和 3.15「近期修复与功能新增专项记录」；新增坑 47-51；更新技术债务清单（财务报表假数据已偿还、头像 base64 和手机号唯一性为新债务）；更新 4.4.2 债务偿还计划，新增 v2.4 阶段。 |
 | v2.5 | 2026-07-15 | 版本升级到 v2.5；在宪章总纲（1.1 节和文首）增加「AI 智能体协作开发白皮书」远期愿景定位；新增 3.15.5「预约权限控制与发型师调配」专项记录；新增坑 52-54（权限判断散落、stylist/barber 命名混用、顾客取消预约 403）；更新快速索引和坑号定位表；更新技术债务清单，新增 stylist/barber 命名混用、顾客端认证不统一、预约状态无操作日志三项债务；更新 4.4.2 债务偿还计划，新增 v2.5 阶段。 |
 | v2.6 | 2026-07-16 | 版本升级到 v2.6；新增 3.15.6「定位失败兜底距离 1km、网页提醒限制、顾客取消预约接口 401」专项记录；重写 3.14.11「开发环境约定」并明确「Trae → 下载到本地 → 本地 push GitHub」工作流；更新 3.15.5 坑 54 的顾客取消预约方案；更新快速索引和坑号定位表；补充 AI 协作金鱼脑教训。 |
-| v2.7 | 2026-07-24 | 版本升级到 v2.7；新增 3.15.7「股东自动转化与提现管理」专项记录；明确股东按推荐新客户首次消费金额 5% 自动奖励、顾客端两种提现方式、店铺端审核状态机；新增坑 55-57；更新快速索引和坑号定位表；相关代码已完成本地 `npm run build` 验证。 |
+| v2.7 | 2026-07-24 | 版本升级到 v2.7；新增 3.15.7「股东自动转化与提现管理」专项记录；明确股东按推荐新客户首次消费金额 10% 自动奖励、顾客端两种提现方式、店铺端审核状态机；新增坑 55-57；更新快速索引和坑号定位表；相关代码已完成本地 `npm run build` 验证。 |
