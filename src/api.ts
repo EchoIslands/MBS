@@ -1582,60 +1582,53 @@ export const productApi = {
   create: async (shopId: string, data: Partial<Product>): Promise<Product | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Product }>(
+      // 商品创建可能携带 base64 图片， payload 较大，延长至 60 秒
+      return await httpThrowing<Product>(
         `${API_BASE}/shops/${shopId}/products`,
         {
           method: 'POST',
           body: JSON.stringify(data),
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
+        60000
       );
-      if (result?.data) return result.data;
     }
     return null;
   },
   update: async (shopId: string, productId: string, data: Partial<Product>): Promise<Product | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Product }>(
+      return await httpThrowing<Product>(
         `${API_BASE}/shops/${shopId}/products/${productId}`,
         {
           method: 'PUT',
           body: JSON.stringify(data),
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
+        60000
       );
-      if (result?.data) return result.data;
     }
     return null;
   },
   delete: async (shopId: string, productId: string): Promise<boolean> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean }>(
-        `${API_BASE}/shops/${shopId}/products/${productId}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      return result?.success === true;
+      await httpThrowing<unknown>(`${API_BASE}/shops/${shopId}/products/${productId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return true;
     }
     return false;
   },
   adjustInventory: async (shopId: string, productId: string, stock: number, reason: string): Promise<Product | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Product; error?: string }>(
-        `${API_BASE}/shops/${shopId}/products/${productId}/inventory`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ stock, reason }),
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      if (result?.error) throw new Error(result.error);
-      if (result?.data) return result.data;
+      return await httpThrowing<Product>(`${API_BASE}/shops/${shopId}/products/${productId}/inventory`, {
+        method: 'POST',
+        body: JSON.stringify({ stock, reason }),
+        headers: { Authorization: `Bearer ${token}` },
+      });
     }
     return null;
   },
@@ -1657,9 +1650,20 @@ export const productApi = {
  * - 非 2xx 或后端返回 success: false 时，抛出后端 error 字段或状态码信息
  * - 与 http 的区别：不把错误静默吞掉为 null，便于页面 catch 后给用户精确提示
  */
-async function httpThrowing<T>(url: string, opts: RequestInit = {}): Promise<T> {
+async function httpThrowing<T>(url: string, opts: RequestInit = {}, timeout = 15000): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort('请求超时'), timeout);
+
+  // 允许调用方传入外部 signal，组件卸载时取消请求，避免 StrictMode 重复挂载产生 AbortError 噪音
+  if (opts.signal) {
+    const externalSignal = opts.signal;
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason);
+    } else {
+      externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
+    }
+  }
+
   const res = await fetch(url, {
     ...opts,
     headers: {
@@ -1700,11 +1704,17 @@ export const productOrderApi = {
     }
     return null;
   },
-  getByCustomer: async (customerId: string, shopId?: string): Promise<ProductOrder[]> => {
+  getByCustomer: async (
+    customerId: string,
+    shopId?: string,
+    opts?: { signal?: AbortSignal; timeout?: number }
+  ): Promise<ProductOrder[]> => {
     if (USE_REAL_API) {
       const query = shopId ? `?shopId=${encodeURIComponent(shopId)}` : '';
       return await httpThrowing<ProductOrder[]>(
-        `${API_BASE}/product-orders/customer/${customerId}${query}`
+        `${API_BASE}/product-orders/customer/${customerId}${query}`,
+        { signal: opts?.signal },
+        opts?.timeout ?? 15000
       );
     }
     return [];

@@ -10,11 +10,14 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.ts';
+import { Customer, ProductCategory } from '../../shared/types.ts';
 
 const mainRouter = Router();
 
-// 数据库原始行通用类型（避免滥用 any）
-type DbRecord = Record<string, unknown>;
+// 数据库原始行通用类型：Supabase 返回的原始行字段类型在编译期无法确定，
+// 映射层统一用 any 接收，具体业务类型在 fromDb 转换函数中再约束。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DbRecord = Record<string, any>;
 
 // ===================== auth =====================
 const authRouter = Router();
@@ -1446,22 +1449,22 @@ customersRouter.get('/', async (req: Request, res: Response) => {
       ]);
 
       profilesMap = (profiles || []).reduce((acc, p) => {
-        acc[p.customer_id] = toCamelCase(p);
+        acc[p.customer_id as string] = toCamelCase(p) as DbRecord;
         return acc;
-      }, {} as Record<string, unknown>);
+      }, {} as Record<string, DbRecord>);
 
       visitsMap = (visits || []).reduce((acc, v) => {
-        const camel = toCamelCase(v);
-        if (!acc[camel.customerId]) acc[camel.customerId] = [];
-        acc[camel.customerId].push(camel);
+        const camel = toCamelCase(v) as DbRecord;
+        if (!acc[camel.customerId as string]) acc[camel.customerId as string] = [];
+        (acc[camel.customerId as string] as DbRecord[]).push(camel);
         return acc;
-      }, {} as Record<string, unknown[]>);
+      }, {} as Record<string, DbRecord[]>);
     }
 
     const enriched = customers.map((c) => ({
       ...c,
-      profile: profilesMap[c.id] || null,
-      visitRecords: visitsMap[c.id] || [],
+      profile: profilesMap[c.id as string] || null,
+      visitRecords: visitsMap[c.id as string] || [],
     }));
 
     res.json({ success: true, data: enriched });
@@ -2083,7 +2086,7 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
     // 为每个 booking 补充服务时长
     const list = await Promise.all(
       (bookings || []).map(async (b: Record<string, unknown>) => {
-        const duration = await getQueueServiceDuration(shopId, b.service_id);
+        const duration = await getQueueServiceDuration(shopId, b.service_id as string);
         return {
           id: b.id,
           shopId: b.shop_id,
@@ -2093,8 +2096,8 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
           stylistName: b.stylist_name,
           serviceId: b.service_id,
           serviceName: b.service_name,
-          scheduledTime: b.scheduled_time,
-          queueNumber: b.queue_number || 1,
+          scheduledTime: b.scheduled_time as string,
+          queueNumber: Number(b.queue_number) || 1,
           status: b.status,
           notes: b.notes,
           duration,
@@ -2128,11 +2131,11 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
       }
 
       const completedInCurrentSlot = (completed || []).filter(
-        (b: Record<string, unknown>) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
+        (b: Record<string, unknown>) => getQueueTimeSlotStart(new Date(b.scheduled_time as string)).getTime() === currentSlotStart.getTime(),
       );
       const maxCompleted =
         completedInCurrentSlot.length > 0
-          ? Math.max(...completedInCurrentSlot.map((b: Record<string, unknown>) => b.queue_number || 0))
+          ? Math.max(...completedInCurrentSlot.map((b: Record<string, unknown>) => Number(b.queue_number) || 0))
           : 0;
       currentNumber = maxCompleted + 1;
     }
@@ -2189,10 +2192,10 @@ queuesRouter.put('/:shopId', async (req: Request, res: Response) => {
 
     const list = await Promise.all(
       (bookings || []).map(async (b: Record<string, unknown>) => {
-        const duration = await getQueueServiceDuration(shopId, b.service_id);
+        const duration = await getQueueServiceDuration(shopId, b.service_id as string);
         return {
           id: b.id,
-          queueNumber: b.queue_number || 1,
+          queueNumber: Number(b.queue_number) || 1,
           status: b.status,
           duration,
         };
@@ -3341,7 +3344,7 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       storedValueLevel: customer.stored_value_level || 'none',
       purchaseVIPExpiresAt: customer.purchase_vip_expires_at,
       storedValueExpiresAt: customer.stored_value_expires_at,
-    } as Record<string, unknown>;
+    } as Customer;
     const purchaseLevel = getEffectivePurchaseVIPLevel(customerForDiscount);
     const storedLevel = getEffectiveStoredValueLevel(customerForDiscount);
 
@@ -3365,7 +3368,7 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
 
       const originalPrice = Number(product.price || 0);
       // 应用与 H5/小程序一致的会员折扣（假发不参与折扣）
-      const unitPrice = calcDiscountedItemPrice(originalPrice, purchaseLevel, storedLevel, product.category);
+      const unitPrice = calcDiscountedItemPrice(originalPrice, purchaseLevel, storedLevel, product.category as ProductCategory | 'service');
       const itemTotal = Math.round(unitPrice * quantity * 100) / 100;
       const itemOriginalTotal = Math.round(originalPrice * quantity * 100) / 100;
       totalAmount += itemTotal;
@@ -3533,16 +3536,16 @@ productOrdersRouter.get('/customer/:customerId', async (req: Request, res: Respo
     const { data: items } = await supabase.from('product_order_items').select('*').in('order_id', orderIds);
     const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
     (items || []).forEach((i: Record<string, unknown>) => {
-      const list = itemsByOrderId.get(i.order_id) || [];
+      const list = itemsByOrderId.get(i.order_id as string) || [];
       list.push(productOrderItemFromDb(i));
-      itemsByOrderId.set(i.order_id, list);
+      itemsByOrderId.set(i.order_id as string, list);
     });
 
     res.json({
       success: true,
       data: (orders || []).map((o: Record<string, unknown>) => ({
         ...productOrderFromDb(o),
-        items: itemsByOrderId.get(o.id) || [],
+        items: itemsByOrderId.get(o.id as string) || [],
       })),
     });
   } catch (error) {
@@ -3599,9 +3602,9 @@ productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, re
         .select('*')
         .in('order_id', orderIds);
       (items || []).forEach((i: Record<string, unknown>) => {
-        const list = itemsByOrderId.get(i.order_id) || [];
+        const list = itemsByOrderId.get(i.order_id as string) || [];
         list.push(productOrderItemFromDb(i));
-        itemsByOrderId.set(i.order_id, list);
+        itemsByOrderId.set(i.order_id as string, list);
       });
     }
 
@@ -3610,7 +3613,7 @@ productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, re
       data: {
         list: (orders || []).map((o: Record<string, unknown>) => ({
           ...productOrderFromDb(o),
-          items: itemsByOrderId.get(o.id) || [],
+          items: itemsByOrderId.get(o.id as string) || [],
         })),
         total: count || 0,
         page: pageNum,
@@ -4269,7 +4272,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
     > = {};
 
     (settlements || []).forEach((s: Record<string, unknown>) => {
-      const createdAt = new Date(s.created_at);
+      const createdAt = new Date(s.created_at as string);
       const isToday = createdAt >= today;
       const isWeek = createdAt >= weekStart;
       const isMonth = createdAt >= monthStart;
@@ -4297,11 +4300,11 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
         ticketCount.year += 1;
       }
 
-      (itemsBySettlement.get(s.id) || []).forEach((item: Record<string, unknown>) => {
+      (itemsBySettlement.get(s.id as string) || []).forEach((item: Record<string, unknown>) => {
         const itemTotal = Number(item.total) || 0;
         const qty = Number(item.quantity) || 1;
-        const empId = item.employee_id || item.employeeId;
-        const empName = item.employee_name || item.employeeName || '发型师';
+        const empId = (item.employee_id || item.employeeId) as string;
+        const empName = (item.employee_name || item.employeeName || '发型师') as string;
 
         if (empId) {
           if (!stylistMap[empId]) {
@@ -4332,9 +4335,10 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
 
     const { data: reviews } = await supabase.from('reviews').select('*').eq('shop_id', shopId);
     (reviews || []).forEach((r: Record<string, unknown>) => {
-      if (r.stylist_id && stylistMap[r.stylist_id]) {
-        stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
-        stylistMap[r.stylist_id].ratingCount += 1;
+      const stylistId = r.stylist_id as string;
+      if (stylistId && stylistMap[stylistId]) {
+        stylistMap[stylistId].ratingSum += Number(r.overall_score || r.rating || 0);
+        stylistMap[stylistId].ratingCount += 1;
       }
     });
 
@@ -4407,13 +4411,13 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
       const services = { total: 0, byType: {} as Record<string, number> };
 
       (settlements || []).forEach((s: Record<string, unknown>) => {
-        const createdAt = new Date(s.created_at);
+        const createdAt = new Date(s.created_at as string);
         const isToday = createdAt >= today;
         const isWeek = createdAt >= weekStart;
         const isMonth = createdAt >= monthStart;
         const isYear = createdAt >= yearStart;
 
-        (s.items || []).forEach((item: Record<string, unknown>) => {
+        ((s.items as Record<string, unknown>[]) || []).forEach((item: Record<string, unknown>) => {
           if (item.employeeId !== stylistId) return;
           const itemTotal = Number(item.total) || 0;
           const qty = Number(item.quantity) || 1;
@@ -4425,7 +4429,7 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
 
           if (item.type === 'service') {
             services.total += qty;
-            const name = item.name || '其他';
+            const name = (item.name || '其他') as string;
             services.byType[name] = (services.byType[name] || 0) + qty;
           }
         });
@@ -5028,25 +5032,25 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
     > = {};
 
     (shops || []).forEach((s: Record<string, unknown>) => {
-      shopStatsMap[s.id] = {
-        shopName: s.name,
+      shopStatsMap[s.id as string] = {
+        shopName: s.name as string,
         revenue: 0,
         services: 0,
         customers: new Set(),
-        employees: (s.employees || []).filter((e: Record<string, unknown>) => e.is_active !== false).length,
+        employees: ((s.employees as Record<string, unknown>[]) || []).filter((e: Record<string, unknown>) => e.is_active !== false).length,
       };
     });
 
     const customerPeriodSet = { today: new Set<string>(), week: new Set<string>(), month: new Set<string>(), year: new Set<string>() };
 
     (settlements || []).forEach((s: Record<string, unknown>) => {
-      const createdAt = new Date(s.created_at);
+      const createdAt = new Date(s.created_at as string);
       const isToday = createdAt >= today;
       const isWeek = createdAt >= weekStart;
       const isMonth = createdAt >= monthStart;
       const isYear = createdAt >= yearStart;
       const total = Number(s.total) || 0;
-      const shopId = s.shop_id;
+      const shopId = s.shop_id as string;
 
       if (isToday) totalRevenue.today += total;
       if (isWeek) totalRevenue.week += total;
@@ -5057,7 +5061,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
         if (isMonth) shopStatsMap[shopId].revenue += total;
       }
 
-      (s.items || []).forEach((item: Record<string, unknown>) => {
+      ((s.items as Record<string, unknown>[]) || []).forEach((item: Record<string, unknown>) => {
         const qty = Number(item.quantity) || 1;
         if (isMonth && (item.type === 'service' || item.type === undefined)) {
           totalServices.month += qty;
@@ -5076,14 +5080,14 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
     });
 
     (bookings || []).forEach((b: Record<string, unknown>) => {
-      const scheduledAt = new Date(b.scheduled_time);
-      const customerId = b.customer_id;
+      const scheduledAt = new Date(b.scheduled_time as string);
+      const customerId = b.customer_id as string;
       if (!customerId) return;
       if (scheduledAt >= today) customerPeriodSet.today.add(customerId);
       if (scheduledAt >= weekStart) customerPeriodSet.week.add(customerId);
       if (scheduledAt >= monthStart) {
         customerPeriodSet.month.add(customerId);
-        if (shopStatsMap[b.shop_id]) shopStatsMap[b.shop_id].customers.add(customerId);
+        if (shopStatsMap[b.shop_id as string]) shopStatsMap[b.shop_id as string].customers.add(customerId);
       }
       if (scheduledAt >= yearStart) customerPeriodSet.year.add(customerId);
     });
@@ -5099,17 +5103,18 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
     > = {};
 
     (settlements || []).forEach((s: Record<string, unknown>) => {
-      const createdAt = new Date(s.created_at);
+      const createdAt = new Date(s.created_at as string);
       if (createdAt < monthStart) return;
-      (s.items || []).forEach((item: Record<string, unknown>) => {
-        const empId = item.employee_id || item.employeeId;
-        const empName = item.employee_name || item.employeeName || '发型师';
+      ((s.items as Record<string, unknown>[]) || []).forEach((item: Record<string, unknown>) => {
+        const empId = (item.employee_id || item.employeeId) as string;
+        const empName = (item.employee_name || item.employeeName || '发型师') as string;
+        const shopId = s.shop_id as string;
         if (!empId) return;
         if (!stylistMap[empId]) {
           stylistMap[empId] = {
             name: empName,
-            shopId: s.shop_id,
-            shopName: shopStatsMap[s.shop_id]?.shopName || '店铺',
+            shopId,
+            shopName: shopStatsMap[shopId]?.shopName || '店铺',
             revenue: 0,
             services: 0,
             ratingSum: 0,
@@ -5124,9 +5129,10 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
     });
 
     (reviews || []).forEach((r: Record<string, unknown>) => {
-      if (r.stylist_id && stylistMap[r.stylist_id]) {
-        stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
-        stylistMap[r.stylist_id].ratingCount += 1;
+      const stylistId = r.stylist_id as string;
+      if (stylistId && stylistMap[stylistId]) {
+        stylistMap[stylistId].ratingSum += Number(r.overall_score || r.rating || 0);
+        stylistMap[stylistId].ratingCount += 1;
       }
     });
 

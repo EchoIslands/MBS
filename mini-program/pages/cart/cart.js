@@ -178,8 +178,22 @@ Page({
         wx.showToast({ title: '结算失败，请重试', icon: 'none' });
       }
     } catch (err) {
-      console.error('[cart] 结算失败:', err);
-      wx.showToast({ title: err.message || '结算失败，请重试', icon: 'none' });
+      if (err.message && err.message.includes('余额不足')) {
+        wx.showActionSheet({
+          itemList: ['切换为到店自提付款', '去储值页面充值'],
+          success: (res) => {
+            if (res.tapIndex === 0) {
+              this.setData({ paymentMethod: 'store_pickup' });
+              this.doCheckout();
+            } else if (res.tapIndex === 1) {
+              wx.navigateTo({ url: `/pages/profile/profile?shopId=${shopId}` });
+            }
+          },
+        });
+      } else {
+        console.error('[cart] 结算失败:', err);
+        wx.showToast({ title: err.message || '结算失败，请重试', icon: 'none' });
+      }
     } finally {
       this.setData({ submitting: false });
     }

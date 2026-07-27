@@ -83,7 +83,13 @@ const ProductManagement: React.FC = () => {
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
-    setFormData({ ...product });
+    setFormData({
+      ...product,
+      isRecommended: product.isRecommended ?? false,
+      isActive: product.isActive ?? true,
+      sortOrder: product.sortOrder ?? 0,
+      lowStockThreshold: product.lowStockThreshold ?? 10,
+    });
     setShowModal(true);
   };
 
@@ -99,6 +105,9 @@ const ProductManagement: React.FC = () => {
       stock: 0,
       sales: 0,
       isActive: true,
+      isRecommended: false,
+      sortOrder: 0,
+      lowStockThreshold: 10,
       tags: [],
     });
     setShowModal(true);

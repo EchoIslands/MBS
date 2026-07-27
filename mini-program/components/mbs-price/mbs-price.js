@@ -1,11 +1,11 @@
 Component({
   properties: {
     original: {
-      type: [String, Number],
+      type: null,
       value: '',
     },
     current: {
-      type: [String, Number],
+      type: null,
       value: '',
     },
     showTag: {

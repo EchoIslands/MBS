@@ -38,6 +38,8 @@ const ProductOrders: React.FC = () => {
   const [submittingRefund, setSubmittingRefund] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
     const fetchOrders = async () => {
       if (!currentCustomer?.id || !shopId) {
         setLoading(false);
@@ -45,15 +47,29 @@ const ProductOrders: React.FC = () => {
       }
       setLoading(true);
       try {
-        const data = await productOrderApi.getByCustomer(currentCustomer.id, shopId);
+        const data = await productOrderApi.getByCustomer(currentCustomer.id, shopId, {
+          signal: controller.signal,
+          timeout: 30000,
+        });
+        if (!mounted) return;
         setOrders(data || []);
       } catch (err) {
+        if (!mounted) return;
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
         console.error('[ProductOrders] 获取订单失败:', err);
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
     fetchOrders();
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, [currentCustomer?.id, shopId]);
 
   const formatDate = (date?: string | Date) => {

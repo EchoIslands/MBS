@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, AlertCircle, X } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { ProductCategory } from '../../../shared/types';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
@@ -20,6 +20,7 @@ const Cart: React.FC = () => {
   } = useAppStore();
   const [submitting, setSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'balance' | 'store_pickup'>('balance');
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
 
   const selectedItems = cart.filter(item => item.selected);
   
@@ -38,15 +39,8 @@ const Cart: React.FC = () => {
 
   const allSelected = cart.length > 0 && cart.every(item => item.selected);
 
-  const handleCheckout = async () => {
-    if (selectedItems.length === 0) {
-      alert('请选择要购买的商品');
-      return;
-    }
-    if (!shopId || !currentCustomer?.id) {
-      alert('请先登录后再结算');
-      return;
-    }
+  const submitOrder = async (method: 'balance' | 'store_pickup') => {
+    if (!shopId || !currentCustomer?.id) return;
 
     setSubmitting(true);
     try {
@@ -57,7 +51,7 @@ const Cart: React.FC = () => {
           productId: item.productId,
           quantity: item.quantity,
         })),
-        paymentMethod,
+        paymentMethod: method,
         pickupName: currentCustomer.name,
         pickupPhone: currentCustomer.phone,
       });
@@ -70,11 +64,28 @@ const Cart: React.FC = () => {
         alert('结算失败，请重试');
       }
     } catch (err: unknown) {
-      console.error('[Cart] 结算失败:', err);
-      alert((err as Error).message || '结算失败，请重试');
+      const message = (err as Error).message || '';
+      if (message.includes('余额不足')) {
+        setShowBalanceModal(true);
+      } else {
+        console.error('[Cart] 结算失败:', err);
+        alert(message || '结算失败，请重试');
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCheckout = () => {
+    if (selectedItems.length === 0) {
+      alert('请选择要购买的商品');
+      return;
+    }
+    if (!shopId || !currentCustomer?.id) {
+      alert('请先登录后再结算');
+      return;
+    }
+    submitOrder(paymentMethod);
   };
 
   return (
@@ -272,6 +283,60 @@ const Cart: React.FC = () => {
         </div>
       )}
       
+      {/* 余额不足弹窗 */}
+      {showBalanceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 relative">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="text-orange-500" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-800">储值余额不足</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  当前余额不足以支付本次订单，你可以选择到店自提付款，或先去充值。
+                </p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setShowBalanceModal(false);
+                  setPaymentMethod('store_pickup');
+                  submitOrder('store_pickup');
+                }}
+                className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <ShoppingBag size={18} />
+                切换为到店自提付款
+              </button>
+              <button
+                onClick={() => {
+                  setShowBalanceModal(false);
+                  navigate('/customer/profile');
+                }}
+                className="w-full py-3 bg-white border border-orange-500 text-orange-500 hover:bg-orange-50 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <Wallet size={18} />
+                去储值页面充值
+              </button>
+              <button
+                onClick={() => setShowBalanceModal(false)}
+                className="w-full py-3 text-gray-500 hover:text-gray-700 font-medium transition-colors"
+              >
+                取消
+              </button>
+            </div>
+            <button
+              onClick={() => setShowBalanceModal(false)}
+              className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full"
+            >
+              <X size={20} className="text-gray-400" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 底部安全区域 */}
       {cart.length > 0 && <div className="h-24" />}
     </div>
