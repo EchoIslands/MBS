@@ -9,8 +9,8 @@ import {
   calcDiscountedItemPrice,
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
-} from '../../shared/lib/membership';
-import { Customer, ProductCategory } from '../../shared/types';
+} from '../../shared/lib/membership.js';
+import { Customer, ProductCategory } from '../../shared/types.js';
 
 const mainRouter = Router();
 

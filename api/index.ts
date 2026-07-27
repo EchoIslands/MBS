@@ -5,7 +5,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { default: app } = await import('./app');
+    const { default: app } = await import('./app.js');
     return app(req, res);
   } catch (err) {
     console.error('[handler] 启动失败:', err);
