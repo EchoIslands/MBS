@@ -3,7 +3,7 @@ import {
   StoredValueLevel,
   PurchaseVIPPlan,
   StoredValuePlan,
-} from './types';
+} from './types.js';
 
 // 购买型 VIP 会员计划（业务配置，非 mock）
 export const purchaseVIPPlans: PurchaseVIPPlan[] = [

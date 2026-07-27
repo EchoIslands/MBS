@@ -1,4 +1,4 @@
-import { UserRole } from './types';
+import { UserRole } from './types.js';
 
 /**
  * 集中式角色权限配置

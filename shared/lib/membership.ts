@@ -10,8 +10,8 @@ import {
   SettlementDiscountDetail,
   StockholderBenefitConfig,
   Shop,
-} from '../types';
-import { purchaseVIPPlans, storedValuePlans } from '../membershipPlans';
+} from '../types.js';
+import { purchaseVIPPlans, storedValuePlans } from '../membershipPlans.js';
 
 // ==================== 权益有效期 ====================
 
