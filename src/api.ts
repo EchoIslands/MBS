@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1494,6 +1494,78 @@ export const ownerApi = {
   },
 };
 
+// 优惠券管理 API
+export const couponApi = {
+  getByShop: async (shopId: string, active?: boolean): Promise<Coupon[]> => {
+    if (USE_REAL_API) {
+      const query = active === true ? '?active=true' : '';
+      const result = await http<{ success: boolean; data: Coupon[] }>(
+        `${API_BASE}/coupons/shop/${shopId}${query}`
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  create: async (shopId: string, data: Partial<Coupon>): Promise<Coupon | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Coupon }>(
+        `${API_BASE}/coupons`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ shopId, ...data }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+  update: async (couponId: string, data: Partial<Coupon>): Promise<Coupon | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Coupon }>(
+        `${API_BASE}/coupons/${couponId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(data),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+  toggleActive: async (couponId: string, isActive: boolean): Promise<Coupon | null> => {
+    return couponApi.update(couponId, { isActive });
+  },
+  getCustomerCoupons: async (customerId: string, shopId?: string, status?: string): Promise<CustomerCoupon[]> => {
+    if (USE_REAL_API) {
+      const params = new URLSearchParams();
+      if (shopId) params.set('shopId', shopId);
+      if (status) params.set('status', status);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const result = await http<{ success: boolean; data: CustomerCoupon[] }>(
+        `${API_BASE}/coupons/customer/${customerId}${query}`
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  claim: async (couponId: string, customerId: string, customerName?: string, customerPhone?: string): Promise<CustomerCoupon | null> => {
+    if (USE_REAL_API) {
+      return await httpThrowing<CustomerCoupon>(
+        `${API_BASE}/coupons/${couponId}/claim`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ customerId, customerName, customerPhone }),
+        }
+      );
+    }
+    throw new Error('演示模式暂不支持领取优惠券');
+  },
+};
+
 // 商品管理 API
 export const productApi = {
   getByShop: async (shopId: string): Promise<Product[]> => {
@@ -1550,6 +1622,33 @@ export const productApi = {
       return result?.success === true;
     }
     return false;
+  },
+  adjustInventory: async (shopId: string, productId: string, stock: number, reason: string): Promise<Product | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Product; error?: string }>(
+        `${API_BASE}/shops/${shopId}/products/${productId}/inventory`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ stock, reason }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.error) throw new Error(result.error);
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+  getInventoryLogs: async (shopId: string, productId: string): Promise<ProductInventoryLog[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: ProductInventoryLog[] }>(
+        `${API_BASE}/shops/${shopId}/products/${productId}/inventory-logs`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
   },
 };
 
@@ -1610,16 +1709,24 @@ export const productOrderApi = {
     }
     return [];
   },
-  getByShop: async (shopId: string, status?: string): Promise<ProductOrder[]> => {
+  getByShop: async (
+    shopId: string,
+    params?: { status?: string; keyword?: string; page?: number; pageSize?: number }
+  ): Promise<{ list: ProductOrder[]; total: number; page: number; pageSize: number }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const query = status ? `?status=${encodeURIComponent(status)}` : '';
-      return await httpThrowing<ProductOrder[]>(
-        `${API_BASE}/product-orders/shop/${shopId}${query}`,
+      const query = new URLSearchParams();
+      if (params?.status) query.set('status', params.status);
+      if (params?.keyword) query.set('keyword', params.keyword);
+      if (params?.page) query.set('page', String(params.page));
+      if (params?.pageSize) query.set('pageSize', String(params.pageSize));
+      const queryString = query.toString() ? `?${query.toString()}` : '';
+      return await httpThrowing<{ list: ProductOrder[]; total: number; page: number; pageSize: number }>(
+        `${API_BASE}/product-orders/shop/${shopId}${queryString}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
     }
-    return [];
+    return { list: [], total: 0, page: 1, pageSize: 10 };
   },
   updateStatus: async (orderId: string, status: string, cancelReason?: string): Promise<ProductOrder | null> => {
     if (USE_REAL_API) {
@@ -1643,6 +1750,44 @@ export const productOrderApi = {
         {
           method: 'POST',
           body: JSON.stringify({ pickupCode }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    }
+    return null;
+  },
+  requestRefund: async (orderId: string, reason: string): Promise<ProductOrderRefund | null> => {
+    if (USE_REAL_API) {
+      return await httpThrowing<ProductOrderRefund>(`${API_BASE}/product-orders/${orderId}/refund`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+    }
+    return null;
+  },
+  getRefundRequests: async (shopId: string, status?: string): Promise<ProductOrderRefund[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const query = status ? `?status=${encodeURIComponent(status)}` : '';
+      return await httpThrowing<ProductOrderRefund[]>(
+        `${API_BASE}/product-orders/refunds/shop/${shopId}${query}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    }
+    return [];
+  },
+  handleRefund: async (
+    refundId: string,
+    status: 'approved' | 'rejected',
+    rejectReason?: string
+  ): Promise<ProductOrderRefund | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      return await httpThrowing<ProductOrderRefund>(
+        `${API_BASE}/product-orders/refunds/${refundId}/status`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ status, rejectReason }),
           headers: { Authorization: `Bearer ${token}` },
         }
       );

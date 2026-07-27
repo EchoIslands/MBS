@@ -30,6 +30,7 @@ import RefundManagement from "./pages/shop/RefundManagement";
 import WithdrawalManagement from "./pages/shop/WithdrawalManagement";
 import ProductManagement from "./pages/shop/ProductManagement";
 import ProductOrderManagement from "./pages/shop/ProductOrderManagement";
+import CouponManagement from "./pages/shop/CouponManagement";
 import CustomerManagement from "./pages/shop/CustomerManagement";
 import CustomerTableManagement from "./pages/shop/CustomerTableManagement";
 import SettlementManagement from "./pages/shop/SettlementManagement";
@@ -174,6 +175,7 @@ export default function App() {
           <Route path="/shop/manage" element={<ShopManage />} />
           <Route path="/shop/products" element={<ProductManagement />} />
           <Route path="/shop/product-orders" element={<ProductOrderManagement />} />
+          <Route path="/shop/coupons" element={<CouponManagement />} />
           <Route path="/shop/reviews" element={<ReviewManagement />} />
           <Route path="/shop/stylist" element={<StylistDashboard />} />
           <Route path="/shop/financial" element={<FinancialReport />} />

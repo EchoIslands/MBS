@@ -27,13 +27,77 @@ export interface Product {
   description: string;
   images: string[];
   stock: number;            // 库存
+  lowStockThreshold?: number; // 库存预警阈值
   sales: number;            // 销量
   isActive: boolean;        // 是否上架
+  isRecommended?: boolean;  // 是否推荐位展示
+  sortOrder?: number;       // 排序权重
   rating?: number;          // 评分
   reviewCount?: number;     // 评价数
   tags?: string[];          // 标签
   createdAt: Date;
   updatedAt: Date;
+}
+
+// 优惠券类型
+export type CouponType = 'fixed_amount' | 'percentage' | 'buy_x_get_y';
+
+// 优惠券适用范围
+export type CouponScope = 'all' | 'product' | 'service';
+
+// 优惠券
+export interface Coupon {
+  id: string;
+  shopId: string;
+  name: string;
+  type: CouponType;
+  value: number;                  // 减免金额或折扣率
+  minOrderAmount?: number;        // 最低使用门槛
+  maxDiscountAmount?: number;     // 最大优惠金额
+  applicableScope: CouponScope;
+  applicableProductIds?: string[];
+  totalQuantity: number;          // -1 表示不限
+  remainingQuantity: number;      // -1 表示不限
+  perCustomerLimit: number;
+  startAt: Date;
+  endAt: Date;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// 顾客领取优惠券记录
+export interface CustomerCoupon {
+  id: string;
+  couponId: string;
+  shopId: string;
+  customerId: string;
+  customerName?: string;
+  customerPhone?: string;
+  status: 'unused' | 'used' | 'expired' | 'cancelled';
+  usedAt?: Date;
+  orderId?: string;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+// 商品库存变动类型
+export type ProductInventoryLogType = 'sale' | 'refund' | 'manual_adjust' | 'init' | 'cancel';
+
+// 商品库存变动记录
+export interface ProductInventoryLog {
+  id: string;
+  shopId: string;
+  productId: string;
+  productName: string;
+  changeAmount: number;     // 正数为增加，负数为减少
+  stockAfter: number;       // 变动后库存
+  type: ProductInventoryLogType;
+  orderId?: string;
+  reason: string;
+  operatorId?: string;
+  operatorName?: string;
+  createdAt: Date;
 }
 
 // 购物车项
@@ -57,7 +121,7 @@ export interface ProductOrder {
   totalAmount: number;
   discountAmount: number;
   payableAmount: number;
-  status: 'pending' | 'paid' | 'preparing' | 'ready' | 'completed' | 'cancelled' | 'refunded';
+  status: 'pending' | 'paid' | 'preparing' | 'ready' | 'completed' | 'cancelled' | 'refunded' | 'refunding';
   paymentMethod?: 'balance' | 'store_pickup' | 'wechat' | 'alipay';
   paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded';
   paidAt?: Date;
@@ -681,6 +745,26 @@ export interface RefundRequest {
   processedBy?: string;
   rejectReason?: string;
   refundMethod?: 'original' | 'balance' | 'bank';  // 退款方式
+}
+
+// 商品订单退款申请
+export interface ProductOrderRefund {
+  id: string;
+  orderId: string;
+  orderNo?: string;
+  shopId: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  previousStatus?: string;
+  rejectReason?: string;
+  handlerId?: string;
+  handlerName?: string;
+  createdAt: Date;
+  updatedAt?: Date;
+  handledAt?: Date;
 }
 
 // 客户反馈类型

@@ -2734,8 +2734,11 @@ const productFromDb = (p: Record<string, unknown>): Record<string, unknown> => (
   description: p.description || '',
   images: p.images || [],
   stock: Number(p.stock) || 0,
+  lowStockThreshold: Number(p.low_stock_threshold) || 10,
   sales: Number(p.sales) || 0,
   isActive: p.is_active !== false,
+  isRecommended: p.is_recommended === true,
+  sortOrder: Number(p.sort_order) || 0,
   rating: Number(p.rating) || 5,
   reviewCount: Number(p.review_count) || 0,
   tags: p.tags || [],
@@ -2754,13 +2757,63 @@ const productToDb = (p: Record<string, unknown>): Record<string, unknown> => ({
   description: p.description,
   images: p.images,
   stock: p.stock,
+  low_stock_threshold: p.lowStockThreshold,
   sales: p.sales,
   is_active: p.isActive,
+  is_recommended: p.isRecommended,
+  sort_order: p.sortOrder,
   rating: p.rating,
   review_count: p.reviewCount,
   tags: p.tags,
+  created_at: p.createdAt,
   updated_at: p.updatedAt || new Date().toISOString(),
 });
+
+// 数据库 product_inventory_logs 行 → 前端 ProductInventoryLog 对象
+const productInventoryLogFromDb = (r: Record<string, unknown>): Record<string, unknown> => ({
+  id: r.id,
+  shopId: r.shop_id,
+  productId: r.product_id,
+  productName: r.product_name,
+  changeAmount: Number(r.change_amount) || 0,
+  stockAfter: Number(r.stock_after) || 0,
+  type: r.type,
+  orderId: r.order_id,
+  reason: r.reason || '',
+  operatorId: r.operator_id,
+  operatorName: r.operator_name,
+  createdAt: r.created_at,
+});
+
+// 写入库存变动记录
+const insertInventoryLog = async (payload: {
+  shopId: string;
+  productId: string;
+  productName: string;
+  changeAmount: number;
+  stockAfter: number;
+  type: 'sale' | 'refund' | 'manual_adjust' | 'init' | 'cancel';
+  orderId?: string;
+  reason?: string;
+  operatorId?: string;
+  operatorName?: string;
+}) => {
+  const id = `pil_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  await supabase.from('product_inventory_logs').insert({
+    id,
+    shop_id: payload.shopId,
+    product_id: payload.productId,
+    product_name: payload.productName,
+    change_amount: payload.changeAmount,
+    stock_after: payload.stockAfter,
+    type: payload.type,
+    order_id: payload.orderId || null,
+    reason: payload.reason || '',
+    operator_id: payload.operatorId || null,
+    operator_name: payload.operatorName || '',
+    created_at: new Date().toISOString(),
+  });
+};
 
 // 将 products 表数据同步回 shops.products JSONB（保持现有 H5/小程序读取 shop.products 的兼容性）
 const syncShopProductsJsonb = async (shopId: string) => {
@@ -2776,7 +2829,15 @@ const syncShopProductsJsonb = async (shopId: string) => {
 shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('products').select('*').eq('shop_id', id).order('created_at', { ascending: false });
+    const { recommended } = req.query;
+    let query = supabase.from('products').select('*').eq('shop_id', id);
+    if (recommended === 'true') {
+      query = query.eq('is_recommended', true).eq('is_active', true);
+    }
+    const { data, error } = await query
+      .order('is_recommended', { ascending: false })
+      .order('sort_order', { ascending: false })
+      .order('created_at', { ascending: false });
     if (error) {
       console.error('[shops] 查询商品失败:', error.message);
       return res.status(500).json({ success: false, error: '查询商品失败' });
@@ -2825,9 +2886,10 @@ shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request,
     const updates = req.body || {};
 
     const dbUpdates = productToDb({ ...updates, updatedAt: new Date().toISOString() });
-    // 防止误改 id/shop_id
+    // 防止误改 id/shop_id/created_at
     delete dbUpdates.id;
     delete dbUpdates.shop_id;
+    delete dbUpdates.created_at;
 
     const { data, error: updateError } = await supabase
       .from('products')
@@ -2869,6 +2931,314 @@ shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Reque
     res.status(500).json({ success: false, error: '删除商品失败' });
   }
 });
+
+// 店铺手动调整商品库存
+shopsRouter.post('/:id/products/:productId/inventory', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id, productId } = req.params;
+    const { stock, reason } = req.body || {};
+    if (stock === undefined || stock === null || Number(stock) < 0) {
+      return res.status(400).json({ success: false, error: '库存数量不能为负数' });
+    }
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ success: false, error: '请填写调整原因' });
+    }
+
+    const { data: product, error: findError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .eq('shop_id', id)
+      .single();
+    if (findError || !product) {
+      return res.status(404).json({ success: false, error: '商品不存在' });
+    }
+
+    const newStock = Math.max(0, Number(stock));
+    const oldStock = Number(product.stock || 0);
+    const changeAmount = newStock - oldStock;
+
+    const { data: updated, error: updateError } = await supabase
+      .from('products')
+      .update({ stock: newStock, updated_at: new Date().toISOString() })
+      .eq('id', productId)
+      .eq('shop_id', id)
+      .select()
+      .single();
+    if (updateError) {
+      console.error('[shops] 调整库存失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '调整库存失败' });
+    }
+
+    const handler = (req as Request & { employee?: Record<string, unknown> }).employee;
+    await insertInventoryLog({
+      shopId: id,
+      productId,
+      productName: String(product.name || ''),
+      changeAmount,
+      stockAfter: newStock,
+      type: 'manual_adjust',
+      reason: String(reason).trim(),
+      operatorId: handler ? String(handler.id) : undefined,
+      operatorName: handler ? String(handler.name) : '店铺',
+    });
+    await syncShopProductsJsonb(id);
+
+    res.json({ success: true, data: productFromDb(updated) });
+  } catch (error) {
+    console.error('[shops] 调整库存异常:', error);
+    res.status(500).json({ success: false, error: '调整库存失败' });
+  }
+});
+
+// 查询商品库存变动记录
+shopsRouter.get('/:id/products/:productId/inventory-logs', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id, productId } = req.params;
+    const { data: logs, error } = await supabase
+      .from('product_inventory_logs')
+      .select('*')
+      .eq('shop_id', id)
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[shops] 查询库存记录失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询库存记录失败' });
+    }
+    res.json({ success: true, data: (logs || []).map(productInventoryLogFromDb) });
+  } catch (error) {
+    console.error('[shops] 查询库存记录异常:', error);
+    res.status(500).json({ success: false, error: '查询库存记录失败' });
+  }
+});
+
+// 优惠券相关转换
+const couponFromDb = (c: Record<string, unknown>): Record<string, unknown> => ({
+  id: c.id,
+  shopId: c.shop_id,
+  name: c.name,
+  type: c.type,
+  value: Number(c.value) || 0,
+  minOrderAmount: c.min_order_amount ? Number(c.min_order_amount) : undefined,
+  maxDiscountAmount: c.max_discount_amount ? Number(c.max_discount_amount) : undefined,
+  applicableScope: c.applicable_scope || 'all',
+  applicableProductIds: c.applicable_product_ids || [],
+  totalQuantity: Number(c.total_quantity ?? -1),
+  remainingQuantity: Number(c.remaining_quantity ?? -1),
+  perCustomerLimit: Number(c.per_customer_limit) || 1,
+  startAt: c.start_at,
+  endAt: c.end_at,
+  isActive: c.is_active !== false,
+  createdAt: c.created_at,
+  updatedAt: c.updated_at,
+});
+
+const customerCouponFromDb = (cc: Record<string, unknown>): Record<string, unknown> => ({
+  id: cc.id,
+  couponId: cc.coupon_id,
+  shopId: cc.shop_id,
+  customerId: cc.customer_id,
+  customerName: cc.customer_name,
+  customerPhone: cc.customer_phone,
+  status: cc.status,
+  usedAt: cc.used_at,
+  orderId: cc.order_id,
+  createdAt: cc.created_at,
+  updatedAt: cc.updated_at,
+});
+
+// 优惠券路由
+const couponsRouter = Router();
+
+// 店铺创建优惠券
+couponsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { shopId, ...rest } = req.body || {};
+    if (!shopId || !rest.name || rest.value === undefined) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+    const id = `cpn_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const now = new Date().toISOString();
+    const payload = {
+      id,
+      shop_id: shopId,
+      name: rest.name,
+      type: rest.type || 'fixed_amount',
+      value: Number(rest.value) || 0,
+      min_order_amount: rest.minOrderAmount ?? 0,
+      max_discount_amount: rest.maxDiscountAmount ?? null,
+      applicable_scope: rest.applicableScope || 'all',
+      applicable_product_ids: rest.applicableProductIds || [],
+      total_quantity: rest.totalQuantity ?? -1,
+      remaining_quantity: rest.remainingQuantity ?? rest.totalQuantity ?? -1,
+      per_customer_limit: rest.perCustomerLimit ?? 1,
+      start_at: rest.startAt || now,
+      end_at: rest.endAt || now,
+      is_active: rest.isActive !== false,
+      created_at: now,
+      updated_at: now,
+    };
+    const { data, error } = await supabase.from('coupons').insert(payload).select().single();
+    if (error) {
+      console.error('[coupons] 创建优惠券失败:', error.message);
+      return res.status(500).json({ success: false, error: '创建优惠券失败' });
+    }
+    res.status(201).json({ success: true, data: couponFromDb(data) });
+  } catch (error) {
+    console.error('[coupons] 创建优惠券异常:', error);
+    res.status(500).json({ success: false, error: '创建优惠券失败' });
+  }
+});
+
+// 查询店铺优惠券列表
+couponsRouter.get('/shop/:shopId', async (req: Request, res: Response) => {
+  try {
+    const { shopId } = req.params;
+    const { active } = req.query;
+    let query = supabase.from('coupons').select('*').eq('shop_id', shopId);
+    if (active === 'true') {
+      const now = new Date().toISOString();
+      query = query.eq('is_active', true).lte('start_at', now).gte('end_at', now);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      return res.status(500).json({ success: false, error: '查询优惠券失败' });
+    }
+    res.json({ success: true, data: (data || []).map(couponFromDb) });
+  } catch (error) {
+    console.error('[coupons] 查询优惠券异常:', error);
+    res.status(500).json({ success: false, error: '查询优惠券失败' });
+  }
+});
+
+// 顾客领取优惠券
+couponsRouter.post('/:id/claim', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customerId, customerName, customerPhone } = req.body || {};
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: '缺少顾客ID' });
+    }
+
+    const { data: coupon, error: couponError } = await supabase.from('coupons').select('*').eq('id', id).single();
+    if (couponError || !coupon) {
+      return res.status(404).json({ success: false, error: '优惠券不存在' });
+    }
+    if (!coupon.is_active) {
+      return res.status(400).json({ success: false, error: '优惠券已停用' });
+    }
+    const now = new Date().toISOString();
+    if (now < coupon.start_at || now > coupon.end_at) {
+      return res.status(400).json({ success: false, error: '优惠券不在有效期内' });
+    }
+    if (Number(coupon.remaining_quantity) >= 0 && Number(coupon.remaining_quantity) <= 0) {
+      return res.status(400).json({ success: false, error: '优惠券已领完' });
+    }
+
+    const limit = Number(coupon.per_customer_limit) || 1;
+    const { count } = await supabase
+      .from('customer_coupons')
+      .select('*', { count: 'exact', head: true })
+      .eq('coupon_id', id)
+      .eq('customer_id', customerId);
+    if ((count || 0) >= limit) {
+      return res.status(400).json({ success: false, error: '您已达到领取上限' });
+    }
+
+    const customerCouponId = `cc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const { data: claimed, error: insertError } = await supabase
+      .from('customer_coupons')
+      .insert({
+        id: customerCouponId,
+        coupon_id: id,
+        shop_id: coupon.shop_id,
+        customer_id: customerId,
+        customer_name: customerName || '',
+        customer_phone: customerPhone || '',
+        status: 'unused',
+        created_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single();
+    if (insertError) {
+      console.error('[coupons] 领取优惠券失败:', insertError.message);
+      return res.status(500).json({ success: false, error: '领取优惠券失败' });
+    }
+
+    if (Number(coupon.remaining_quantity) > 0) {
+      await supabase
+        .from('coupons')
+        .update({ remaining_quantity: Number(coupon.remaining_quantity) - 1, updated_at: now })
+        .eq('id', id);
+    }
+
+    res.json({ success: true, data: customerCouponFromDb(claimed) });
+  } catch (error) {
+    console.error('[coupons] 领取优惠券异常:', error);
+    res.status(500).json({ success: false, error: '领取优惠券失败' });
+  }
+});
+
+// 更新优惠券（启用/禁用、修改字段）
+couponsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const now = new Date().toISOString();
+    const payload: Record<string, unknown> = { updated_at: now };
+    if (body.name !== undefined) payload.name = body.name;
+    if (body.type !== undefined) payload.type = body.type;
+    if (body.value !== undefined) payload.value = Number(body.value) || 0;
+    if (body.minOrderAmount !== undefined) payload.min_order_amount = body.minOrderAmount ?? 0;
+    if (body.maxDiscountAmount !== undefined) payload.max_discount_amount = body.maxDiscountAmount ?? null;
+    if (body.applicableScope !== undefined) payload.applicable_scope = body.applicableScope || 'all';
+    if (body.applicableProductIds !== undefined) payload.applicable_product_ids = body.applicableProductIds || [];
+    if (body.totalQuantity !== undefined) payload.total_quantity = body.totalQuantity ?? -1;
+    if (body.remainingQuantity !== undefined) payload.remaining_quantity = body.remainingQuantity ?? body.totalQuantity ?? -1;
+    if (body.perCustomerLimit !== undefined) payload.per_customer_limit = body.perCustomerLimit ?? 1;
+    if (body.startAt !== undefined) payload.start_at = body.startAt;
+    if (body.endAt !== undefined) payload.end_at = body.endAt;
+    if (body.isActive !== undefined) payload.is_active = body.isActive !== false;
+
+    const { data, error } = await supabase.from('coupons').update(payload).eq('id', id).select().single();
+    if (error) {
+      console.error('[coupons] 更新优惠券失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新优惠券失败' });
+    }
+    if (!data) {
+      return res.status(404).json({ success: false, error: '优惠券不存在' });
+    }
+    res.json({ success: true, data: couponFromDb(data) });
+  } catch (error) {
+    console.error('[coupons] 更新优惠券异常:', error);
+    res.status(500).json({ success: false, error: '更新优惠券失败' });
+  }
+});
+
+// 查询顾客优惠券
+couponsRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
+  try {
+    const { customerId } = req.params;
+    const { shopId, status } = req.query;
+    let query = supabase.from('customer_coupons').select('*, coupons(*)').eq('customer_id', customerId);
+    if (shopId) query = query.eq('shop_id', shopId);
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      return res.status(500).json({ success: false, error: '查询优惠券失败' });
+    }
+    res.json({ success: true, data: (data || []).map((cc: DbRecord) => ({
+      ...customerCouponFromDb(cc),
+      coupon: cc.coupons ? couponFromDb(cc.coupons as Record<string, unknown>) : undefined,
+    })) });
+  } catch (error) {
+    console.error('[coupons] 查询顾客优惠券异常:', error);
+    res.status(500).json({ success: false, error: '查询优惠券失败' });
+  }
+});
+
+mainRouter.use('/coupons', couponsRouter);
 
 mainRouter.use('/shops', shopsRouter);
 
@@ -3072,16 +3442,28 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       return res.status(500).json({ success: false, error: '创建订单明细失败' });
     }
 
-    // 扣减库存
+    // 扣减库存并记录变动
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (product) {
-        const newStock = Math.max(0, Number(product.stock || 0) - Number(item.quantity || 1));
-        const newSales = Number(product.sales || 0) + Number(item.quantity || 1);
+        const quantity = Number(item.quantity || 1);
+        const oldStock = Number(product.stock || 0);
+        const newStock = Math.max(0, oldStock - quantity);
+        const newSales = Number(product.sales || 0) + quantity;
         await supabase
           .from('products')
           .update({ stock: newStock, sales: newSales, updated_at: new Date().toISOString() })
           .eq('id', product.id);
+        await insertInventoryLog({
+          shopId,
+          productId: String(product.id),
+          productName: String(product.name || ''),
+          changeAmount: -quantity,
+          stockAfter: newStock,
+          type: 'sale',
+          orderId,
+          reason: `商品订单消费 ${orderNo}`,
+        });
       }
     }
 
@@ -3169,35 +3551,71 @@ productOrdersRouter.get('/customer/:customerId', async (req: Request, res: Respo
   }
 });
 
-// 店铺查看商品订单列表
+// 店铺查看商品订单列表（支持状态筛选、订单号/手机号搜索、分页）
 productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { shopId } = req.params;
-    const { status } = req.query;
-    let query = supabase.from('product_orders').select('*').eq('shop_id', shopId);
+    const { status, keyword, page = '1', pageSize = '10' } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 10));
+
+    let query = supabase
+      .from('product_orders')
+      .select('*', { count: 'exact' })
+      .eq('shop_id', shopId);
+
     if (status) {
-      query = query.eq('status', status);
+      const statuses = (status as string).split(',').filter(Boolean);
+      if (statuses.length === 1) {
+        query = query.eq('status', statuses[0]);
+      } else if (statuses.length > 1) {
+        query = query.in('status', statuses);
+      }
     }
-    const { data: orders, error } = await query.order('created_at', { ascending: false });
+
+    if (keyword) {
+      const k = String(keyword).trim();
+      if (k) {
+        query = query.or(`order_no.ilike.%${k}%,customer_phone.ilike.%${k}%`);
+      }
+    }
+
+    const from = (pageNum - 1) * pageSizeNum;
+    const to = from + pageSizeNum - 1;
+    const { data: orders, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
     if (error) {
+      console.error('[productOrders] 查询店铺订单失败:', error.message);
       return res.status(500).json({ success: false, error: '查询订单失败' });
     }
 
     const orderIds = (orders || []).map((o: Record<string, unknown>) => o.id);
-    const { data: items } = await supabase.from('product_order_items').select('*').in('order_id', orderIds);
     const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
-    (items || []).forEach((i: Record<string, unknown>) => {
-      const list = itemsByOrderId.get(i.order_id) || [];
-      list.push(productOrderItemFromDb(i));
-      itemsByOrderId.set(i.order_id, list);
-    });
+    if (orderIds.length > 0) {
+      const { data: items } = await supabase
+        .from('product_order_items')
+        .select('*')
+        .in('order_id', orderIds);
+      (items || []).forEach((i: Record<string, unknown>) => {
+        const list = itemsByOrderId.get(i.order_id) || [];
+        list.push(productOrderItemFromDb(i));
+        itemsByOrderId.set(i.order_id, list);
+      });
+    }
 
     res.json({
       success: true,
-      data: (orders || []).map((o: Record<string, unknown>) => ({
-        ...productOrderFromDb(o),
-        items: itemsByOrderId.get(o.id) || [],
-      })),
+      data: {
+        list: (orders || []).map((o: Record<string, unknown>) => ({
+          ...productOrderFromDb(o),
+          items: itemsByOrderId.get(o.id) || [],
+        })),
+        total: count || 0,
+        page: pageNum,
+        pageSize: pageSizeNum,
+      },
     });
   } catch (error) {
     console.error('[productOrders] 查询店铺订单异常:', error);
@@ -3248,20 +3666,33 @@ productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res:
       return res.status(500).json({ success: false, error: '更新订单失败' });
     }
 
-    // 取消订单时回滚库存
+    // 取消订单时回滚库存并记录变动
     if (status === 'cancelled') {
       const { data: items } = await supabase.from('product_order_items').select('*').eq('order_id', id);
       for (const item of items || []) {
-        const { data: product } = await supabase.from('products').select('stock, sales').eq('id', item.product_id).single();
+        const { data: product } = await supabase.from('products').select('stock, sales, name').eq('id', item.product_id).single();
         if (product) {
+          const quantity = Number(item.quantity || 1);
+          const newStock = Math.max(0, Number(product.stock || 0) + quantity);
+          const newSales = Math.max(0, Number(product.sales || 0) - quantity);
           await supabase
             .from('products')
             .update({
-              stock: Math.max(0, Number(product.stock || 0) + Number(item.quantity || 1)),
-              sales: Math.max(0, Number(product.sales || 0) - Number(item.quantity || 1)),
+              stock: newStock,
+              sales: newSales,
               updated_at: new Date().toISOString(),
             })
             .eq('id', item.product_id);
+          await insertInventoryLog({
+            shopId: existing.shop_id,
+            productId: String(item.product_id),
+            productName: String(product.name || ''),
+            changeAmount: quantity,
+            stockAfter: newStock,
+            type: 'cancel',
+            orderId: id,
+            reason: `订单取消回滚库存 ${cancelReason || '店铺取消'}`,
+          });
         }
       }
       await syncShopProductsJsonb(existing.shop_id);
@@ -3322,6 +3753,277 @@ productOrdersRouter.post('/:id/verify-pickup', authMiddleware, async (req: Reque
   } catch (error) {
     console.error('[productOrders] 核销异常:', error);
     res.status(500).json({ success: false, error: '核销失败' });
+  }
+});
+
+const productOrderRefundFromDb = (r: DbRecord): Record<string, unknown> => ({
+  id: r.id,
+  orderId: r.order_id,
+  orderNo: r.order_no || r.product_orders?.order_no,
+  shopId: r.shop_id,
+  customerId: r.customer_id,
+  customerName: r.customer_name,
+  amount: Number(r.amount) || 0,
+  reason: r.reason,
+  status: r.status,
+  previousStatus: r.previous_status,
+  rejectReason: r.reject_reason,
+  handlerId: r.handler_id,
+  handlerName: r.handler_name,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  handledAt: r.handled_at,
+});
+
+// 顾客申请商品订单退款
+productOrdersRouter.post('/:id/refund', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ success: false, error: '请填写退款原因' });
+    }
+
+    const { data: order, error: orderError } = await supabase
+      .from('product_orders')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (orderError || !order) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    // 仅余额支付且未结束的订单可申请退款
+    const eligibleStatuses = ['paid', 'preparing', 'ready'];
+    if (!eligibleStatuses.includes(order.status)) {
+      return res.status(400).json({ success: false, error: '当前订单状态不可申请退款' });
+    }
+    if (order.payment_method !== 'balance') {
+      return res.status(400).json({ success: false, error: '仅余额支付订单支持退款' });
+    }
+
+    // 检查是否已有进行中的退款
+    const { data: existingRefund } = await supabase
+      .from('product_order_refunds')
+      .select('id')
+      .eq('order_id', id)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (existingRefund) {
+      return res.status(400).json({ success: false, error: '已存在待处理的退款申请' });
+    }
+
+    const refundId = `por_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const { data: refund, error } = await supabase
+      .from('product_order_refunds')
+      .insert({
+        id: refundId,
+        order_id: id,
+        shop_id: order.shop_id,
+        customer_id: order.customer_id,
+        customer_name: order.customer_name || '',
+        amount: Number(order.payable_amount || 0),
+        reason: String(reason).trim(),
+        status: 'pending',
+        previous_status: order.status,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[productOrders] 创建退款申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '提交退款申请失败' });
+    }
+
+    // 将订单标记为退款中
+    await supabase
+      .from('product_orders')
+      .update({ status: 'refunding', updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    res.json({ success: true, data: productOrderRefundFromDb(refund) });
+  } catch (error) {
+    console.error('[productOrders] 申请退款异常:', error);
+    res.status(500).json({ success: false, error: '申请退款失败' });
+  }
+});
+
+// 店铺查看商品订单退款申请列表
+productOrdersRouter.get('/refunds/shop/:shopId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { shopId } = req.params;
+    const { status } = req.query;
+    let query = supabase
+      .from('product_order_refunds')
+      .select('*, product_orders!inner(order_no)')
+      .eq('shop_id', shopId);
+    if (status) {
+      query = query.eq('status', status);
+    }
+    const { data: refunds, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      console.error('[productOrders] 查询退款申请失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询退款申请失败' });
+    }
+    res.json({
+      success: true,
+      data: (refunds || []).map((r: DbRecord) => productOrderRefundFromDb(r)),
+    });
+  } catch (error) {
+    console.error('[productOrders] 查询退款申请异常:', error);
+    res.status(500).json({ success: false, error: '查询退款申请失败' });
+  }
+});
+
+// 店铺处理商品订单退款申请
+productOrdersRouter.put('/refunds/:id/status', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, rejectReason } = req.body || {};
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: '无效的处理状态' });
+    }
+
+    const { data: refund, error: refundError } = await supabase
+      .from('product_order_refunds')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (refundError || !refund) {
+      return res.status(404).json({ success: false, error: '退款申请不存在' });
+    }
+    if (refund.status !== 'pending') {
+      return res.status(400).json({ success: false, error: '退款申请已处理' });
+    }
+
+    const { data: order } = await supabase
+      .from('product_orders')
+      .select('*')
+      .eq('id', refund.order_id)
+      .single();
+    if (!order) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    const now = new Date().toISOString();
+    const updatePayload: Record<string, unknown> = {
+      status,
+      updated_at: now,
+      handled_at: now,
+    };
+    if (status === 'rejected') {
+      updatePayload.reject_reason = rejectReason || '店铺拒绝';
+    }
+    const handler = (req as Request & { employee?: Record<string, unknown> }).employee;
+    if (handler) {
+      updatePayload.handler_id = handler.id;
+      updatePayload.handler_name = handler.name;
+    }
+
+    const { data: updatedRefund, error } = await supabase
+      .from('product_order_refunds')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) {
+      return res.status(500).json({ success: false, error: '处理退款申请失败' });
+    }
+
+    let orderStatus = refund.previous_status;
+    if (status === 'approved') {
+      orderStatus = 'refunded';
+      // 回滚库存并记录变动
+      const { data: items } = await supabase
+        .from('product_order_items')
+        .select('*')
+        .eq('order_id', refund.order_id);
+      for (const item of items || []) {
+        const { data: product } = await supabase
+          .from('products')
+          .select('stock, sales, name')
+          .eq('id', item.product_id)
+          .single();
+        if (product) {
+          const quantity = Number(item.quantity || 1);
+          const newStock = Math.max(0, Number(product.stock || 0) + quantity);
+          const newSales = Math.max(0, Number(product.sales || 0) - quantity);
+          await supabase
+            .from('products')
+            .update({
+              stock: newStock,
+              sales: newSales,
+              updated_at: now,
+            })
+            .eq('id', item.product_id);
+          await insertInventoryLog({
+            shopId: refund.shop_id,
+            productId: String(item.product_id),
+            productName: String(product.name || ''),
+            changeAmount: quantity,
+            stockAfter: newStock,
+            type: 'refund',
+            orderId: refund.order_id,
+            reason: `订单退款回滚库存 ${order.order_no}`,
+            operatorId: handler ? String(handler.id) : undefined,
+            operatorName: handler ? String(handler.name) : '店铺',
+          });
+        }
+      }
+
+      // 退还余额（仅增加储值余额，不得影响可提现推荐金额）
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('stored_value_balance, balance')
+        .eq('id', refund.customer_id)
+        .eq('shop_id', refund.shop_id)
+        .single();
+      if (customer) {
+        const refundAmount = Number(refund.amount || 0);
+        const currentBalance = Number(customer.stored_value_balance || 0);
+        const currentDisplayBalance = Number(customer.balance || currentBalance);
+        const newBalance = Math.round((currentBalance + refundAmount) * 100) / 100;
+        const newDisplayBalance = Math.round((currentDisplayBalance + refundAmount) * 100) / 100;
+        await supabase
+          .from('customers')
+          .update({
+            stored_value_balance: newBalance,
+            balance: newDisplayBalance,
+            updated_at: now,
+          })
+          .eq('id', refund.customer_id)
+          .eq('shop_id', refund.shop_id);
+
+        await supabase.from('stored_value_transactions').insert({
+          id: `svt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          customer_id: refund.customer_id,
+          type: 'refund',
+          amount: refundAmount,
+          balance_after: newBalance,
+          principal_portion: refundAmount,
+          referral_portion: 0,
+          order_id: refund.order_id,
+          note: `商品订单退款 ${order.order_no}`,
+          created_at: now,
+          created_by: handler ? handler.id : null,
+          created_by_name: handler ? handler.name : '店铺',
+        });
+      }
+
+      await syncShopProductsJsonb(refund.shop_id);
+    }
+
+    await supabase
+      .from('product_orders')
+      .update({ status: orderStatus, updated_at: now })
+      .eq('id', refund.order_id);
+
+    res.json({ success: true, data: productOrderRefundFromDb(updatedRefund) });
+  } catch (error) {
+    console.error('[productOrders] 处理退款异常:', error);
+    res.status(500).json({ success: false, error: '处理退款申请失败' });
   }
 });
 

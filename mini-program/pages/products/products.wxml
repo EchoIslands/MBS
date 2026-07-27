@@ -13,6 +13,18 @@
   </view>
 
   <view class="container products-container">
+    <!-- 优惠券入口 -->
+    <view wx:if="{{coupons.length > 0}}" class="coupon-banner" bindtap="toggleCouponModal">
+      <view class="coupon-banner-left">
+        <view class="coupon-icon">券</view>
+        <view>
+          <view class="coupon-banner-title">领取优惠券</view>
+          <view class="coupon-banner-sub">共 {{coupons.length}} 张，已领 {{myCoupons.length}} 张</view>
+        </view>
+      </view>
+      <view class="coupon-banner-btn">去领取</view>
+    </view>
+
     <!-- 搜索 -->
     <view class="search-bar">
       <mbs-icon name="search" size="28" color="var(--text-tertiary)" />
@@ -48,6 +60,11 @@
     <view class="sort-bar">
       <text class="sort-count">共 {{filteredProducts.length}} 件商品</text>
       <view class="sort-options">
+        <view
+          class="sort-option {{sortBy === 'recommended' ? 'sort-option-active' : ''}}"
+          data-key="recommended"
+          bindtap="onSortTap"
+        >推荐</view>
         <view
           class="sort-option {{sortBy === 'sales' ? 'sort-option-active' : ''}}"
           data-key="sales"
@@ -117,6 +134,43 @@
     <view wx:if="{{!loading && filteredProducts.length === 0}}" class="empty-state">
       <mbs-icon name="shoppingBag" size="72" color="var(--text-tertiary)" />
       <view class="empty-text">暂无相关商品</view>
+    </view>
+  </view>
+
+  <!-- 优惠券领取弹窗 -->
+  <view wx:if="{{showCoupons}}" class="coupon-modal" bindtap="toggleCouponModal">
+    <view class="coupon-modal-content" catchtap="preventBubble">
+      <view class="coupon-modal-header">
+        <text class="coupon-modal-title">领取优惠券</text>
+        <view class="coupon-modal-close" bindtap="toggleCouponModal">×</view>
+      </view>
+      <view class="coupon-modal-body">
+        <view wx:if="{{coupons.length === 0}}" class="coupon-empty">暂无可用优惠券</view>
+        <view
+          wx:for="{{coupons}}"
+          wx:key="id"
+          class="coupon-item"
+        >
+          <view class="coupon-item-info">
+            <view class="coupon-item-name">{{item.name}}</view>
+            <view class="coupon-item-value">
+              <text wx:if="{{item.type === 'percentage'}}">{{item.value}}折</text>
+              <text wx:else>¥{{fmt.formatMoney(item.value)}}</text>
+              <text wx:if="{{item.minOrderAmount}}" class="coupon-item-limit">满¥{{item.minOrderAmount}}可用</text>
+              <text wx:else class="coupon-item-limit">无门槛</text>
+            </view>
+            <view class="coupon-item-expiry">有效期至 {{fmt.formatDate(item.endAt)}}</view>
+          </view>
+          <button
+            class="coupon-claim-btn {{claimedMap[item.id] ? 'coupon-claimed' : ''}}"
+            data-coupon-id="{{item.id}}"
+            bindtap="onClaimCoupon"
+            disabled="{{claimingId === item.id || claimedMap[item.id]}}"
+          >
+            {{claimingId === item.id ? '领取中...' : (claimedMap[item.id] ? '已领取' : '领取')}}
+          </button>
+        </view>
+      </view>
     </view>
   </view>
 </view>

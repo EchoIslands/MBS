@@ -1,4 +1,4 @@
-import { getShopProducts } from '../../api/product';
+import { getShopProducts, getShopCoupons, getCustomerCoupons, claimCoupon } from '../../api/product';
 import { getCustomerPublic } from '../../api/customer';
 import { addToCart, getCartCount } from '../../utils/cart';
 import { getCustomerId } from '../../utils/storage';
@@ -23,9 +23,14 @@ Page({
     categories,
     selectedCategory: 'all',
     searchQuery: '',
-    sortBy: 'sales',
+    sortBy: 'recommended',
     loading: true,
     cartCount: 0,
+    coupons: [],
+    myCoupons: [],
+    claimedMap: {},
+    showCoupons: false,
+    claimingId: '',
   },
 
   onLoad(options) {
@@ -33,6 +38,7 @@ Page({
     this.setData({ shopId });
     this.loadCustomer();
     this.loadProducts();
+    this.loadCoupons();
   },
 
   onShow() {
@@ -75,6 +81,52 @@ Page({
     }
   },
 
+  async loadCoupons() {
+    try {
+      const coupons = await getShopCoupons(this.data.shopId);
+      let myCoupons = [];
+      const customerId = getCustomerId();
+      if (customerId) {
+        myCoupons = await getCustomerCoupons(customerId, this.data.shopId, 'unused');
+      }
+      const claimedMap = {};
+      (Array.isArray(myCoupons) ? myCoupons : []).forEach((mc) => {
+        if (mc.couponId) claimedMap[mc.couponId] = true;
+      });
+      this.setData({ coupons: coupons || [], myCoupons: Array.isArray(myCoupons) ? myCoupons : [], claimedMap });
+    } catch (err) {
+      console.error('[products] 加载优惠券失败:', err);
+    }
+  },
+
+  toggleCouponModal() {
+    this.setData({ showCoupons: !this.data.showCoupons });
+  },
+
+  async onClaimCoupon(e) {
+    const { couponId } = e.currentTarget.dataset;
+    const customerId = getCustomerId();
+    if (!customerId) {
+      wx.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+    this.setData({ claimingId: couponId });
+    try {
+      const { customer } = this.data;
+      await claimCoupon(couponId, customerId, customer?.name || '', customer?.phone || '');
+      wx.showToast({ title: '领取成功', icon: 'success' });
+      await this.loadCoupons();
+    } catch (err) {
+      wx.showToast({ title: err.message || '领取失败', icon: 'none' });
+    } finally {
+      this.setData({ claimingId: '' });
+    }
+  },
+
+  hasClaimed(couponId) {
+    return this.data.myCoupons.some((mc) => mc.couponId === couponId);
+  },
+
   refreshCartCount() {
     this.setData({ cartCount: getCartCount() });
   },
@@ -97,6 +149,15 @@ Page({
     }
 
     switch (sortBy) {
+      case 'recommended':
+        result.sort((a, b) => {
+          const aRec = a.isRecommended ? 1 : 0;
+          const bRec = b.isRecommended ? 1 : 0;
+          if (aRec !== bRec) return bRec - aRec;
+          if ((b.sortOrder || 0) !== (a.sortOrder || 0)) return (b.sortOrder || 0) - (a.sortOrder || 0);
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        });
+        break;
       case 'sales':
         result.sort((a, b) => (b.sales || 0) - (a.sales || 0));
         break;
@@ -159,5 +220,9 @@ Page({
 
   goBack() {
     wx.navigateBack();
+  },
+
+  preventBubble() {
+    // 阻止优惠券弹窗内容区点击事件冒泡关闭弹窗
   },
 });

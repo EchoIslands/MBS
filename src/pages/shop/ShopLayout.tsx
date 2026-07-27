@@ -18,6 +18,7 @@ import {
   Building2,
   AlertTriangle,
   Package,
+  Ticket,
   Bell,
   ArrowLeft,
   Camera,
@@ -127,6 +128,12 @@ const menuItems: MenuItem[] = [
     label: '商品订单',
     path: '/shop/product-orders',
     icon: <Package size={18} />,
+    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
+  },
+  {
+    label: '优惠券管理',
+    path: '/shop/coupons',
+    icon: <Ticket size={18} />,
     roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
   },
   {

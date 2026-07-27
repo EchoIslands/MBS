@@ -19,7 +19,7 @@
   </view>
 
   <view wx:if="{{!loading && orders.length > 0}}" class="container orders-container">
-    <view wx:for="{{orders}}" wx:key="id" class="order-card card">
+    <view wx:for="{{orders}}" wx:key="id" class="order-card card" bindtap="showDetail" data-index="{{index}}">
       <view class="order-header">
         <text class="order-no">订单号：{{item.orderNo}}</text>
         <text class="order-status status-{{item.status}}">{{statusLabels[item.status]}}</text>
@@ -49,6 +49,117 @@
       <view wx:if="{{item.pickupCode}}" class="pickup-code">
         <text>自提码：</text>
         <text class="pickup-code-value">{{item.pickupCode}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 订单详情弹窗 -->
+  <view class="detail-mask" wx:if="{{detailOrder}}" bindtap="closeDetail">
+    <view class="detail-modal" catchtap="onDetailTap">
+      <view class="detail-header">
+        <text class="detail-title">订单详情</text>
+        <view class="detail-close" bindtap="closeDetail">
+          <mbs-icon name="close" size="32" color="var(--text-secondary)" />
+        </view>
+      </view>
+
+      <view class="detail-section">
+        <view class="detail-row">
+          <text class="detail-label">订单号</text>
+          <text class="detail-value">{{detailOrder.orderNo}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">状态</text>
+          <text class="detail-status status-{{detailOrder.status}}">{{statusLabels[detailOrder.status]}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">下单时间</text>
+          <text class="detail-value">{{fmt.formatDateTime(detailOrder.createdAt)}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">提货人</text>
+          <text class="detail-value">{{detailOrder.pickupName || '-'}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">提货电话</text>
+          <text class="detail-value">{{detailOrder.pickupPhone || '-'}}</text>
+        </view>
+        <view class="detail-row" wx:if="{{detailOrder.pickupCode}}">
+          <text class="detail-label">自提码</text>
+          <text class="pickup-code-value">{{detailOrder.pickupCode}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">支付方式</text>
+          <text class="detail-value">{{detailOrder.paymentMethod === 'balance' ? '余额支付' : detailOrder.paymentMethod === 'store_pickup' ? '到店自提付款' : detailOrder.paymentMethod}}</text>
+        </view>
+        <view class="detail-row" wx:if="{{detailOrder.notes}}">
+          <text class="detail-label">备注</text>
+          <text class="detail-value">{{detailOrder.notes}}</text>
+        </view>
+      </view>
+
+      <view class="detail-section">
+        <view class="detail-items-title">商品明细</view>
+        <view wx:for="{{detailOrder.items}}" wx:for-item="goods" wx:key="id" class="detail-item">
+          <image wx:if="{{goods.image}}" class="detail-item-image" src="{{goods.image}}" mode="aspectFill" />
+          <view wx:else class="detail-item-image-placeholder">
+            <mbs-icon name="shoppingBag" size="40" color="var(--text-tertiary)" />
+          </view>
+          <view class="detail-item-info">
+            <view class="detail-item-name">{{goods.name}}</view>
+            <view class="detail-item-spec">¥{{fmt.formatMoney(goods.price)}} × {{goods.quantity}}</view>
+          </view>
+          <view class="detail-item-total">¥{{fmt.formatMoney(goods.totalAmount)}}</view>
+        </view>
+      </view>
+
+      <view class="detail-summary">
+        <text class="detail-summary-text">商品总额 ¥{{fmt.formatMoney(detailOrder.totalAmount)}}</text>
+        <text class="detail-summary-text">优惠 -¥{{fmt.formatMoney(detailOrder.discountAmount)}}</text>
+        <text class="detail-summary-total">合计 ¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
+      </view>
+
+      <view class="detail-actions" wx:if="{{canRequestRefund(detailOrder)}}">
+        <view class="btn btn-danger" bindtap="openRefundModal">申请退款</view>
+        <view class="btn btn-secondary" bindtap="closeDetail">关闭</view>
+      </view>
+      <view class="detail-actions" wx:else>
+        <view class="btn btn-secondary" bindtap="closeDetail">关闭</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 退款申请弹窗 -->
+  <view class="detail-mask" wx:if="{{showRefundModal}}" bindtap="closeRefundModal">
+    <view class="detail-modal" catchtap="onRefundModalTap">
+      <view class="detail-header">
+        <text class="detail-title">申请退款</text>
+        <view class="detail-close" bindtap="closeRefundModal">
+          <mbs-icon name="close" size="32" color="var(--text-secondary)" />
+        </view>
+      </view>
+      <view class="detail-section">
+        <view class="detail-row">
+          <text class="detail-label">退款金额</text>
+          <text class="detail-value" style="color: var(--danger); font-weight: bold;">¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
+        </view>
+        <view class="detail-row">
+          <text class="detail-label">退款原因</text>
+        </view>
+        <textarea
+          class="refund-reason-input"
+          value="{{refundReason}}"
+          bindinput="onRefundReasonInput"
+          placeholder="请填写退款原因"
+          maxlength="200"
+          auto-height
+        />
+      </view>
+      <view class="detail-actions">
+        <view class="btn btn-secondary" bindtap="closeRefundModal">取消</view>
+        <view class="btn btn-danger {{submittingRefund ? 'btn-disabled' : ''}}" bindtap="requestRefund">
+          {{submittingRefund ? '提交中...' : '提交申请'}}
+        </view>
       </view>
     </view>
   </view>

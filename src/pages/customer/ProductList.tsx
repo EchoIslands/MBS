@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Search, Filter, Star, Loader2, Crown } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Search, Filter, Star, Loader2, Crown, Ticket, X } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { Product, ProductCategory } from '../../../shared/types';
-import { productApi } from '../../api';
+import { Product, ProductCategory, Coupon, CustomerCoupon } from '../../../shared/types';
+import { productApi, couponApi } from '../../api';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const categoryNames: Record<ProductCategory, string> = {
@@ -18,14 +18,59 @@ const categoryNames: Record<ProductCategory, string> = {
 const ProductList: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
   const navigate = useNavigate();
-  const { currentShop, cart, addToCart, currentCustomer } = useAppStore();
+  const { cart, addToCart, currentCustomer } = useAppStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
-  const [sortBy, setSortBy] = useState<'sales' | 'price' | 'rating'>('sales');
+  const [sortBy, setSortBy] = useState<'recommended' | 'sales' | 'price' | 'rating'>('recommended');
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [myCoupons, setMyCoupons] = useState<CustomerCoupon[]>([]);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [showCoupons, setShowCoupons] = useState(false);
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const loadCoupons = useCallback(async () => {
+    if (!shopId) return;
+    try {
+      const data = await couponApi.getByShop(shopId, true);
+      setCoupons(Array.isArray(data) ? data : []);
+      if (currentCustomer?.id) {
+        const mine = await couponApi.getCustomerCoupons(currentCustomer.id, shopId, 'unused');
+        setMyCoupons(Array.isArray(mine) ? mine : []);
+      } else {
+        setMyCoupons([]);
+      }
+    } catch (err) {
+      console.error('[ProductList] 加载优惠券失败:', err);
+    }
+  }, [shopId, currentCustomer?.id]);
+
+  const handleClaim = async (coupon: Coupon) => {
+    if (!currentCustomer?.id) {
+      alert('请先登录');
+      navigate(`/customer/login?redirect=/customer/products/${shopId}`);
+      return;
+    }
+    setClaimingId(coupon.id);
+    try {
+      await couponApi.claim(coupon.id, currentCustomer.id, currentCustomer.name, currentCustomer.phone);
+      alert('领取成功');
+      await loadCoupons();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '领取失败');
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const hasClaimed = (couponId: string) => myCoupons.some((mc) => mc.couponId === couponId);
+
+  const displayCoupons = useMemo(() => {
+    const now = new Date();
+    return coupons.filter((c) => new Date(c.endAt) >= now);
+  }, [coupons]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -41,7 +86,8 @@ const ProductList: React.FC = () => {
       }
     };
     fetchProducts();
-  }, [shopId, currentShop?.products?.length]);
+    loadCoupons();
+  }, [shopId, currentCustomer?.id, loadCoupons]);
 
   const filteredProducts = useMemo(() => {
     let result = [...products];
@@ -64,6 +110,13 @@ const ProductList: React.FC = () => {
 
     // 排序
     switch (sortBy) {
+      case 'recommended':
+        result.sort((a, b) => {
+          if (a.isRecommended !== b.isRecommended) return (b.isRecommended ? 1 : 0) - (a.isRecommended ? 1 : 0);
+          if ((b.sortOrder || 0) !== (a.sortOrder || 0)) return (b.sortOrder || 0) - (a.sortOrder || 0);
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+        break;
       case 'sales':
         result.sort((a, b) => b.sales - a.sales);
         break;
@@ -131,6 +184,27 @@ const ProductList: React.FC = () => {
 
         {!loading && (
           <>
+        {/* 优惠券入口 */}
+        {displayCoupons.length > 0 && (
+          <div
+            onClick={() => setShowCoupons(true)}
+            className="bg-gradient-to-r from-red-500 to-orange-500 rounded-xl p-4 text-white shadow-md cursor-pointer flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                <Ticket size={20} />
+              </div>
+              <div>
+                <div className="font-bold">领取优惠券</div>
+                <div className="text-xs text-white/80">
+                  共 {displayCoupons.length} 张优惠券，已领 {myCoupons.length} 张
+                </div>
+              </div>
+            </div>
+            <span className="text-sm bg-white text-orange-500 px-3 py-1 rounded-full font-medium">去领取</span>
+          </div>
+        )}
+
         {/* 搜索栏 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -182,6 +256,16 @@ const ProductList: React.FC = () => {
             共 {filteredProducts.length} 件商品
           </span>
           <div className="flex gap-1 sm:gap-2 overflow-x-auto">
+            <button
+              onClick={() => setSortBy('recommended')}
+              className={`flex-shrink-0 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                sortBy === 'recommended'
+                  ? 'bg-orange-100 text-orange-600'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              推荐
+            </button>
             <button
               onClick={() => setSortBy('sales')}
               className={`flex-shrink-0 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
@@ -302,6 +386,53 @@ const ProductList: React.FC = () => {
         {filteredProducts.length === 0 && (
           <div className="text-center py-8 sm:py-12">
             <p className="text-gray-500 text-sm">暂无相关商品</p>
+          </div>
+        )}
+
+        {/* 优惠券领取弹窗 */}
+        {showCoupons && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-800">领取优惠券</h2>
+                <button onClick={() => setShowCoupons(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                {displayCoupons.length === 0 ? (
+                  <p className="text-center text-gray-500 py-6">暂无可用优惠券</p>
+                ) : (
+                  displayCoupons.map((coupon) => (
+                    <div key={coupon.id} className="border border-orange-100 bg-orange-50 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-gray-800">{coupon.name}</div>
+                          <div className="text-red-500 font-bold mt-1">
+                            {coupon.type === 'percentage' ? `${coupon.value}折` : `¥${Number(coupon.value).toFixed(2)}`}
+                            {coupon.minOrderAmount ? ` · 满¥${Number(coupon.minOrderAmount).toFixed(0)}可用` : ' · 无门槛'}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            有效期至 {new Date(coupon.endAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleClaim(coupon)}
+                          disabled={claimingId === coupon.id || hasClaimed(coupon.id)}
+                          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                            hasClaimed(coupon.id)
+                              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                              : 'bg-orange-500 text-white hover:bg-orange-600'
+                          }`}
+                        >
+                          {claimingId === coupon.id ? '领取中...' : hasClaimed(coupon.id) ? '已领取' : '领取'}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
           </>

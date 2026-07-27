@@ -10,9 +10,11 @@ import {
   Loader2,
   Upload,
   X,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { Product, ProductCategory } from '../../../shared/types';
+import { Product, ProductCategory, ProductInventoryLog } from '../../../shared/types';
 import { productApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
@@ -32,6 +34,8 @@ const ProductManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [inventoryModal, setInventoryModal] = useState<{ open: boolean; product?: Product; stock: string; reason: string }>({ open: false, stock: '', reason: '' });
+  const [logsModal, setLogsModal] = useState<{ open: boolean; product?: Product; logs: ProductInventoryLog[]; loading: boolean }>({ open: false, logs: [], loading: false });
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
@@ -132,6 +136,8 @@ const ProductManagement: React.FC = () => {
           stock: formData.stock || 0,
           sales: formData.sales || 0,
           isActive: formData.isActive ?? true,
+          isRecommended: formData.isRecommended,
+          sortOrder: formData.sortOrder,
           rating: 5,
           reviewCount: 0,
           tags: formData.tags || [],
@@ -215,6 +221,70 @@ const ProductManagement: React.FC = () => {
     }
   };
 
+  const openInventoryModal = (product: Product) => {
+    setInventoryModal({ open: true, product, stock: String(product.stock), reason: '' });
+  };
+
+  const handleAdjustInventory = async () => {
+    if (!shopId || !inventoryModal.product) return;
+    const stockNum = Number(inventoryModal.stock);
+    if (Number.isNaN(stockNum) || stockNum < 0) {
+      alert('请输入有效的库存数量');
+      return;
+    }
+    if (!inventoryModal.reason.trim()) {
+      alert('请填写调整原因');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await productApi.adjustInventory(shopId, inventoryModal.product.id, stockNum, inventoryModal.reason.trim());
+      if (updated) {
+        setProducts(products.map(p => (p.id === inventoryModal.product!.id ? { ...p, ...updated, updatedAt: new Date(updated.updatedAt || Date.now()) } : p)));
+        setInventoryModal({ open: false, stock: '', reason: '' });
+      } else {
+        alert('调整库存失败');
+      }
+    } catch (err: unknown) {
+      console.error('[ProductManagement] 调整库存失败:', err);
+      alert('调整失败：' + (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openLogsModal = async (product: Product) => {
+    if (!shopId) return;
+    setLogsModal({ open: true, product, logs: [], loading: true });
+    try {
+      const logs = await productApi.getInventoryLogs(shopId, product.id);
+      setLogsModal({ open: true, product, logs: logs || [], loading: false });
+    } catch (err: unknown) {
+      console.error('[ProductManagement] 获取库存记录失败:', err);
+      alert('获取记录失败：' + (err as Error).message);
+      setLogsModal({ open: true, product, logs: [], loading: false });
+    }
+  };
+
+  const formatDate = (date?: string | Date) => {
+    if (!date) return '-';
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const isLowStock = (product: Product) => {
+    const threshold = product.lowStockThreshold ?? 10;
+    return product.stock <= threshold;
+  };
+
+  const logTypeLabels: Record<string, string> = {
+    sale: '销售扣减',
+    refund: '退款回滚',
+    manual_adjust: '手动调整',
+    init: '初始库存',
+    cancel: '订单取消',
+  };
+
   return (
     <ShopLayout title="商品管理">
       <div className="min-h-screen bg-gray-50">
@@ -228,7 +298,7 @@ const ProductManagement: React.FC = () => {
         {!loading && (
           <>
             {/* 统计卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
@@ -262,6 +332,19 @@ const ProductManagement: React.FC = () => {
                 <p className="text-gray-500 text-sm">已下架</p>
                 <p className="text-2xl font-bold text-gray-800">
                   {products.filter(p => !p.isActive).length}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm p-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                <AlertTriangle className="text-red-500" size={24} />
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm">库存预警</p>
+                <p className="text-2xl font-bold text-gray-800">
+                  {products.filter(isLowStock).length}
                 </p>
               </div>
             </div>
@@ -305,12 +388,31 @@ const ProductManagement: React.FC = () => {
                             已下架
                           </span>
                         )}
+                        {product.isRecommended && (
+                          <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full">
+                            推荐
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">
                         {product.description}
                       </p>
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => openLogsModal(product)}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="库存记录"
+                      >
+                        <History size={18} />
+                      </button>
+                      <button
+                        onClick={() => openInventoryModal(product)}
+                        className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
+                        title="调整库存"
+                      >
+                        <Package size={18} />
+                      </button>
                       <button
                         onClick={() => toggleStatus(product.id)}
                         className={`p-2 rounded-lg transition-colors ${
@@ -352,9 +454,14 @@ const ProductManagement: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-sm text-gray-500">库存</span>
-                      <span className="text-lg font-medium text-gray-800 ml-2">
+                      <span className={`text-lg font-medium ml-2 ${isLowStock(product) ? 'text-red-500' : 'text-gray-800'}`}>
                         {product.stock}
                       </span>
+                      {isLowStock(product) && (
+                        <span className="ml-2 text-xs px-2 py-0.5 bg-red-100 text-red-600 rounded-full">
+                          库存预警
+                        </span>
+                      )}
                     </div>
                     <div>
                       <span className="text-sm text-gray-500">销量</span>
@@ -519,16 +626,28 @@ const ProductManagement: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    销量
+                    库存预警阈值
                   </label>
                   <input
                     type="number"
-                    value={formData.sales}
-                    onChange={(e) => setFormData({ ...formData, sales: Number(e.target.value) })}
+                    value={formData.lowStockThreshold ?? 10}
+                    onChange={(e) => setFormData({ ...formData, lowStockThreshold: Number(e.target.value) })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                    placeholder="0"
+                    placeholder="10"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  销量
+                </label>
+                <input
+                  type="number"
+                  value={formData.sales}
+                  onChange={(e) => setFormData({ ...formData, sales: Number(e.target.value) })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  placeholder="0"
+                />
               </div>
 
               <div>
@@ -560,17 +679,44 @@ const ProductManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isActive"
-                  checked={formData.isActive}
-                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                  className="w-5 h-5 text-orange-500 rounded"
-                />
-                <label htmlFor="isActive" className="text-sm text-gray-700 cursor-pointer">
-                  立即上架
-                </label>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">排序权重</label>
+                  <input
+                    type="number"
+                    value={formData.sortOrder ?? 0}
+                    onChange={(e) => setFormData({ ...formData, sortOrder: Number(e.target.value) })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    placeholder="数值越大越靠前"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isRecommended"
+                    checked={formData.isRecommended}
+                    onChange={(e) => setFormData({ ...formData, isRecommended: e.target.checked })}
+                    className="w-5 h-5 text-orange-500 rounded"
+                  />
+                  <label htmlFor="isRecommended" className="text-sm text-gray-700 cursor-pointer">
+                    推荐位展示
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="w-5 h-5 text-orange-500 rounded"
+                  />
+                  <label htmlFor="isActive" className="text-sm text-gray-700 cursor-pointer">
+                    立即上架
+                  </label>
+                </div>
               </div>
             </div>
             <div className="p-6 border-t border-gray-100 flex gap-3">
@@ -588,6 +734,141 @@ const ProductManagement: React.FC = () => {
                 {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {saving ? '保存中...' : '保存'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 库存调整弹窗 */}
+      {inventoryModal.open && inventoryModal.product && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setInventoryModal({ open: false, stock: '', reason: '' })}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">调整库存</h2>
+              <button
+                onClick={() => setInventoryModal({ open: false, stock: '', reason: '' })}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">商品：<span className="text-gray-800 font-medium">{inventoryModal.product.name}</span></p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">调整后库存</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={inventoryModal.stock}
+                  onChange={(e) => setInventoryModal((prev) => ({ ...prev, stock: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  placeholder="请输入库存数量"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">调整原因</label>
+                <textarea
+                  value={inventoryModal.reason}
+                  onChange={(e) => setInventoryModal((prev) => ({ ...prev, reason: e.target.value }))}
+                  rows={3}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
+                  placeholder="例如：盘点补货、损耗登记"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setInventoryModal({ open: false, stock: '', reason: '' })}
+                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleAdjustInventory}
+                disabled={saving}
+                className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {saving && <Loader2 size={18} className="animate-spin" />}
+                确认调整
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 库存变动记录弹窗 */}
+      {logsModal.open && logsModal.product && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setLogsModal({ open: false, logs: [], loading: false })}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">库存变动记录 - {logsModal.product.name}</h2>
+              <button
+                onClick={() => setLogsModal({ open: false, logs: [], loading: false })}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {logsModal.loading && (
+                <div className="flex items-center justify-center py-12 text-gray-500">
+                  <Loader2 size={24} className="animate-spin mr-2" />
+                  加载中...
+                </div>
+              )}
+              {!logsModal.loading && logsModal.logs.length === 0 && (
+                <div className="text-center py-12 text-gray-500">暂无变动记录</div>
+              )}
+              {!logsModal.loading && logsModal.logs.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3 text-left rounded-l-lg">时间</th>
+                      <th className="px-4 py-3 text-left">类型</th>
+                      <th className="px-4 py-3 text-right">变动</th>
+                      <th className="px-4 py-3 text-right">库存</th>
+                      <th className="px-4 py-3 text-left rounded-r-lg">原因/备注</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {logsModal.logs.map((log) => (
+                      <tr key={log.id}>
+                        <td className="px-4 py-3 text-gray-600">{formatDate(log.createdAt)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            log.type === 'sale' ? 'bg-red-100 text-red-600' :
+                            log.type === 'refund' || log.type === 'cancel' ? 'bg-green-100 text-green-600' :
+                            log.type === 'manual_adjust' ? 'bg-blue-100 text-blue-600' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {logTypeLabels[log.type] || log.type}
+                          </span>
+                        </td>
+                        <td className={`px-4 py-3 text-right font-medium ${log.changeAmount > 0 ? 'text-green-600' : log.changeAmount < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                          {log.changeAmount > 0 ? '+' : ''}{log.changeAmount}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-800">{log.stockAfter}</td>
+                        <td className="px-4 py-3 text-gray-600 max-w-xs truncate" title={log.reason}>
+                          {log.reason}
+                          {log.operatorName && <span className="text-gray-400 ml-1">({log.operatorName})</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
