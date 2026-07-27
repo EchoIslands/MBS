@@ -3,8 +3,8 @@
  */
 
 /** snake_case → camelCase：用于将 Supabase 查询结果转为前端格式 */
-export function toCamelCase<T = Record<string, any>>(obj: Record<string, any>): T {
-  const result: Record<string, any> = {};
+export function toCamelCase<T = Record<string, unknown>>(obj: Record<string, unknown>): T {
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     const camelKey = key
       .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
@@ -31,6 +31,6 @@ export function toSnakeCase(obj: Record<string, unknown>): Record<string, unknow
 }
 
 /** 批量转换数组 */
-export function toCamelCaseList<T = Record<string, any>>(list: Record<string, any>[]): T[] {
+export function toCamelCaseList<T = Record<string, unknown>>(list: Record<string, unknown>[]): T[] {
   return list.map(toCamelCase) as T[];
 }

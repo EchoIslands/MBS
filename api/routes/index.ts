@@ -5,8 +5,16 @@ import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
 import { mapCustomerBodyToDB, validateCustomerData } from '../utils/customerMapper.js';
+import {
+  calcDiscountedItemPrice,
+  getEffectivePurchaseVIPLevel,
+  getEffectiveStoredValueLevel,
+} from '../../shared/lib/membership.ts';
 
 const mainRouter = Router();
+
+// 数据库原始行通用类型（避免滥用 any）
+type DbRecord = Record<string, unknown>;
 
 // ===================== auth =====================
 const authRouter = Router();
@@ -280,7 +288,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    const updateData: Record<string, any> = {};
+    const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
@@ -358,7 +366,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
     const { id: currentId, shopId } = req.employee!;
     const { name, phone, title, specialty, avatar, password } = req.body || {};
 
-    const updateData: Record<string, any> = {};
+    const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
@@ -402,9 +410,9 @@ interface StockholderBenefitConfig {
   birthdayGift: string;
 }
 
-function getEffectiveStockholderConfig(stockholderConfig: Record<string, any>): StockholderBenefitConfig {
+function getEffectiveStockholderConfig(stockholderConfig: Record<string, unknown>): StockholderBenefitConfig {
   if (stockholderConfig && typeof stockholderConfig === 'object') {
-    const cfg = stockholderConfig as Record<string, any>;
+    const cfg = stockholderConfig as Record<string, unknown>;
     return {
       enabled: cfg.enabled === true,
       serviceDiscountRate: typeof cfg.serviceDiscountRate === 'number' ? cfg.serviceDiscountRate : 0.8,
@@ -426,7 +434,7 @@ function getEffectiveStockholderConfig(stockholderConfig: Record<string, any>): 
   };
 }
 
-function calcStockholderCashback(totalAmount: number, isStockholder: boolean, stockholderConfig: Record<string, any>): number {
+function calcStockholderCashback(totalAmount: number, isStockholder: boolean, stockholderConfig: Record<string, unknown>): number {
   if (!isStockholder) return 0;
   const config = getEffectiveStockholderConfig(stockholderConfig);
   if (!config.enabled || config.cashbackRate <= 0) return 0;
@@ -551,7 +559,7 @@ async function processReferralPromotion(
     if (firstSpentAmount <= 0) return;
 
     // 1. 查询被推荐人的推荐记录（referral_records 正式表）
-    const { data: referralRecords, error: refError } = await supabase
+    const { data: referralRecords, error: _refError } = await supabase
       .from('referral_records')
       .select('*')
       .eq('shop_id', shopId)
@@ -616,7 +624,7 @@ async function processReferralPromotion(
 
     if (!referralRecord) return;
 
-    const record = referralRecord as Record<string, any>;
+    const record = referralRecord as Record<string, unknown>;
     const referrerId = record.referrer_id as string;
     if (!referrerId) return;
 
@@ -643,7 +651,7 @@ async function processReferralPromotion(
     const bonusAmount = Math.round(firstSpentAmount * bonusRate * 100) / 100;
 
     // 6. 自动升级推荐人为股东（如果还不是）
-    const updatePayload: Record<string, any> = {
+    const updatePayload: Record<string, unknown> = {
       withdrawable_referral_amount: Math.round(((referrer.withdrawable_referral_amount || 0) + bonusAmount) * 100) / 100,
       referral_earnings: Math.round(((referrer.referral_earnings || 0) + bonusAmount) * 100) / 100,
     };
@@ -702,7 +710,7 @@ const getBookingTimeSlotStart = (date: Date, slotMinutes: number = BOOKING_TIME_
   return d;
 };
 
-const bookingFromDb = (b: Record<string, any>): Record<string, any> => ({
+const bookingFromDb = (b: Record<string, unknown>): Record<string, unknown> => ({
   id: b.id,
   shopId: b.shop_id,
   customerId: b.customer_id,
@@ -1183,8 +1191,8 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
         .eq('id', shopId)
         .maybeSingle();
       if (shopData?.services) {
-        const services = shopData.services as Record<string, any>[];
-        const svc = services.find((s: Record<string, any>) => s.id === serviceId);
+        const services = shopData.services as Record<string, unknown>[];
+        const svc = services.find((s: Record<string, unknown>) => s.id === serviceId);
         if (svc) {
           finalServiceName = svc.name || finalServiceName;
           finalPrice = svc.price || finalPrice;
@@ -1424,7 +1432,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
 
     // 批量查询客户画像与到店记录，按 customer_id 聚合
     const customerIds = customers.map((c) => c.id).filter(Boolean);
-    let profilesMap: Record<string, any> = {};
+    let profilesMap: Record<string, unknown> = {};
     let visitsMap: Record<string, unknown[]> = {};
 
     if (customerIds.length > 0) {
@@ -1440,14 +1448,14 @@ customersRouter.get('/', async (req: Request, res: Response) => {
       profilesMap = (profiles || []).reduce((acc, p) => {
         acc[p.customer_id] = toCamelCase(p);
         return acc;
-      }, {} as Record<string, any>);
+      }, {} as Record<string, unknown>);
 
       visitsMap = (visits || []).reduce((acc, v) => {
         const camel = toCamelCase(v);
         if (!acc[camel.customerId]) acc[camel.customerId] = [];
         acc[camel.customerId].push(camel);
         return acc;
-      }, {} as Record<string, any[]>);
+      }, {} as Record<string, unknown[]>);
     }
 
     const enriched = customers.map((c) => ({
@@ -1591,7 +1599,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
       return;
     }
 
-    const updatePayload: Record<string, any> = {};
+    const updatePayload: Record<string, unknown> = {};
     const now = new Date().toISOString();
 
     // 购买型 VIP 升级/续费
@@ -1617,7 +1625,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
     }
 
     // 储值会员升级/办理
-    let storedValueTx: Record<string, any> | null = null;
+    let storedValueTx: Record<string, unknown> | null = null;
     let storedAddAmount = 0;
     if (storedValueLevel && typeof storedValueLevel === 'string') {
       const planAmounts: Record<string, number> = {
@@ -1902,7 +1910,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
 
     const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const snakeBody = toSnakeCase(req.body || {});
-    const insertData: Record<string, any> = {
+    const insertData: Record<string, unknown> = {
       id: profileId,
       customer_id: id,
     };
@@ -1955,7 +1963,7 @@ customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
     }
 
     const snakeBody = toSnakeCase(req.body || {});
-    const upsertData: Record<string, any> = { customer_id: id };
+    const upsertData: Record<string, unknown> = { customer_id: id };
 
     for (const [key, value] of Object.entries(snakeBody)) {
       if (key === 'id' || key === 'customer_id') continue;
@@ -2038,8 +2046,8 @@ const getQueueServiceDuration = async (shopId: string, serviceId: string): Promi
       .maybeSingle();
 
     if (data?.services) {
-      const services = data.services as Record<string, any>[];
-      const svc = services.find((s: Record<string, any>) => s.id === serviceId);
+      const services = data.services as Record<string, unknown>[];
+      const svc = services.find((s: Record<string, unknown>) => s.id === serviceId);
       if (svc && typeof svc.duration === 'number' && svc.duration > 0) {
         return svc.duration;
       }
@@ -2074,7 +2082,7 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
 
     // 为每个 booking 补充服务时长
     const list = await Promise.all(
-      (bookings || []).map(async (b: Record<string, any>) => {
+      (bookings || []).map(async (b: Record<string, unknown>) => {
         const duration = await getQueueServiceDuration(shopId, b.service_id);
         return {
           id: b.id,
@@ -2120,11 +2128,11 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
       }
 
       const completedInCurrentSlot = (completed || []).filter(
-        (b: Record<string, any>) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
+        (b: Record<string, unknown>) => getQueueTimeSlotStart(new Date(b.scheduled_time)).getTime() === currentSlotStart.getTime(),
       );
       const maxCompleted =
         completedInCurrentSlot.length > 0
-          ? Math.max(...completedInCurrentSlot.map((b: Record<string, any>) => b.queue_number || 0))
+          ? Math.max(...completedInCurrentSlot.map((b: Record<string, unknown>) => b.queue_number || 0))
           : 0;
       currentNumber = maxCompleted + 1;
     }
@@ -2180,7 +2188,7 @@ queuesRouter.put('/:shopId', async (req: Request, res: Response) => {
     }
 
     const list = await Promise.all(
-      (bookings || []).map(async (b: Record<string, any>) => {
+      (bookings || []).map(async (b: Record<string, unknown>) => {
         const duration = await getQueueServiceDuration(shopId, b.service_id);
         return {
           id: b.id,
@@ -2222,7 +2230,7 @@ mainRouter.use('/queues', queuesRouter);
 // ===================== reviews =====================
 const reviewsRouter = Router();
 
-const reviewFromDb = (r: Record<string, any>): unknown => ({
+const reviewFromDb = (r: Record<string, unknown>): unknown => ({
   id: r.id,
   shopId: r.shop_id,
   customerId: r.customer_id,
@@ -2330,7 +2338,7 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
       .select('overall_score')
       .eq('shop_id', shopId);
 
-    const scores = (reviewStats || []).map((r: Record<string, any>) => Number(r.overall_score)).filter((s: number) => !isNaN(s));
+    const scores = (reviewStats || []).map((r: Record<string, unknown>) => Number(r.overall_score)).filter((s: number) => !isNaN(s));
     const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 5;
 
     await supabase
@@ -2535,7 +2543,7 @@ mainRouter.use('/reviews', reviewsRouter);
 // ===================== shops =====================
 const shopsRouter = Router();
 
-const shopFromDb = (s: Record<string, any>): Record<string, any> => ({
+const shopFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   id: s.id,
   name: s.name,
   description: s.description || '',
@@ -2630,7 +2638,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: {
         ...shopFromDb(data),
-        employees: (employees || []).map((e: Record<string, any>) => ({
+        employees: (employees || []).map((e: Record<string, unknown>) => ({
           id: e.id,
           name: e.name,
           phone: e.phone,
@@ -2672,7 +2680,7 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
       isActive,
     } = req.body || {};
 
-    const updatePayload: Record<string, any> = {
+    const updatePayload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
@@ -2713,16 +2721,67 @@ shopsRouter.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// 商品管理（店铺 products JSONB 字段）
+// 商品管理（已迁移到 products 独立表，同时同步 shops.products JSONB 保持兼容）
+
+// 数据库 product 行 → 前端 Product 对象格式
+const productFromDb = (p: Record<string, unknown>): Record<string, unknown> => ({
+  id: p.id,
+  shopId: p.shop_id,
+  name: p.name,
+  category: p.category,
+  price: Number(p.price) || 0,
+  originalPrice: p.original_price ? Number(p.original_price) : undefined,
+  description: p.description || '',
+  images: p.images || [],
+  stock: Number(p.stock) || 0,
+  sales: Number(p.sales) || 0,
+  isActive: p.is_active !== false,
+  rating: Number(p.rating) || 5,
+  reviewCount: Number(p.review_count) || 0,
+  tags: p.tags || [],
+  createdAt: p.created_at,
+  updatedAt: p.updated_at,
+});
+
+// 前端 Product 对象 → 数据库 products 表字段
+const productToDb = (p: Record<string, unknown>): Record<string, unknown> => ({
+  id: p.id,
+  shop_id: p.shopId,
+  name: p.name,
+  category: p.category,
+  price: p.price,
+  original_price: p.originalPrice,
+  description: p.description,
+  images: p.images,
+  stock: p.stock,
+  sales: p.sales,
+  is_active: p.isActive,
+  rating: p.rating,
+  review_count: p.reviewCount,
+  tags: p.tags,
+  updated_at: p.updatedAt || new Date().toISOString(),
+});
+
+// 将 products 表数据同步回 shops.products JSONB（保持现有 H5/小程序读取 shop.products 的兼容性）
+const syncShopProductsJsonb = async (shopId: string) => {
+  try {
+    const { data: products } = await supabase.from('products').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
+    const jsonbProducts = (products || []).map(productFromDb);
+    await supabase.from('shops').update({ products: jsonbProducts, updated_at: new Date().toISOString() }).eq('id', shopId);
+  } catch (err) {
+    console.error('[shops] 同步 shops.products JSONB 失败:', err);
+  }
+};
+
 shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('shops').select('products').eq('id', id).single();
+    const { data, error } = await supabase.from('products').select('*').eq('shop_id', id).order('created_at', { ascending: false });
     if (error) {
       console.error('[shops] 查询商品失败:', error.message);
       return res.status(500).json({ success: false, error: '查询商品失败' });
     }
-    res.json({ success: true, data: data?.products || [] });
+    res.json({ success: true, data: (data || []).map(productFromDb) });
   } catch (error) {
     console.error('[shops] 获取商品异常:', error);
     res.status(500).json({ success: false, error: '获取商品失败' });
@@ -2737,12 +2796,6 @@ shopsRouter.post('/:id/products', authMiddleware, async (req: Request, res: Resp
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
 
-    const { data: shop, error: fetchError } = await supabase.from('shops').select('products').eq('id', id).single();
-    if (fetchError) {
-      console.error('[shops] 查询店铺商品失败:', fetchError.message);
-      return res.status(500).json({ success: false, error: '查询店铺失败' });
-    }
-
     const newProduct = {
       ...product,
       id: product.id || `prod_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -2750,15 +2803,16 @@ shopsRouter.post('/:id/products', authMiddleware, async (req: Request, res: Resp
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const products = [...(shop?.products || []), newProduct];
 
-    const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
-    if (updateError) {
-      console.error('[shops] 添加商品失败:', updateError.message);
+    const { data, error: insertError } = await supabase.from('products').insert(productToDb(newProduct)).select().single();
+    if (insertError) {
+      console.error('[shops] 添加商品失败:', insertError.message);
       return res.status(500).json({ success: false, error: '添加商品失败' });
     }
 
-    res.status(201).json({ success: true, data: newProduct });
+    await syncShopProductsJsonb(id);
+
+    res.status(201).json({ success: true, data: productFromDb(data) });
   } catch (error) {
     console.error('[shops] 添加商品异常:', error);
     res.status(500).json({ success: false, error: '添加商品失败' });
@@ -2770,24 +2824,27 @@ shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request,
     const { id, productId } = req.params;
     const updates = req.body || {};
 
-    const { data: shop, error: fetchError } = await supabase.from('shops').select('products').eq('id', id).single();
-    if (fetchError) {
-      console.error('[shops] 查询店铺商品失败:', fetchError.message);
-      return res.status(500).json({ success: false, error: '查询店铺失败' });
-    }
+    const dbUpdates = productToDb({ ...updates, updatedAt: new Date().toISOString() });
+    // 防止误改 id/shop_id
+    delete dbUpdates.id;
+    delete dbUpdates.shop_id;
 
-    const products = (shop?.products || []).map((p: Record<string, any>) =>
-      p.id === productId ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
-    );
+    const { data, error: updateError } = await supabase
+      .from('products')
+      .update(dbUpdates)
+      .eq('id', productId)
+      .eq('shop_id', id)
+      .select()
+      .single();
 
-    const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
     if (updateError) {
       console.error('[shops] 更新商品失败:', updateError.message);
       return res.status(500).json({ success: false, error: '更新商品失败' });
     }
 
-    const updated = products.find((p: Record<string, any>) => p.id === productId);
-    res.json({ success: true, data: updated });
+    await syncShopProductsJsonb(id);
+
+    res.json({ success: true, data: productFromDb(data) });
   } catch (error) {
     console.error('[shops] 更新商品异常:', error);
     res.status(500).json({ success: false, error: '更新商品失败' });
@@ -2797,18 +2854,14 @@ shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request,
 shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id, productId } = req.params;
-    const { data: shop, error: fetchError } = await supabase.from('shops').select('products').eq('id', id).single();
-    if (fetchError) {
-      console.error('[shops] 查询店铺商品失败:', fetchError.message);
-      return res.status(500).json({ success: false, error: '查询店铺失败' });
-    }
 
-    const products = (shop?.products || []).filter((p: Record<string, any>) => p.id !== productId);
-    const { error: updateError } = await supabase.from('shops').update({ products, updated_at: new Date().toISOString() }).eq('id', id);
-    if (updateError) {
-      console.error('[shops] 删除商品失败:', updateError.message);
+    const { error: deleteError } = await supabase.from('products').delete().eq('id', productId).eq('shop_id', id);
+    if (deleteError) {
+      console.error('[shops] 删除商品失败:', deleteError.message);
       return res.status(500).json({ success: false, error: '删除商品失败' });
     }
+
+    await syncShopProductsJsonb(id);
 
     res.json({ success: true });
   } catch (error) {
@@ -2819,10 +2872,465 @@ shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Reque
 
 mainRouter.use('/shops', shopsRouter);
 
+// ===================== product orders =====================
+const productOrdersRouter = Router();
+
+const productOrderFromDb = (o: DbRecord): Record<string, unknown> => ({
+  id: o.id,
+  shopId: o.shop_id,
+  customerId: o.customer_id,
+  customerName: o.customer_name,
+  customerPhone: o.customer_phone,
+  orderNo: o.order_no,
+  totalAmount: Number(o.total_amount) || 0,
+  discountAmount: Number(o.discount_amount) || 0,
+  payableAmount: Number(o.payable_amount) || 0,
+  status: o.status,
+  paymentMethod: o.payment_method,
+  paymentStatus: o.payment_status,
+  paidAt: o.paid_at,
+  pickupCode: o.pickup_code,
+  pickupName: o.pickup_name,
+  pickupPhone: o.pickup_phone,
+  notes: o.notes,
+  cancelledAt: o.cancelled_at,
+  cancelReason: o.cancel_reason,
+  completedAt: o.completed_at,
+  createdAt: o.created_at,
+  updatedAt: o.updated_at,
+});
+
+const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => ({
+  id: i.id,
+  orderId: i.order_id,
+  productId: i.product_id,
+  name: i.name,
+  image: i.image,
+  price: Number(i.price) || 0,
+  originalPrice: i.original_price ? Number(i.original_price) : undefined,
+  quantity: Number(i.quantity) || 1,
+  totalAmount: Number(i.total_amount) || 0,
+  category: i.category,
+});
+
+// 生成订单号：PO + 年月日 + 4位随机
+const generateOrderNo = () => {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const randomStr = Math.floor(1000 + Math.random() * 9000);
+  return `PO${dateStr}${randomStr}`;
+};
+
+// 生成到店自提核销码：6 位数字
+const generatePickupCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// 顾客创建商品订单（MVP：支持余额支付和到店自提付款）
+productOrdersRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const { shopId, customerId, items, paymentMethod, pickupName, pickupPhone, notes } = req.body || {};
+
+    if (!shopId || !customerId || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    if (!['balance', 'store_pickup'].includes(paymentMethod)) {
+      return res.status(400).json({ success: false, error: '暂不支持的支付方式' });
+    }
+
+    // 获取顾客信息（含会员等级，用于计算商品折扣）
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select(
+        'id, shop_id, name, phone, stored_value_balance, withdrawable_referral_amount, purchase_vip_level, stored_value_level, purchase_vip_expires_at, stored_value_expires_at'
+      )
+      .eq('id', customerId)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (customerError || !customer) {
+      return res.status(404).json({ success: false, error: '顾客不存在' });
+    }
+
+    // 获取商品信息并校验库存
+    const productIds = items.map((i: Record<string, unknown>) => i.productId);
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('*')
+      .in('id', productIds)
+      .eq('shop_id', shopId);
+
+    if (productsError || !products) {
+      return res.status(500).json({ success: false, error: '查询商品失败' });
+    }
+
+    // 计算顾客有效会员等级，确保前后端折扣价一致
+    const customerForDiscount = {
+      purchaseVIPLevel: customer.purchase_vip_level || 'regular',
+      storedValueLevel: customer.stored_value_level || 'none',
+      purchaseVIPExpiresAt: customer.purchase_vip_expires_at,
+      storedValueExpiresAt: customer.stored_value_expires_at,
+    } as Record<string, unknown>;
+    const purchaseLevel = getEffectivePurchaseVIPLevel(customerForDiscount);
+    const storedLevel = getEffectiveStoredValueLevel(customerForDiscount);
+
+    const productMap = new Map(products.map((p: Record<string, unknown>) => [p.id, p]));
+    let totalAmount = 0;
+    let originalTotalAmount = 0;
+    const orderItems: Array<Record<string, unknown>> = [];
+
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        return res.status(400).json({ success: false, error: `商品不存在: ${item.productId}` });
+      }
+      if (!product.is_active) {
+        return res.status(400).json({ success: false, error: `商品已下架: ${product.name}` });
+      }
+      const quantity = Math.max(1, Math.floor(Number(item.quantity || 1)));
+      if (Number(product.stock || 0) < quantity) {
+        return res.status(400).json({ success: false, error: `商品库存不足: ${product.name}` });
+      }
+
+      const originalPrice = Number(product.price || 0);
+      // 应用与 H5/小程序一致的会员折扣（假发不参与折扣）
+      const unitPrice = calcDiscountedItemPrice(originalPrice, purchaseLevel, storedLevel, product.category);
+      const itemTotal = Math.round(unitPrice * quantity * 100) / 100;
+      const itemOriginalTotal = Math.round(originalPrice * quantity * 100) / 100;
+      totalAmount += itemTotal;
+      originalTotalAmount += itemOriginalTotal;
+
+      orderItems.push({
+        product_id: product.id,
+        name: product.name,
+        image: product.images?.[0] || null,
+        price: unitPrice,
+        original_price: product.original_price,
+        quantity,
+        total_amount: itemTotal,
+        category: product.category,
+      });
+    }
+
+    totalAmount = Math.round(totalAmount * 100) / 100;
+    originalTotalAmount = Math.round(originalTotalAmount * 100) / 100;
+    const payableAmount = totalAmount;
+    const discountAmount = Math.round((originalTotalAmount - totalAmount) * 100) / 100;
+
+    // 余额支付：立即扣减库存和余额
+    if (paymentMethod === 'balance') {
+      const balance = Number(customer.stored_value_balance || 0);
+      if (balance < payableAmount) {
+        return res.status(400).json({ success: false, error: '储值余额不足' });
+      }
+    }
+
+    const orderId = `po_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const orderNo = generateOrderNo();
+    const pickupCode = generatePickupCode();
+
+    // 创建订单
+    const { data: order, error: orderError } = await supabase
+      .from('product_orders')
+      .insert({
+        id: orderId,
+        shop_id: shopId,
+        customer_id: customerId,
+        customer_name: customer.name || '',
+        customer_phone: customer.phone || '',
+        order_no: orderNo,
+        total_amount: totalAmount,
+        discount_amount: discountAmount,
+        payable_amount: payableAmount,
+        status: paymentMethod === 'balance' ? 'paid' : 'pending',
+        payment_method: paymentMethod,
+        payment_status: paymentMethod === 'balance' ? 'paid' : 'pending',
+        paid_at: paymentMethod === 'balance' ? new Date().toISOString() : null,
+        pickup_code: pickupCode,
+        pickup_name: pickupName || customer.name || '',
+        pickup_phone: pickupPhone || customer.phone || '',
+        notes: notes || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (orderError) {
+      console.error('[productOrders] 创建订单失败:', orderError.message);
+      return res.status(500).json({ success: false, error: '创建订单失败' });
+    }
+
+    // 创建订单明细
+    const orderItemsWithOrderId = orderItems.map((i) => ({ ...i, order_id: orderId }));
+    const { error: itemsError } = await supabase.from('product_order_items').insert(orderItemsWithOrderId);
+    if (itemsError) {
+      console.error('[productOrders] 创建订单明细失败:', itemsError.message);
+      // 回滚订单
+      await supabase.from('product_orders').delete().eq('id', orderId);
+      return res.status(500).json({ success: false, error: '创建订单明细失败' });
+    }
+
+    // 扣减库存
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (product) {
+        const newStock = Math.max(0, Number(product.stock || 0) - Number(item.quantity || 1));
+        const newSales = Number(product.sales || 0) + Number(item.quantity || 1);
+        await supabase
+          .from('products')
+          .update({ stock: newStock, sales: newSales, updated_at: new Date().toISOString() })
+          .eq('id', product.id);
+      }
+    }
+
+    // 余额支付：扣减余额并记录流水
+    if (paymentMethod === 'balance') {
+      const currentBalance = Number(customer.stored_value_balance || 0);
+      const currentReferral = Number(customer.withdrawable_referral_amount || 0);
+      const principal = Math.max(0, currentBalance - currentReferral);
+      const usedPrincipal = Math.min(payableAmount, principal);
+      const usedReferral = payableAmount - usedPrincipal;
+
+      const newBalance = Math.round((currentBalance - payableAmount) * 100) / 100;
+      const newReferral = Math.round((currentReferral - usedReferral) * 100) / 100;
+
+      await supabase
+        .from('customers')
+        .update({ stored_value_balance: newBalance, balance: newBalance, withdrawable_referral_amount: newReferral })
+        .eq('id', customerId)
+        .eq('shop_id', shopId);
+
+      await supabase.from('stored_value_transactions').insert({
+        id: `svt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        customer_id: customerId,
+        type: 'consume',
+        amount: -payableAmount,
+        balance_after: newBalance,
+        principal_portion: -usedPrincipal,
+        referral_portion: -usedReferral,
+        order_id: orderId,
+        note: `商品订单消费 ${orderNo}`,
+        created_at: new Date().toISOString(),
+        created_by: customerId,
+        created_by_name: customer.name || '顾客',
+      });
+    }
+
+    await syncShopProductsJsonb(shopId);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        ...productOrderFromDb(order),
+        items: orderItems.map((i) => productOrderItemFromDb({ ...i, order_id: orderId })),
+      },
+    });
+  } catch (error) {
+    console.error('[productOrders] 创建订单异常:', error);
+    res.status(500).json({ success: false, error: '创建订单失败' });
+  }
+});
+
+// 顾客查看自己的商品订单列表
+productOrdersRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
+  try {
+    const { customerId } = req.params;
+    const { shopId } = req.query;
+    let query = supabase.from('product_orders').select('*').eq('customer_id', customerId);
+    if (shopId) {
+      query = query.eq('shop_id', shopId);
+    }
+    const { data: orders, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      return res.status(500).json({ success: false, error: '查询订单失败' });
+    }
+
+    const orderIds = (orders || []).map((o: Record<string, unknown>) => o.id);
+    const { data: items } = await supabase.from('product_order_items').select('*').in('order_id', orderIds);
+    const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
+    (items || []).forEach((i: Record<string, unknown>) => {
+      const list = itemsByOrderId.get(i.order_id) || [];
+      list.push(productOrderItemFromDb(i));
+      itemsByOrderId.set(i.order_id, list);
+    });
+
+    res.json({
+      success: true,
+      data: (orders || []).map((o: Record<string, unknown>) => ({
+        ...productOrderFromDb(o),
+        items: itemsByOrderId.get(o.id) || [],
+      })),
+    });
+  } catch (error) {
+    console.error('[productOrders] 查询顾客订单异常:', error);
+    res.status(500).json({ success: false, error: '查询订单失败' });
+  }
+});
+
+// 店铺查看商品订单列表
+productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { shopId } = req.params;
+    const { status } = req.query;
+    let query = supabase.from('product_orders').select('*').eq('shop_id', shopId);
+    if (status) {
+      query = query.eq('status', status);
+    }
+    const { data: orders, error } = await query.order('created_at', { ascending: false });
+    if (error) {
+      return res.status(500).json({ success: false, error: '查询订单失败' });
+    }
+
+    const orderIds = (orders || []).map((o: Record<string, unknown>) => o.id);
+    const { data: items } = await supabase.from('product_order_items').select('*').in('order_id', orderIds);
+    const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
+    (items || []).forEach((i: Record<string, unknown>) => {
+      const list = itemsByOrderId.get(i.order_id) || [];
+      list.push(productOrderItemFromDb(i));
+      itemsByOrderId.set(i.order_id, list);
+    });
+
+    res.json({
+      success: true,
+      data: (orders || []).map((o: Record<string, unknown>) => ({
+        ...productOrderFromDb(o),
+        items: itemsByOrderId.get(o.id) || [],
+      })),
+    });
+  } catch (error) {
+    console.error('[productOrders] 查询店铺订单异常:', error);
+    res.status(500).json({ success: false, error: '查询订单失败' });
+  }
+});
+
+// 店铺更新订单状态（备货/可提货/完成/取消）
+productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, cancelReason } = req.body || {};
+    const validStatuses = ['pending', 'paid', 'preparing', 'ready', 'completed', 'cancelled', 'refunded'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: '无效的订单状态' });
+    }
+
+    const { data: existing, error: findError } = await supabase.from('product_orders').select('*').eq('id', id).single();
+    if (findError || !existing) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    // 状态机校验：防止已完成/已取消/已退款的订单被再次操作
+    if (['completed', 'cancelled', 'refunded'].includes(existing.status)) {
+      return res.status(400).json({ success: false, error: '订单已结束，无法变更状态' });
+    }
+    // 已支付订单不允许直接取消（需走退款流程），避免顾客钱款损失
+    if (status === 'cancelled' && existing.status !== 'pending') {
+      return res.status(400).json({ success: false, error: '仅待支付订单可直接取消' });
+    }
+
+    const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    if (status === 'completed') {
+      updatePayload.completed_at = new Date().toISOString();
+    }
+    if (status === 'cancelled') {
+      updatePayload.cancelled_at = new Date().toISOString();
+      updatePayload.cancel_reason = cancelReason || '店铺取消';
+    }
+    // 到店自提付款：标记为 paid 时记录付款时间
+    if (status === 'paid' && existing.payment_method === 'store_pickup') {
+      updatePayload.payment_status = 'paid';
+      updatePayload.paid_at = new Date().toISOString();
+    }
+
+    const { data: order, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).select().single();
+    if (error) {
+      return res.status(500).json({ success: false, error: '更新订单失败' });
+    }
+
+    // 取消订单时回滚库存
+    if (status === 'cancelled') {
+      const { data: items } = await supabase.from('product_order_items').select('*').eq('order_id', id);
+      for (const item of items || []) {
+        const { data: product } = await supabase.from('products').select('stock, sales').eq('id', item.product_id).single();
+        if (product) {
+          await supabase
+            .from('products')
+            .update({
+              stock: Math.max(0, Number(product.stock || 0) + Number(item.quantity || 1)),
+              sales: Math.max(0, Number(product.sales || 0) - Number(item.quantity || 1)),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', item.product_id);
+        }
+      }
+      await syncShopProductsJsonb(existing.shop_id);
+    }
+
+    res.json({ success: true, data: productOrderFromDb(order) });
+  } catch (error) {
+    console.error('[productOrders] 更新订单状态异常:', error);
+    res.status(500).json({ success: false, error: '更新订单失败' });
+  }
+});
+
+// 店铺核销自提码
+productOrdersRouter.post('/:id/verify-pickup', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { pickupCode } = req.body || {};
+
+    const { data: order, error: findError } = await supabase.from('product_orders').select('*').eq('id', id).single();
+    if (findError || !order) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    if (order.pickup_code !== pickupCode) {
+      return res.status(400).json({ success: false, error: '核销码错误' });
+    }
+
+    if (order.status === 'completed') {
+      return res.status(400).json({ success: false, error: '订单已完成' });
+    }
+
+    // 余额支付订单：须为 paid/ready 方可核销
+    // 到店自提付款订单：pending 即可核销（顾客到店付款并提货，一次性完成）
+    const canVerify =
+      ['paid', 'ready'].includes(order.status) ||
+      (order.status === 'pending' && order.payment_method === 'store_pickup');
+    if (!canVerify) {
+      return res.status(400).json({ success: false, error: '订单未付款或不可核销' });
+    }
+
+    // 到店自提付款：核销时同时标记为已付款和完成
+    const updatePayload: Record<string, unknown> = {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (order.payment_method === 'store_pickup' && order.payment_status !== 'paid') {
+      updatePayload.payment_status = 'paid';
+      updatePayload.paid_at = new Date().toISOString();
+    }
+
+    const { data: updated, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).select().single();
+    if (error) {
+      return res.status(500).json({ success: false, error: '核销失败' });
+    }
+
+    res.json({ success: true, data: productOrderFromDb(updated) });
+  } catch (error) {
+    console.error('[productOrders] 核销异常:', error);
+    res.status(500).json({ success: false, error: '核销失败' });
+  }
+});
+
+mainRouter.use('/product-orders', productOrdersRouter);
+
 // ===================== settlements =====================
 const settlementsRouter = Router();
 
-const settlementFromDb = (s: Record<string, any>): Record<string, any> => ({
+const settlementFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   id: s.id,
   shopId: s.shop_id,
   customerId: s.customer_id,
@@ -2906,7 +3414,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       const newVisitCount = (customer.visit_count || 0) + 1;
       const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
       const earnedPoints = Math.round(Number(total || 0));
-      const updatePayload: Record<string, any> = {
+      const updatePayload: Record<string, unknown> = {
         visit_count: newVisitCount,
         total_spent: newTotalSpent,
         last_visit_at: new Date().toISOString(),
@@ -2955,8 +3463,8 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       booking_id: bookingId || null,
       stylist_id: null,
       stylist_name: req.employee!.name,
-      service_ids: items.filter((i: Record<string, any>) => i.type === 'service').map((i: Record<string, any>) => i.id),
-      service_names: items.filter((i: Record<string, any>) => i.type === 'service').map((i: Record<string, any>) => i.name),
+      service_ids: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.id),
+      service_names: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.name),
       total_amount: total || 0,
       check_in_time: new Date().toISOString(),
       created_at: new Date().toISOString(),
@@ -3036,13 +3544,13 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
     }
 
     // 关联结算明细（ Supabase 不会自动返回关联表）
-    const settlementIds = (settlements || []).map((s: Record<string, any>) => s.id).filter(Boolean) as string[];
+    const settlementIds = (settlements || []).map((s: Record<string, unknown>) => s.id).filter(Boolean) as string[];
     const { data: itemsData } = await supabase
       .from('settlement_items')
       .select('*')
       .in('settlement_id', settlementIds.length > 0 ? settlementIds : ['__none__']);
     const itemsBySettlement = new Map<string, unknown[]>();
-    (itemsData || []).forEach((item: Record<string, any>) => {
+    (itemsData || []).forEach((item: Record<string, unknown>) => {
       const sid = item.settlement_id as string;
       if (!itemsBySettlement.has(sid)) itemsBySettlement.set(sid, []);
       itemsBySettlement.get(sid)!.push(item);
@@ -3058,7 +3566,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
       { name: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
     > = {};
 
-    (settlements || []).forEach((s: Record<string, any>) => {
+    (settlements || []).forEach((s: Record<string, unknown>) => {
       const createdAt = new Date(s.created_at);
       const isToday = createdAt >= today;
       const isWeek = createdAt >= weekStart;
@@ -3087,7 +3595,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
         ticketCount.year += 1;
       }
 
-      (itemsBySettlement.get(s.id) || []).forEach((item: Record<string, any>) => {
+      (itemsBySettlement.get(s.id) || []).forEach((item: Record<string, unknown>) => {
         const itemTotal = Number(item.total) || 0;
         const qty = Number(item.quantity) || 1;
         const empId = item.employee_id || item.employeeId;
@@ -3121,7 +3629,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
     });
 
     const { data: reviews } = await supabase.from('reviews').select('*').eq('shop_id', shopId);
-    (reviews || []).forEach((r: Record<string, any>) => {
+    (reviews || []).forEach((r: Record<string, unknown>) => {
       if (r.stylist_id && stylistMap[r.stylist_id]) {
         stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
         stylistMap[r.stylist_id].ratingCount += 1;
@@ -3190,20 +3698,20 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
       supabase.from('reviews').select('*').eq('shop_id', shopId),
     ]);
 
-    const performances = (employees || []).map((emp: Record<string, any>) => {
+    const performances = (employees || []).map((emp: Record<string, unknown>) => {
       const stylistId = emp.id;
 
       const revenue = { today: 0, week: 0, month: 0, year: 0 };
       const services = { total: 0, byType: {} as Record<string, number> };
 
-      (settlements || []).forEach((s: Record<string, any>) => {
+      (settlements || []).forEach((s: Record<string, unknown>) => {
         const createdAt = new Date(s.created_at);
         const isToday = createdAt >= today;
         const isWeek = createdAt >= weekStart;
         const isMonth = createdAt >= monthStart;
         const isYear = createdAt >= yearStart;
 
-        (s.items || []).forEach((item: Record<string, any>) => {
+        (s.items || []).forEach((item: Record<string, unknown>) => {
           if (item.employeeId !== stylistId) return;
           const itemTotal = Number(item.total) || 0;
           const qty = Number(item.quantity) || 1;
@@ -3221,7 +3729,7 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
         });
       });
 
-      const stylistReviews = (reviews || []).filter((r: Record<string, any>) => r.stylist_id === stylistId);
+      const stylistReviews = (reviews || []).filter((r: Record<string, unknown>) => r.stylist_id === stylistId);
       const avgRating =
         stylistReviews.length > 0
           ? stylistReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / stylistReviews.length
@@ -3260,7 +3768,7 @@ mainRouter.use('/stylists', stylistsRouter);
 // ===================== member_benefits =====================
 const memberBenefitsRouter = Router();
 
-const benefitFromDb = (b: Record<string, any>): Record<string, any> => ({
+const benefitFromDb = (b: Record<string, unknown>): Record<string, unknown> => ({
   id: b.id,
   customerId: b.customer_id,
   shopId: b.shop_id,
@@ -3310,7 +3818,7 @@ const referralsRouter = Router();
 
 referralsRouter.use(authMiddleware);
 
-const referralFromDb = (r: Record<string, any>): unknown => ({
+const referralFromDb = (r: Record<string, unknown>): unknown => ({
   id: r.id,
   referrerId: r.referrer_id,
   referrerName: r.referrer_name,
@@ -3353,7 +3861,7 @@ const surveysRouter = Router();
 
 surveysRouter.use(authMiddleware);
 
-const surveyFromDb = (s: Record<string, any>): Record<string, any> => ({
+const surveyFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   id: s.id,
   shopId: s.shop_id,
   bookingId: s.booking_id,
@@ -3433,7 +3941,7 @@ const refundsRouter = Router();
 
 refundsRouter.use(authMiddleware);
 
-const refundFromDb = (r: Record<string, any>): unknown => ({
+const refundFromDb = (r: Record<string, unknown>): unknown => ({
   id: r.id,
   shopId: r.shop_id,
   bookingId: r.booking_id,
@@ -3521,7 +4029,7 @@ refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '无效的状态值' });
     }
 
-    const updatePayload: Record<string, any> = { status };
+    const updatePayload: Record<string, unknown> = { status };
     if (status === 'rejected' && rejectReason) {
       updatePayload.reject_reason = rejectReason;
     }
@@ -3556,7 +4064,7 @@ mainRouter.use('/refunds', refundsRouter);
 // ===================== withdrawals =====================
 const withdrawalsRouter = Router();
 
-const withdrawalFromDb = (w: Record<string, any>): unknown => ({
+const withdrawalFromDb = (w: Record<string, unknown>): unknown => ({
   id: w.id,
   shopId: w.shop_id,
   customerId: w.customer_id,
@@ -3732,7 +4240,7 @@ withdrawalsRouter.put('/:id/status', authMiddleware, async (req: Request, res: R
       return res.status(400).json({ success: false, error: '该提现申请已处理' });
     }
 
-    const updatePayload: Record<string, any> = { status, updated_at: new Date().toISOString() };
+    const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
     if (status === 'rejected' && rejectReason) {
       updatePayload.reject_reason = rejectReason;
     }
@@ -3817,19 +4325,19 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       { shopName: string; revenue: number; services: number; customers: Set<string>; employees: number }
     > = {};
 
-    (shops || []).forEach((s: Record<string, any>) => {
+    (shops || []).forEach((s: Record<string, unknown>) => {
       shopStatsMap[s.id] = {
         shopName: s.name,
         revenue: 0,
         services: 0,
         customers: new Set(),
-        employees: (s.employees || []).filter((e: Record<string, any>) => e.is_active !== false).length,
+        employees: (s.employees || []).filter((e: Record<string, unknown>) => e.is_active !== false).length,
       };
     });
 
     const customerPeriodSet = { today: new Set<string>(), week: new Set<string>(), month: new Set<string>(), year: new Set<string>() };
 
-    (settlements || []).forEach((s: Record<string, any>) => {
+    (settlements || []).forEach((s: Record<string, unknown>) => {
       const createdAt = new Date(s.created_at);
       const isToday = createdAt >= today;
       const isWeek = createdAt >= weekStart;
@@ -3847,7 +4355,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
         if (isMonth) shopStatsMap[shopId].revenue += total;
       }
 
-      (s.items || []).forEach((item: Record<string, any>) => {
+      (s.items || []).forEach((item: Record<string, unknown>) => {
         const qty = Number(item.quantity) || 1;
         if (isMonth && (item.type === 'service' || item.type === undefined)) {
           totalServices.month += qty;
@@ -3865,7 +4373,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       });
     });
 
-    (bookings || []).forEach((b: Record<string, any>) => {
+    (bookings || []).forEach((b: Record<string, unknown>) => {
       const scheduledAt = new Date(b.scheduled_time);
       const customerId = b.customer_id;
       if (!customerId) return;
@@ -3888,10 +4396,10 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       { name: string; shopId: string; shopName: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
     > = {};
 
-    (settlements || []).forEach((s: Record<string, any>) => {
+    (settlements || []).forEach((s: Record<string, unknown>) => {
       const createdAt = new Date(s.created_at);
       if (createdAt < monthStart) return;
-      (s.items || []).forEach((item: Record<string, any>) => {
+      (s.items || []).forEach((item: Record<string, unknown>) => {
         const empId = item.employee_id || item.employeeId;
         const empName = item.employee_name || item.employeeName || '发型师';
         if (!empId) return;
@@ -3913,7 +4421,7 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       });
     });
 
-    (reviews || []).forEach((r: Record<string, any>) => {
+    (reviews || []).forEach((r: Record<string, unknown>) => {
       if (r.stylist_id && stylistMap[r.stylist_id]) {
         stylistMap[r.stylist_id].ratingSum += Number(r.overall_score || r.rating || 0);
         stylistMap[r.stylist_id].ratingCount += 1;

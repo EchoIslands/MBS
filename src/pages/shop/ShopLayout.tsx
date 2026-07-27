@@ -124,6 +124,12 @@ const menuItems: MenuItem[] = [
     roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
   },
   {
+    label: '商品订单',
+    path: '/shop/product-orders',
+    icon: <Package size={18} />,
+    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
+  },
+  {
     label: '开单结算',
     path: '/shop/checkout',
     icon: <CreditCard size={18} />,
@@ -168,6 +174,20 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   const location = useLocation();
   const { currentShop, currentEmployee, userRole, logout } = useAppStore();
 
+  // 个人资料弹窗状态（必须在所有 early return 之前调用 Hook）
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: currentEmployee?.name || '',
+    phone: currentEmployee?.phone || '',
+    title: currentEmployee?.title || '',
+    specialty: currentEmployee?.specialty || '',
+    avatar: currentEmployee?.avatar || '',
+    password: '',
+  });
+  const updateCurrentEmployee = useAppStore((state) => state.updateCurrentEmployee);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
   // 未登录 → 回到登录页
   if (!currentEmployee) {
     navigate('/shop/login');
@@ -199,20 +219,6 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 
   const employeeName = currentEmployee?.name || currentShop?.name || '管理后台';
   const roleLabel = roleLabels[userRole || ''] || '管理员';
-
-  // 个人资料弹窗状态
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [profileForm, setProfileForm] = useState({
-    name: currentEmployee?.name || '',
-    phone: currentEmployee?.phone || '',
-    title: currentEmployee?.title || '',
-    specialty: currentEmployee?.specialty || '',
-    avatar: currentEmployee?.avatar || '',
-    password: '',
-  });
-  const updateCurrentEmployee = useAppStore((state) => state.updateCurrentEmployee);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenProfile = () => {
     setProfileForm({

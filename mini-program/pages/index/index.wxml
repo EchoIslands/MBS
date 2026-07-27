@@ -97,8 +97,8 @@
             </view>
             <view class="product-name">{{item.name}}</view>
             <view class="product-price-row">
-              <text wx:if="{{item.originalPrice && item.originalPrice > item.price}}" class="product-original-price">¥{{item.originalPrice}}</text>
-              <text class="product-price">¥{{item.price}}</text>
+              <text wx:if="{{item.originalPrice && item.originalPrice > item.price}}" class="product-original-price">¥{{fmt.formatMoney(item.originalPrice)}}</text>
+              <text class="product-price">¥{{fmt.formatMoney(item.price)}}</text>
             </view>
           </view>
         </view>

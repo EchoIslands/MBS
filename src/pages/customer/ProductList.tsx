@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Search, Filter, Star } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Search, Filter, Star, Loader2, Crown } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory } from '../../../shared/types';
+import { productApi } from '../../api';
+import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const categoryNames: Record<ProductCategory, string> = {
   [ProductCategory.WIG]: '假发',
@@ -16,15 +18,32 @@ const categoryNames: Record<ProductCategory, string> = {
 const ProductList: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
   const navigate = useNavigate();
-  const { currentShop, cart, addToCart } = useAppStore();
+  const { currentShop, cart, addToCart, currentCustomer } = useAppStore();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'all'>('all');
   const [sortBy, setSortBy] = useState<'sales' | 'price' | 'rating'>('sales');
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  useEffect(() => {
+    const fetchProducts = async () => {
+      if (!shopId) return;
+      setLoading(true);
+      try {
+        const data = await productApi.getByShop(shopId);
+        setProducts(data || []);
+      } catch (err) {
+        console.error('[ProductList] 获取商品失败:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, [shopId, currentShop?.products?.length]);
+
   const filteredProducts = useMemo(() => {
-    const products = currentShop?.products || [];
     let result = [...products];
 
     // 搜索过滤
@@ -57,11 +76,23 @@ const ProductList: React.FC = () => {
     }
 
     return result;
-  }, [currentShop?.products, searchQuery, selectedCategory, sortBy]);
+  }, [products, searchQuery, selectedCategory, sortBy]);
 
   const handleAddToCart = (product: Product) => {
+    if (product.stock <= 0) {
+      alert('暂时缺货');
+      return;
+    }
     addToCart(product);
     alert('已添加到购物车！');
+  };
+
+  const getMemberPrice = (product: Product) => {
+    return calcDiscountedItemPriceForCustomer(
+      product.price,
+      currentCustomer,
+      product.category
+    );
   };
 
   return (
@@ -91,6 +122,15 @@ const ProductList: React.FC = () => {
       </header>
 
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        {loading && (
+          <div className="flex items-center justify-center py-12 text-gray-500">
+            <Loader2 size={32} className="animate-spin mr-2" />
+            加载中...
+          </div>
+        )}
+
+        {!loading && (
+          <>
         {/* 搜索栏 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
@@ -185,7 +225,7 @@ const ProductList: React.FC = () => {
             >
               <div className="relative">
                 <img
-                  src={product.images[0]}
+                  src={product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
                   alt={product.name}
                   className="w-full h-40 sm:h-48 object-cover"
                 />
@@ -218,14 +258,31 @@ const ProductList: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-base sm:text-lg font-bold text-red-500">
-                      ¥{product.price}
-                    </span>
-                    {product.originalPrice && (
-                      <span className="text-[10px] sm:text-xs text-gray-400 line-through">
-                        ¥{product.originalPrice}
-                      </span>
-                    )}
+                    {(() => {
+                      const memberPrice = getMemberPrice(product);
+                      const hasDiscount = memberPrice < product.price;
+                      return (
+                        <>
+                          <span className="text-base sm:text-lg font-bold text-red-500">
+                            ¥{memberPrice.toFixed(2)}
+                          </span>
+                          {hasDiscount ? (
+                            <span className="text-[10px] sm:text-xs text-gray-400 line-through">
+                              ¥{product.price.toFixed(2)}
+                            </span>
+                          ) : product.originalPrice ? (
+                            <span className="text-[10px] sm:text-xs text-gray-400 line-through">
+                              ¥{product.originalPrice.toFixed(2)}
+                            </span>
+                          ) : null}
+                          {hasDiscount && (
+                            <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full">
+                              <Crown size={8} /> 会员价
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
                 <button
@@ -246,6 +303,8 @@ const ProductList: React.FC = () => {
           <div className="text-center py-8 sm:py-12">
             <p className="text-gray-500 text-sm">暂无相关商品</p>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

@@ -334,25 +334,6 @@ const CustomerProfileForm: React.FC = () => {
 
     setSaving(true);
 
-    const profileData = {
-      updatedBy: currentEmployee?.id || '',
-      updatedByName: currentEmployee?.name || '技师',
-      haircutStyles,
-      hairColors,
-      permColors,
-      treatments,
-      hairType,
-      hairLength,
-      visitFrequency,
-      budgetRange,
-      communicationStyle,
-      extraServices,
-      visitTimes,
-      notes: notes.trim(),
-      allergies: hasAllergies ? allergies.trim() : '无',
-      productsUsed,
-    };
-
     try {
       const profilePayload: Partial<Customer['profile']> = {
         updatedBy: currentEmployee?.id || '',

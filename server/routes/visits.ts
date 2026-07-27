@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { mockCustomers, mockShops, mockBookings } from '../_internal/mockData.js';
-import { CustomerVisitRecord } from '../_internal/types.js';
+import { Customer, CustomerVisitRecord, Shop, StockholderBenefitConfig } from '../_internal/types.js';
 
 const router = Router();
 
@@ -18,11 +18,11 @@ const stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> =
 
 // ==================== 股东权益计算（与 shared/lib/membership.ts 保持一致）====================
 
-function isActiveStockholder(customer: any): boolean {
+function isActiveStockholder(customer: Customer | undefined): boolean {
   return !!customer?.isStockholder;
 }
 
-function getEffectiveStockholderConfig(shop: any): any {
+function getEffectiveStockholderConfig(shop: Shop | undefined): StockholderBenefitConfig {
   if (shop?.stockholderConfig) {
     return shop.stockholderConfig;
   }
@@ -37,7 +37,7 @@ function getEffectiveStockholderConfig(shop: any): any {
   };
 }
 
-function calcStockholderCashback(totalAmount: number, customer: any, shop: any): number {
+function calcStockholderCashback(totalAmount: number, customer: Customer | undefined, shop: Shop | undefined): number {
   if (!isActiveStockholder(customer)) return 0;
   const config = getEffectiveStockholderConfig(shop);
   if (!config.enabled || config.cashbackRate <= 0) return 0;
@@ -61,8 +61,8 @@ function hasCashbackGrantedForBooking(bookingId: string): boolean {
  * 三方协同：计算逻辑与 H5/小程序 shared/lib/membership.ts 完全一致
  */
 function processStockholderBenefitsOnCheckout(record: CustomerVisitRecord) {
-  const customer = mockCustomers.find((c: any) => c.id === record.customerId);
-  const shop = mockShops.find((s: any) => s.id === record.shopId);
+  const customer = mockCustomers.find((c) => c.id === record.customerId);
+  const shop = mockShops.find((s) => s.id === record.shopId);
   if (!customer || !shop) return;
 
   if (!isActiveStockholder(customer)) return;
@@ -96,13 +96,13 @@ function processStockholderBenefitsOnCheckout(record: CustomerVisitRecord) {
 
     // 更新客户可提现余额（优先 withdrawableReferralAmount，兼容旧字段）
     const oldWithdrawable =
-      (customer as any).withdrawableReferralAmount ??
-      (customer as any).withdrawableAmount ??
+      customer.withdrawableReferralAmount ??
+      customer.withdrawableAmount ??
       customer.referralEarnings ??
       0;
     const newWithdrawable = Math.round((oldWithdrawable + cashbackAmount) * 100) / 100;
-    (customer as any).withdrawableReferralAmount = newWithdrawable;
-    (customer as any).withdrawableAmount = newWithdrawable;
+    customer.withdrawableReferralAmount = newWithdrawable;
+    customer.withdrawableAmount = newWithdrawable;
     customer.referralEarnings = newWithdrawable;
 
     // 站内通知占位（后续可替换为微信模板消息或短信）

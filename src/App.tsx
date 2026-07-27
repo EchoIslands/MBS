@@ -15,7 +15,9 @@ import ReviewPage from "./pages/customer/Review";
 import RefundPage from "./pages/customer/Refund";
 import Feedback from "./pages/customer/Feedback";
 import ProductList from "./pages/customer/ProductList";
+import ProductDetail from "./pages/customer/ProductDetail";
 import Cart from "./pages/customer/Cart";
+import ProductOrders from "./pages/customer/ProductOrders";
 
 // 理发店端
 import ShopLogin from "./pages/shop/Login";
@@ -27,6 +29,7 @@ import OwnerDashboard from "./pages/shop/OwnerDashboard";
 import RefundManagement from "./pages/shop/RefundManagement";
 import WithdrawalManagement from "./pages/shop/WithdrawalManagement";
 import ProductManagement from "./pages/shop/ProductManagement";
+import ProductOrderManagement from "./pages/shop/ProductOrderManagement";
 import CustomerManagement from "./pages/shop/CustomerManagement";
 import CustomerTableManagement from "./pages/shop/CustomerTableManagement";
 import SettlementManagement from "./pages/shop/SettlementManagement";
@@ -152,11 +155,13 @@ export default function App() {
         <Route path="/customer" element={<Navigate to={`/customer/shop/${DEFAULT_SHOP_ID}`} replace />} />
         <Route path="/customer/shop/:id" element={<ShopDetail />} />
         <Route path="/customer/products/:shopId" element={<ProductList />} />
+        <Route path="/customer/product/:shopId/:productId" element={<ProductDetail />} />
         <Route path="/customer/booking/:shopId" element={<Booking />} />
         <Route path="/customer/queue/:bookingId" element={<Queue />} />
         <Route element={<CustomerRouteGuard />}>
           <Route path="/customer/profile" element={<Profile />} />
           <Route path="/customer/cart/:shopId" element={<Cart />} />
+          <Route path="/customer/product-orders/:shopId" element={<ProductOrders />} />
           <Route path="/customer/review/:bookingId" element={<ReviewPage />} />
           <Route path="/customer/refund" element={<RefundPage />} />
           <Route path="/customer/feedback" element={<Feedback />} />
@@ -168,6 +173,7 @@ export default function App() {
           <Route path="/shop" element={<Dashboard />} />
           <Route path="/shop/manage" element={<ShopManage />} />
           <Route path="/shop/products" element={<ProductManagement />} />
+          <Route path="/shop/product-orders" element={<ProductOrderManagement />} />
           <Route path="/shop/reviews" element={<ReviewManagement />} />
           <Route path="/shop/stylist" element={<StylistDashboard />} />
           <Route path="/shop/financial" element={<FinancialReport />} />

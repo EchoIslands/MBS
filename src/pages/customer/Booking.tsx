@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
   Scissors, Sparkles, Award, Zap
@@ -133,14 +133,17 @@ const BookingPage: React.FC = () => {
   [shop]);
 
   // 技师在特定时段是否已被预约
-  const isBarberBusy = (barberId: string, date: string, time: string) =>
-    existingBookings.some((bk) => {
-      if (bk.status === 'cancelled') return false;
-      if (bk.barberId !== barberId && bk.stylistId !== barberId) return false;
-      const bkDate = new Date(bk.scheduledTime);
-      return bkDate.toISOString().split('T')[0] === date
-        && bkDate.toTimeString().slice(0, 5) === time;
-    });
+  const isBarberBusy = useCallback(
+    (barberId: string, date: string, time: string) =>
+      existingBookings.some((bk) => {
+        if (bk.status === 'cancelled') return false;
+        if (bk.barberId !== barberId && bk.stylistId !== barberId) return false;
+        const bkDate = new Date(bk.scheduledTime);
+        return bkDate.toISOString().split('T')[0] === date
+          && bkDate.toTimeString().slice(0, 5) === time;
+      }),
+    [existingBookings]
+  );
 
   // 计算技师可用性与预计等待时间
   // 等待时间基于该技师在当天的已有预约数稳定计算，不再使用 Math.random()，
@@ -185,7 +188,7 @@ const BookingPage: React.FC = () => {
       }
     }
     return best;
-  }, [stylists, selectedDate, selectedTime, existingBookings]);
+  }, [stylists, selectedDate, selectedTime, existingBookings, isBarberBusy]);
 
   const handleBooking = async () => {
     if (!selectedService || !selectedDate || !selectedTime) {

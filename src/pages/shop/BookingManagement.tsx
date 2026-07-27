@@ -102,10 +102,13 @@ const BookingManagement: React.FC = () => {
   const canCancelBooking = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
 
   // 判断预约是否属于当前发型师
-  const isAssignedToMe = (booking: Booking) =>
-    !isCurrentUserStylist ||
-    booking.stylistId === currentEmployee?.id ||
-    booking.barberId === currentEmployee?.id;
+  const isAssignedToMe = useCallback(
+    (booking: Booking) =>
+      !isCurrentUserStylist ||
+      booking.stylistId === currentEmployee?.id ||
+      booking.barberId === currentEmployee?.id,
+    [isCurrentUserStylist, currentEmployee?.id]
+  );
 
   // 完成服务
   const handleCompleteBooking = async () => {
@@ -332,7 +335,7 @@ const BookingManagement: React.FC = () => {
 
       return matchesSearch && matchesStatus && matchesBarber && matchesDate && isAssignedToMe(b);
     });
-  }, [bookings, searchTerm, statusFilter, barberFilter, dateFilter, isCurrentUserStylist, currentEmployee?.id]);
+  }, [bookings, searchTerm, statusFilter, barberFilter, dateFilter, isAssignedToMe]);
 
   // 看板视图用：仅按搜索、日期和发型师筛选，状态用于列内分组
   const boardBookings = useMemo(() => {
@@ -350,7 +353,7 @@ const BookingManagement: React.FC = () => {
 
       return matchesSearch && matchesBarber && matchesDate && isAssignedToMe(b);
     });
-  }, [bookings, searchTerm, barberFilter, dateFilter, isCurrentUserStylist, currentEmployee?.id]);
+  }, [bookings, searchTerm, barberFilter, dateFilter, isAssignedToMe]);
 
   // 按状态分组（看板视图用）
   const boardGroups = useMemo(() => {

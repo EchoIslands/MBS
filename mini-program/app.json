@@ -4,7 +4,11 @@
     "pages/booking/booking",
     "pages/queue/queue",
     "pages/profile/profile",
-    "pages/checkout/checkout"
+    "pages/checkout/checkout",
+    "pages/products/products",
+    "pages/product-detail/product-detail",
+    "pages/cart/cart",
+    "pages/product-orders/product-orders"
   ],
   "window": {
     "backgroundTextStyle": "light",

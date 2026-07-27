@@ -1,25 +1,23 @@
 import { Router, Request, Response } from 'express';
 import { mockBookings, mockShops, mockCustomers } from '../_internal/mockData.js';
+import { Customer, Shop, StockholderBenefitConfig } from '../_internal/types.js';
 
 const router = Router();
 
 // ==================== 股东权益内存存储（实际项目应使用数据库）====================
 declare global {
   var __stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> | undefined;
-  var __stockholderFreeServiceUsageDb: Map<string, Record<string, unknown>> | undefined;
 }
 const stockholderBenefitRecordsDb: Map<string, Record<string, unknown>> =
   globalThis.__stockholderBenefitRecordsDb || (globalThis.__stockholderBenefitRecordsDb = new Map());
-const stockholderFreeServiceUsageDb: Map<string, Record<string, unknown>> =
-  globalThis.__stockholderFreeServiceUsageDb || (globalThis.__stockholderFreeServiceUsageDb = new Map());
 
 // ==================== 股东权益计算（与 shared/lib/membership.ts 保持一致）====================
 
-function isActiveStockholder(customer: any): boolean {
+function isActiveStockholder(customer: Customer | undefined): boolean {
   return !!customer?.isStockholder;
 }
 
-function getEffectiveStockholderConfig(shop: any): any {
+function getEffectiveStockholderConfig(shop: Shop | undefined): StockholderBenefitConfig {
   if (shop?.stockholderConfig) {
     return shop.stockholderConfig;
   }
@@ -34,16 +32,11 @@ function getEffectiveStockholderConfig(shop: any): any {
   };
 }
 
-function calcStockholderCashback(totalAmount: number, customer: any, shop: any): number {
+function calcStockholderCashback(totalAmount: number, customer: Customer | undefined, shop: Shop | undefined): number {
   if (!isActiveStockholder(customer)) return 0;
   const config = getEffectiveStockholderConfig(shop);
   if (!config.enabled || config.cashbackRate <= 0) return 0;
   return Math.round(totalAmount * config.cashbackRate * 100) / 100;
-}
-
-function getCurrentYearMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 /**
@@ -63,8 +56,8 @@ function hasCashbackGrantedForBooking(bookingId: string): boolean {
  * 三方协同：计算逻辑与 H5/小程序 shared/lib/membership.ts 完全一致
  */
 function processStockholderBenefitsOnComplete(booking: BookingRecord) {
-  const customer = mockCustomers.find((c: any) => c.id === booking.customer_id);
-  const shop = mockShops.find((s: any) => s.id === booking.shop_id);
+  const customer = mockCustomers.find((c) => c.id === booking.customer_id);
+  const shop = mockShops.find((s) => s.id === booking.shop_id);
   if (!customer || !shop) return;
 
   if (!isActiveStockholder(customer)) return;
@@ -98,13 +91,13 @@ function processStockholderBenefitsOnComplete(booking: BookingRecord) {
 
     // 更新客户可提现余额（优先 withdrawableReferralAmount，兼容旧字段）
     const oldWithdrawable =
-      (customer as any).withdrawableReferralAmount ??
-      (customer as any).withdrawableAmount ??
+      customer.withdrawableReferralAmount ??
+      customer.withdrawableAmount ??
       customer.referralEarnings ??
       0;
     const newWithdrawable = Math.round((oldWithdrawable + cashbackAmount) * 100) / 100;
-    (customer as any).withdrawableReferralAmount = newWithdrawable;
-    (customer as any).withdrawableAmount = newWithdrawable;
+    customer.withdrawableReferralAmount = newWithdrawable;
+    customer.withdrawableAmount = newWithdrawable;
     customer.referralEarnings = newWithdrawable;
 
     // 站内通知占位（后续可替换为微信模板消息或短信）
@@ -117,9 +110,6 @@ function processStockholderBenefitsOnComplete(booking: BookingRecord) {
   // 注意：当前预约数据结构未标记"是否使用免费服务"，此处预留框架。
   // 实际使用时，应在预约创建/结算时传入 useFreeService 标记。
   // 若本次服务使用了免费额度，则扣除当月配额：
-  // const yearMonth = getCurrentYearMonth();
-  // const usageKey = `${booking.shop_id}_${booking.customer_id}_${yearMonth}`;
-  // ...
 }
 
 interface BookingRecord {

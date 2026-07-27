@@ -25,7 +25,7 @@ const CustomerLogin: React.FC = () => {
       } else {
         setError('手机号不存在，试用账号：13900000001');
       }
-    } catch (err) {
+    } catch (_err) {
       setError('登录失败，请稍后重试');
     } finally {
       setLoading(false);

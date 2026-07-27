@@ -1,0 +1,80 @@
+<wxs src="../../utils/format.wxs" module="fmt" />
+<view class="detail-page">
+  <view class="detail-header">
+    <view class="header-back" bindtap="goBack">
+      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
+    </view>
+    <view class="header-title">商品详情</view>
+    <view class="header-cart" bindtap="goToCart">
+      <mbs-icon name="shoppingBag" size="36" color="var(--text-primary)" />
+      <view wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="detail-loading">
+    <view class="empty-text">加载中...</view>
+  </view>
+
+  <block wx:if="{{!loading && product}}">
+    <view class="detail-image-wrap">
+      <image wx:if="{{product.images && product.images.length > 0}}" class="detail-image" src="{{product.images[0]}}" mode="aspectFill" />
+      <view wx:else class="detail-image-placeholder">
+        <mbs-icon name="shoppingBag" size="96" color="var(--text-tertiary)" />
+      </view>
+      <view wx:if="{{product.tags && product.tags.length > 0}}" class="detail-tags">
+        <text wx:for="{{product.tags}}" wx:key="*this" class="detail-tag">{{item}}</text>
+      </view>
+    </view>
+
+    <view class="detail-info card">
+      <view class="detail-name">{{product.name}}</view>
+      <view class="detail-meta">
+        <mbs-icon name="star" size="24" color="var(--warning)" />
+        <text class="detail-rating">{{product.ratingText}}</text>
+        <text class="detail-sales">已售 {{product.sales || 0}}</text>
+      </view>
+      <view class="detail-price-row">
+        <text wx:if="{{product.memberPrice < product.price}}" class="detail-original-price">¥{{fmt.formatMoney(product.price)}}</text>
+        <text class="detail-price">¥{{fmt.formatMoney(product.memberPrice)}}</text>
+        <text wx:if="{{product.memberPrice < product.price}}" class="detail-vip-tag">会员价</text>
+      </view>
+      <view class="detail-stock">库存：{{product.stockText}}</view>
+
+      <view class="detail-section">
+        <view class="detail-section-title">商品介绍</view>
+        <view class="detail-desc">{{product.description || '暂无商品介绍'}}</view>
+      </view>
+    </view>
+  </block>
+
+  <view wx:if="{{!loading && !product}}" class="detail-empty">
+    <mbs-icon name="shoppingBag" size="96" color="var(--text-tertiary)" />
+    <view class="empty-text">商品不存在或已下架</view>
+    <view class="btn btn-secondary" bindtap="goBack">返回</view>
+  </view>
+
+  <!-- 底部操作栏 -->
+  <view wx:if="{{!loading && product}}" class="detail-footer">
+    <view class="quantity-row">
+      <text class="quantity-label">数量</text>
+      <view class="quantity-control">
+        <view class="quantity-btn" bindtap="onQuantityMinus">
+          <mbs-icon name="minus" size="24" color="var(--text-primary)" />
+        </view>
+        <text class="quantity-value">{{quantity}}</text>
+        <view class="quantity-btn" bindtap="onQuantityPlus">
+          <mbs-icon name="plus" size="24" color="var(--text-primary)" />
+        </view>
+      </view>
+    </view>
+    <view class="detail-actions">
+      <view class="detail-action-cart" bindtap="goToCart">购物车</view>
+      <view
+        class="detail-action-buy {{product.stock <= 0 ? 'detail-action-disabled' : ''}}"
+        bindtap="onAddToCart"
+      >
+        {{product.stock > 0 ? '加入购物车' : '暂时缺货'}}
+      </view>
+    </view>
+  </view>
+</view>

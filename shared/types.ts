@@ -51,19 +51,38 @@ export interface ProductOrder {
   shopId: string;
   customerId: string;
   customerName?: string;
-  items: Array<{
-    productId: string;
-    productName: string;
-    price: number;
-    quantity: number;
-  }>;
+  customerPhone?: string;
+  orderNo: string;
+  items: ProductOrderItem[];
   totalAmount: number;
-  status: 'pending' | 'confirmed' | 'shipped' | 'completed' | 'cancelled';
-  shippingAddress?: string;
-  phone?: string;
+  discountAmount: number;
+  payableAmount: number;
+  status: 'pending' | 'paid' | 'preparing' | 'ready' | 'completed' | 'cancelled' | 'refunded';
+  paymentMethod?: 'balance' | 'store_pickup' | 'wechat' | 'alipay';
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded';
+  paidAt?: Date;
+  pickupCode?: string;
+  pickupName?: string;
+  pickupPhone?: string;
   notes?: string;
+  cancelledAt?: Date;
+  cancelReason?: string;
+  completedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ProductOrderItem {
+  id?: string;
+  orderId?: string;
+  productId: string;
+  name: string;
+  image?: string;
+  price: number;
+  originalPrice?: number;
+  quantity: number;
+  totalAmount: number;
+  category?: ProductCategory;
 }
 
 export interface Employee {

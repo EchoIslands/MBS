@@ -1,46 +1,80 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { ProductCategory } from '../../../shared/types';
-import { calcDiscountedItemPrice } from '../../lib/membership';
+import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
+import { productOrderApi } from '../../api';
 
 const Cart: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
   const navigate = useNavigate();
-  const { 
-    cart, 
-    updateCartItem, 
-    removeFromCart, 
-    toggleCartItemSelection, 
+  const {
+    cart,
+    updateCartItem,
+    removeFromCart,
+    toggleCartItemSelection,
     selectAllCartItems,
     clearCart,
     currentCustomer
   } = useAppStore();
+  const [submitting, setSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'balance' | 'store_pickup'>('balance');
 
   const selectedItems = cart.filter(item => item.selected);
   
   const totalPrice = useMemo(() => {
-    return selectedItems.reduce((sum, item) => {
-      const memberPrice = calcDiscountedItemPrice(
+    const total = selectedItems.reduce((sum, item) => {
+      const memberPrice = calcDiscountedItemPriceForCustomer(
         item.product.price,
-        currentCustomer?.purchaseVIPLevel,
-        currentCustomer?.storedValueLevel,
+        currentCustomer,
         item.product.category
       );
-      return sum + memberPrice * item.quantity;
+      const itemTotal = Math.round(memberPrice * item.quantity * 100) / 100;
+      return sum + itemTotal;
     }, 0);
+    return Math.round(total * 100) / 100;
   }, [selectedItems, currentCustomer]);
 
   const allSelected = cart.length > 0 && cart.every(item => item.selected);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (selectedItems.length === 0) {
       alert('请选择要购买的商品');
       return;
     }
-    alert('订单提交成功！');
-    // 这里可以添加订单处理逻辑
+    if (!shopId || !currentCustomer?.id) {
+      alert('请先登录后再结算');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const order = await productOrderApi.create({
+        shopId,
+        customerId: currentCustomer.id,
+        items: selectedItems.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+        })),
+        paymentMethod,
+        pickupName: currentCustomer.name,
+        pickupPhone: currentCustomer.phone,
+      });
+
+      if (order) {
+        selectedItems.forEach((item) => removeFromCart(item.id));
+        alert('订单提交成功！');
+        navigate(`/customer/product-orders/${shopId}`);
+      } else {
+        alert('结算失败，请重试');
+      }
+    } catch (err: unknown) {
+      console.error('[Cart] 结算失败:', err);
+      alert((err as Error).message || '结算失败，请重试');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -97,10 +131,9 @@ const Cart: React.FC = () => {
               {/* 商品列表 */}
               <div className="space-y-3">
                 {cart.map((item) => {
-                  const memberPrice = calcDiscountedItemPrice(
+                  const memberPrice = calcDiscountedItemPriceForCustomer(
                     item.product.price,
-                    currentCustomer?.purchaseVIPLevel,
-                    currentCustomer?.storedValueLevel,
+                    currentCustomer,
                     item.product.category
                   );
                   const hasDiscount = memberPrice < item.product.price;
@@ -118,7 +151,7 @@ const Cart: React.FC = () => {
                           className="w-5 h-5 text-orange-500 rounded mt-1"
                         />
                         <img
-                          src={item.product.images[0]}
+                          src={item.product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=200&h=200&fit=crop'}
                           alt={item.product.name}
                           className="w-24 h-24 rounded-lg object-cover"
                         />
@@ -172,7 +205,7 @@ const Cart: React.FC = () => {
                           <div className="flex justify-between items-center">
                             <span className="text-sm text-gray-500">
                               小计: <span className="text-red-500 font-medium">
-                                ¥{(memberPrice * item.quantity).toFixed(2)}
+                                ¥{(Math.round(memberPrice * item.quantity * 100) / 100).toFixed(2)}
                               </span>
                             </span>
                             <button
@@ -212,17 +245,29 @@ const Cart: React.FC = () => {
                 已选{selectedItems.length}件
               </span>
             </div>
-            <button
-              onClick={handleCheckout}
-              disabled={selectedItems.length === 0}
-              className={`px-8 py-3 rounded-xl font-medium transition-colors ${
-                selectedItems.length > 0
-                  ? 'bg-orange-500 text-white hover:bg-orange-600'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              结算({selectedItems.length})
-            </button>
+            <div className="flex items-center gap-3">
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as 'balance' | 'store_pickup')}
+                disabled={submitting}
+                className="text-sm border border-gray-300 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+              >
+                <option value="balance">余额支付</option>
+                <option value="store_pickup">到店自提付款</option>
+              </select>
+              <button
+                onClick={handleCheckout}
+                disabled={selectedItems.length === 0 || submitting}
+                className={`px-8 py-3 rounded-xl font-medium transition-colors flex items-center gap-2 ${
+                  selectedItems.length > 0 && !submitting
+                    ? 'bg-orange-500 text-white hover:bg-orange-600'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                {submitting && <Loader2 size={18} className="animate-spin" />}
+                结算({selectedItems.length})
+              </button>
+            </div>
           </div>
         </div>
       )}

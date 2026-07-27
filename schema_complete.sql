@@ -384,6 +384,66 @@ create table if not exists refund_requests (
   created_at timestamptz default now()
 );
 
+-- ========== 16. 商品表（MVP 商城）【新增】 ==========
+create table if not exists products (
+  id text primary key,
+  shop_id text references shops(id) on delete cascade not null,
+  name text not null,
+  category text not null default 'other',
+  price numeric(12,2) not null default 0,
+  original_price numeric(12,2),
+  description text default '',
+  images text[] default '{}',
+  stock integer not null default 0,
+  sales integer not null default 0,
+  is_active boolean default true,
+  rating numeric default 5.0,
+  review_count integer default 0,
+  tags text[] default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- ========== 17. 商品订单主表（MVP 商城）【新增】 ==========
+create table if not exists product_orders (
+  id text primary key,
+  shop_id text references shops(id) on delete cascade not null,
+  customer_id text references customers(id) on delete set null,
+  customer_name text,
+  customer_phone text,
+  order_no text unique not null,
+  total_amount numeric(12,2) not null default 0,
+  discount_amount numeric(12,2) default 0,
+  payable_amount numeric(12,2) not null default 0,
+  status text not null default 'pending',
+  payment_method text,
+  payment_status text default 'pending',
+  paid_at timestamptz,
+  pickup_code text,
+  pickup_name text,
+  pickup_phone text,
+  notes text,
+  cancelled_at timestamptz,
+  cancel_reason text,
+  completed_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- ========== 18. 商品订单明细表（MVP 商城）【新增】 ==========
+create table if not exists product_order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id text references product_orders(id) on delete cascade not null,
+  product_id text references products(id) on delete set null,
+  name text not null,
+  image text,
+  price numeric(12,2) not null default 0,
+  original_price numeric(12,2),
+  quantity integer not null default 1,
+  total_amount numeric(12,2) not null default 0,
+  category text
+);
+
 -- ========== 索引（提高查询速度） ==========
 create index if not exists idx_bookings_shop_id on bookings(shop_id);
 create index if not exists idx_bookings_customer_id on bookings(customer_id);
@@ -407,6 +467,16 @@ create index if not exists idx_satisfaction_surveys_shop_id on satisfaction_surv
 create index if not exists idx_refund_requests_shop_id on refund_requests(shop_id);
 create index if not exists idx_refund_requests_status on refund_requests(status);
 
+-- 商城相关索引
+create index if not exists idx_products_shop_id on products(shop_id);
+create index if not exists idx_products_category on products(category);
+create index if not exists idx_products_is_active on products(is_active);
+create index if not exists idx_product_orders_shop_id on product_orders(shop_id);
+create index if not exists idx_product_orders_customer_id on product_orders(customer_id);
+create index if not exists idx_product_orders_status on product_orders(status);
+create index if not exists idx_product_orders_order_no on product_orders(order_no);
+create index if not exists idx_product_order_items_order_id on product_order_items(order_id);
+
 -- ========== 行级安全（RLS）策略 ==========
 alter table shops enable row level security;
 alter table employees enable row level security;
@@ -423,6 +493,9 @@ alter table settlement_items enable row level security;
 alter table referral_records enable row level security;
 alter table satisfaction_surveys enable row level security;
 alter table refund_requests enable row level security;
+alter table products enable row level security;
+alter table product_orders enable row level security;
+alter table product_order_items enable row level security;
 
 -- ========== 完成提示 ==========
 -- 执行完成后，你的数据库结构将包含：
@@ -430,4 +503,5 @@ alter table refund_requests enable row level security;
 -- 2. 双轨会员体系所需的所有字段和表
 -- 3. 开单结算、权益核销、储值流水等功能表
 -- 4. 推荐返现记录表
--- 5. 所有必要的索引和 RLS 安全策略
+-- 5. MVP 商城所需商品表、商品订单表及明细表
+-- 6. 所有必要的索引和 RLS 安全策略

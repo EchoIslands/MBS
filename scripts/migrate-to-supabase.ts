@@ -20,9 +20,22 @@ import { createClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  Booking,
+  Customer,
+  CustomerVisitRecord,
+  Employee,
+  MemberBenefitRecord,
+  Queue,
+  Review,
+  Settlement,
+  SettlementItem,
+  Shop,
+} from '../shared/types.js';
 
 // Node.js 20 没有原生 WebSocket，需要注入 ws 包
-(globalThis as any).WebSocket = WebSocket;
+const globalWithWebSocket = globalThis as Record<string, unknown>;
+globalWithWebSocket.WebSocket = WebSocket;
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -50,7 +63,7 @@ if (!confirmed) {
 }
 
 const raw = fs.readFileSync(path.resolve(exportPath), 'utf-8');
-const data = JSON.parse(raw);
+const data = JSON.parse(raw) as Record<string, unknown>;
 
 const ensureArray = (val: unknown) => (Array.isArray(val) ? val : []);
 const toISO = (val: unknown) => {
@@ -89,7 +102,7 @@ async function truncateTables() {
       console.log(`   ✓ ${table}（已为空）`);
       continue;
     }
-    const ids = rows.map((r: any) => r[pk]);
+    const ids = rows.map((r: Record<string, unknown>) => String(r[pk]));
     // 每次最多删 1000 条
     for (let i = 0; i < ids.length; i += 1000) {
       const batch = ids.slice(i, i + 1000);
@@ -104,7 +117,7 @@ async function truncateTables() {
 }
 
 async function migrateShops() {
-  const shops = ensureArray(data['mbs_shops_cache']);
+  const shops = ensureArray(data['mbs_shops_cache']) as Shop[];
 
   // 如果没有店铺数据，创建默认 shop1 并补充默认员工/服务/商品，否则店铺端无法登录
   if (shops.length === 0) {
@@ -187,7 +200,7 @@ async function migrateShops() {
   }
 
   console.log(`🏪 迁移店铺：${shops.length} 条`);
-  const rows = shops.map((shop: any) => ({
+  const rows = shops.map((shop) => ({
     id: shop.id,
     name: shop.name,
     description: shop.description,
@@ -214,10 +227,10 @@ async function migrateShops() {
   if (error) throw new Error(`店铺迁移失败：${error.message}`);
 
   // 同时把 employees 抽出来写入 employees 表，否则登录找不到人
-  const employees: any[] = [];
-  shops.forEach((shop: any) => {
-    const shopEmployees = ensureArray(shop.employees);
-    shopEmployees.forEach((emp: any) => {
+  const employees: Record<string, unknown>[] = [];
+  shops.forEach((shop) => {
+    const shopEmployees = ensureArray(shop.employees) as Employee[];
+    shopEmployees.forEach((emp) => {
       employees.push({
         id: emp.id,
         shop_id: shop.id,
@@ -243,11 +256,11 @@ async function migrateShops() {
 }
 
 async function migrateCustomers() {
-  const customers = ensureArray(data['mbs_customers_cache']);
+  const customers = ensureArray(data['mbs_customers_cache']) as Customer[];
   if (!customers.length) return;
 
   console.log(`👥 迁移客户：${customers.length} 条`);
-  const rows = customers.map((c: any) => ({
+  const rows = customers.map((c) => ({
     id: c.id,
     shop_id: c.shopId || 'shop1',
     name: c.name,
@@ -299,8 +312,8 @@ async function migrateCustomers() {
   if (error) throw new Error(`客户迁移失败：${error.message}`);
 
   // 迁移客户画像
-  const profiles: any[] = [];
-  customers.forEach((c: any) => {
+  const profiles: Record<string, unknown>[] = [];
+  customers.forEach((c) => {
     if (!c.profile) return;
     profiles.push({
       id: c.profile.id,
@@ -332,9 +345,9 @@ async function migrateCustomers() {
   }
 
   // 迁移到店记录
-  const visitRecords: any[] = [];
-  customers.forEach((c: any) => {
-    ensureArray(c.visitRecords).forEach((vr: any) => {
+  const visitRecords: Record<string, unknown>[] = [];
+  customers.forEach((c) => {
+    (ensureArray(c.visitRecords) as CustomerVisitRecord[]).forEach((vr) => {
       visitRecords.push({
         id: vr.id,
         customer_id: c.id,
@@ -362,11 +375,11 @@ async function migrateCustomers() {
 }
 
 async function migrateBookings() {
-  const bookings = ensureArray(data['mbs_bookings_cache']);
+  const bookings = ensureArray(data['mbs_bookings_cache']) as Booking[];
   if (!bookings.length) return;
 
   console.log(`📅 迁移预约：${bookings.length} 条`);
-  const rows = bookings.map((b: any) => ({
+  const rows = bookings.map((b) => ({
     id: b.id,
     shop_id: b.shopId || 'shop1',
     customer_id: b.customerId,
@@ -389,11 +402,11 @@ async function migrateBookings() {
 }
 
 async function migrateSettlements() {
-  const settlements = ensureArray(data['mbs_settlements_cache']);
+  const settlements = ensureArray(data['mbs_settlements_cache']) as Settlement[];
   if (!settlements.length) return;
 
   console.log(`💰 迁移结算：${settlements.length} 条`);
-  const rows = settlements.map((s: any) => ({
+  const rows = settlements.map((s) => ({
     id: s.id,
     shop_id: s.shopId || 'shop1',
     customer_id: s.customerId,
@@ -416,9 +429,9 @@ async function migrateSettlements() {
   if (error) throw new Error(`结算迁移失败：${error.message}`);
 
   // 迁移结算明细
-  const items: any[] = [];
-  settlements.forEach((s: any) => {
-    ensureArray(s.items).forEach((item: any, idx: number) => {
+  const items: Record<string, unknown>[] = [];
+  settlements.forEach((s) => {
+    (ensureArray(s.items) as SettlementItem[]).forEach((item, idx: number) => {
       items.push({
         id: item.uuid || `${s.id}_item_${idx}`,
         settlement_id: s.id,
@@ -441,11 +454,11 @@ async function migrateSettlements() {
 }
 
 async function migrateBenefits() {
-  const benefits = ensureArray(data['mbs_benefits_cache']);
+  const benefits = ensureArray(data['mbs_benefits_cache']) as MemberBenefitRecord[];
   if (!benefits.length) return;
 
   console.log(`🎁 迁移会员权益：${benefits.length} 条`);
-  const rows = benefits.map((b: any) => ({
+  const rows = benefits.map((b) => ({
     id: b.id,
     shop_id: b.shopId || 'shop1',
     customer_id: b.customerId,
@@ -469,11 +482,11 @@ async function migrateBenefits() {
 }
 
 async function migrateQueues() {
-  const queues = ensureArray(data['mbs_queues_cache']);
+  const queues = ensureArray(data['mbs_queues_cache']) as Queue[];
   if (!queues.length) return;
 
   console.log(`⏳ 迁移排队队列：${queues.length} 条`);
-  const rows = queues.map((q: any) => ({
+  const rows = queues.map((q) => ({
     shop_id: q.shopId || q.id,
     current_number: q.currentNumber ?? 0,
     estimated_wait_time: q.estimatedWaitTime ?? 15,
@@ -485,11 +498,11 @@ async function migrateQueues() {
 }
 
 async function migrateReviews() {
-  const reviews = ensureArray(data['mbs_reviews_cache']);
+  const reviews = ensureArray(data['mbs_reviews_cache']) as Review[];
   if (!reviews.length) return;
 
   console.log(`⭐ 迁移评价：${reviews.length} 条`);
-  const rows = reviews.map((r: any) => ({
+  const rows = reviews.map((r) => ({
     id: r.id,
     shop_id: r.shopId || 'shop1',
     customer_id: r.customerId,

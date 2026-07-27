@@ -1,11 +1,30 @@
-import { getShop } from '../../api/shop';
-import { getCustomerId, setRouteParams } from '../../utils/storage';
+import { getShop, getShopReviews } from '../../api/shop';
+import { getCustomerId, setRouteParams, clearCustomerId } from '../../utils/storage';
+
+function toTwoDigits(n) {
+  return String(n).padStart(2, '0');
+}
+
+function formatDate(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  return `${d.getFullYear()}-${toTwoDigits(d.getMonth() + 1)}-${toTwoDigits(d.getDate())}`;
+}
+
+function buildStarList(score) {
+  const rounded = Math.round(score || 0);
+  return [1, 2, 3, 4, 5].map((i) => ({ key: i, filled: i <= rounded }));
+}
 
 Page({
   data: {
     shop: null,
     stylists: [],
     displayTags: [],
+    products: [],
+    reviews: [],
+    reviewCount: 0,
+    ratingStars: [],
     loading: true,
     error: '',
     showLogin: false,
@@ -29,10 +48,19 @@ Page({
       if (shop) {
         const stylists = (shop.employees || []).filter((e) => this.isStylist(e) && e.isActive !== false);
         const displayTags = (shop.services || []).slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
+        const products = (shop.products || []).filter((p) => p.isActive).slice(0, 4);
+        const reviews = (await this.loadReviews(shop.id)).map((r) => ({
+          ...r,
+          starList: buildStarList(r.overallScore || r.rating || 0),
+        }));
         this.setData({
           shop,
           stylists,
           displayTags,
+          products,
+          reviews,
+          reviewCount: reviews.length,
+          ratingStars: this.buildStars(shop.rating || 4.8),
           loading: false,
         });
       } else {
@@ -44,12 +72,44 @@ Page({
     }
   },
 
+  async loadReviews(shopId) {
+    try {
+      return await getShopReviews(shopId);
+    } catch (err) {
+      console.warn('[index] 加载评价失败:', err);
+      return [];
+    }
+  },
+
+  buildStars(rating) {
+    const rounded = Math.round(rating || 0);
+    return [1, 2, 3, 4, 5].map((i) => ({ key: i, filled: i <= rounded }));
+  },
+
   goToProfile() {
     wx.navigateTo({ url: '/pages/profile/profile' });
   },
 
+  handleLogout() {
+    wx.showModal({
+      title: '退出登录',
+      content: '确定要退出当前账号吗？',
+      success: (res) => {
+        if (res.confirm) {
+          clearCustomerId();
+          wx.showToast({ title: '已退出登录', icon: 'success' });
+        }
+      },
+    });
+  },
+
+  formatDate,
+
   goToProducts() {
-    wx.showToast({ title: '商品商城开发中', icon: 'none' });
+    const shopId = (this.data.shop && this.data.shop.id) || 'shop1';
+    wx.navigateTo({
+      url: `/pages/products/products?shopId=${shopId}`,
+    });
   },
 
   goToBooking() {

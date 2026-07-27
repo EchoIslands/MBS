@@ -38,6 +38,14 @@ function formatShortDate(isoString) {
   return d.getFullYear() + '/' + toTwoDigits(d.getMonth() + 1) + '/' + toTwoDigits(d.getDate());
 }
 
+function formatMoney(amount) {
+  amount = Number(amount);
+  if (amount !== amount) {
+    amount = 0;
+  }
+  return amount.toFixed(2);
+}
+
 function formatDiscount(discount) {
   discount = parseFloat(discount);
   if (discount != discount) {
@@ -116,6 +124,7 @@ module.exports = {
   formatDate: formatDate,
   formatDateTime: formatDateTime,
   formatShortDate: formatShortDate,
+  formatMoney: formatMoney,
   formatDiscount: formatDiscount,
   getPurchaseVIPLabel: getPurchaseVIPLabel,
   getStoredValueLabel: getStoredValueLabel,

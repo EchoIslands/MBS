@@ -143,6 +143,7 @@
 | 坑 59 | 小程序提现弹窗样式缺失，三方视觉不一致 | 中 | 3.15.7 |
 | 坑 60 | Vercel 部署报 `TS2339`/`TS2538`，`unknown` 类型上直接访问属性 | 严重 | 3.15.8 |
 | 坑 61 | 本地 `npm run build` 不检查 `api/` 目录，Vercel 构建时才暴露后端类型错误 | 严重 | 3.15.8 |
+| 坑 62 | Vercel 项目 Git 绑定损坏：Connect 显示成功但 GitHub webhook 为空，push 不触发部署 | 严重 | 3.15.9 |
 
 ---
 
@@ -2250,6 +2251,115 @@ npm run server:api
   - “本地构建通过”必须包含前后端；
   - 项目初始化时就应配置好全量类型检查，不能依赖 Vercel 当类型检查器。
 - **相关文件**：`tsconfig.json`、`package.json`。
+
+### 3.15.9 Vercel Git 绑定损坏与项目重建（2026-07-24）
+
+> 坑 62：Vercel 项目显示 `Connected just now`，但 GitHub 仓库 `Settings → Webhooks` 中始终没有 Vercel 的 webhook，push 后 Vercel Deployments 不更新。
+
+#### 1. 现象
+
+- 本地 `git push origin main` 成功，GitHub 仓库 commit 已更新；
+- Vercel 项目 **Settings → Git** 显示 `EchoIslands/MBS Connected just now`；
+- GitHub **Settings → Webhooks** 页面为空，没有任何 `https://api.vercel.com/...` 的 webhook；
+- Vercel **Deployments** 列表里最新部署仍是数小时甚至数天前的旧 commit；
+- Disconnect / Reconnect 多次无效，GitHub App 权限（repository hooks 等）均正常。
+
+#### 2. 根因分析
+
+Vercel 项目最早通常通过 **GitHub OAuth 集成** 创建，并自动在 GitHub 仓库注册 webhook。当以下任一情况发生时，旧绑定会损坏：
+
+- OAuth 授权过期或被撤销；
+- GitHub 仓库被转移、重命名、或所有权变更；
+- 手动删除了 GitHub 仓库里的 Vercel webhook；
+- Vercel 平台把项目迁移到 GitHub App 集成，但迁移未彻底完成；
+- 同一仓库在 Vercel 上被多个项目/账号连接过，导致 integration ID 不一致。
+
+**核心问题**：Vercel 项目内部保存的 Git 集成配置和当前 GitHub App 安装没有同步。Connect/Disconnect 只刷新了表面状态，没有重新注册仓库级 webhook。
+
+#### 3. 修复方案
+
+唯一可靠修复是 **重新 Import 仓库**，让 Vercel 走完整绑定流程。
+
+#### 4. 完整恢复操作流程
+
+**前置准备**
+
+1. 打开旧 Vercel 项目 → **Settings → Environment Variables**，记录所有变量名（Value 可能因 Sensitive 隐藏）。
+2. 到 Supabase 控制台获取：
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+3. 如果本地 `E:\MBS` 有 `.env`、`.env.local`、`.env.production` 等文件，直接从中复制值。
+4. 如果 `JWT_SECRET` 没有备份，准备一个新的随机字符串（如 `mbs-jwt-secret-2024-xxxxxxxx`）。
+
+**步骤 1：创建新 Vercel 项目**
+
+1. 登录 [vercel.com](https://vercel.com)，进入 Dashboard。
+2. 点右上角 **Add New → Project**。
+3. 在仓库列表找到 `EchoIslands/MBS`，点 **Import**。
+4. Framework Preset 选择 **Vite**（通常自动识别）。
+5. 不需要改 Build Command / Output Directory，保持默认即可。
+6. 点 **Deploy**。
+
+**步骤 2：迁移环境变量**
+
+1. 新项目创建后，进入 **Settings → Environment Variables**。
+2. 逐个添加：
+
+| 变量名 | 值来源 | 环境勾选 |
+|---|---|---|
+| `SUPABASE_URL` | Supabase 控制台 / 本地 `.env` | Production、Preview |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase 控制台 / 本地 `.env` | Production、Preview |
+| `JWT_SECRET` | 本地 `.env` 或重新生成 | Production、Preview |
+| `VITE_USE_REAL_API` | `true` | Production、Preview |
+
+3. Hobby 免费计划下 **Development 环境变量锁死**，无法通过网页勾选；本项目只需 Production + Preview 即可，本地开发依赖 `.env` 文件。
+4. 每加一个变量点 **Save**。
+
+**步骤 3：验证自动部署**
+
+1. 在本地执行一次空提交：
+   ```bash
+   cd E:\MBS
+   git commit --allow-empty -m "chore: test Vercel webhook after import"
+   git push origin main
+   ```
+2. 等待 10-30 秒，刷新新项目 **Deployments** 页面。
+3. 应该出现新的部署记录，Source 为 `main`，Commit 为刚才的空提交。
+4. 同时到 GitHub **Settings → Webhooks** 查看，应该出现一条 `https://api.vercel.com/v1/integrations/git/...`。
+
+**步骤 4：域名迁移（如需保留旧域名）**
+
+1. 新项目部署成功后，会分配新域名（如 `mbs-xxxx.vercel.app`）。
+2. 如果要把旧项目的 `mbs-gamma.vercel.app` 切过来：
+   - 旧项目 **Settings → Domains**，删除 `mbs-gamma.vercel.app`；
+   - 新项目 **Settings → Domains**，添加 `mbs-gamma.vercel.app`，按提示验证。
+3. 如果还绑定了自定义域名（如 `www.hfmbs.cn`），同样在新项目 Domains 里重新添加并更新 DNS。
+
+**步骤 5：清理旧项目**
+
+1. 确认新项目运行正常：
+   - 首页能打开；
+   - 登录/预约等核心流程可用；
+   - Vercel Functions 日志无报错。
+2. 旧项目可以进入 **Settings → General → Delete Project** 删除，避免混淆。
+
+#### 5. 验证清单
+
+- [ ] 新项目 Deployments 出现最新 commit；
+- [ ] GitHub Webhooks 出现 Vercel 的 webhook；
+- [ ] 环境变量 4 个全部添加并 Save；
+- [ ] 生产域名 / 自定义域名指向新项目；
+- [ ] 小程序、H5、店铺端访问的 API 域名已更新为新的生产地址；
+- [ ] 核心功能线上实测通过。
+
+#### 6. 教训
+
+- **不要反复 Disconnect/Reconnect 旧项目**：绑定损坏时，表面 Connect 成功不代表 webhook 已重建。
+- **环境变量必须提前备份**：Sensitive 变量在 Vercel 网页不可见，丢失后只能去 Supabase 控制台或本地 `.env` 找。
+- **项目重建比修绑定更快**：Vercel 的 Git 集成状态保存在平台侧，用户侧没有强制刷新 webhook 的入口，重建项目是最干净的方案。
+- **域名切换要最后做**：避免新功能还没验证就切域名，导致线上服务中断。
+
+- **相关文件**：Vercel 项目设置、GitHub 仓库 Webhooks、Supabase 项目设置、本地 `.env` 文件。
 
 ---
 

@@ -1,0 +1,122 @@
+<wxs src="../../utils/format.wxs" module="fmt" />
+<view class="products-page">
+  <!-- 自定义头部 -->
+  <view class="products-header">
+    <view class="header-back" bindtap="goBack">
+      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
+    </view>
+    <view class="header-title">商品商城</view>
+    <view class="header-cart" bindtap="goToCart">
+      <mbs-icon name="shoppingBag" size="36" color="var(--text-primary)" />
+      <view wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount}}</view>
+    </view>
+  </view>
+
+  <view class="container products-container">
+    <!-- 搜索 -->
+    <view class="search-bar">
+      <mbs-icon name="search" size="28" color="var(--text-tertiary)" />
+      <input
+        type="text"
+        placeholder="搜索商品..."
+        value="{{searchQuery}}"
+        bindinput="onSearchInput"
+        class="search-input"
+      />
+    </view>
+
+    <!-- 分类 -->
+    <view class="category-card card">
+      <view class="card-title">
+        <mbs-icon name="filter" size="28" color="var(--primary)" />
+        商品分类
+      </view>
+      <scroll-view scroll-x class="category-scroll">
+        <view
+          wx:for="{{categories}}"
+          wx:key="key"
+          class="category-chip {{selectedCategory === item.key ? 'category-chip-active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onCategoryTap"
+        >
+          {{item.name}}
+        </view>
+      </scroll-view>
+    </view>
+
+    <!-- 排序 -->
+    <view class="sort-bar">
+      <text class="sort-count">共 {{filteredProducts.length}} 件商品</text>
+      <view class="sort-options">
+        <view
+          class="sort-option {{sortBy === 'sales' ? 'sort-option-active' : ''}}"
+          data-key="sales"
+          bindtap="onSortTap"
+        >销量</view>
+        <view
+          class="sort-option {{sortBy === 'price' ? 'sort-option-active' : ''}}"
+          data-key="price"
+          bindtap="onSortTap"
+        >价格</view>
+        <view
+          class="sort-option {{sortBy === 'rating' ? 'sort-option-active' : ''}}"
+          data-key="rating"
+          bindtap="onSortTap"
+        >评分</view>
+      </view>
+    </view>
+
+    <!-- 加载 -->
+    <view wx:if="{{loading}}" class="empty-state">
+      <view class="empty-text">加载中...</view>
+    </view>
+
+    <!-- 商品列表 -->
+    <view wx:if="{{!loading && filteredProducts.length > 0}}" class="product-grid">
+      <view
+        wx:for="{{filteredProducts}}"
+        wx:key="id"
+        class="product-card"
+        data-product-id="{{item.id}}"
+        bindtap="goToDetail"
+      >
+        <view class="product-image-wrap">
+          <image wx:if="{{item.images && item.images.length > 0}}" class="product-image" src="{{item.images[0]}}" mode="aspectFill" />
+          <view wx:else class="product-image-placeholder">
+            <mbs-icon name="shoppingBag" size="56" color="var(--text-tertiary)" />
+          </view>
+          <view wx:if="{{item.displayTags && item.displayTags.length > 0}}" class="product-tags">
+            <text wx:for="{{item.displayTags}}" wx:for-item="tag" wx:key="*this" class="product-tag">{{tag}}</text>
+          </view>
+        </view>
+        <view class="product-info">
+          <view class="product-name">{{item.name}}</view>
+          <view class="product-meta">
+            <mbs-icon name="star" size="20" color="var(--warning)" />
+            <text class="product-rating">{{item.ratingText}}</text>
+            <text class="product-sales">已售{{item.sales || 0}}</text>
+          </view>
+          <view class="product-price-row">
+              <text wx:if="{{item.memberPrice < item.price}}" class="product-original-price">¥{{fmt.formatMoney(item.price)}}</text>
+              <text class="product-price">¥{{fmt.formatMoney(item.memberPrice)}}</text>
+              <text wx:if="{{item.memberPrice < item.price}}" class="product-vip-tag">会员价</text>
+            </view>
+          <button
+            class="product-add-btn"
+            data-product="{{item}}"
+            catchtap="onAddToCart"
+            disabled="{{item.stock <= 0}}"
+          >
+            {{item.stock > 0 ? '加入购物车' : '暂时缺货'}}
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 空状态 -->
+    <view wx:if="{{!loading && filteredProducts.length === 0}}" class="empty-state">
+      <mbs-icon name="shoppingBag" size="72" color="var(--text-tertiary)" />
+      <view class="empty-text">暂无相关商品</view>
+    </view>
+  </view>
+</view>

@@ -11,16 +11,18 @@ import {
   MessageCircle,
   LogOut,
   Scissors,
+  Crown,
 } from 'lucide-react';
 import { Shop, Review, UserRole, Employee } from '../../../shared/types';
 import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
 import { getAvatarUrl } from '../../lib/avatar';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
+import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { setCurrentShop, logout } = useAppStore();
+  const { setCurrentShop, logout, currentCustomer } = useAppStore();
   const [shop, setShop] = useState<Shop | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
@@ -243,7 +245,7 @@ const ShopDetail: React.FC = () => {
                     className="bg-gray-50 rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
                   >
                     <img
-                      src={product.images[0]}
+                      src={product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
                       alt={product.name}
                       className="w-full h-32 object-cover"
                     />
@@ -251,16 +253,35 @@ const ShopDetail: React.FC = () => {
                       <h4 className="font-medium text-gray-800 text-sm line-clamp-2 mb-1">
                         {product.name}
                       </h4>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-bold text-amber-600">
-                          ¥{product.price}
-                        </span>
-                        {product.originalPrice && (
-                          <span className="text-xs text-gray-400 line-through">
-                            ¥{product.originalPrice}
-                          </span>
-                        )}
-                      </div>
+                      {(() => {
+                        const memberPrice = calcDiscountedItemPriceForCustomer(
+                          product.price,
+                          currentCustomer,
+                          product.category
+                        );
+                        const hasDiscount = memberPrice < product.price;
+                        return (
+                          <div className="flex items-baseline gap-1 flex-wrap">
+                            <span className="text-lg font-bold text-amber-600">
+                              ¥{memberPrice.toFixed(2)}
+                            </span>
+                            {hasDiscount ? (
+                              <>
+                                <span className="text-xs text-gray-400 line-through">
+                                  ¥{product.price.toFixed(2)}
+                                </span>
+                                <span className="text-[10px] inline-flex items-center gap-0.5 px-1 py-0.5 bg-orange-100 text-orange-600 rounded-full">
+                                  <Crown size={8} /> 会员价
+                                </span>
+                              </>
+                            ) : product.originalPrice ? (
+                              <span className="text-xs text-gray-400 line-through">
+                                ¥{product.originalPrice.toFixed(2)}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}

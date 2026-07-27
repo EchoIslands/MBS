@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1550,6 +1550,104 @@ export const productApi = {
       return result?.success === true;
     }
     return false;
+  },
+};
+
+/**
+ * 带错误透传的 HTTP 请求封装（MVP 商城订单等需要明确后端错误信息的场景）
+ * - 非 2xx 或后端返回 success: false 时，抛出后端 error 字段或状态码信息
+ * - 与 http 的区别：不把错误静默吞掉为 null，便于页面 catch 后给用户精确提示
+ */
+async function httpThrowing<T>(url: string, opts: RequestInit = {}): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+    },
+    signal: controller.signal,
+  });
+  clearTimeout(timeoutId);
+
+  const data = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    error?: string;
+    data?: T;
+  };
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || `请求失败 (${res.status})`);
+  }
+  return data.data as T;
+}
+
+// 商品订单 API（MVP 商城）
+export const productOrderApi = {
+  create: async (data: {
+    shopId: string;
+    customerId: string;
+    items: Array<{ productId: string; quantity: number }>;
+    paymentMethod: 'balance' | 'store_pickup';
+    pickupName?: string;
+    pickupPhone?: string;
+    notes?: string;
+  }): Promise<ProductOrder | null> => {
+    if (USE_REAL_API) {
+      return await httpThrowing<ProductOrder>(`${API_BASE}/product-orders`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    }
+    return null;
+  },
+  getByCustomer: async (customerId: string, shopId?: string): Promise<ProductOrder[]> => {
+    if (USE_REAL_API) {
+      const query = shopId ? `?shopId=${encodeURIComponent(shopId)}` : '';
+      return await httpThrowing<ProductOrder[]>(
+        `${API_BASE}/product-orders/customer/${customerId}${query}`
+      );
+    }
+    return [];
+  },
+  getByShop: async (shopId: string, status?: string): Promise<ProductOrder[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const query = status ? `?status=${encodeURIComponent(status)}` : '';
+      return await httpThrowing<ProductOrder[]>(
+        `${API_BASE}/product-orders/shop/${shopId}${query}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    }
+    return [];
+  },
+  updateStatus: async (orderId: string, status: string, cancelReason?: string): Promise<ProductOrder | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      return await httpThrowing<ProductOrder>(
+        `${API_BASE}/product-orders/${orderId}/status`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ status, cancelReason }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    }
+    return null;
+  },
+  verifyPickup: async (orderId: string, pickupCode: string): Promise<ProductOrder | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      return await httpThrowing<ProductOrder>(
+        `${API_BASE}/product-orders/${orderId}/verify-pickup`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ pickupCode }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    }
+    return null;
   },
 };
 
