@@ -205,15 +205,15 @@
   <!-- 底部固定操作栏（与 H5 ShopDetail 对齐） -->
   <view class="fixed-bottom-bar" wx:if="{{shop}}">
     <view class="index-bottom-actions">
-      <view class="btn btn-primary-plain index-bottom-btn" bindtap="goToProducts">
+      <view class="index-bottom-btn index-bottom-btn-store" bindtap="goToProducts">
         <view class="index-bottom-icon-wrap">
-          <mbs-icon name="shoppingBag" size="32" color="var(--accent)" />
+          <mbs-icon name="shoppingBag" size="40" color="var(--orange-700)" />
         </view>
         <view class="index-bottom-text">商品商城</view>
       </view>
-      <view class="btn btn-blue index-bottom-btn" bindtap="goToBooking">
+      <view class="index-bottom-btn index-bottom-btn-booking" bindtap="goToBooking">
         <view class="index-bottom-icon-wrap">
-          <mbs-icon name="calendar" size="32" color="var(--card-bg)" />
+          <mbs-icon name="clock" size="40" color="#ffffff" />
         </view>
         <view class="index-bottom-text">立即预约</view>
       </view>

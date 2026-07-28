@@ -1,7 +1,7 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="profile-page">
   <!-- 顶部会员卡（视觉焦点 — 让会员一眼看到自己的权益价值） -->
-  <view wx:if="{{customer}}" class="vip-header {{purchaseLevel === PurchaseVIPLevel.REGULAR ? 'gradient-vip-regular' : ''}} {{purchaseLevel === PurchaseVIPLevel.BRONZE ? 'gradient-vip-bronze' : ''}} {{purchaseLevel === PurchaseVIPLevel.SILVER ? 'gradient-vip-silver' : ''}} {{purchaseLevel === PurchaseVIPLevel.GOLD ? 'gradient-vip-gold' : ''}} {{purchaseLevel === PurchaseVIPLevel.DIAMOND ? 'gradient-vip-diamond' : ''}}">
+  <view wx:if="{{customer}}" class="{{vipHeaderClass}}">
     <!-- 装饰背景 -->
     <view class="vip-decor vip-decor-1"></view>
     <view class="vip-decor vip-decor-2"></view>
@@ -285,7 +285,7 @@
     </view>
 
     <!-- 退出登录 -->
-    <view class="btn btn-danger" bindtap="handleLogout">
+    <view class="btn btn-logout" bindtap="handleLogout">
       <mbs-icon name="logOut" size="28" color="var(--danger)" />
       退出登录
     </view>

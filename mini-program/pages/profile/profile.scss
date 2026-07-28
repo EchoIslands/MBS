@@ -445,6 +445,21 @@
   margin-top: 6rpx;
 }
 
+.btn-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  width: 100%;
+  padding: 28rpx 0;
+  border-radius: 24rpx;
+  background: #fff;
+  color: var(--danger);
+  border: 2rpx solid #fecaca;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
 /* 弹窗 */
 .modal-mask {
   position: fixed;

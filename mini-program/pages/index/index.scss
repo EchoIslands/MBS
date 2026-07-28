@@ -490,28 +490,51 @@
 
 /* 底部固定 CTA */
 .fixed-bottom-bar {
-  padding: 20rpx 32rpx;
+  padding: 32rpx;
+  background: #fff;
+  border-top: 1rpx solid var(--gray-200);
+  box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.08);
 }
 
 .index-bottom-actions {
   display: flex;
-  gap: 20rpx;
+  gap: 24rpx;
 }
 
 .index-bottom-btn {
   flex: 1;
-  height: 96rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12rpx;
-  padding: 0;
+  gap: 16rpx;
+  min-height: 112rpx;
+  padding: 32rpx 48rpx;
+  border-radius: 24rpx;
+  font-size: 36rpx;
+  font-weight: 700;
   line-height: 1;
+  transition: opacity 0.15s;
+}
+
+.index-bottom-btn:active {
+  opacity: 0.9;
+}
+
+.index-bottom-btn-store {
+  background: var(--orange-50);
+  color: var(--orange-700);
+  border: 2rpx solid var(--orange-200);
+}
+
+.index-bottom-btn-booking {
+  background: linear-gradient(135deg, var(--primary-light), var(--primary));
+  color: #fff;
+  box-shadow: 0 8rpx 24rpx rgba(79, 142, 247, 0.28);
 }
 
 .index-bottom-icon-wrap {
-  width: 32rpx;
-  height: 32rpx;
+  width: 40rpx;
+  height: 40rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -519,7 +542,5 @@
 }
 
 .index-bottom-text {
-  font-size: 30rpx;
-  font-weight: 600;
   line-height: 1;
 }

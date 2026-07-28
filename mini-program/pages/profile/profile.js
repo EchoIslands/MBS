@@ -132,6 +132,7 @@ Page({
     totalSpent: 0,
     myBenefits: [],
     stockholderSummary: { isStockholder: false, enabled: false, benefits: [] },
+    vipHeaderClass: 'vip-header gradient-vip-regular',
     // 预约详情弹窗
     viewingBooking: null,
     cancelling: false,
@@ -212,6 +213,7 @@ Page({
         shop = null;
       }
       const stockholderSummary = getStockholderBenefitSummary(customer, shop);
+      const vipHeaderClass = this.computeVipHeaderClass(purchaseLevel);
       const payload = {
         customer,
         bookings: allBookings,
@@ -229,6 +231,7 @@ Page({
         totalSpent: customer?.totalSpent ?? 0,
         myBenefits: this.computeMyBenefits(customer),
         stockholderSummary,
+        vipHeaderClass,
       };
       const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
       if (sizeKB > 500) {
@@ -482,5 +485,16 @@ Page({
       [BenefitType.REDO]: 'alertCircle',
     };
     return map[type] || 'gift';
+  },
+
+  computeVipHeaderClass(purchaseLevel) {
+    const map = {
+      [PurchaseVIPLevel.REGULAR]: 'gradient-vip-regular',
+      [PurchaseVIPLevel.BRONZE]: 'gradient-vip-bronze',
+      [PurchaseVIPLevel.SILVER]: 'gradient-vip-silver',
+      [PurchaseVIPLevel.GOLD]: 'gradient-vip-gold',
+      [PurchaseVIPLevel.DIAMOND]: 'gradient-vip-diamond',
+    };
+    return `vip-header ${map[purchaseLevel] || 'gradient-vip-regular'}`;
   },
 });
