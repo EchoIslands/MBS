@@ -42,6 +42,64 @@ function formatShortDate(isoString) {
   return `${d.getFullYear()}/${toTwoDigits(d.getMonth() + 1)}/${toTwoDigits(d.getDate())}`;
 }
 
+function truncate(str, maxLen = 80) {
+  if (!str || typeof str !== 'string') return str;
+  return str.length > maxLen ? str.slice(0, maxLen) + '…' : str;
+}
+
+function slimCustomer(raw) {
+  if (!raw) return null;
+  return {
+    id: raw.id,
+    name: truncate(raw.name, 40) || '顾客',
+    phone: raw.phone || '',
+    shopId: raw.shopId || raw.shop_id || '',
+    purchaseVIPLevel: raw.purchaseVIPLevel ?? raw.purchase_vip_level ?? PurchaseVIPLevel.REGULAR,
+    storedValueLevel: raw.storedValueLevel ?? raw.stored_value_level ?? StoredValueLevel.NONE,
+    purchaseVIPExpiresAt: raw.purchaseVIPExpiresAt || raw.purchase_vip_expires_at,
+    storedValueExpiresAt: raw.storedValueExpiresAt || raw.stored_value_expires_at,
+    storedValueBalance: raw.storedValueBalance ?? raw.stored_value_balance ?? raw.balance ?? 0,
+    balance: raw.balance ?? 0,
+    withdrawableReferralAmount: raw.withdrawableReferralAmount ?? raw.withdrawable_referral_amount ?? 0,
+    points: raw.points ?? 0,
+    totalSpent: raw.totalSpent ?? raw.total_spent ?? 0,
+    isStockholder: !!raw.isStockholder || !!raw.is_stockholder,
+    referralEarnings: raw.referralEarnings ?? raw.referral_earnings ?? 0,
+    referralBonusRate: raw.referralBonusRate ?? raw.referral_bonus_rate ?? 0.1,
+    memberBenefitRecords: Array.isArray(raw.memberBenefitRecords)
+      ? raw.memberBenefitRecords.slice(0, 20).map((b) => ({
+          type: b.type,
+          name: truncate(b.name, 40),
+          status: b.status,
+          expiresAt: b.expiresAt || b.expires_at,
+        }))
+      : Array.isArray(raw.benefits)
+        ? raw.benefits.slice(0, 20).map((b) => ({
+            type: b.type,
+            name: truncate(b.name, 40),
+            status: b.status,
+            expiresAt: b.expiresAt || b.expires_at,
+          }))
+        : [],
+  };
+}
+
+function slimBookings(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 50).map((b) => ({
+    id: b.id,
+    shopId: b.shopId || b.shop_id,
+    shopName: truncate(b.shopName || b.shop_name, 40) || 'MBS 理发店',
+    serviceName: truncate(b.serviceName || b.service_name, 60) || '未知服务',
+    status: b.status,
+    scheduledTime: b.scheduledTime || b.scheduled_time,
+    price: b.price,
+    barberName: truncate(b.barberName || b.barber_name, 30) || '待安排',
+    queueNumber: b.queueNumber || b.queue_number,
+    notes: truncate(b.notes, 200),
+  }));
+}
+
 Page({
   data: {
     customer: null,
@@ -73,6 +131,7 @@ Page({
     points: 0,
     totalSpent: 0,
     myBenefits: [],
+    stockholderSummary: { isStockholder: false, enabled: false, benefits: [] },
     // 预约详情弹窗
     viewingBooking: null,
     cancelling: false,
@@ -130,8 +189,10 @@ Page({
     this.setData({ loading: true, error: '', showLogin: false });
     try {
       // 登录接口已返回完整顾客信息，优先直接使用，避免生产环境 /customers/:id/public 偶发 401 阻塞登录流程
-      const customer = prefetchedCustomer || await getCustomerPublic(customerId);
-      const bookings = await getCustomerBookings(customerId);
+      const rawCustomer = prefetchedCustomer || await getCustomerPublic(customerId);
+      const customer = slimCustomer(rawCustomer);
+      const rawBookings = await getCustomerBookings(customerId);
+      const allBookings = slimBookings(rawBookings);
 
       const purchaseLevel = customer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
       const storedLevel = customer?.storedValueLevel ?? StoredValueLevel.NONE;
@@ -141,12 +202,17 @@ Page({
       const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel);
       const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
 
-      const allBookings = bookings || [];
       // 三方协同：优先从最近预约获取店铺配置，与 H5 保持一致
-      const recentShopId = allBookings[0]?.shopId;
-      const shop = recentShopId ? await getShop(recentShopId) : null;
+      let shop = null;
+      try {
+        const recentShopId = allBookings[0]?.shopId;
+        shop = recentShopId ? await getShop(recentShopId) : null;
+      } catch (shopErr) {
+        console.warn('[profile] 获取最近预约店铺配置失败，使用默认配置:', shopErr);
+        shop = null;
+      }
       const stockholderSummary = getStockholderBenefitSummary(customer, shop);
-      this.setData({
+      const payload = {
         customer,
         bookings: allBookings,
         loading: false,
@@ -163,7 +229,12 @@ Page({
         totalSpent: customer?.totalSpent ?? 0,
         myBenefits: this.computeMyBenefits(customer),
         stockholderSummary,
-      });
+      };
+      const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
+      if (sizeKB > 500) {
+        console.warn(`[profile] setData 数据量仍偏大: ${sizeKB} KB，请检查顾客/预约数据`);
+      }
+      this.setData(payload);
       this.refreshFilteredBookings();
     } catch (err) {
       console.error('[profile] 加载个人信息失败:', err);
@@ -268,10 +339,6 @@ Page({
       return;
     }
     wx.navigateTo({ url: `/pages/my-coupons/my-coupons?shopId=${customer.shopId || 'shop1'}` });
-  },
-
-  goToFeedback() {
-    this.setData({ withdrawModalOpen: true, withdrawAmount: '', withdrawChannel: 'consume' });
   },
 
   closeWithdrawModal() {

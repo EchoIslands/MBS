@@ -173,7 +173,7 @@
       <view wx:if="{{purchasePlan}}" class="vip-current-card vip-current-orange">
         <view class="flex-1 min-w-0">
           <view class="vip-current-title">当前：{{purchasePlan.name}}</view>
-          <view class="vip-current-desc">{{purchasePlan.benefits.join(' · ')}}</view>
+          <view class="vip-current-desc">{{purchasePlan.benefits && purchasePlan.benefits.join ? purchasePlan.benefits.join(' · ') : ''}}</view>
         </view>
         <view class="btn btn-small btn-primary-plain" bindtap="goToShop">了解更多</view>
       </view>

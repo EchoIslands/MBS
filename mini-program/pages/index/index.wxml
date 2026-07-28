@@ -206,12 +206,16 @@
   <view class="fixed-bottom-bar" wx:if="{{shop}}">
     <view class="index-bottom-actions">
       <view class="btn btn-primary-plain index-bottom-btn" bindtap="goToProducts">
-        <mbs-icon class="index-bottom-icon" name="shoppingBag" size="32" color="var(--accent)" />
-        <text class="index-bottom-text">商品商城</text>
+        <view class="index-bottom-icon-wrap">
+          <mbs-icon name="shoppingBag" size="32" color="var(--accent)" />
+        </view>
+        <view class="index-bottom-text">商品商城</view>
       </view>
       <view class="btn btn-blue index-bottom-btn" bindtap="goToBooking">
-        <mbs-icon class="index-bottom-icon" name="calendar" size="32" color="var(--card-bg)" />
-        <text class="index-bottom-text">立即预约</text>
+        <view class="index-bottom-icon-wrap">
+          <mbs-icon name="calendar" size="32" color="var(--card-bg)" />
+        </view>
+        <view class="index-bottom-text">立即预约</view>
       </view>
     </view>
   </view>

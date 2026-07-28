@@ -16,6 +16,21 @@ function buildStarList(score) {
   return [1, 2, 3, 4, 5].map((i) => ({ key: i, filled: i <= rounded }));
 }
 
+function truncate(str, maxLen = 80) {
+  if (!str || typeof str !== 'string') return str;
+  return str.length > maxLen ? str.slice(0, maxLen) + '…' : str;
+}
+
+function limitImageList(images, maxCount = 1) {
+  if (!Array.isArray(images)) return [];
+  return images.slice(0, maxCount).map((url) => {
+    if (typeof url !== 'string') return '';
+    // base64 图片可能非常长，只保留前 200 个字符作为标识；小程序首页展示用不到完整 base64
+    if (url.startsWith('data:')) return url.slice(0, 200);
+    return url;
+  });
+}
+
 Page({
   data: {
     shop: null,
@@ -51,6 +66,16 @@ Page({
       }
 
       // 精简店铺数据，避免 setData 传输过大
+      const services = (Array.isArray(rawShop.services) ? rawShop.services : [])
+        .filter((s) => s && s.id)
+        .slice(0, 20)
+        .map((s) => ({
+          id: s.id,
+          name: truncate(s.name, 40),
+          description: truncate(s.description, 120),
+          duration: s.duration,
+          price: s.price,
+        }));
       const shop = {
         id: rawShop.id,
         name: rawShop.name || '皓诗形象设计',
@@ -58,29 +83,35 @@ Page({
         phone: rawShop.phone || '',
         rating: rawShop.rating || 4.8,
         reviewCount: rawShop.reviewCount || 0,
-        services: Array.isArray(rawShop.services) ? rawShop.services : [],
-        images: Array.isArray(rawShop.images) ? rawShop.images.slice(0, 3) : [],
+        services,
+        images: limitImageList(rawShop.images, 3),
       };
       const stylists = (rawShop.employees || [])
         .filter((e) => this.isStylist(e) && e.isActive !== false)
         .slice(0, 8)
-        .map((e) => ({ id: e.id, name: e.name, title: e.title || '', rating: e.rating || 5 }));
-      const displayTags = shop.services.slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
+        .map((e) => ({ id: e.id, name: truncate(e.name, 20), title: truncate(e.title, 30), rating: e.rating || 5 }));
+      const displayTags = services.slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
       const products = (Array.isArray(rawShop.products) ? rawShop.products : [])
         .filter((p) => p && p.isActive !== false)
         .slice(0, 4)
-        .map((p) => ({ id: p.id, name: p.name, price: p.price, originalPrice: p.originalPrice, images: Array.isArray(p.images) ? p.images.slice(0, 1) : [] }));
+        .map((p) => ({
+          id: p.id,
+          name: truncate(p.name, 40),
+          price: p.price,
+          originalPrice: p.originalPrice,
+          images: limitImageList(p.images, 1),
+        }));
       const reviews = (await this.loadReviews(shop.id)).slice(0, 3).map((r) => ({
         id: r.id,
-        customerName: r.customerName || '匿名用户',
-        comment: r.comment || '',
+        customerName: truncate(r.customerName, 20) || '匿名用户',
+        comment: truncate(r.comment, 200),
         createdAt: r.createdAt,
-        reply: r.reply,
-        replyBy: r.replyBy,
+        reply: truncate(r.reply, 200),
+        replyBy: truncate(r.replyBy, 20),
         replyAt: r.replyAt,
         starList: buildStarList(r.overallScore || r.rating || 0),
       }));
-      this.setData({
+      const payload = {
         shop,
         stylists,
         displayTags,
@@ -89,7 +120,12 @@ Page({
         reviewCount: reviews.length,
         ratingStars: this.buildStars(shop.rating || 4.8),
         loading: false,
-      });
+      };
+      const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
+      if (sizeKB > 500) {
+        console.warn(`[index] setData 数据量仍偏大: ${sizeKB} KB，请检查店铺/商品/服务数据`);
+      }
+      this.setData(payload);
     } catch (err) {
       console.error('加载店铺失败:', err);
       this.setData({ error: '网络错误，请稍后重试', loading: false });

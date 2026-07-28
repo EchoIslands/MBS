@@ -500,14 +500,18 @@
 
 .index-bottom-btn {
   flex: 1;
+  height: 96rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12rpx;
+  padding: 0;
   line-height: 1;
 }
 
-.index-bottom-icon {
+.index-bottom-icon-wrap {
+  width: 32rpx;
+  height: 32rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -515,6 +519,7 @@
 }
 
 .index-bottom-text {
-  display: inline-flex;
-  align-items: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 1;
 }
