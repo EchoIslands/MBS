@@ -1,4 +1,5 @@
 Component({
+  externalClasses: ['class'],
   properties: {
     name: {
       type: String,

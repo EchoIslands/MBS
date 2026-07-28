@@ -44,28 +44,52 @@ Page({
   async loadShop() {
     this.setData({ loading: true, error: '' });
     try {
-      const shop = await getShop('shop1');
-      if (shop) {
-        const stylists = (shop.employees || []).filter((e) => this.isStylist(e) && e.isActive !== false);
-        const displayTags = (shop.services || []).slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
-        const products = (shop.products || []).filter((p) => p.isActive).slice(0, 4);
-        const reviews = (await this.loadReviews(shop.id)).map((r) => ({
-          ...r,
-          starList: buildStarList(r.overallScore || r.rating || 0),
-        }));
-        this.setData({
-          shop,
-          stylists,
-          displayTags,
-          products,
-          reviews,
-          reviewCount: reviews.length,
-          ratingStars: this.buildStars(shop.rating || 4.8),
-          loading: false,
-        });
-      } else {
+      const rawShop = await getShop('shop1');
+      if (!rawShop) {
         this.setData({ error: '店铺信息加载失败', loading: false });
+        return;
       }
+
+      // 精简店铺数据，避免 setData 传输过大
+      const shop = {
+        id: rawShop.id,
+        name: rawShop.name || '皓诗形象设计',
+        address: rawShop.address || '',
+        phone: rawShop.phone || '',
+        rating: rawShop.rating || 4.8,
+        reviewCount: rawShop.reviewCount || 0,
+        services: Array.isArray(rawShop.services) ? rawShop.services : [],
+        images: Array.isArray(rawShop.images) ? rawShop.images.slice(0, 3) : [],
+      };
+      const stylists = (rawShop.employees || [])
+        .filter((e) => this.isStylist(e) && e.isActive !== false)
+        .slice(0, 8)
+        .map((e) => ({ id: e.id, name: e.name, title: e.title || '', rating: e.rating || 5 }));
+      const displayTags = shop.services.slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
+      const products = (Array.isArray(rawShop.products) ? rawShop.products : [])
+        .filter((p) => p && p.isActive !== false)
+        .slice(0, 4)
+        .map((p) => ({ id: p.id, name: p.name, price: p.price, originalPrice: p.originalPrice, images: Array.isArray(p.images) ? p.images.slice(0, 1) : [] }));
+      const reviews = (await this.loadReviews(shop.id)).slice(0, 3).map((r) => ({
+        id: r.id,
+        customerName: r.customerName || '匿名用户',
+        comment: r.comment || '',
+        createdAt: r.createdAt,
+        reply: r.reply,
+        replyBy: r.replyBy,
+        replyAt: r.replyAt,
+        starList: buildStarList(r.overallScore || r.rating || 0),
+      }));
+      this.setData({
+        shop,
+        stylists,
+        displayTags,
+        products,
+        reviews,
+        reviewCount: reviews.length,
+        ratingStars: this.buildStars(shop.rating || 4.8),
+        loading: false,
+      });
     } catch (err) {
       console.error('加载店铺失败:', err);
       this.setData({ error: '网络错误，请稍后重试', loading: false });
@@ -74,7 +98,12 @@ Page({
 
   async loadReviews(shopId) {
     try {
-      return await getShopReviews(shopId);
+      if (typeof getShopReviews !== 'function') {
+        console.warn('[index] getShopReviews 未定义，跳过评价加载');
+        return [];
+      }
+      const reviews = await getShopReviews(shopId);
+      return Array.isArray(reviews) ? reviews : [];
     } catch (err) {
       console.warn('[index] 加载评价失败:', err);
       return [];

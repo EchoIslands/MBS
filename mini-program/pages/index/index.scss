@@ -504,4 +504,17 @@
   align-items: center;
   justify-content: center;
   gap: 12rpx;
+  line-height: 1;
+}
+
+.index-bottom-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.index-bottom-text {
+  display: inline-flex;
+  align-items: center;
 }

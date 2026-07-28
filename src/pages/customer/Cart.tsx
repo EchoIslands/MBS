@@ -113,6 +113,15 @@ const Cart: React.FC = () => {
   const submitOrder = async (method: 'balance' | 'store_pickup') => {
     if (!shopId || !currentCustomer?.id) return;
 
+    // 余额支付前端预检：避免余额不足时直接调用 API 产生 400
+    if (method === 'balance') {
+      const balance = currentCustomer.storedValueBalance || currentCustomer.balance || 0;
+      if (balance < payablePrice) {
+        setShowBalanceModal(true);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const order = await productOrderApi.create({
