@@ -119,11 +119,9 @@
         <text class="detail-summary-total">合计 ¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
       </view>
 
-      <view class="detail-actions" wx:if="{{canRequestRefund(detailOrder)}}">
-        <view class="btn btn-danger" bindtap="openRefundModal">申请退款</view>
-        <view class="btn btn-secondary" bindtap="closeDetail">关闭</view>
-      </view>
-      <view class="detail-actions" wx:else>
+      <view class="detail-actions">
+        <view class="btn btn-secondary" wx:if="{{canCancel(detailOrder)}}" bindtap="handleCancel">取消订单</view>
+        <view class="btn btn-danger" wx:if="{{canRequestRefund(detailOrder)}}" bindtap="openRefundModal">申请退款</view>
         <view class="btn btn-secondary" bindtap="closeDetail">关闭</view>
       </view>
     </view>

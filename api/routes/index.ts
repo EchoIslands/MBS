@@ -3291,6 +3291,38 @@ const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => ({
   category: i.category,
 });
 
+// 取消订单时回滚库存并记录变动
+const rollbackProductOrderInventory = async (orderId: string, shopId: string, cancelReason?: string) => {
+  const { data: items } = await supabase.from('product_order_items').select('*').eq('order_id', orderId);
+  for (const item of items || []) {
+    const { data: product } = await supabase.from('products').select('stock, sales, name').eq('id', item.product_id).single();
+    if (product) {
+      const quantity = Number(item.quantity || 1);
+      const newStock = Math.max(0, Number(product.stock || 0) + quantity);
+      const newSales = Math.max(0, Number(product.sales || 0) - quantity);
+      await supabase
+        .from('products')
+        .update({
+          stock: newStock,
+          sales: newSales,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', item.product_id);
+      await insertInventoryLog({
+        shopId,
+        productId: String(item.product_id),
+        productName: String(product.name || ''),
+        changeAmount: quantity,
+        stockAfter: newStock,
+        type: 'cancel',
+        orderId,
+        reason: `订单取消回滚库存 ${cancelReason || '用户取消'}`,
+      });
+    }
+  }
+  await syncShopProductsJsonb(shopId);
+};
+
 // 生成订单号：PO + 年月日 + 4位随机
 const generateOrderNo = () => {
   const now = new Date();
@@ -3800,40 +3832,57 @@ productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res:
 
     // 取消订单时回滚库存并记录变动
     if (status === 'cancelled') {
-      const { data: items } = await supabase.from('product_order_items').select('*').eq('order_id', id);
-      for (const item of items || []) {
-        const { data: product } = await supabase.from('products').select('stock, sales, name').eq('id', item.product_id).single();
-        if (product) {
-          const quantity = Number(item.quantity || 1);
-          const newStock = Math.max(0, Number(product.stock || 0) + quantity);
-          const newSales = Math.max(0, Number(product.sales || 0) - quantity);
-          await supabase
-            .from('products')
-            .update({
-              stock: newStock,
-              sales: newSales,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', item.product_id);
-          await insertInventoryLog({
-            shopId: existing.shop_id,
-            productId: String(item.product_id),
-            productName: String(product.name || ''),
-            changeAmount: quantity,
-            stockAfter: newStock,
-            type: 'cancel',
-            orderId: id,
-            reason: `订单取消回滚库存 ${cancelReason || '店铺取消'}`,
-          });
-        }
-      }
-      await syncShopProductsJsonb(existing.shop_id);
+      await rollbackProductOrderInventory(id, existing.shop_id, cancelReason || '店铺取消');
     }
 
     res.json({ success: true, data: productOrderFromDb(order) });
   } catch (error) {
     console.error('[productOrders] 更新订单状态异常:', error);
     res.status(500).json({ success: false, error: '更新订单失败' });
+  }
+});
+
+// 顾客自主取消待支付订单
+productOrdersRouter.put('/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customerId, cancelReason } = req.body || {};
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: '缺少顾客ID' });
+    }
+
+    const { data: existing, error: findError } = await supabase.from('product_orders').select('*').eq('id', id).single();
+    if (findError || !existing) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    if (existing.customer_id !== customerId) {
+      return res.status(403).json({ success: false, error: '无权操作该订单' });
+    }
+
+    if (existing.status !== 'pending') {
+      return res.status(400).json({ success: false, error: '仅待支付订单可取消' });
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancel_reason: cancelReason || '用户取消',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: order, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).select().single();
+    if (error) {
+      return res.status(500).json({ success: false, error: '取消订单失败' });
+    }
+
+    // 回滚库存
+    await rollbackProductOrderInventory(id, existing.shop_id, cancelReason || '用户取消');
+
+    res.json({ success: true, data: productOrderFromDb(order) });
+  } catch (error) {
+    console.error('[productOrders] 顾客取消订单异常:', error);
+    res.status(500).json({ success: false, error: '取消订单失败' });
   }
 });
 

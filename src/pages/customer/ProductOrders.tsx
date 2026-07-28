@@ -82,6 +82,27 @@ const ProductOrders: React.FC = () => {
     return order.paymentMethod === 'balance' && ['paid', 'preparing', 'ready'].includes(order.status);
   };
 
+  const canCancel = (order: ProductOrder) => {
+    return order.status === 'pending';
+  };
+
+  const handleCancel = async () => {
+    if (!detailOrder || !currentCustomer?.id) return;
+    if (!window.confirm('确定要取消该订单吗？取消后库存将自动回滚。')) return;
+    try {
+      await productOrderApi.cancel(detailOrder.id, currentCustomer.id, '用户主动取消');
+      alert('订单已取消');
+      setDetailOrder(null);
+      if (currentCustomer?.id && shopId) {
+        const data = await productOrderApi.getByCustomer(currentCustomer.id, shopId);
+        setOrders(data || []);
+      }
+    } catch (err) {
+      console.error('[ProductOrders] 取消订单失败:', err);
+      alert((err as Error).message || '取消订单失败');
+    }
+  };
+
   const handleRefundRequest = async () => {
     if (!detailOrder) return;
     const reason = refundReason.trim();
@@ -249,6 +270,17 @@ const ProductOrders: React.FC = () => {
                   <span className="text-gray-500">优惠：-¥{detailOrder.discountAmount.toFixed(2)}</span>
                   <span className="font-bold text-red-500">合计：¥{detailOrder.payableAmount.toFixed(2)}</span>
                 </div>
+
+                {canCancel(detailOrder) && (
+                  <div className="mt-4 pt-4 border-t">
+                    <button
+                      onClick={handleCancel}
+                      className="w-full py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+                    >
+                      取消订单
+                    </button>
+                  </div>
+                )}
 
                 {canRequestRefund(detailOrder) && (
                   <div className="mt-4 pt-4 border-t">

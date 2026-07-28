@@ -1,5 +1,5 @@
 import { getCustomerPublic } from '../../api/customer';
-import { getCustomerProductOrders, requestProductOrderRefund } from '../../api/product';
+import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder } from '../../api/product';
 import { getCustomerId } from '../../utils/storage';
 
 const statusLabels = {
@@ -103,6 +103,38 @@ Page({
 
   canRequestRefund(order) {
     return order && order.paymentMethod === 'balance' && ['paid', 'preparing', 'ready'].includes(order.status);
+  },
+
+  canCancel(order) {
+    return order && order.status === 'pending';
+  },
+
+  async handleCancel() {
+    const order = this.data.detailOrder;
+    const customerId = getCustomerId();
+    if (!order || !customerId) return;
+    if (!this.canCancel(order)) {
+      wx.showToast({ title: '当前订单不可取消', icon: 'none' });
+      return;
+    }
+    const res = await wx.showModal({
+      title: '取消订单',
+      content: '确定要取消该订单吗？取消后库存将自动回滚。',
+      confirmText: '确定',
+      cancelText: '再想想',
+    });
+    if (!res.confirm) return;
+    wx.showLoading({ title: '取消中' });
+    try {
+      await cancelProductOrder(order.id, customerId, '用户主动取消');
+      wx.hideLoading();
+      wx.showToast({ title: '订单已取消' });
+      this.setData({ detailOrder: null });
+      this.onRefresh();
+    } catch (err) {
+      wx.hideLoading();
+      wx.showToast({ title: err.message || '取消订单失败', icon: 'none' });
+    }
   },
 
   openRefundModal() {

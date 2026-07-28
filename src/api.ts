@@ -1767,6 +1767,15 @@ export const productOrderApi = {
     }
     return null;
   },
+  cancel: async (orderId: string, customerId: string, cancelReason?: string): Promise<ProductOrder | null> => {
+    if (USE_REAL_API) {
+      return await httpThrowing<ProductOrder>(`${API_BASE}/product-orders/${orderId}/cancel`, {
+        method: 'PUT',
+        body: JSON.stringify({ customerId, cancelReason }),
+      });
+    }
+    return null;
+  },
   requestRefund: async (orderId: string, reason: string): Promise<ProductOrderRefund | null> => {
     if (USE_REAL_API) {
       return await httpThrowing<ProductOrderRefund>(`${API_BASE}/product-orders/${orderId}/refund`, {
