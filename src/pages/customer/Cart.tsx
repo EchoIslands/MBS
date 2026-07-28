@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, AlertCircle, X } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, AlertCircle, X, Ticket } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { ProductCategory } from '../../../shared/types';
+import { ProductCategory, CustomerCoupon, Coupon } from '../../../shared/types';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
-import { productOrderApi } from '../../api';
+import { productOrderApi, couponApi } from '../../api';
 
 const Cart: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
@@ -21,9 +21,30 @@ const Cart: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'balance' | 'store_pickup'>('balance');
   const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [customerCoupons, setCustomerCoupons] = useState<CustomerCoupon[]>([]);
+  const [selectedCouponId, setSelectedCouponId] = useState<string | null>(null);
+  const [showCouponModal, setShowCouponModal] = useState(false);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+
+  // 加载顾客可用优惠券
+  useEffect(() => {
+    const loadCoupons = async () => {
+      if (!shopId || !currentCustomer?.id) return;
+      setLoadingCoupons(true);
+      try {
+        const coupons = await couponApi.getCustomerCoupons(currentCustomer.id, shopId, 'unused');
+        setCustomerCoupons(coupons || []);
+      } catch (err) {
+        console.error('[Cart] 加载优惠券失败:', err);
+      } finally {
+        setLoadingCoupons(false);
+      }
+    };
+    loadCoupons();
+  }, [shopId, currentCustomer?.id]);
 
   const selectedItems = cart.filter(item => item.selected);
-  
+
   const totalPrice = useMemo(() => {
     const total = selectedItems.reduce((sum, item) => {
       const memberPrice = calcDiscountedItemPriceForCustomer(
@@ -36,6 +57,56 @@ const Cart: React.FC = () => {
     }, 0);
     return Math.round(total * 100) / 100;
   }, [selectedItems, currentCustomer]);
+
+  const selectedCoupon = useMemo(() => {
+    return customerCoupons.find((c) => c.id === selectedCouponId) || null;
+  }, [customerCoupons, selectedCouponId]);
+
+  const couponDiscount = useMemo(() => {
+    if (!selectedCoupon || !selectedCoupon.coupon || totalPrice <= 0) return 0;
+    const coupon = selectedCoupon.coupon as Coupon;
+
+    // 最低使用门槛
+    const minOrderAmount = coupon.minOrderAmount || 0;
+    if (totalPrice < minOrderAmount) return 0;
+
+    // 服务类券不适用商品订单
+    if (coupon.applicableScope === 'service') return 0;
+
+    let discountBase = totalPrice;
+    if (coupon.applicableScope === 'product') {
+      const applicableIds = coupon.applicableProductIds || [];
+      const applicableTotal = selectedItems.reduce((sum, item) => {
+        if (applicableIds.includes(item.productId)) {
+          const memberPrice = calcDiscountedItemPriceForCustomer(
+            item.product.price,
+            currentCustomer,
+            item.product.category
+          );
+          return sum + Math.round(memberPrice * item.quantity * 100) / 100;
+        }
+        return sum;
+      }, 0);
+      if (applicableTotal <= 0) return 0;
+      discountBase = Math.round(applicableTotal * 100) / 100;
+    }
+
+    let discount = 0;
+    if (coupon.type === 'fixed_amount') {
+      discount = Math.min(coupon.value, discountBase);
+    } else if (coupon.type === 'percentage') {
+      const ratio = Math.max(0, Math.min(10, coupon.value / 10));
+      discount = discountBase * (1 - ratio);
+    }
+    if (coupon.maxDiscountAmount && coupon.maxDiscountAmount > 0) {
+      discount = Math.min(discount, coupon.maxDiscountAmount);
+    }
+    return Math.round(discount * 100) / 100;
+  }, [selectedCoupon, selectedItems, totalPrice, currentCustomer]);
+
+  const payablePrice = useMemo(() => {
+    return Math.round((totalPrice - couponDiscount) * 100) / 100;
+  }, [totalPrice, couponDiscount]);
 
   const allSelected = cart.length > 0 && cart.every(item => item.selected);
 
@@ -54,6 +125,7 @@ const Cart: React.FC = () => {
         paymentMethod: method,
         pickupName: currentCustomer.name,
         pickupPhone: currentCustomer.phone,
+        customerCouponId: selectedCouponId || undefined,
       });
 
       if (order) {
@@ -241,17 +313,53 @@ const Cart: React.FC = () => {
           )}
       </div>
 
+      {/* 优惠券选择 */}
+      {cart.length > 0 && selectedItems.length > 0 && (
+        <div className="fixed bottom-[72px] left-0 right-0 bg-white border-t shadow-sm z-40">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <button
+              onClick={() => setShowCouponModal(true)}
+              disabled={loadingCoupons}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-2">
+                <Ticket size={18} className="text-orange-500" />
+                <span className="text-sm text-gray-700">
+                  {selectedCoupon ? selectedCoupon.coupon?.name : '选择优惠券'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {couponDiscount > 0 && (
+                  <span className="text-sm text-red-500">
+                    -¥{couponDiscount.toFixed(2)}
+                  </span>
+                )}
+                <span className="text-xs text-gray-400">
+                  {selectedCoupon ? '更换' : customerCoupons.length > 0 ? `${customerCoupons.length} 张可用` : '无可用'}
+                </span>
+                <ArrowLeft size={16} className="text-gray-400 -rotate-180" />
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 底部结算栏 */}
       {cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
           <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div>
                 <span className="text-sm text-gray-500">合计:</span>
                 <span className="text-2xl font-bold text-red-500 ml-2">
-                  ¥{totalPrice.toFixed(2)}
+                  ¥{payablePrice.toFixed(2)}
                 </span>
               </div>
+              {couponDiscount > 0 && (
+                <span className="text-xs text-orange-500 bg-orange-50 px-2 py-1 rounded-full">
+                  已优惠 ¥{couponDiscount.toFixed(2)}
+                </span>
+              )}
               <span className="text-xs text-gray-400">
                 已选{selectedItems.length}件
               </span>
@@ -337,8 +445,128 @@ const Cart: React.FC = () => {
         </div>
       )}
 
+      {/* 优惠券选择弹窗 */}
+      {showCouponModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-[60]">
+          <div className="bg-white rounded-t-2xl w-full max-w-4xl max-h-[70vh] overflow-hidden flex flex-col">
+            <div className="px-4 py-4 border-b flex items-center justify-between">
+              <h3 className="font-bold text-lg">选择优惠券</h3>
+              <button
+                onClick={() => setShowCouponModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X size={20} className="text-gray-400" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-3 flex-1">
+              {customerCoupons.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Ticket className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                  <p>暂无可用优惠券</p>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setSelectedCouponId(null);
+                      setShowCouponModal(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border transition-colors ${
+                      !selectedCouponId ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="text-gray-700">不使用优惠券</span>
+                    {!selectedCouponId && <span className="text-orange-500 text-sm">已选</span>}
+                  </button>
+                  {customerCoupons.map((cc) => {
+                    const coupon = cc.coupon as Coupon | undefined;
+                    const isSelected = selectedCouponId === cc.id;
+                    const isApplicable =
+                      coupon &&
+                      coupon.type !== 'buy_x_get_y' &&
+                      coupon.applicableScope !== 'service' &&
+                      totalPrice >= (coupon.minOrderAmount || 0) &&
+                      (coupon.applicableScope !== 'product' ||
+                        selectedItems.some((item) =>
+                          (coupon.applicableProductIds || []).includes(item.productId)
+                        ));
+                    return (
+                      <button
+                        key={cc.id}
+                        onClick={() => {
+                          if (!isApplicable) return;
+                          setSelectedCouponId(cc.id);
+                          setShowCouponModal(false);
+                        }}
+                        disabled={!isApplicable}
+                        className={`w-full text-left p-4 rounded-xl border transition-colors ${
+                          isSelected
+                            ? 'border-orange-500 bg-orange-50'
+                            : isApplicable
+                            ? 'border-gray-200 hover:bg-gray-50'
+                            : 'border-gray-100 bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-800">
+                              {coupon?.name || '优惠券'}
+                            </div>
+                            <div className="text-sm text-gray-500 mt-1">
+                              {coupon?.type === 'fixed_amount' && (
+                                <span className="text-red-500 font-bold">¥{coupon.value.toFixed(2)}</span>
+                              )}
+                              {coupon?.type === 'percentage' && (
+                                <span className="text-red-500 font-bold">{coupon.value}折</span>
+                              )}
+                              {coupon?.type === 'buy_x_get_y' && (
+                                <span className="text-gray-400">买赠券</span>
+                              )}
+                              {coupon?.minOrderAmount ? (
+                                <span className="ml-2">满{coupon.minOrderAmount}元可用</span>
+                              ) : null}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-2">
+                              {coupon?.applicableScope === 'all' && '全场通用'}
+                              {coupon?.applicableScope === 'product' && '限定商品'}
+                              {coupon?.applicableScope === 'service' && '仅限服务'}
+                              <span className="ml-2">
+                                有效期至 {coupon?.endAt ? new Date(coupon.endAt).toLocaleDateString() : '-'}
+                              </span>
+                            </div>
+                            {!isApplicable && (
+                              <div className="text-xs text-red-500 mt-2">
+                                {coupon?.type === 'buy_x_get_y'
+                                  ? '买赠券暂不可用'
+                                  : coupon?.applicableScope === 'service'
+                                  ? '仅限服务类项目'
+                                  : totalPrice < (coupon?.minOrderAmount || 0)
+                                  ? '订单金额未满使用门槛'
+                                  : '不适用当前商品'}
+                              </div>
+                            )}
+                          </div>
+                          {isSelected && (
+                            <div className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center flex-shrink-0">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 底部安全区域 */}
-      {cart.length > 0 && <div className="h-24" />}
+      {cart.length > 0 && selectedItems.length > 0 && <div className="h-[132px]" />}
+      {cart.length > 0 && selectedItems.length === 0 && <div className="h-24" />}
     </div>
   );
 };

@@ -1695,6 +1695,7 @@ export const productOrderApi = {
     pickupName?: string;
     pickupPhone?: string;
     notes?: string;
+    customerCouponId?: string;
   }): Promise<ProductOrder | null> => {
     if (USE_REAL_API) {
       return await httpThrowing<ProductOrder>(`${API_BASE}/product-orders`, {

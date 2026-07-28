@@ -1,5 +1,5 @@
 import { getCustomerPublic } from '../../api/customer';
-import { createProductOrder } from '../../api/product';
+import { createProductOrder, getCustomerCoupons } from '../../api/product';
 import {
   getCart,
   updateCartItem,
@@ -24,6 +24,11 @@ Page({
     pendingCheckout: false,
     customer: null,
     paymentMethod: 'balance',
+    customerCoupons: [],
+    selectedCouponId: null,
+    showCouponModal: false,
+    couponDiscount: 0,
+    payablePrice: 0,
   },
 
   onLoad(options) {
@@ -61,13 +66,73 @@ Page({
       return sum + itemTotal;
     }, 0);
     const allSelected = cart.length > 0 && cart.every((item) => item.selected);
+    const couponDiscount = this.calcCouponDiscount(totalPrice, selectedItems);
+    const payablePrice = Math.round((totalPrice - couponDiscount) * 100) / 100;
+    const selectedCouponName = this.data.selectedCouponId
+      ? (this.data.customerCoupons.find((item) => item.id === this.data.selectedCouponId)?.coupon?.name || '')
+      : '';
     this.setData({
       cart,
       displayCart,
       selectedItems,
       totalPrice: totalPrice.toFixed(2),
       allSelected,
+      couponDiscount: couponDiscount.toFixed(2),
+      payablePrice: payablePrice.toFixed(2),
+      selectedCouponName,
     });
+  },
+
+  calcCouponDiscount(totalPrice, selectedItems) {
+    const { selectedCouponId, customerCoupons } = this.data;
+    if (!selectedCouponId || totalPrice <= 0) return 0;
+    const cc = customerCoupons.find((item) => item.id === selectedCouponId);
+    if (!cc || !cc.coupon) return 0;
+    const coupon = cc.coupon;
+    if (coupon.type === 'buy_x_get_y') return 0;
+    if (coupon.applicableScope === 'service') return 0;
+    if (totalPrice < (coupon.minOrderAmount || 0)) return 0;
+
+    let discountBase = totalPrice;
+    if (coupon.applicableScope === 'product') {
+      const applicableIds = coupon.applicableProductIds || [];
+      const applicableTotal = selectedItems.reduce((sum, item) => {
+        if (applicableIds.includes(item.productId)) {
+          const price = calcDiscountedItemPrice(
+            item.product.price,
+            this.data.customer,
+            item.product.category
+          );
+          return sum + Math.round(price * item.quantity * 100) / 100;
+        }
+        return sum;
+      }, 0);
+      if (applicableTotal <= 0) return 0;
+      discountBase = applicableTotal;
+    }
+
+    let discount = 0;
+    if (coupon.type === 'fixed_amount') {
+      discount = Math.min(coupon.value, discountBase);
+    } else if (coupon.type === 'percentage') {
+      const ratio = Math.max(0, Math.min(10, coupon.value / 10));
+      discount = discountBase * (1 - ratio);
+    }
+    if (coupon.maxDiscountAmount && coupon.maxDiscountAmount > 0) {
+      discount = Math.min(discount, coupon.maxDiscountAmount);
+    }
+    return Math.round(discount * 100) / 100;
+  },
+
+  async loadCustomerCoupons() {
+    const { customer, shopId } = this.data;
+    if (!customer || !customer.id) return;
+    try {
+      const coupons = await getCustomerCoupons(customer.id, shopId, 'unused');
+      this.setData({ customerCoupons: coupons || [] });
+    } catch (err) {
+      console.error('[cart] 加载优惠券失败:', err);
+    }
   },
 
   async loadCustomer() {
@@ -79,6 +144,7 @@ Page({
     try {
       const customer = await getCustomerPublic(customerId);
       this.setData({ customer });
+      await this.loadCustomerCoupons();
       this.refreshCart();
     } catch (err) {
       console.error('[cart] 加载顾客信息失败:', err);
@@ -152,7 +218,7 @@ Page({
   },
 
   async doCheckout() {
-    const { shopId, selectedItems, customer, paymentMethod } = this.data;
+    const { shopId, selectedItems, customer, paymentMethod, selectedCouponId } = this.data;
     this.setData({ submitting: true });
     try {
       const order = await createProductOrder({
@@ -165,6 +231,7 @@ Page({
         paymentMethod,
         pickupName: customer.name,
         pickupPhone: customer.phone,
+        customerCouponId: selectedCouponId || undefined,
       });
 
       if (order) {
@@ -222,4 +289,35 @@ Page({
   goBack() {
     wx.navigateBack();
   },
+
+  toggleCouponModal() {
+    this.setData({ showCouponModal: !this.data.showCouponModal });
+  },
+
+  onSelectCoupon(e) {
+    const { couponId } = e.currentTarget.dataset;
+    this.setData({ selectedCouponId: couponId, showCouponModal: false });
+    this.refreshCart();
+  },
+
+  onClearCoupon() {
+    this.setData({ selectedCouponId: null, showCouponModal: false });
+    this.refreshCart();
+  },
+
+  isCouponApplicable(coupon) {
+    const { selectedItems, totalPrice } = this.data;
+    const price = parseFloat(totalPrice) || 0;
+    if (!coupon) return false;
+    if (coupon.type === 'buy_x_get_y') return false;
+    if (coupon.applicableScope === 'service') return false;
+    if (price < (coupon.minOrderAmount || 0)) return false;
+    if (coupon.applicableScope === 'product') {
+      const applicableIds = coupon.applicableProductIds || [];
+      return selectedItems.some((item) => applicableIds.includes(item.productId));
+    }
+    return true;
+  },
+
+  noop() {},
 });

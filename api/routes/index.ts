@@ -10,7 +10,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, ProductCategory } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory } from '../../shared/types.js';
 
 const mainRouter = Router();
 
@@ -3021,7 +3021,7 @@ shopsRouter.get('/:id/products/:productId/inventory-logs', authMiddleware, async
 });
 
 // 优惠券相关转换
-const couponFromDb = (c: Record<string, unknown>): Record<string, unknown> => ({
+const couponFromDb = (c: DbRecord): Coupon => ({
   id: c.id,
   shopId: c.shop_id,
   name: c.name,
@@ -3041,7 +3041,7 @@ const couponFromDb = (c: Record<string, unknown>): Record<string, unknown> => ({
   updatedAt: c.updated_at,
 });
 
-const customerCouponFromDb = (cc: Record<string, unknown>): Record<string, unknown> => ({
+const customerCouponFromDb = (cc: DbRecord): CustomerCoupon => ({
   id: cc.id,
   couponId: cc.coupon_id,
   shopId: cc.shop_id,
@@ -3304,10 +3304,30 @@ const generatePickupCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// 顾客创建商品订单（MVP：支持余额支付和到店自提付款）
+// 计算优惠券优惠金额（基于会员折扣后的金额）
+const calcCouponDiscount = (coupon: Coupon, baseAmount: number): number => {
+  if (baseAmount <= 0) return 0;
+  let discount = 0;
+  if (coupon.type === 'fixed_amount') {
+    discount = Math.min(coupon.value, baseAmount);
+  } else if (coupon.type === 'percentage') {
+    // 前端约定：value 为折数，如 8.8 表示 8.8 折（减免 12%）
+    const ratio = Math.max(0, Math.min(10, coupon.value / 10));
+    discount = baseAmount * (1 - ratio);
+  } else if (coupon.type === 'buy_x_get_y') {
+    // MVP 阶段买赠券暂不在商品订单使用
+    return 0;
+  }
+  if (coupon.maxDiscountAmount && coupon.maxDiscountAmount > 0) {
+    discount = Math.min(discount, coupon.maxDiscountAmount);
+  }
+  return Math.round(discount * 100) / 100;
+};
+
+// 顾客创建商品订单（MVP：支持余额支付和到店自提付款，支持优惠券抵扣）
 productOrdersRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const { shopId, customerId, items, paymentMethod, pickupName, pickupPhone, notes } = req.body || {};
+    const { shopId, customerId, items, paymentMethod, pickupName, pickupPhone, notes, customerCouponId } = req.body || {};
 
     if (!shopId || !customerId || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, error: '缺少必要字段' });
@@ -3393,8 +3413,91 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
 
     totalAmount = Math.round(totalAmount * 100) / 100;
     originalTotalAmount = Math.round(originalTotalAmount * 100) / 100;
-    const payableAmount = totalAmount;
-    const discountAmount = Math.round((originalTotalAmount - totalAmount) * 100) / 100;
+
+    // 校验并应用优惠券
+    let couponDiscount = 0;
+    let appliedCustomerCoupon: CustomerCoupon | null = null;
+    let appliedCoupon: Coupon | null = null;
+
+    if (customerCouponId) {
+      const { data: cc, error: ccError } = await supabase
+        .from('customer_coupons')
+        .select('*, coupons(*)')
+        .eq('id', customerCouponId)
+        .eq('customer_id', customerId)
+        .eq('shop_id', shopId)
+        .single();
+
+      if (ccError || !cc) {
+        return res.status(400).json({ success: false, error: '优惠券不存在或不属于当前顾客' });
+      }
+
+      const rawCoupon = (cc.coupons || {}) as Record<string, unknown>;
+      const coupon = couponFromDb(rawCoupon);
+
+      if (cc.status !== 'unused') {
+        return res.status(400).json({ success: false, error: '优惠券已使用或已失效' });
+      }
+
+      const now = new Date().toISOString();
+      if (now < String(coupon.startAt) || now > String(coupon.endAt)) {
+        return res.status(400).json({ success: false, error: '优惠券不在有效期内' });
+      }
+      if (!coupon.isActive) {
+        return res.status(400).json({ success: false, error: '优惠券已停用' });
+      }
+      if (coupon.type === 'buy_x_get_y') {
+        return res.status(400).json({ success: false, error: '买赠券暂不支持在商品订单使用' });
+      }
+
+      const minOrderAmount = coupon.minOrderAmount || 0;
+      if (totalAmount < minOrderAmount) {
+        return res.status(400).json({ success: false, error: `订单金额未满 ${minOrderAmount.toFixed(2)} 元，无法使用该优惠券` });
+      }
+
+      let discountBase = totalAmount;
+      if (coupon.applicableScope === 'service') {
+        return res.status(400).json({ success: false, error: '该优惠券仅限服务类项目，不能用于商品订单' });
+      }
+      if (coupon.applicableScope === 'product') {
+        const applicableIds = coupon.applicableProductIds || [];
+        if (!Array.isArray(applicableIds) || applicableIds.length === 0) {
+          return res.status(400).json({ success: false, error: '优惠券适用范围为空' });
+        }
+        let applicableTotal = 0;
+        for (const item of items) {
+          if (applicableIds.includes(item.productId)) {
+            const product = productMap.get(item.productId);
+            if (product) {
+              const quantity = Math.max(1, Math.floor(Number(item.quantity || 1)));
+              const unitPrice = calcDiscountedItemPrice(
+                Number(product.price || 0),
+                purchaseLevel,
+                storedLevel,
+                product.category as ProductCategory | 'service'
+              );
+              applicableTotal += unitPrice * quantity;
+            }
+          }
+        }
+        if (applicableTotal <= 0) {
+          return res.status(400).json({ success: false, error: '优惠券不适用当前商品' });
+        }
+        discountBase = Math.round(applicableTotal * 100) / 100;
+      }
+
+      couponDiscount = calcCouponDiscount(coupon, discountBase);
+      if (couponDiscount <= 0) {
+        return res.status(400).json({ success: false, error: '优惠券无可用优惠金额' });
+      }
+
+      appliedCustomerCoupon = cc;
+      appliedCoupon = coupon;
+    }
+
+    couponDiscount = Math.round(couponDiscount * 100) / 100;
+    const payableAmount = Math.round((totalAmount - couponDiscount) * 100) / 100;
+    const discountAmount = Math.round((originalTotalAmount - payableAmount) * 100) / 100;
 
     // 余额支付：立即扣减库存和余额
     if (paymentMethod === 'balance') {
@@ -3448,6 +3551,24 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       // 回滚订单
       await supabase.from('product_orders').delete().eq('id', orderId);
       return res.status(500).json({ success: false, error: '创建订单明细失败' });
+    }
+
+    // 标记优惠券为已使用
+    if (appliedCustomerCoupon && appliedCustomerCoupon.id) {
+      const { error: couponUseError } = await supabase
+        .from('customer_coupons')
+        .update({
+          status: 'used',
+          used_at: new Date().toISOString(),
+          order_id: orderId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', appliedCustomerCoupon.id)
+        .eq('status', 'unused');
+      if (couponUseError) {
+        console.error('[productOrders] 标记优惠券已使用失败:', couponUseError.message);
+        // 不影响订单本身，记录日志即可
+      }
     }
 
     // 扣减库存并记录变动
@@ -3515,6 +3636,9 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       data: {
         ...productOrderFromDb(order),
         items: orderItems.map((i) => productOrderItemFromDb({ ...i, order_id: orderId })),
+        couponDiscount,
+        customerCouponId: appliedCustomerCoupon?.id || undefined,
+        couponName: appliedCoupon?.name || undefined,
       },
     });
   } catch (error) {

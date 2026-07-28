@@ -79,6 +79,7 @@ export interface CustomerCoupon {
   orderId?: string;
   createdAt: Date;
   updatedAt?: Date;
+  coupon?: Coupon;
 }
 
 // 商品库存变动类型
