@@ -291,6 +291,12 @@
     </view>
   </view>
 
+  <!-- 兜底：如果所有条件都不满足，至少显示重试按钮 -->
+  <view wx:if="{{!loading && !error && !customer}}" class="container empty-state">
+    <view class="empty-text">页面加载异常，请重试</view>
+    <view class="btn btn-primary" bindtap="loadProfile">重新加载</view>
+  </view>
+</view>
   <!-- 提现申请弹窗 -->
   <view wx:if="{{withdrawModalOpen}}" class="modal-mask" catchtap="closeWithdrawModal">
     <view class="modal-dialog" catchtap="stopPropagation">

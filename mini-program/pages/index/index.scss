@@ -490,29 +490,31 @@
 
 /* 底部固定 CTA */
 .fixed-bottom-bar {
-  padding: 32rpx;
+  padding: 24rpx 32rpx;
   background: #fff;
   border-top: 1rpx solid var(--gray-200);
-  box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 -6rpx 18rpx rgba(0, 0, 0, 0.06);
 }
 
 .index-bottom-actions {
   display: flex;
-  gap: 24rpx;
+  gap: 20rpx;
 }
 
 .index-bottom-btn {
   flex: 1;
+  height: 88rpx;
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 16rpx;
-  min-height: 112rpx;
-  padding: 32rpx 48rpx;
-  border-radius: 24rpx;
-  font-size: 36rpx;
+  gap: 12rpx;
+  padding: 0 32rpx;
+  border-radius: 20rpx;
+  font-size: 30rpx;
   font-weight: 700;
   line-height: 1;
+  box-sizing: border-box;
   transition: opacity 0.15s;
 }
 
@@ -529,12 +531,12 @@
 .index-bottom-btn-booking {
   background: linear-gradient(135deg, var(--primary-light), var(--primary));
   color: #fff;
-  box-shadow: 0 8rpx 24rpx rgba(79, 142, 247, 0.28);
+  box-shadow: 0 6rpx 18rpx rgba(79, 142, 247, 0.24);
 }
 
 .index-bottom-icon-wrap {
-  width: 40rpx;
-  height: 40rpx;
+  width: 32rpx;
+  height: 32rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -542,5 +544,9 @@
 }
 
 .index-bottom-text {
+  display: inline-block;
   line-height: 1;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
 }
