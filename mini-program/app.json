@@ -8,7 +8,8 @@
     "pages/products/products",
     "pages/product-detail/product-detail",
     "pages/cart/cart",
-    "pages/product-orders/product-orders"
+    "pages/product-orders/product-orders",
+    "pages/my-coupons/my-coupons"
   ],
   "window": {
     "backgroundTextStyle": "light",

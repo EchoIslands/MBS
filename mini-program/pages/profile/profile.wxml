@@ -267,6 +267,11 @@
 
     <!-- 快捷功能 -->
     <view class="quick-grid">
+      <view class="quick-item" bindtap="goToCoupons">
+        <mbs-icon name="ticket" size="40" color="var(--accent)" />
+        <view class="quick-title">我的优惠券</view>
+        <view class="quick-hint">查看已领券</view>
+      </view>
       <view class="quick-item" bindtap="goToRefund">
         <mbs-icon name="alertCircle" size="40" color="var(--accent)" />
         <view class="quick-title">退款管理</view>

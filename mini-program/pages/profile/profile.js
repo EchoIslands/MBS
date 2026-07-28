@@ -261,7 +261,16 @@ Page({
     wx.showToast({ title: '功能开发中', icon: 'none' });
   },
 
-  openWithdrawModal() {
+  goToCoupons() {
+    const { customer } = this.data;
+    if (!customer) {
+      wx.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/my-coupons/my-coupons?shopId=${customer.shopId || 'shop1'}` });
+  },
+
+  goToFeedback() {
     this.setData({ withdrawModalOpen: true, withdrawAmount: '', withdrawChannel: 'consume' });
   },
 

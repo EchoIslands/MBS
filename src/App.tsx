@@ -18,6 +18,7 @@ import ProductList from "./pages/customer/ProductList";
 import ProductDetail from "./pages/customer/ProductDetail";
 import Cart from "./pages/customer/Cart";
 import ProductOrders from "./pages/customer/ProductOrders";
+import MyCoupons from "./pages/customer/MyCoupons";
 
 // 理发店端
 import ShopLogin from "./pages/shop/Login";
@@ -163,6 +164,7 @@ export default function App() {
           <Route path="/customer/profile" element={<Profile />} />
           <Route path="/customer/cart/:shopId" element={<Cart />} />
           <Route path="/customer/product-orders/:shopId" element={<ProductOrders />} />
+          <Route path="/customer/coupons" element={<MyCoupons />} />
           <Route path="/customer/review/:bookingId" element={<ReviewPage />} />
           <Route path="/customer/refund" element={<RefundPage />} />
           <Route path="/customer/feedback" element={<Feedback />} />

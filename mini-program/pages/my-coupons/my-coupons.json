@@ -1,0 +1,6 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "mbs-icon": "/components/icon/icon"
+  }
+}
