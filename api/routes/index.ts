@@ -771,6 +771,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
       return res.status(500).json({
         success: false,
         error: '获取预约列表失败',
+        details: error.message,
       });
     }
 
@@ -789,10 +790,14 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : '';
     console.error('[bookings] 获取预约列表失败:', error);
     res.status(500).json({
       success: false,
       error: '获取预约列表失败',
+      details: message,
+      stack,
     });
   }
 });
