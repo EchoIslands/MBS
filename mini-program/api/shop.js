@@ -9,6 +9,14 @@ export async function getShop(id) {
 }
 
 /**
+ * 获取店铺评价列表
+ */
+export async function getShopReviews(id) {
+  const result = await get(`/reviews/shop/${id}`);
+  return result?.data || [];
+}
+
+/**
  * 获取附近店铺列表
  */
 export async function getNearbyShops(lat, lon, level) {

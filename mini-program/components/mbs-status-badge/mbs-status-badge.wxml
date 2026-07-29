@@ -1,0 +1,1 @@
+<view class="mbs-status-badge {{className}}">{{label}}</view>

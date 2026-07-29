@@ -40,10 +40,10 @@
     "disableUseStrict": false,
     "minifyWXML": false,
     "showES6CompileOption": false,
-    "useCompilerPlugins": ["sass"]
+    "useCompilerPlugins": []
   },
   "compileType": "miniprogram",
-  "libVersion": "3.0.0",
+  "libVersion": "3.17.0",
   "appid": "touristappid",
   "projectname": "mbs-mini-program",
   "condition": {}

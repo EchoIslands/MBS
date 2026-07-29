@@ -1,6 +1,8 @@
 {
   "navigationBarTitleText": "排队状态",
   "usingComponents": {
-    "mbs-icon": "/components/icon/icon"
+    "mbs-icon": "/components/icon/icon",
+    "mbs-status-badge": "/components/mbs-status-badge/mbs-status-badge",
+    "mbs-price": "/components/mbs-price/mbs-price"
   }
 }

@@ -207,13 +207,13 @@
     <view class="index-bottom-actions">
       <view class="index-bottom-btn index-bottom-btn-store" bindtap="goToProducts">
         <view class="index-bottom-icon-wrap">
-          <mbs-icon name="shoppingBag" size="32" color="var(--orange-700)" />
+          <mbs-icon name="shoppingBag" size="40" color="#a3582f" />
         </view>
         <view class="index-bottom-text">商品商城</view>
       </view>
       <view class="index-bottom-btn index-bottom-btn-booking" bindtap="goToBooking">
         <view class="index-bottom-icon-wrap">
-          <mbs-icon name="clock" size="32" color="#ffffff" />
+          <mbs-icon name="clock" size="40" color="#ffffff" />
         </view>
         <view class="index-bottom-text">立即预约</view>
       </view>

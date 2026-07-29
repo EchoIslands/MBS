@@ -2,6 +2,8 @@
   "navigationBarTitleText": "结算",
   "usingComponents": {
     "mbs-icon": "/components/icon/icon",
-    "login-modal": "/components/login-modal/login-modal"
+    "login-modal": "/components/login-modal/login-modal",
+    "mbs-price": "/components/mbs-price/mbs-price",
+    "mbs-status-badge": "/components/mbs-status-badge/mbs-status-badge"
   }
 }

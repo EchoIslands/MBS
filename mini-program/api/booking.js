@@ -1,4 +1,4 @@
-import { get, post } from '../utils/api';
+import { get, post, put } from '../utils/api';
 
 /**
  * 创建预约
@@ -13,6 +13,16 @@ export async function createBooking(data) {
  */
 export async function getBooking(id) {
   const result = await get(`/bookings/${id}`);
+  return result?.data || null;
+}
+
+/**
+ * 顾客取消预约
+ * @param {string} id 预约ID
+ * @param {string} customerId 顾客ID
+ */
+export async function cancelBooking(id, customerId) {
+  const result = await put(`/bookings/${id}/cancel`, { customerId });
   return result?.data || null;
 }
 

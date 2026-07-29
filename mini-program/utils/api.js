@@ -21,6 +21,8 @@ export function request(url, options = {}) {
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
 
+  console.log(`[mini-api] 发起请求: ${options.method || 'GET'} ${fullUrl}`);
+
   return new Promise((resolve, reject) => {
     let timeoutId = null;
     let completed = false;
@@ -33,18 +35,19 @@ export function request(url, options = {}) {
         ...(options.headers || {}),
       },
       data: options.body,
-      timeout: 30000,
+      timeout: 15000,
       success: (res) => {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
+
+        console.log(`[mini-api] 响应: ${fullUrl} -> ${res.statusCode}`);
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data);
           return;
         }
 
-        // 非 2xx 统一按失败处理，便于页面 catch 后给用户提示
         const errMsg = res.data?.error || res.data?.message || `请求失败（${res.statusCode}）`;
         if (res.statusCode !== 404) {
           console.warn(`[mini-api] ${fullUrl} 返回 ${res.statusCode}: ${errMsg}`);
@@ -69,7 +72,7 @@ export function request(url, options = {}) {
       requestTask.abort();
       console.warn(`[mini-api] ${fullUrl} 请求超时`);
       reject(new Error('请求超时'));
-    }, 30000);
+    }, 15000);
   });
 }
 

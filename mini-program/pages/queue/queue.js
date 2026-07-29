@@ -12,6 +12,28 @@ const serviceSteps = [
   { key: 'finish', label: '吹干整理', duration: 10 },
 ];
 
+function normalizeBooking(raw) {
+  if (!raw) return null;
+  const scheduledTime = raw.scheduledTime || raw.scheduled_time;
+  return {
+    ...raw,
+    id: raw.id,
+    shopId: raw.shopId || raw.shop_id,
+    customerId: raw.customerId || raw.customer_id,
+    customerName: raw.customerName || raw.customer_name || '顾客',
+    serviceId: raw.serviceId || raw.service_id,
+    serviceName: raw.serviceName || raw.service_name || '服务',
+    scheduledTime,
+    barberId: raw.barberId || raw.stylistId || raw.barber_id || raw.stylist_id,
+    barberName: raw.barberName || raw.stylistName || raw.barber_name || raw.stylist_name || '待安排',
+    status: raw.status || 'confirmed',
+    queueNumber: raw.queueNumber || raw.queue_number || 1,
+    price: typeof raw.price === 'number' ? raw.price : 0,
+    notes: raw.notes || '',
+    createdAt: raw.createdAt || raw.created_at,
+  };
+}
+
 function toTwoDigits(n) {
   return String(n).padStart(2, '0');
 }
@@ -50,10 +72,13 @@ Page({
     shopId: 'shop1',
     queue: null,
     myBooking: null,
+    stylist: null,
     shop: null,
     loading: true,
     error: '',
     currentDate: '',
+    // 服务步骤（绑定到 WXML 渲染）
+    serviceSteps,
     // 计算字段
     aheadCount: 0,
     waitTime: 0,
@@ -63,6 +88,7 @@ Page({
     timeSlotLabel: '',
     appointmentInfo: { days: 0, hours: 0, minutes: 0, totalMinutes: 0, isToday: true },
     distance: 1.0,
+    distanceStr: '1.0',
     walkTime: 12,
     shouldLeaveNow: false,
     reminderEnabled: true,
@@ -130,8 +156,13 @@ Page({
 
   async loadMyBooking(id) {
     try {
-      const booking = await getBooking(id);
-      this.setData({ myBooking: booking });
+      const booking = normalizeBooking(await getBooking(id));
+      const { shop } = this.data;
+      let stylist = null;
+      if (booking?.barberId && shop?.employees) {
+        stylist = shop.employees.find((e) => e.id === booking.barberId) || null;
+      }
+      this.setData({ myBooking: booking, stylist });
       this.refreshComputed();
     } catch (err) {
       console.warn('[queue] 加载我的预约失败:', err);
@@ -199,8 +230,16 @@ Page({
         totalMinutes <= walkTime + 30;
     }
 
+    // 服务已开始时先计算剩余时间，避免使用 stale data
+    let remainingMinutes = 0;
+    if (isStarted && myBooking?.scheduledTime) {
+      const elapsedMinutes = Math.floor((Date.now() - new Date(myBooking.scheduledTime).getTime()) / 60000);
+      const totalMinutes = serviceSteps.reduce((sum, s) => sum + s.duration, 0);
+      remainingMinutes = Math.max(0, totalMinutes - elapsedMinutes);
+    }
+
     // 等待时间：服务未开始按前方人数 × 服务时长；已开始按服务剩余时间
-    const waitTime = isStarted ? this.data.remainingMinutes : (aheadCount === 0 ? 0 : aheadCount * serviceMinutes);
+    const waitTime = isStarted ? remainingMinutes : (aheadCount === 0 ? 0 : aheadCount * serviceMinutes);
 
     this.setData({
       position,
@@ -210,9 +249,11 @@ Page({
       appointmentInfo,
       timeSlotLabel,
       distance,
+      distanceStr: distance.toFixed(1),
       walkTime,
       shouldLeaveNow,
       waitTime,
+      remainingMinutes,
     });
 
     this.computeProgress();
@@ -326,25 +367,4 @@ Page({
     return `${d.getMonth() + 1}月${d.getDate()}日 ${weekDays[d.getDay()]} ${toTwoDigits(d.getHours())}:${toTwoDigits(d.getMinutes())}`;
   },
 
-  statusText(status) {
-    const map = {
-      pending: '待店铺确认',
-      confirmed: '已确认',
-      serving: '服务中',
-      completed: '已完成',
-      cancelled: '已取消',
-    };
-    return map[status] || status;
-  },
-
-  statusClass(status) {
-    const map = {
-      pending: 'status-pending',
-      confirmed: 'status-confirmed',
-      serving: 'status-serving',
-      completed: 'status-completed',
-      cancelled: 'status-cancelled',
-    };
-    return map[status] || 'status-pending';
-  },
 });
