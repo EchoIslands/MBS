@@ -13,10 +13,10 @@
   align-items: center;
   justify-content: center;
   border-radius: 16rpx;
+}
 
-  &:active {
-    background: var(--gray-100);
-  }
+.order-header-btn:active {
+  background: var(--gray-100);
 }
 
 .order-header-placeholder {
@@ -238,10 +238,10 @@
   gap: 20rpx;
   padding: 20rpx 0;
   border-bottom: 1rpx solid var(--gray-50);
+}
 
-  &:last-child {
-    border-bottom: none;
-  }
+.detail-item:last-child {
+  border-bottom: none;
 }
 
 .detail-item-image {

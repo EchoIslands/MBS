@@ -15,6 +15,13 @@ create table if not exists shops (
   avatar text,
   images text[],
   services jsonb default '[]'::jsonb,
+  products jsonb default '[]'::jsonb,
+  opening_hours jsonb default '{}'::jsonb,
+  employees jsonb default '[]'::jsonb,
+  booking_confirm_mode text default 'auto',
+  stockholder_config jsonb default '{}'::jsonb,
+  rating numeric default 5,
+  review_count integer default 0,
   created_at timestamptz default now()
 );
 
