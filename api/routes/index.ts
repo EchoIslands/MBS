@@ -2564,7 +2564,7 @@ const shopFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   avatar: s.avatar || '',
   images: s.images || [],
   services: s.services || [],
-  products: s.products || [],
+  products: truncateProductImages(s.products as unknown[]) || [],
   openingHours: s.opening_hours || {},
   employees: s.employees || [],
   bookingConfirmMode: s.booking_confirm_mode || 'auto',
@@ -2754,6 +2754,27 @@ const productFromDb = (p: Record<string, unknown>): Record<string, unknown> => (
   updatedAt: p.updated_at,
 });
 
+// 对 base64 图片进行截断，避免单个产品图片达数 MB 导致 API 响应/小程序 setData 过大
+const MAX_BASE64_IMAGE_PREVIEW_LEN = 200;
+const truncateProductImages = (products: unknown[]): unknown[] => {
+  return (products || []).map((product) => {
+    if (!product || typeof product !== 'object') return product;
+    const p = product as Record<string, unknown>;
+    const rawImages = p.images;
+    if (!Array.isArray(rawImages)) return p;
+    const images = rawImages.map((url) => {
+      if (typeof url !== 'string') return url;
+      if (url.startsWith('data:')) {
+        return url.length > MAX_BASE64_IMAGE_PREVIEW_LEN
+          ? url.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
+          : url;
+      }
+      return url;
+    });
+    return { ...p, images };
+  });
+};
+
 // 前端 Product 对象 → 数据库 products 表字段
 const productToDb = (p: Record<string, unknown>): Record<string, unknown> => ({
   id: p.id,
@@ -2827,7 +2848,7 @@ const insertInventoryLog = async (payload: {
 const syncShopProductsJsonb = async (shopId: string) => {
   try {
     const { data: products } = await supabase.from('products').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
-    const jsonbProducts = (products || []).map(productFromDb);
+    const jsonbProducts = truncateProductImages((products || []).map(productFromDb));
     await supabase.from('shops').update({ products: jsonbProducts, updated_at: new Date().toISOString() }).eq('id', shopId);
   } catch (err) {
     console.error('[shops] 同步 shops.products JSONB 失败:', err);
@@ -2850,7 +2871,7 @@ shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
       console.error('[shops] 查询商品失败:', error.message);
       return res.status(500).json({ success: false, error: '查询商品失败' });
     }
-    res.json({ success: true, data: (data || []).map(productFromDb) });
+    res.json({ success: true, data: truncateProductImages((data || []).map(productFromDb)) });
   } catch (error) {
     console.error('[shops] 获取商品异常:', error);
     res.status(500).json({ success: false, error: '获取商品失败' });

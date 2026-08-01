@@ -58,8 +58,11 @@ Page({
 
   async loadShop() {
     this.setData({ loading: true, error: '' });
+    const startTime = Date.now();
     try {
+      console.log('[index] 开始加载店铺 shop1');
       const rawShop = await getShop('shop1');
+      console.log(`[index] 店铺加载完成，耗时 ${Date.now() - startTime}ms`);
       if (!rawShop) {
         this.setData({ error: '店铺信息加载失败', loading: false });
         return;
@@ -127,8 +130,13 @@ Page({
       }
       this.setData(payload);
     } catch (err) {
-      console.error('加载店铺失败:', err);
-      this.setData({ error: '网络错误，请稍后重试', loading: false });
+      const elapsed = Date.now() - startTime;
+      const isTimeout = err && (err.isTimeout || /timeout|超时/i.test(err.message));
+      console.error(`[index] 加载店铺失败 (耗时 ${elapsed}ms):`, err);
+      const errorMsg = isTimeout
+        ? '连接服务器超时，请检查网络后点击重试'
+        : (err && err.message) || '网络错误，请稍后重试';
+      this.setData({ error: errorMsg, loading: false });
     }
   },
 

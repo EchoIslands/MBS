@@ -17,11 +17,14 @@ function getApiBase() {
   return 'https://www.hfmbs.cn/api';
 }
 
+const DEFAULT_TIMEOUT = 30000; // 小程序网络环境复杂，给予更充裕的超时时间
+
 export function request(url, options = {}) {
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
+  const timeout = options.timeout || DEFAULT_TIMEOUT;
 
-  console.log(`[mini-api] 发起请求: ${options.method || 'GET'} ${fullUrl}`);
+  console.log(`[mini-api] 发起请求: ${options.method || 'GET'} ${fullUrl} (超时:${timeout}ms)`);
 
   return new Promise((resolve, reject) => {
     let timeoutId = null;
@@ -35,7 +38,7 @@ export function request(url, options = {}) {
         ...(options.headers || {}),
       },
       data: options.body,
-      timeout: 15000,
+      timeout,
       success: (res) => {
         if (completed) return;
         completed = true;
@@ -43,7 +46,12 @@ export function request(url, options = {}) {
 
         console.log(`[mini-api] 响应: ${fullUrl} -> ${res.statusCode}`);
 
+        // 微信返回 200 但后端可能返回错误信息
         if (res.statusCode >= 200 && res.statusCode < 300) {
+          const bodyStr = res.data ? JSON.stringify(res.data) : '';
+          if (bodyStr.length > 512 * 1024) {
+            console.warn(`[mini-api] ${fullUrl} 响应体过大: ${Math.round(bodyStr.length / 1024)}KB`);
+          }
           resolve(res.data);
           return;
         }
@@ -54,6 +62,7 @@ export function request(url, options = {}) {
         }
         const err = new Error(errMsg);
         err.statusCode = res.statusCode;
+        err.response = res.data;
         reject(err);
       },
       fail: (err) => {
@@ -62,7 +71,10 @@ export function request(url, options = {}) {
         if (timeoutId) clearTimeout(timeoutId);
 
         console.warn(`[mini-api] ${fullUrl} 请求失败（${err.errMsg}）`);
-        reject(new Error(err.errMsg || '网络请求失败'));
+        const friendly = err.errMsg || '网络请求失败';
+        const error = new Error(friendly.includes('timeout') ? '请求超时，请稍后重试' : friendly);
+        error.original = err;
+        reject(error);
       },
     });
 
@@ -71,8 +83,10 @@ export function request(url, options = {}) {
       completed = true;
       requestTask.abort();
       console.warn(`[mini-api] ${fullUrl} 请求超时`);
-      reject(new Error('请求超时'));
-    }, 15000);
+      const err = new Error('请求超时，请稍后重试');
+      err.isTimeout = true;
+      reject(err);
+    }, timeout);
   });
 }
 
