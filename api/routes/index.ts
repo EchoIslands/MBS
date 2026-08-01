@@ -1408,6 +1408,93 @@ customersRouter.get('/:id/public', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/customers/:id/recharge
+ * 顾客端自助储值充值（小程序/H5）
+ */
+customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shopId, storedValueLevel } = req.body || {};
+
+    if (!shopId) {
+      return res.status(400).json({ success: false, error: '缺少店铺ID' });
+    }
+    if (!storedValueLevel) {
+      return res.status(400).json({ success: false, error: '缺少储值档位' });
+    }
+
+    const planAmounts: Record<string, number> = {
+      store_500: 500,
+      store_1000: 1000,
+      store_2000: 2000,
+      store_5000: 5000,
+    };
+    const targetAmount = planAmounts[storedValueLevel];
+    if (targetAmount === undefined) {
+      return res.status(400).json({ success: false, error: '无效的储值档位' });
+    }
+
+    const { data: customer, error: fetchError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+    if (fetchError || !customer) {
+      return res.status(404).json({ success: false, error: '客户不存在' });
+    }
+
+    const currentBalance = Number(customer.stored_value_balance || 0);
+    const addAmount = Math.max(0, targetAmount - currentBalance);
+    const newBalance = currentBalance + addAmount;
+    const hadRecharged = customer.stored_value_level && customer.stored_value_level !== 'none';
+    const now = new Date().toISOString();
+
+    const { data: updatedCustomer, error: updateError } = await supabase
+      .from('customers')
+      .update({
+        stored_value_level: storedValueLevel,
+        stored_value_balance: newBalance,
+        balance: newBalance,
+        has_recharged: true,
+        recharge_level: storedValueLevel,
+        stored_value_expires_at: new Date(Date.now() + 2 * 365 * 86400000).toISOString(),
+        is_member: true,
+        membership_level: customer.is_stockholder ? 'stockholder' : 'premium',
+        updated_at: now,
+      })
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .select()
+      .single();
+    if (updateError || !updatedCustomer) {
+      console.error('[customers] 自助储值失败:', updateError?.message);
+      return res.status(500).json({ success: false, error: '充值失败' });
+    }
+
+    if (addAmount > 0) {
+      await supabase.from('stored_value_transactions').insert({
+        id: `svtx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        customer_id: id,
+        type: hadRecharged ? 'upgrade' : 'recharge',
+        amount: addAmount,
+        balance_after: newBalance,
+        referral_portion: 0,
+        note: hadRecharged ? `自助储值升级至 ${storedValueLevel}` : `自助开通 ${storedValueLevel}`,
+        created_at: now,
+        created_by: id,
+        created_by_name: customer.name || '顾客',
+      });
+    }
+
+    res.json({ success: true, data: toCamelCase(updatedCustomer) });
+  } catch (err: unknown) {
+    console.error('[customers] 自助储值异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
 // 所有客户接口都需要登录
 customersRouter.use(authMiddleware);
 

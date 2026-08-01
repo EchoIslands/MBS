@@ -1,0 +1,53 @@
+<view class="recharge-page">
+  <!-- 自定义头部 -->
+  <view class="recharge-header">
+    <view class="recharge-header__back" bindtap="goBack">
+      <mbs-icon name="arrowLeft" size="36" color="var(--gray-800)" />
+    </view>
+    <view class="recharge-header__title">储值充值</view>
+    <view class="recharge-header__spacer"></view>
+  </view>
+
+  <view class="recharge-body">
+    <!-- 当前余额 -->
+    <view class="balance-card">
+      <view class="balance-label">当前储值余额</view>
+      <view class="balance-value">¥{{balance.toFixed(2)}}</view>
+      <view class="balance-level" wx:if="{{currentLevel !== 'none'}}">当前等级：{{levelLabel}}</view>
+    </view>
+
+    <!-- 选择档位 -->
+    <view class="section-title">选择充值档位</view>
+    <view class="plan-list">
+      <view
+        wx:for="{{plans}}"
+        wx:key="level"
+        class="plan-card {{selectedLevel === item.level ? 'plan-card--active' : ''}}"
+        data-level="{{item.level}}"
+        bindtap="onSelectPlan"
+      >
+        <view class="plan-amount">¥{{item.amount}}</view>
+        <view class="plan-discount">享{{item.discount}}折</view>
+        <view class="plan-tag" wx:if="{{selectedLevel === item.level}}">已选</view>
+      </view>
+    </view>
+
+    <!-- 充值说明 -->
+    <view class="recharge-tips">
+      <view class="tip-item">· 储值余额可用于商品订单余额支付</view>
+      <view class="tip-item">· 充值后等级自动提升，享受对应折扣</view>
+      <view class="tip-item">· 储值有效期为自充值日起 2 年</view>
+    </view>
+  </view>
+
+  <!-- 底部按钮 -->
+  <view class="recharge-footer">
+    <view class="recharge-summary">
+      <text class="recharge-summary__label">实付金额：</text>
+      <text class="recharge-summary__price">¥{{selectedAmount}}</text>
+    </view>
+    <button class="recharge-btn {{submitting ? 'recharge-btn--disabled' : ''}}" bindtap="onRecharge" disabled="{{submitting}}">
+      {{submitting ? '充值中...' : '立即充值'}}
+    </button>
+  </view>
+</view>

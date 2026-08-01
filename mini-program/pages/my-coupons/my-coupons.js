@@ -1,5 +1,6 @@
 import { getCustomerCoupons } from '../../api/product';
 import { getCustomerId } from '../../utils/storage';
+import { getCart } from '../../utils/cart';
 
 Page({
   data: {
@@ -100,8 +101,25 @@ Page({
     const { coupon } = e.currentTarget.dataset;
     if (!coupon) return;
     const { shopId } = this.data;
+
     if (coupon.applicableScope === 'service') {
       wx.switchTab({ url: `/pages/index/index?shopId=${shopId}` });
+      return;
+    }
+
+    const cart = getCart();
+    const cartCount = cart.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    if (cartCount > 0) {
+      wx.showActionSheet({
+        itemList: ['去购物车结算', '去商城逛逛'],
+        success: (res) => {
+          if (res.tapIndex === 0) {
+            wx.navigateTo({ url: `/pages/cart/cart?shopId=${shopId}` });
+          } else {
+            wx.navigateTo({ url: `/pages/products/products?shopId=${shopId}` });
+          }
+        },
+      });
     } else {
       wx.navigateTo({ url: `/pages/products/products?shopId=${shopId}` });
     }

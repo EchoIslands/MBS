@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "我的商品订单",
+  "navigationStyle": "custom",
   "enablePullDownRefresh": true,
   "usingComponents": {
     "login-modal": "../../components/login-modal/login-modal"

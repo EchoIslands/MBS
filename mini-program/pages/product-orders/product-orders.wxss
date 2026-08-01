@@ -6,6 +6,21 @@
 }
 
 /* ===== 自定义头部 ===== */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: #fff;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.sticky-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(16rpx + var(--status-bar-height, 0)) 32rpx 16rpx;
+}
+
 .order-header-btn {
   width: 72rpx;
   height: 72rpx;

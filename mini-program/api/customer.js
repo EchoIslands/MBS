@@ -23,3 +23,14 @@ export async function getCustomerBookings(customerId) {
   const result = await get(`/bookings/customer/${customerId}`);
   return result?.data || [];
 }
+
+/**
+ * 顾客自助储值充值
+ */
+export async function rechargeCustomer(customerId, shopId, storedValueLevel) {
+  const result = await post(`/customers/${customerId}/recharge`, { shopId, storedValueLevel });
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '充值失败');
+  }
+  return result?.data || null;
+}
