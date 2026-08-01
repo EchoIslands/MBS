@@ -15,7 +15,9 @@
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTitleText": "MBS 理发店",
-    "navigationBarTextStyle": "black"
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f9fafb"
   },
+  "style": "v2",
   "sitemapLocation": "sitemap.json"
 }

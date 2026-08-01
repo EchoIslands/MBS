@@ -1,40 +1,39 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="profile-page">
-  <!-- 顶部会员卡（视觉焦点 — 让会员一眼看到自己的权益价值） -->
+  <!-- 1) 渐变 VIP 头部 -->
   <view wx:if="{{customer}}" class="{{vipHeaderClass}}">
-    <!-- 装饰背景 -->
     <view class="vip-decor vip-decor-1"></view>
     <view class="vip-decor vip-decor-2"></view>
     <view class="vip-decor vip-decor-3"></view>
 
     <view class="vip-header-inner">
       <!-- 基本信息行 -->
-      <view class="flex items-center justify-between mb-5">
-        <view class="flex items-center gap-3">
+      <view class="vip-info-row">
+        <view class="vip-info-left">
           <view class="vip-avatar">
-            <mbs-icon name="user" size="44" color="var(--card-bg)" />
+            <mbs-icon name="user" size="44" color="rgba(255,255,255,0.9)" />
           </view>
-          <view>
+          <view class="vip-identity">
             <view class="vip-name">{{customer.name || '顾客'}}</view>
             <view class="vip-phone">{{customer.phone || ''}}</view>
           </view>
         </view>
-        <view class="flex flex-col items-end gap-2">
+        <view class="vip-info-right">
           <view class="vip-badge">
-            <mbs-icon name="crown" size="24" color="var(--card-bg)" />
+            <mbs-icon name="crown" size="24" color="rgba(255,255,255,0.95)" />
             <text>{{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
           </view>
           <view wx:if="{{storedLevel !== StoredValueLevel.NONE}}" class="vip-badge vip-badge-sub">
-            <mbs-icon name="wallet" size="20" color="var(--card-bg)" />
+            <mbs-icon name="wallet" size="20" color="rgba(255,255,255,0.95)" />
             <text>{{fmt.getStoredValueLabel(storedLevel)}}</text>
           </view>
         </view>
       </view>
 
-      <!-- 核心价值数字：当前综合折扣 -->
+      <!-- 2) 折扣卡 -->
       <view class="vip-discount-card">
         <view class="vip-discount-label">
-          <mbs-icon name="sparkles" size="24" color="var(--card-bg)" />
+          <mbs-icon name="sparkles" size="24" color="rgba(255,255,255,0.9)" />
           您当前的消费折扣
         </view>
         <view class="vip-discount-value">{{fmt.formatDiscount(effectiveDiscount)}} 折</view>
@@ -46,66 +45,65 @@
         </view>
       </view>
 
-      <!-- 数据速览 -->
+      <!-- 3) 4 列数据速览 -->
       <view class="vip-stats-grid">
         <view class="vip-stat-item">
           <view class="vip-stat-label">
-            <mbs-icon name="wallet" size="20" color="var(--card-bg)" /> 储值余额
+            <mbs-icon name="wallet" size="20" color="rgba(255,255,255,0.85)" />
+            储值余额
           </view>
           <view class="vip-stat-value">¥{{balance}}</view>
         </view>
         <view class="vip-stat-item">
           <view class="vip-stat-label">
-            <mbs-icon name="gift" size="20" color="var(--card-bg)" /> 可提现返现
+            <mbs-icon name="gift" size="20" color="rgba(255,255,255,0.85)" />
+            可提现返现
           </view>
           <view class="vip-stat-value">¥{{withdrawable}}</view>
           <view wx:if="{{withdrawable > 0}}" class="vip-stat-action" bindtap="openWithdrawModal">申请提现</view>
         </view>
         <view class="vip-stat-item">
           <view class="vip-stat-label">
-            <mbs-icon name="star" size="20" color="var(--card-bg)" /> 积分
+            <mbs-icon name="star" size="20" color="rgba(255,255,255,0.85)" />
+            积分
           </view>
           <view class="vip-stat-value">{{points}}</view>
         </view>
         <view class="vip-stat-item">
           <view class="vip-stat-label">
-            <mbs-icon name="award" size="20" color="var(--card-bg)" /> 累计消费
+            <mbs-icon name="award" size="20" color="rgba(255,255,255,0.85)" />
+            累计消费
           </view>
           <view class="vip-stat-value">¥{{totalSpent}}</view>
         </view>
       </view>
 
-      <!-- VIP 到期提醒 -->
+      <!-- 4) VIP 到期提醒 -->
       <view wx:if="{{expiringSoon && customer.purchaseVIPExpiresAt}}" class="vip-alert vip-alert-yellow">
-        <mbs-icon name="alertCircle" size="28" color="var(--card-bg)" />
+        <mbs-icon name="alertCircle" size="28" color="#92400e" />
         <text>您的 {{fmt.getPurchaseVIPLabel(purchaseLevel)}} 将于 {{fmt.formatShortDate(customer.purchaseVIPExpiresAt)}} 到期，请及时续费</text>
       </view>
 
       <!-- 储值到期提醒 -->
       <view wx:if="{{storedExpiringSoon && customer.storedValueExpiresAt}}" class="vip-alert vip-alert-orange">
-        <mbs-icon name="alertCircle" size="28" color="var(--card-bg)" />
+        <mbs-icon name="alertCircle" size="28" color="#9a3412" />
         <text>您的 {{fmt.getStoredValueLabel(storedLevel)}} 将于 {{fmt.formatShortDate(customer.storedValueExpiresAt)}} 到期。到期前充值满额可延续储值福利</text>
       </view>
 
-      <!-- 股东会员专属 -->
+      <!-- 5) 股东会员专属 -->
       <view wx:if="{{customer.isStockholder}}" class="vip-stockholder">
         <view class="vip-stockholder-label">
-          <mbs-icon name="gift" size="24" color="var(--card-bg)" /> 股东推荐收益
+          <mbs-icon name="gift" size="24" color="rgba(255,255,255,0.9)" />
+          股东推荐收益
         </view>
-        <view class="flex items-center justify-between">
+        <view class="vip-stockholder-row">
           <view>
             <view class="vip-stockholder-value">¥{{customer.referralEarnings || 0}}</view>
             <view class="vip-stockholder-hint">已推荐客户到店 · 提成比例 {{(customer.referralBonusRate || 0.10) * 100}}%</view>
           </view>
-          <view class="vip-stockholder-crown">👑</view>
-        </view>
-      </view>
-
-      <!-- 股东权益标签 -->
-      <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="vip-stockholder-benefits">
-        <view class="vip-stockholder-benefit-title">股东会员专享权益</view>
-        <view class="vip-stockholder-benefit-tags">
-          <view wx:for="{{stockholderSummary.benefits}}" wx:key="*this" class="vip-stockholder-benefit-tag">{{item}}</view>
+          <view class="vip-stockholder-crown">
+            <mbs-icon name="crown" size="80" color="rgba(255,255,255,0.35)" />
+          </view>
         </view>
       </view>
     </view>
@@ -127,7 +125,19 @@
 
   <!-- 主内容区 -->
   <view wx:if="{{customer}}" class="container profile-content">
-    <!-- 我的可用权益 -->
+
+    <!-- 股东会员权益说明卡 -->
+    <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-benefits-card">
+      <view class="card-title stockholder-benefits-title">
+        <mbs-icon name="award" size="36" color="#b45309" />
+        股东会员专享权益
+      </view>
+      <view class="stockholder-benefits-tags">
+        <view wx:for="{{stockholderSummary.benefits}}" wx:key="*this" class="stockholder-benefit-tag">{{item}}</view>
+      </view>
+    </view>
+
+    <!-- 6) 我的可用权益 -->
     <view wx:if="{{myBenefits.length > 0}}" class="card">
       <view class="card-title">
         <mbs-icon name="gift" size="32" color="var(--pink-500)" />
@@ -135,7 +145,7 @@
       </view>
       <view class="benefit-list">
         <view wx:for="{{myBenefits}}" wx:key="index" class="benefit-item">
-          <view class="flex items-center gap-2">
+          <view class="benefit-left">
             <mbs-icon name="{{fmt.benefitIconName(item.type)}}" size="28" color="{{fmt.benefitIconColor(item.type)}}" />
             <text class="benefit-name">{{item.name}}</text>
           </view>
@@ -144,7 +154,7 @@
       </view>
     </view>
 
-    <!-- 购买 VIP 权益对比 -->
+    <!-- 7) 购买 VIP 权益对比 -->
     <view class="card">
       <view class="card-title">
         <mbs-icon name="crown" size="32" color="var(--accent)" />
@@ -163,7 +173,7 @@
           <view wx:for="{{vipBenefits}}" wx:key="index" class="benefits-row">
             <view class="benefits-cell benefits-feature">{{item.feature}}</view>
             <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.BRONZE ? 'text-orange-600 font-bold bg-orange-light' : 'text-gray-500'}}">{{item.bronze}}</view>
-            <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.SILVER ? 'text-blue font-bold bg-blue-light' : 'text-gray-500'}}">{{item.silver}}</view>
+            <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.SILVER ? 'text-blue-600 font-bold bg-blue-light' : 'text-gray-500'}}">{{item.silver}}</view>
             <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.GOLD ? 'text-yellow-600 font-bold bg-yellow-light' : 'text-gray-500'}}">{{item.gold}}</view>
             <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.DIAMOND ? 'text-purple-600 font-bold bg-purple-light' : 'text-gray-500'}}">{{item.diamond}}</view>
           </view>
@@ -171,7 +181,7 @@
       </view>
 
       <view wx:if="{{purchasePlan}}" class="vip-current-card vip-current-orange">
-        <view class="flex-1 min-w-0">
+        <view class="vip-current-info">
           <view class="vip-current-title">当前：{{purchasePlan.name}}</view>
           <view class="vip-current-desc">{{purchasePlan.benefits && purchasePlan.benefits.join ? purchasePlan.benefits.join(' · ') : ''}}</view>
         </view>
@@ -179,7 +189,7 @@
       </view>
     </view>
 
-    <!-- 储值会员权益对比 -->
+    <!-- 8) 储值会员权益对比 -->
     <view class="card">
       <view class="card-title">
         <mbs-icon name="wallet" size="32" color="var(--success)" />
@@ -206,15 +216,17 @@
       </view>
 
       <view wx:if="{{storedPlan}}" class="vip-current-card vip-current-green">
-        <view class="vip-current-title">当前：{{storedPlan.name}}</view>
-        <view class="vip-current-desc">储值 {{storedPlan.amount}} 元，折上折再享 {{fmt.formatDiscount(storedPlan.discount)}} 折</view>
+        <view class="vip-current-info">
+          <view class="vip-current-title">当前：{{storedPlan.name}}</view>
+          <view class="vip-current-desc">储值 {{storedPlan.amount}} 元，折上折再享 {{fmt.formatDiscount(storedPlan.discount)}} 折</view>
+        </view>
       </view>
     </view>
 
-    <!-- 我的预约 -->
+    <!-- 9) 我的预约 -->
     <view class="card">
-      <view class="flex items-center justify-between mb-4">
-        <view class="card-title" style="margin-bottom: 0;">
+      <view class="booking-header">
+        <view class="card-title booking-title">
           <mbs-icon name="calendar" size="32" color="var(--primary)" />
           我的预约
         </view>
@@ -233,7 +245,8 @@
           </view>
           <view class="empty-text">{{activeTab === 'current' ? '暂无进行中的预约' : '暂无历史预约'}}</view>
           <view wx:if="{{activeTab === 'current'}}" class="btn btn-primary btn-small" style="margin-top: 24rpx;" bindtap="goToBooking">
-            去预约 <mbs-icon name="chevronRight" size="20" color="var(--card-bg)" />
+            去预约
+            <mbs-icon name="chevronRight" size="20" color="#fff" />
           </view>
         </view>
 
@@ -247,13 +260,13 @@
             data-id="{{booking.id}}"
           >
             <view class="booking-main">
-              <view class="min-w-0 flex-1">
+              <view class="booking-info">
                 <view class="booking-shop">{{booking.shopName || 'MBS 理发店'}}</view>
                 <view class="booking-service">{{booking.serviceName}}</view>
               </view>
               <mbs-status-badge status="{{booking.status}}" />
             </view>
-            <view class="booking-meta-row">
+            <view class="booking-meta">
               <view class="booking-time">
                 <mbs-icon name="clock" size="20" color="var(--text-tertiary)" />
                 {{fmt.formatDateTime(booking.scheduledTime)}}
@@ -265,7 +278,7 @@
       </block>
     </view>
 
-    <!-- 快捷功能 -->
+    <!-- 10) 快捷功能 3 列网格 -->
     <view class="quick-grid">
       <view class="quick-item" bindtap="goToCoupons">
         <mbs-icon name="ticket" size="40" color="var(--accent)" />
@@ -284,20 +297,20 @@
       </view>
     </view>
 
-    <!-- 退出登录 -->
+    <!-- 11) 退出登录 -->
     <view class="btn btn-logout" bindtap="handleLogout">
       <mbs-icon name="logOut" size="28" color="var(--danger)" />
       退出登录
     </view>
   </view>
 
-  <!-- 兜底：如果所有条件都不满足，至少显示重试按钮 -->
+  <!-- 兜底 -->
   <view wx:if="{{!loading && !error && !customer}}" class="container empty-state">
     <view class="empty-text">页面加载异常，请重试</view>
     <view class="btn btn-primary" bindtap="loadProfile">重新加载</view>
   </view>
 
-  <!-- 提现申请弹窗 -->
+  <!-- 12) 提现弹窗 -->
   <view wx:if="{{withdrawModalOpen}}" class="modal-mask" catchtap="closeWithdrawModal">
     <view class="modal-dialog" catchtap="stopPropagation">
       <view class="modal-header">
@@ -338,7 +351,7 @@
 
         <view class="withdraw-section">
           <view class="withdraw-section-title">提现金额</view>
-          <view class="withdraw-amount-input-wrap">
+          <view class="withdraw-amount-wrap">
             <text class="withdraw-amount-symbol">¥</text>
             <input
               class="withdraw-amount-input"
@@ -361,7 +374,7 @@
     </view>
   </view>
 
-  <!-- 预约详情弹窗 -->
+  <!-- 13) 预约详情弹窗 -->
   <view wx:if="{{viewingBooking}}" class="modal-mask" catchtap="closeBookingModal">
     <view class="modal-dialog" catchtap="stopPropagation">
       <view class="modal-header">
@@ -376,7 +389,7 @@
           <mbs-status-badge status="{{viewingBooking.status}}" />
         </view>
 
-        <view class="info-list" style="margin-top: 24rpx;">
+        <view class="info-list">
           <view class="info-row">
             <text class="info-label"><mbs-icon name="mapPin" size="24" color="var(--text-tertiary)" /> 店铺</text>
             <text class="info-value">{{viewingBooking.shopName || 'MBS 理发店'}}</text>
@@ -401,9 +414,9 @@
             <text class="info-label"># 排队号</text>
             <text class="info-value">#{{viewingBooking.queueNumber || '-'}}</text>
           </view>
-          <view wx:if="{{viewingBooking.notes}}" class="info-row" style="align-items: flex-start;">
+          <view wx:if="{{viewingBooking.notes}}" class="info-row info-row-start">
             <text class="info-label"><mbs-icon name="messageSquare" size="24" color="var(--text-tertiary)" /> 备注</text>
-            <text class="info-value" style="text-align: left; flex: 1;">{{viewingBooking.notes}}</text>
+            <text class="info-value">{{viewingBooking.notes}}</text>
           </view>
         </view>
       </view>

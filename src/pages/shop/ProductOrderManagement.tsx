@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Package, Loader2, CheckCircle, Clock, Truck, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Package, Loader2, CheckCircle, Clock, Truck, Search, X, ChevronLeft, ChevronRight, MapPin, Package as PackageIcon } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { ProductOrder, ProductOrderRefund } from '../../../shared/types';
 import { productOrderApi } from '../../api';
@@ -10,6 +10,7 @@ const statusLabels: Record<string, string> = {
   paid: '已支付',
   preparing: '备货中',
   ready: '待提货',
+  shipped: '已发货',
   completed: '已完成',
   cancelled: '已取消',
   refunded: '已退款',
@@ -21,21 +22,37 @@ const statusColors: Record<string, string> = {
   paid: 'text-blue-600 bg-blue-100',
   preparing: 'text-yellow-600 bg-yellow-100',
   ready: 'text-purple-600 bg-purple-100',
+  shipped: 'text-indigo-600 bg-indigo-100',
   completed: 'text-green-600 bg-green-100',
   cancelled: 'text-gray-600 bg-gray-100',
   refunded: 'text-red-600 bg-red-100',
   refunding: 'text-pink-600 bg-pink-100',
 };
 
-type TabKey = 'all' | 'pending' | 'processing' | 'ready' | 'completed' | 'cancelled';
+type TabKey = 'all' | 'pending' | 'processing' | 'ready' | 'shipped' | 'completed' | 'cancelled';
 
 const tabs: { key: TabKey; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'pending', label: '待支付' },
   { key: 'processing', label: '处理中' },
   { key: 'ready', label: '待提货' },
+  { key: 'shipped', label: '已发货' },
   { key: 'completed', label: '已完成' },
   { key: 'cancelled', label: '已取消' },
+];
+
+// 常用快递公司列表
+const SHIPPING_COMPANIES = [
+  '顺丰速运',
+  '京东快递',
+  '中通快递',
+  '圆通速递',
+  '韵达速递',
+  '申通快递',
+  '百世快递',
+  '极兔速递',
+  'EMS',
+  '邮政快递',
 ];
 
 const ProductOrderManagement: React.FC = () => {
@@ -52,6 +69,11 @@ const ProductOrderManagement: React.FC = () => {
   const [verifyInputs, setVerifyInputs] = useState<Record<string, string>>({});
   const [detailOrder, setDetailOrder] = useState<ProductOrder | null>(null);
   const [refundModal, setRefundModal] = useState<{ open: boolean; refund?: ProductOrderRefund; rejectReason: string }>({ open: false, rejectReason: '' });
+  
+  // 发货弹窗状态
+  const [shipModal, setShipModal] = useState<{ open: boolean; order?: ProductOrder }>({ open: false });
+  const [shipForm, setShipForm] = useState({ company: '', no: '' });
+  const [trackingModal, setTrackingModal] = useState<{ open: boolean; order?: ProductOrder; tracking: Array<{ id: string; orderId: string; shippingCompany: string; shippingNo: string; eventTime: string; eventDescription: string; location: string; }> }>({ open: false, tracking: [] });
 
   const shopId = currentShop?.id || '';
 
@@ -62,8 +84,16 @@ const ProductOrderManagement: React.FC = () => {
     }
     setLoading(true);
     try {
-      const statusParam =
-        activeTab === 'all' ? undefined : activeTab === 'processing' ? 'paid,preparing' : activeTab;
+      let statusParam: string | undefined;
+      if (activeTab === 'all') {
+        statusParam = undefined;
+      } else if (activeTab === 'processing') {
+        statusParam = 'paid,preparing';
+      } else if (activeTab === 'shipped') {
+        statusParam = 'shipped';
+      } else {
+        statusParam = activeTab;
+      }
       const data = await productOrderApi.getByShop(shopId, {
         status: statusParam,
         keyword: keyword.trim() || undefined,
@@ -124,6 +154,54 @@ const ProductOrderManagement: React.FC = () => {
       alert((err as Error).message || '核销失败');
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  // 发货操作
+  const openShipModal = (order: ProductOrder) => {
+    setShipForm({ company: order.shippingCompany || '', no: order.shippingNo || '' });
+    setShipModal({ open: true, order });
+  };
+
+  const handleShipOrder = async () => {
+    if (!shipModal.order) return;
+    if (!shipForm.company || !shipForm.no) {
+      alert('请填写物流公司和运单号');
+      return;
+    }
+    setUpdatingId(shipModal.order.id);
+    try {
+      const updated = await productOrderApi.shipOrder(shipModal.order.id, shipForm);
+      if (updated) {
+        setOrders((prev) => prev.map((o) => (o.id === shipModal.order!.id ? { ...o, ...updated } : o)));
+        setShipModal({ open: false });
+        setShipForm({ company: '', no: '' });
+        alert('发货成功');
+        // 如果在详情弹窗中，也更新详情
+        if (detailOrder?.id === shipModal.order.id) {
+          setDetailOrder({ ...detailOrder, ...updated });
+        }
+      } else {
+        alert('发货失败');
+      }
+    } catch (err) {
+      console.error('[ProductOrderManagement] 发货失败:', err);
+      alert((err as Error).message || '发货失败');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // 查看物流
+  const openTrackingModal = async (order: ProductOrder) => {
+    setTrackingModal({ open: true, order, tracking: [] });
+    try {
+      const tracking = await productOrderApi.getTrackingInfo(order.id);
+      setTrackingModal({ open: true, order, tracking });
+    } catch (err) {
+      console.error('[ProductOrderManagement] 获取物流失败:', err);
+      alert((err as Error).message || '获取物流信息失败');
+      setTrackingModal({ open: false, order: undefined, tracking: [] });
     }
   };
 
@@ -211,27 +289,48 @@ const ProductOrderManagement: React.FC = () => {
 
     if (order.status === 'paid') {
       return (
-        <button
-          onClick={() => updateOrderStatus(order.id, 'preparing')}
-          disabled={isUpdating}
-          className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1"
-        >
-          {isUpdating && <Loader2 size={14} className="animate-spin" />}
-          开始备货
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => updateOrderStatus(order.id, 'preparing')}
+            disabled={isUpdating}
+            className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1"
+          >
+            {isUpdating && <Loader2 size={14} className="animate-spin" />}
+            开始备货
+          </button>
+          {/* 支持发货的订单也可以直接发货 */}
+          <button
+            onClick={() => openShipModal(order)}
+            disabled={isUpdating}
+            className="px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center gap-1"
+          >
+            <Truck size={14} />
+            立即发货
+          </button>
+        </div>
       );
     }
 
     if (order.status === 'preparing') {
       return (
-        <button
-          onClick={() => updateOrderStatus(order.id, 'ready')}
-          disabled={isUpdating}
-          className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1"
-        >
-          {isUpdating && <Loader2 size={14} className="animate-spin" />}
-          通知提货
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => updateOrderStatus(order.id, 'ready')}
+            disabled={isUpdating}
+            className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1"
+          >
+            {isUpdating && <Loader2 size={14} className="animate-spin" />}
+            通知提货
+          </button>
+          <button
+            onClick={() => openShipModal(order)}
+            disabled={isUpdating}
+            className="px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center gap-1"
+          >
+            <Truck size={14} />
+            立即发货
+          </button>
+        </div>
       );
     }
 
@@ -253,7 +352,28 @@ const ProductOrderManagement: React.FC = () => {
             {isUpdating && <Loader2 size={14} className="animate-spin" />}
             核销提货
           </button>
+          {/* 支持发货的订单也可以选择发货 */}
+          <button
+            onClick={() => openShipModal(order)}
+            disabled={isUpdating}
+            className="px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center gap-1"
+          >
+            <Truck size={14} />
+            改为发货
+          </button>
         </div>
+      );
+    }
+
+    if (order.status === 'shipped') {
+      return (
+        <button
+          onClick={() => openTrackingModal(order)}
+          className="px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 flex items-center gap-1"
+        >
+          <MapPin size={14} />
+          查看物流
+        </button>
       );
     }
 
@@ -277,7 +397,7 @@ const ProductOrderManagement: React.FC = () => {
     <ShopLayout title="商品订单管理">
       <div className="min-h-screen bg-gray-50">
         {/* 统计 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-2xl shadow-sm p-5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
@@ -308,6 +428,17 @@ const ProductOrderManagement: React.FC = () => {
               <div>
                 <p className="text-gray-500 text-xs">待提货</p>
                 <p className="text-xl font-bold text-gray-800">{orders.filter((o) => o.status === 'ready').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                <Truck className="text-indigo-600" size={20} />
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs">已发货</p>
+                <p className="text-xl font-bold text-gray-800">{orders.filter((o) => o.status === 'shipped').length}</p>
               </div>
             </div>
           </div>
@@ -410,6 +541,21 @@ const ProductOrderManagement: React.FC = () => {
                   </span>
                 </div>
 
+                {/* 发货信息 */}
+                {order.status === 'shipped' && order.shippingCompany && (
+                  <div className="bg-indigo-50 rounded-lg p-3 mb-4 flex items-center gap-2">
+                    <Truck size={16} className="text-indigo-500" />
+                    <span className="text-sm text-indigo-700">
+                      {order.shippingCompany} {order.shippingNo}
+                    </span>
+                    {order.shippedAt && (
+                      <span className="text-xs text-indigo-500 ml-auto">
+                        发货时间：{formatDate(order.shippedAt)}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-3 mb-4">
                   {order.items.map((item, idx) => (
                     <div key={idx} className="flex gap-3">
@@ -481,6 +627,157 @@ const ProductOrderManagement: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 发货弹窗 */}
+        {shipModal.open && shipModal.order && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setShipModal({ open: false })}
+          >
+            <div
+              className="bg-white rounded-2xl max-w-lg w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-800">订单发货</h2>
+                <button
+                  onClick={() => setShipModal({ open: false })}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="space-y-4 text-sm mb-5">
+                <p className="text-gray-500">订单号：<span className="text-gray-800">{shipModal.order.orderNo}</span></p>
+                <p className="text-gray-500">顾客：<span className="text-gray-800">{shipModal.order.customerName || '-'}</span></p>
+                <p className="text-gray-500">
+                  手机号：<span className="text-gray-800">{shipModal.order.customerPhone || '-'}</span>
+                </p>
+                <p className="text-gray-500">
+                  商品金额：<span className="text-red-500 font-bold">¥{shipModal.order.payableAmount.toFixed(2)}</span>
+                </p>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">物流公司 *</label>
+                  <input
+                    list="shipping-companies"
+                    value={shipForm.company}
+                    onChange={(e) => setShipForm({ ...shipForm, company: e.target.value })}
+                    placeholder="请选择或输入物流公司"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="shipping-companies">
+                    {SHIPPING_COMPANIES.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">运单号 *</label>
+                  <input
+                    value={shipForm.no}
+                    onChange={(e) => setShipForm({ ...shipForm, no: e.target.value })}
+                    placeholder="请输入运单号"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShipModal({ open: false })}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleShipOrder}
+                  disabled={!!updatingId}
+                  className="flex-1 px-4 py-2.5 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  {updatingId === shipModal.order.id && <Loader2 size={16} className="animate-spin" />}
+                  确认发货
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 物流信息弹窗 */}
+        {trackingModal.open && trackingModal.order && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setTrackingModal({ open: false, order: undefined, tracking: [] })}
+          >
+            <div
+              className="bg-white rounded-2xl max-w-lg w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-800">物流信息</h2>
+                <button
+                  onClick={() => setTrackingModal({ open: false, order: undefined, tracking: [] })}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="bg-indigo-50 rounded-xl p-4 mb-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <Truck size={16} className="text-indigo-500" />
+                  <span className="text-gray-700">
+                    {trackingModal.order.shippingCompany} {trackingModal.order.shippingNo}
+                  </span>
+                </div>
+                {trackingModal.order.shippedAt && (
+                  <div className="text-xs text-gray-500 mt-2">
+                    发货时间：{formatDate(trackingModal.order.shippedAt)}
+                  </div>
+                )}
+              </div>
+
+              {trackingModal.tracking.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <PackageIcon className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                  <p>暂无物流轨迹</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {trackingModal.tracking.map((item, idx) => (
+                    <div key={item.id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className={`w-3 h-3 rounded-full ${idx === 0 ? 'bg-indigo-500' : 'bg-gray-300'}`}></div>
+                        {idx < trackingModal.tracking.length - 1 && (
+                          <div className="w-px h-full bg-gray-200"></div>
+                        )}
+                      </div>
+                      <div className="flex-1 pb-3">
+                        <p className={`text-sm ${idx === 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                          {item.eventDescription}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">{formatDate(item.eventTime)}</p>
+                        {item.location && (
+                          <p className="text-xs text-gray-400">{item.location}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => setTrackingModal({ open: false, order: undefined, tracking: [] })}
+                className="w-full mt-4 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50"
+              >
+                关闭
+              </button>
+            </div>
           </div>
         )}
 
@@ -582,6 +879,32 @@ const ProductOrderManagement: React.FC = () => {
                   {detailOrder.notes && <p className="text-gray-500">备注：<span className="text-gray-800">{detailOrder.notes}</span></p>}
                 </div>
 
+                {/* 发货信息 */}
+                {(detailOrder.status === 'shipped' || (detailOrder.shippingCompany && detailOrder.shippingNo)) && (
+                  <div className="bg-indigo-50 rounded-xl p-4 space-y-2">
+                    <h3 className="text-sm font-medium text-indigo-700 flex items-center gap-2">
+                      <Truck size={16} />
+                      物流信息
+                    </h3>
+                    <p className="text-gray-500">
+                      物流公司：<span className="text-gray-800">{detailOrder.shippingCompany || '-'}</span>
+                    </p>
+                    <p className="text-gray-500">
+                      运单号：<span className="text-gray-800">{detailOrder.shippingNo || '-'}</span>
+                    </p>
+                    {detailOrder.shippedAt && (
+                      <p className="text-gray-500">
+                        发货时间：<span className="text-gray-800">{formatDate(detailOrder.shippedAt)}</span>
+                      </p>
+                    )}
+                    {detailOrder.confirmedAt && (
+                      <p className="text-gray-500">
+                        收货时间：<span className="text-gray-800">{formatDate(detailOrder.confirmedAt)}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="border rounded-xl overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 grid grid-cols-12 gap-2">
                     <span className="col-span-6">商品</span>
@@ -618,6 +941,16 @@ const ProductOrderManagement: React.FC = () => {
                 >
                   关闭
                 </button>
+                {/* 已发货状态显示查看物流按钮 */}
+                {detailOrder.status === 'shipped' && (
+                  <button
+                    onClick={() => openTrackingModal(detailOrder)}
+                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm hover:bg-indigo-600 flex items-center gap-1"
+                  >
+                    <MapPin size={16} />
+                    查看物流
+                  </button>
+                )}
                 {renderActions(detailOrder)}
               </div>
             </div>

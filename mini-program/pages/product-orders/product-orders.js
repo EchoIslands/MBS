@@ -1,5 +1,5 @@
 import { getCustomerPublic } from '../../api/customer';
-import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder } from '../../api/product';
+import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder, getProductOrderTracking, confirmProductOrderReceipt } from '../../api/product';
 import { getCustomerId } from '../../utils/storage';
 
 const statusLabels = {
@@ -7,6 +7,7 @@ const statusLabels = {
   paid: '已支付',
   preparing: '备货中',
   ready: '待提货',
+  shipped: '已发货',
   completed: '已完成',
   cancelled: '已取消',
   refunded: '已退款',
@@ -18,6 +19,8 @@ Page({
     shopId: 'shop1',
     customer: null,
     orders: [],
+    filteredOrders: [],
+    filterStatus: 'all',
     loading: true,
     showLogin: false,
     statusLabels,
@@ -25,6 +28,17 @@ Page({
     showRefundModal: false,
     refundReason: '',
     submittingRefund: false,
+    // 物流轨迹弹窗
+    showTrackingModal: false,
+    trackingList: [],
+    trackingLoading: false,
+    // 确认收货
+    confirmingReceipt: false,
+    // 详情页按钮显示控制
+    canConfirmReceipt: false,
+    canViewTracking: false,
+    canCancel: false,
+    canRequestRefund: false,
   },
 
   onLoad(options) {
@@ -56,11 +70,33 @@ Page({
     try {
       const orders = await getCustomerProductOrders(customerId, this.data.shopId);
       this.setData({ orders: orders || [], loading: false });
+      this.applyFilter();
     } catch (err) {
       console.error('[product-orders] 加载订单失败:', err);
       wx.showToast({ title: '订单加载失败', icon: 'none' });
       this.setData({ orders: [], loading: false });
     }
+  },
+
+  applyFilter() {
+    const { orders, filterStatus } = this.data;
+    let filtered = orders;
+    if (filterStatus === 'pending') {
+      filtered = orders.filter(o => o.status === 'pending');
+    } else if (filterStatus === 'completed') {
+      filtered = orders.filter(o => ['completed', 'paid'].includes(o.status));
+    } else if (filterStatus === 'shipped') {
+      filtered = orders.filter(o => o.status === 'shipped');
+    } else if (filterStatus === 'cancelled') {
+      filtered = orders.filter(o => ['cancelled', 'refunded', 'refunding'].includes(o.status));
+    }
+    this.setData({ filteredOrders: filtered });
+  },
+
+  onFilterChange(e) {
+    const status = e.currentTarget.dataset.status;
+    this.setData({ filterStatus: status });
+    this.applyFilter();
   },
 
   onLoginClose() {
@@ -88,13 +124,49 @@ Page({
 
   showDetail(e) {
     const index = e.currentTarget.dataset.index;
-    const order = this.data.orders[index];
+    const order = this.data.filteredOrders[index];
     if (!order) return;
-    this.setData({ detailOrder: order });
+    const canConfirmReceipt = order.status === 'shipped';
+    const canViewTracking = (order.status === 'shipped' || order.status === 'completed') && order.shippingCompany;
+    const canCancel = order.status === 'pending';
+    const canRequestRefund = order.paymentMethod === 'balance' && ['paid', 'preparing', 'ready'].includes(order.status);
+    this.setData({ detailOrder: order, canConfirmReceipt, canViewTracking, canCancel, canRequestRefund });
+  },
+
+  handlePay(e) {
+    const index = e.currentTarget.dataset.index;
+    const order = this.data.filteredOrders[index];
+    if (!order) return;
+    wx.showModal({
+      title: '确认支付',
+      content: `订单金额 ¥${(order.payableAmount / 100).toFixed(2)}，是否前往支付？`,
+      confirmText: '去支付',
+      cancelText: '取消',
+      success: (res) => {
+        if (res.confirm) {
+          wx.showToast({ title: '支付功能开发中', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  handleReorder(e) {
+    const index = e.currentTarget.dataset.index;
+    const order = this.data.filteredOrders[index];
+    if (!order) return;
+    wx.navigateTo({
+      url: `/pages/products/products?shopId=${this.data.shopId}`,
+    });
   },
 
   closeDetail() {
-    this.setData({ detailOrder: null });
+    this.setData({
+      detailOrder: null,
+      canConfirmReceipt: false,
+      canViewTracking: false,
+      canCancel: false,
+      canRequestRefund: false
+    });
   },
 
   onDetailTap() {
@@ -107,6 +179,14 @@ Page({
 
   canCancel(order) {
     return order && order.status === 'pending';
+  },
+
+  canConfirmReceipt(order) {
+    return order && order.status === 'shipped';
+  },
+
+  canViewTracking(order) {
+    return order && (order.status === 'shipped' || order.status === 'completed') && order.shippingCompany;
   },
 
   async handleCancel() {
@@ -175,6 +255,72 @@ Page({
       wx.showToast({ title: err.message || '申请退款失败', icon: 'none' });
     } finally {
       this.setData({ submittingRefund: false });
+    }
+  },
+
+  // 查看物流轨迹
+  async openTrackingModal() {
+    const order = this.data.detailOrder;
+    if (!order) return;
+    this.setData({ showTrackingModal: true, trackingList: [], trackingLoading: true });
+    try {
+      const trackingList = await getProductOrderTracking(order.id);
+      this.setData({ trackingList: trackingList || [], trackingLoading: false });
+    } catch (err) {
+      console.error('[product-orders] 获取物流失败:', err);
+      wx.showToast({ title: err.message || '获取物流信息失败', icon: 'none' });
+      this.setData({ showTrackingModal: false, trackingLoading: false });
+    }
+  },
+
+  closeTrackingModal() {
+    this.setData({ showTrackingModal: false, trackingList: [] });
+  },
+
+  onTrackingModalTap() {
+    // 阻止点击弹窗内容时关闭
+  },
+
+  // 确认收货
+  async handleConfirmReceipt() {
+    const order = this.data.detailOrder;
+    const customerId = getCustomerId();
+    if (!order || !customerId) return;
+    if (!this.canConfirmReceipt(order)) {
+      wx.showToast({ title: '当前订单不可确认收货', icon: 'none' });
+      return;
+    }
+    const res = await wx.showModal({
+      title: '确认收货',
+      content: '请确认已收到商品，确认后订单将标记为已完成。',
+      confirmText: '确认收货',
+      cancelText: '再想想',
+    });
+    if (!res.confirm) return;
+    this.setData({ confirmingReceipt: true });
+    wx.showLoading({ title: '确认中' });
+    try {
+      const updated = await confirmProductOrderReceipt(order.id, customerId);
+      wx.hideLoading();
+      if (updated) {
+        wx.showToast({ title: '已确认收货' });
+        // 更新本地订单数据
+        this.setData({
+          detailOrder: { ...order, status: 'completed', confirmedAt: updated.confirmedAt, completedAt: updated.completedAt }
+        });
+        // 更新订单列表
+        this.setData({
+          orders: this.data.orders.map(o => o.id === order.id ? { ...o, status: 'completed', confirmedAt: updated.confirmedAt } : o)
+        });
+        this.applyFilter();
+      } else {
+        wx.showToast({ title: '确认收货失败', icon: 'none' });
+      }
+    } catch (err) {
+      wx.hideLoading();
+      wx.showToast({ title: err.message || '确认收货失败', icon: 'none' });
+    } finally {
+      this.setData({ confirmingReceipt: false });
     }
   },
 });

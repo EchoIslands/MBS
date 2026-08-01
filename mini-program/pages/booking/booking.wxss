@@ -1,0 +1,787 @@
+/* ============================================================
+   Booking Page — Visual sync with H5 Booking.tsx
+   Design tokens: app.scss
+   ============================================================ */
+
+.booking-page {
+  min-height: 100vh;
+  background: var(--bg);
+  padding-bottom: 200rpx;
+}
+
+.container {
+  padding: 24rpx 24rpx 0;
+}
+
+/* ========== 顶部导航 ========== */
+.nav-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  background: var(--card-bg);
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.nav-btn {
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  transition: background 0.15s;
+}
+
+.nav-btn:active {
+  background: var(--gray-100);
+}
+
+.nav-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.nav-spacer {
+  width: 72rpx;
+}
+
+/* ========== 通用卡片 ========== */
+.card {
+  background: var(--card-bg);
+  border-radius: 32rpx;
+  padding: 40rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+  border: 1rpx solid var(--gray-100);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 32rpx;
+}
+
+.card-header-text {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--gray-800);
+}
+
+.card-subtitle {
+  font-size: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+/* ========== 2) 店铺迷你信息卡 ========== */
+.shop-card {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.shop-icon-wrap {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 20rpx;
+  background: var(--blue-50);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.shop-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.shop-name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--gray-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shop-address {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 6rpx;
+}
+
+/* ========== 3) 股东权益卡 ========== */
+.stockholder-card {
+  background: linear-gradient(135deg, var(--amber-50), #fff0e0);
+  border: 1rpx solid var(--amber-200);
+}
+
+.stockholder-title {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--amber-800);
+  margin-bottom: 24rpx;
+}
+
+.stockholder-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.stockholder-tag {
+  font-size: 24rpx;
+  padding: 8rpx 20rpx;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--amber-700);
+  border-radius: 9999rpx;
+  border: 1rpx solid var(--amber-200);
+}
+
+/* ========== 4) 服务选择卡 ========== */
+.service-scroll-wrap {
+  display: flex;
+  gap: 12rpx;
+  height: 520rpx;
+}
+
+.service-scroll {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.service-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  border: 2rpx solid var(--gray-200);
+  border-radius: 24rpx;
+  background: var(--card-bg);
+  transition: all 0.15s;
+}
+
+.service-item:last-child {
+  margin-bottom: 0;
+}
+
+.service-item-active {
+  border-color: var(--accent);
+  background: var(--amber-50);
+}
+
+.service-radio {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.service-item-active .service-radio {
+  border-color: var(--accent);
+}
+
+.service-radio-inner {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.service-icon-wrap {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, var(--amber-100), #ffdcc2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.service-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.service-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--gray-800);
+  line-height: 1.35;
+}
+
+.service-desc {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-top: 6rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  color: var(--accent-dark);
+  background: var(--amber-50);
+  padding: 6rpx 16rpx;
+  border-radius: 9999rpx;
+  font-weight: 500;
+  margin-top: 8rpx;
+}
+
+.service-price-box {
+  text-align: right;
+  margin-left: 12rpx;
+  flex-shrink: 0;
+  background: var(--card-bg);
+  padding: 16rpx 20rpx;
+  border-radius: 20rpx;
+  border: 1rpx solid var(--gray-100);
+}
+
+.service-price-original {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  margin-bottom: 4rpx;
+}
+
+.service-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  justify-content: flex-end;
+}
+
+.service-price-tag {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  font-weight: 600;
+}
+
+.tag-amber {
+  background: var(--amber-100);
+  color: var(--amber-800);
+}
+
+.tag-orange {
+  background: var(--amber-50);
+  color: var(--amber-700);
+}
+
+.service-price-current {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* 自定义滚动条 */
+.custom-scrollbar {
+  width: 8rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8rpx 0;
+}
+
+.custom-scrollbar-track {
+  width: 6rpx;
+  height: 100%;
+  background: var(--gray-200);
+  border-radius: 6rpx;
+  position: relative;
+}
+
+.custom-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  width: 6rpx;
+  background: var(--accent);
+  border-radius: 6rpx;
+}
+
+.empty-hint {
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--text-secondary);
+  padding: 40rpx 0;
+}
+
+/* ========== 5) 日期选择卡 ========== */
+.date-scroll {
+  white-space: nowrap;
+  width: 100%;
+}
+
+.date-scroll-inner {
+  display: inline-flex;
+  gap: 16rpx;
+  padding: 4rpx 2rpx 16rpx;
+}
+
+.date-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 132rpx;
+  padding: 20rpx 0;
+  background: var(--gray-100);
+  border-radius: 20rpx;
+  transition: all 0.15s;
+}
+
+.date-chip-active {
+  background: var(--accent);
+  color: var(--card-bg);
+  box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.3);
+}
+
+.date-chip-label {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.date-chip-week {
+  font-size: 22rpx;
+  margin-top: 4rpx;
+  opacity: 0.85;
+}
+
+/* ========== 6) 时间选择卡 ========== */
+.time-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16rpx;
+}
+
+.time-chip {
+  padding: 20rpx 0;
+  text-align: center;
+  background: var(--gray-100);
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  color: var(--gray-700);
+  transition: all 0.15s;
+}
+
+.time-chip-active {
+  background: var(--accent);
+  color: var(--card-bg);
+  box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.3);
+  font-weight: 600;
+}
+
+.time-chip-disabled {
+  background: var(--gray-200);
+  color: var(--gray-400);
+  text-decoration: line-through;
+}
+
+.time-chip-tag {
+  font-size: 18rpx;
+  margin-top: 2rpx;
+  opacity: 0.75;
+}
+
+/* ========== 7) 发型师选择卡 ========== */
+.barber-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  border: 2rpx solid var(--gray-200);
+  border-radius: 28rpx;
+  background: var(--card-bg);
+  transition: all 0.15s;
+}
+
+.barber-card:last-child {
+  margin-bottom: 0;
+}
+
+/* 智能匹配卡 */
+.barber-card-smart {
+  border-color: var(--gray-200);
+}
+
+.barber-card-smart-active {
+  border-color: var(--green-500);
+  background: var(--green-50);
+}
+
+/* 指定发型师选中 */
+.barber-card-selected {
+  border-color: var(--accent);
+  background: var(--amber-50);
+}
+
+/* 已约发型师 */
+.barber-card-busy {
+  border-color: var(--gray-100);
+  background: var(--gray-50);
+  opacity: 0.6;
+}
+
+.barber-radio {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 6rpx;
+  transition: all 0.15s;
+}
+
+.barber-card-smart-active .barber-radio {
+  border-color: var(--green-500);
+}
+
+.barber-card-selected .barber-radio {
+  border-color: var(--accent);
+}
+
+.barber-radio-inner {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.barber-radio-inner-green {
+  background: var(--green-500);
+}
+
+.barber-avatar {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.barber-avatar-green {
+  background: linear-gradient(135deg, var(--green-100), #bbf7d0);
+}
+
+.barber-avatar-orange {
+  background: linear-gradient(135deg, var(--amber-100), #ffdcc2);
+}
+
+.barber-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.barber-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.barber-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--gray-800);
+}
+
+.barber-desc {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-top: 10rpx;
+  line-height: 1.4;
+}
+
+.barber-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+  margin-top: 14rpx;
+}
+
+.barber-wait {
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.barber-wait-ok {
+  color: var(--green-600);
+}
+
+.barber-wait-pending {
+  color: var(--text-tertiary);
+}
+
+.barber-wait-busy {
+  color: var(--danger);
+}
+
+/* 分隔线 */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 32rpx 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1rpx;
+  background: var(--gray-200);
+}
+
+.divider-text {
+  padding: 0 24rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  background: var(--card-bg);
+}
+
+/* 发型师评分行 */
+.barber-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.rating-value {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.services-count {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  color: var(--text-secondary);
+}
+
+.barber-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 12rpx;
+}
+
+.tags-more {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+}
+
+.barber-wait-row {
+  margin-top: 12rpx;
+}
+
+/* ========== 标签系统 ========== */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 16rpx;
+  border-radius: 9999rpx;
+  font-size: 22rpx;
+  font-weight: 500;
+}
+
+.tag-gray {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.tag-gray-sm {
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 20rpx;
+  padding: 4rpx 14rpx;
+}
+
+.tag-orange {
+  background: var(--amber-50);
+  color: var(--amber-700);
+}
+
+.tag-green {
+  background: var(--green-50);
+  color: var(--green-600);
+}
+
+.tag-red {
+  background: var(--red-50);
+  color: var(--danger);
+}
+
+/* ========== 8) 备注 textarea ========== */
+.notes-textarea {
+  width: 100%;
+  min-height: 200rpx;
+  padding: 24rpx 28rpx;
+  border: 2rpx solid var(--gray-200);
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  color: var(--gray-800);
+  background: var(--card-bg);
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+
+.notes-textarea:focus {
+  border-color: var(--accent);
+}
+
+/* ========== 底部占位 ========== */
+.bottom-spacer {
+  height: 48rpx;
+}
+
+/* ========== 9) 固定底部栏 ========== */
+.fixed-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--card-bg);
+  border-top: 1rpx solid var(--gray-200);
+  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom, 0));
+  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.05);
+  z-index: 100;
+}
+
+.bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.bar-price-area {
+  flex: 1;
+  min-width: 0;
+}
+
+.bar-price-label {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.bar-price-value {
+  margin-top: 4rpx;
+}
+
+.bar-price-current {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.bar-price-placeholder {
+  font-size: 28rpx;
+  color: var(--text-tertiary);
+}
+
+.bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  padding: 28rpx 56rpx;
+  background: linear-gradient(135deg, var(--primary-light), var(--primary));
+  color: #fff;
+  border-radius: 24rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.3);
+  transition: opacity 0.15s;
+}
+
+.bar-btn:active {
+  opacity: 0.85;
+}
+
+.bar-btn-disabled {
+  background: linear-gradient(135deg, var(--gray-400), var(--gray-500));
+  box-shadow: none;
+}
+
+/* ========== 空状态 ========== */
+.empty-state {
+  text-align: center;
+  padding: 120rpx 32rpx;
+}
+
+.empty-icon {
+  width: 120rpx;
+  height: 120rpx;
+  margin: 0 auto 32rpx;
+  background: var(--gray-100);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: var(--text-secondary);
+}
+
+/* ========== 按钮 ========== */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  border-radius: 24rpx;
+  padding: 28rpx 48rpx;
+  text-align: center;
+  font-weight: 600;
+  font-size: 30rpx;
+  transition: opacity 0.15s;
+  box-sizing: border-box;
+}
+
+.btn:active {
+  opacity: 0.85;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: var(--text-primary);
+  border: 2rpx solid var(--gray-200);
+}

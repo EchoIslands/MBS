@@ -1,81 +1,178 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="orders-page">
-  <view class="orders-header">
-    <view class="header-back" bindtap="goBack">
-      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
+<view class="orders-page page">
+  <!-- 1. 自定义头部 -->
+  <view class="sticky-header">
+    <view class="sticky-header-inner">
+      <view class="order-header-btn" bindtap="goBack">
+        <mbs-icon name="arrowLeft" size="36" color="var(--gray-800)" />
+      </view>
+      <view class="sticky-header-title">我的订单</view>
+      <view class="order-header-placeholder"></view>
     </view>
-    <view class="header-title">我的商品订单</view>
-    <view class="header-spacer"></view>
   </view>
 
-  <view wx:if="{{loading}}" class="orders-empty">
+  <!-- 2. 状态筛选 Tabs (chips) -->
+  <view class="filter-bar order-filter">
+    <view
+      class="filter-chip {{filterStatus === 'all' ? 'filter-chip-active' : ''}}"
+      bindtap="onFilterChange"
+      data-status="all"
+    >全部</view>
+    <view
+      class="filter-chip {{filterStatus === 'pending' ? 'filter-chip-active' : ''}}"
+      bindtap="onFilterChange"
+      data-status="pending"
+    >待付款</view>
+    <view
+      class="filter-chip {{filterStatus === 'shipped' ? 'filter-chip-active' : ''}}"
+      bindtap="onFilterChange"
+      data-status="shipped"
+    >待收货</view>
+    <view
+      class="filter-chip {{filterStatus === 'completed' ? 'filter-chip-active' : ''}}"
+      bindtap="onFilterChange"
+      data-status="completed"
+    >已完成</view>
+    <view
+      class="filter-chip {{filterStatus === 'cancelled' ? 'filter-chip-active' : ''}}"
+      bindtap="onFilterChange"
+      data-status="cancelled"
+    >已取消</view>
+  </view>
+
+  <!-- 加载中 -->
+  <view wx:if="{{loading}}" class="empty-state">
+    <view class="empty-icon">
+      <mbs-icon name="clock" size="48" color="var(--text-tertiary)" />
+    </view>
     <view class="empty-text">加载中...</view>
   </view>
 
-  <view wx:if="{{!loading && orders.length === 0}}" class="orders-empty">
-    <mbs-icon name="shoppingBag" size="96" color="var(--text-tertiary)" />
+  <!-- 空状态 -->
+  <view wx:elif="{{!loading && filteredOrders.length === 0}}" class="empty-state">
+    <view class="empty-icon">
+      <mbs-icon name="shoppingBag" size="56" color="var(--text-tertiary)" />
+    </view>
     <view class="empty-text">暂无商品订单</view>
-    <view class="btn btn-secondary" bindtap="goToProducts">去逛逛</view>
+    <view class="btn btn-primary order-empty-btn" bindtap="goToProducts">去逛逛</view>
   </view>
 
-  <view wx:if="{{!loading && orders.length > 0}}" class="container orders-container">
-    <view wx:for="{{orders}}" wx:key="id" class="order-card card" bindtap="showDetail" data-index="{{index}}">
-      <view class="order-header">
+  <!-- 3. 订单列表 -->
+  <view wx:else class="order-list">
+    <view wx:for="{{filteredOrders}}" wx:key="id" class="order-card">
+      <!-- 卡片顶部：订单号 + 状态徽章 -->
+      <view class="order-card-header">
         <text class="order-no">订单号：{{item.orderNo}}</text>
-        <text class="order-status status-{{item.status}}">{{statusLabels[item.status]}}</text>
+        <view class="badge order-status-badge status-{{item.status}}">
+          {{statusLabels[item.status]}}
+        </view>
       </view>
 
-      <view class="order-items">
-        <view wx:for="{{item.items}}" wx:for-item="goods" wx:key="id" class="order-item">
-          <image wx:if="{{goods.image}}" class="order-item-image" src="{{goods.image}}" mode="aspectFill" />
-          <view wx:else class="order-item-image-placeholder">
-            <mbs-icon name="shoppingBag" size="40" color="var(--text-tertiary)" />
+      <!-- 发货信息（已发货状态） -->
+      <view wx:if="{{item.status === 'shipped' && item.shippingCompany}}" class="order-shipping-info">
+        <mbs-icon name="truck" size="28" color="var(--indigo-500)" />
+        <view class="order-shipping-text">
+          <text class="order-shipping-company">{{item.shippingCompany}}</text>
+          <text class="order-shipping-no">{{item.shippingNo}}</text>
+        </view>
+      </view>
+
+      <!-- 商品预览 -->
+      <view class="order-items-preview">
+        <block wx:for="{{item.items}}" wx:for-item="goods" wx:key="id" wx:for-index="idx">
+          <image wx:if="{{idx < 3 && goods.image}}" class="order-item-thumb" src="{{goods.image}}" mode="aspectFill" />
+          <view wx:elif="{{idx < 3}}" class="order-item-thumb order-item-thumb-placeholder">
+            <mbs-icon name="shoppingBag" size="28" color="var(--text-tertiary)" />
           </view>
-          <view class="order-item-info">
-              <view class="order-item-name">{{goods.name}}</view>
-              <view class="order-item-spec">¥{{fmt.formatMoney(goods.price)}} × {{goods.quantity}}</view>
-            </view>
-            <view class="order-item-total">¥{{fmt.formatMoney(goods.totalAmount)}}</view>
-        </view>
+        </block>
+        <view wx:if="{{item.items.length > 3}}" class="order-item-more">+{{item.items.length - 3}}</view>
       </view>
 
-      <view class="order-footer">
-        <text class="order-time">{{fmt.formatDateTime(item.createdAt)}}</text>
+      <view class="order-items-names">
+        <block wx:for="{{item.items}}" wx:for-item="goods" wx:key="id" wx:for-index="idx">
+          <text wx:if="{{idx < 2}}" class="order-item-name">{{goods.name}}</text>
+        </block>
+      </view>
+
+      <!-- 底部：合计 + 件数 -->
+      <view class="order-card-footer">
         <view class="order-total">
-          合计：<text class="order-total-price">¥{{fmt.formatMoney(item.payableAmount)}}</text>
+          <text class="order-total-label">合计</text>
+          <text class="order-total-value">¥{{fmt.formatMoney(item.payableAmount)}}</text>
         </view>
+        <view class="order-item-count">共{{item.items.length}}件</view>
       </view>
 
-      <view wx:if="{{item.pickupCode}}" class="pickup-code">
-        <text>自提码：</text>
-        <text class="pickup-code-value">{{item.pickupCode}}</text>
+      <!-- 4. 操作按钮 -->
+      <view class="order-card-actions">
+        <block wx:if="{{item.status === 'pending'}}">
+          <view class="btn btn-primary order-action-btn" catchtap="handlePay" data-index="{{index}}">去支付</view>
+          <view class="btn btn-secondary order-action-btn" catchtap="showDetail" data-index="{{index}}">查看详情</view>
+        </block>
+        <block wx:elif="{{item.status === 'shipped'}}">
+          <view class="btn btn-secondary order-action-btn" catchtap="showDetail" data-index="{{index}}">查看详情</view>
+          <view class="btn btn-primary order-action-btn order-action-btn-outline" catchtap="showDetail" data-index="{{index}}">确认收货</view>
+        </block>
+        <block wx:elif="{{item.status === 'completed'}}">
+          <view class="btn btn-secondary order-action-btn" catchtap="showDetail" data-index="{{index}}">查看详情</view>
+          <view class="btn btn-primary order-action-btn order-action-btn-outline" catchtap="handleReorder" data-index="{{index}}">再次购买</view>
+        </block>
+        <block wx:else>
+          <view class="btn btn-secondary order-action-btn order-action-btn-block" catchtap="showDetail" data-index="{{index}}">查看详情</view>
+        </block>
       </view>
     </view>
   </view>
 
-  <!-- 订单详情弹窗 -->
-  <view class="detail-mask" wx:if="{{detailOrder}}" bindtap="closeDetail">
-    <view class="detail-modal" catchtap="onDetailTap">
-      <view class="detail-header">
-        <text class="detail-title">订单详情</text>
-        <view class="detail-close" bindtap="closeDetail">
-          <mbs-icon name="close" size="32" color="var(--text-secondary)" />
+  <!-- 5. 订单详情弹窗 -->
+  <view class="modal-overlay" wx:if="{{detailOrder}}" bindtap="closeDetail">
+    <view class="modal-content" catchtap="onDetailTap">
+      <view class="modal-header">
+        <view class="modal-title">订单详情</view>
+        <view class="modal-close" bindtap="closeDetail">
+          <mbs-icon name="close" size="36" color="var(--text-secondary)" />
         </view>
       </view>
 
-      <view class="detail-section">
+      <view class="modal-body">
         <view class="detail-row">
           <text class="detail-label">订单号</text>
           <text class="detail-value">{{detailOrder.orderNo}}</text>
         </view>
         <view class="detail-row">
           <text class="detail-label">状态</text>
-          <text class="detail-status status-{{detailOrder.status}}">{{statusLabels[detailOrder.status]}}</text>
+          <view class="badge order-status-badge status-{{detailOrder.status}}">
+            {{statusLabels[detailOrder.status]}}
+          </view>
         </view>
         <view class="detail-row">
           <text class="detail-label">下单时间</text>
           <text class="detail-value">{{fmt.formatDateTime(detailOrder.createdAt)}}</text>
         </view>
+
+        <!-- 发货信息（已发货/已完成状态显示） -->
+        <view wx:if="{{detailOrder.shippingCompany}}" class="detail-shipping-section">
+          <view class="detail-section-title">物流信息</view>
+          <view class="detail-shipping-card">
+            <view class="detail-shipping-row">
+              <text class="detail-label">物流公司</text>
+              <text class="detail-value">{{detailOrder.shippingCompany}}</text>
+            </view>
+            <view class="detail-shipping-row">
+              <text class="detail-label">运单号</text>
+              <text class="detail-value">{{detailOrder.shippingNo}}</text>
+            </view>
+            <view wx:if="{{detailOrder.shippedAt}}" class="detail-shipping-row">
+              <text class="detail-label">发货时间</text>
+              <text class="detail-value">{{fmt.formatDateTime(detailOrder.shippedAt)}}</text>
+            </view>
+            <view wx:if="{{detailOrder.confirmedAt}}" class="detail-shipping-row">
+              <text class="detail-label">收货时间</text>
+              <text class="detail-value">{{fmt.formatDateTime(detailOrder.confirmedAt)}}</text>
+            </view>
+          </view>
+        </view>
+
         <view class="detail-row">
           <text class="detail-label">提货人</text>
           <text class="detail-value">{{detailOrder.pickupName || '-'}}</text>
@@ -90,19 +187,30 @@
         </view>
         <view class="detail-row">
           <text class="detail-label">支付方式</text>
-          <text class="detail-value">{{detailOrder.paymentMethod === 'balance' ? '余额支付' : detailOrder.paymentMethod === 'store_pickup' ? '到店自提付款' : detailOrder.paymentMethod}}</text>
+          <text class="detail-value">
+            {{detailOrder.paymentMethod === 'balance' ? '余额支付' : detailOrder.paymentMethod === 'store_pickup' ? '到店自提付款' : detailOrder.paymentMethod}}
+          </text>
         </view>
         <view class="detail-row" wx:if="{{detailOrder.notes}}">
           <text class="detail-label">备注</text>
           <text class="detail-value">{{detailOrder.notes}}</text>
         </view>
-      </view>
 
-      <view class="detail-section">
-        <view class="detail-items-title">商品明细</view>
-        <view wx:for="{{detailOrder.items}}" wx:for-item="goods" wx:key="id" class="detail-item">
+        <view class="detail-section-title">商品明细</view>
+        <view class="detail-item">
+          <image wx:if="{{detailOrder.items[0].image}}" class="detail-item-image" src="{{detailOrder.items[0].image}}" mode="aspectFill" />
+          <view wx:else class="detail-item-image detail-item-image-placeholder">
+            <mbs-icon name="shoppingBag" size="40" color="var(--text-tertiary)" />
+          </view>
+          <view class="detail-item-info">
+            <view class="detail-item-name">{{detailOrder.items[0].name}}</view>
+            <view class="detail-item-spec">¥{{fmt.formatMoney(detailOrder.items[0].price)}} × {{detailOrder.items[0].quantity}}</view>
+          </view>
+          <view class="detail-item-total">¥{{fmt.formatMoney(detailOrder.items[0].totalAmount)}}</view>
+        </view>
+        <view wx:for="{{detailOrder.items}}" wx:for-item="goods" wx:for-index="idx" wx:key="id" wx:if="{{idx > 0}}" class="detail-item">
           <image wx:if="{{goods.image}}" class="detail-item-image" src="{{goods.image}}" mode="aspectFill" />
-          <view wx:else class="detail-item-image-placeholder">
+          <view wx:else class="detail-item-image detail-item-image-placeholder">
             <mbs-icon name="shoppingBag" size="40" color="var(--text-tertiary)" />
           </view>
           <view class="detail-item-info">
@@ -111,41 +219,101 @@
           </view>
           <view class="detail-item-total">¥{{fmt.formatMoney(goods.totalAmount)}}</view>
         </view>
+
+        <view class="detail-summary">
+          <view class="detail-summary-row">
+            <text class="detail-summary-label">商品总额</text>
+            <text class="detail-summary-value">¥{{fmt.formatMoney(detailOrder.totalAmount)}}</text>
+          </view>
+          <view class="detail-summary-row">
+            <text class="detail-summary-label">优惠</text>
+            <text class="detail-summary-value">¥{{fmt.formatMoney(detailOrder.discountAmount)}}</text>
+          </view>
+          <view class="detail-summary-row detail-summary-total">
+            <text class="detail-summary-label">合计</text>
+            <text class="detail-summary-value detail-summary-price">¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
+          </view>
+        </view>
       </view>
 
-      <view class="detail-summary">
-        <text class="detail-summary-text">商品总额 ¥{{fmt.formatMoney(detailOrder.totalAmount)}}</text>
-        <text class="detail-summary-text">优惠 -¥{{fmt.formatMoney(detailOrder.discountAmount)}}</text>
-        <text class="detail-summary-total">合计 ¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
-      </view>
-
-      <view class="detail-actions">
-        <view class="btn btn-secondary" wx:if="{{canCancel(detailOrder)}}" bindtap="handleCancel">取消订单</view>
-        <view class="btn btn-danger" wx:if="{{canRequestRefund(detailOrder)}}" bindtap="openRefundModal">申请退款</view>
-        <view class="btn btn-secondary" bindtap="closeDetail">关闭</view>
+      <view class="modal-footer detail-modal-footer">
+        <view wx:if="{{canViewTracking}}" class="btn btn-secondary" bindtap="openTrackingModal">查看物流</view>
+        <view wx:if="{{canConfirmReceipt}}" class="btn btn-primary" bindtap="handleConfirmReceipt">确认收货</view>
+        <view wx:if="{{canCancel}}" class="btn btn-secondary" bindtap="handleCancel">取消订单</view>
+        <view wx:if="{{canRequestRefund}}" class="btn btn-danger" bindtap="openRefundModal">申请退款</view>
+        <view class="btn btn-ghost" bindtap="closeDetail">关闭</view>
       </view>
     </view>
   </view>
 
-  <!-- 退款申请弹窗 -->
-  <view class="detail-mask" wx:if="{{showRefundModal}}" bindtap="closeRefundModal">
-    <view class="detail-modal" catchtap="onRefundModalTap">
-      <view class="detail-header">
-        <text class="detail-title">申请退款</text>
-        <view class="detail-close" bindtap="closeRefundModal">
-          <mbs-icon name="close" size="32" color="var(--text-secondary)" />
+  <!-- 6. 物流轨迹弹窗 -->
+  <view class="modal-overlay" wx:if="{{showTrackingModal}}" bindtap="closeTrackingModal">
+    <view class="modal-content tracking-modal" catchtap="onTrackingModalTap">
+      <view class="modal-header">
+        <view class="modal-title">物流信息</view>
+        <view class="modal-close" bindtap="closeTrackingModal">
+          <mbs-icon name="close" size="36" color="var(--text-secondary)" />
         </view>
       </view>
-      <view class="detail-section">
+
+      <view class="modal-body">
+        <view wx:if="{{trackingLoading}}" class="tracking-loading">
+          <mbs-icon name="clock" size="48" color="var(--text-tertiary)" />
+          <text class="tracking-loading-text">加载中...</text>
+        </view>
+
+        <block wx:elif="{{trackingList.length === 0}}">
+          <view class="tracking-empty">
+            <mbs-icon name="truck" size="56" color="var(--text-tertiary)" />
+            <text class="tracking-empty-text">暂无物流轨迹</text>
+          </view>
+        </block>
+
+        <block wx:else>
+          <view wx:if="{{detailOrder}}" class="tracking-header">
+            <view class="tracking-company">
+              <text class="tracking-company-name">{{detailOrder.shippingCompany}}</text>
+              <text class="tracking-company-no">{{detailOrder.shippingNo}}</text>
+            </view>
+          </view>
+          <view class="timeline">
+            <view wx:for="{{trackingList}}" wx:key="id" wx:for-item="item" wx:for-index="idx" class="timeline-item">
+              <view class="timeline-dot {{idx === 0 ? 'timeline-dot-active' : ''}}"></view>
+              <view wx:if="{{idx < trackingList.length - 1}}" class="timeline-line"></view>
+              <view class="timeline-content">
+                <text class="timeline-desc {{idx === 0 ? 'timeline-desc-active' : ''}}">{{item.eventDescription}}</text>
+                <text class="timeline-time">{{fmt.formatDateTime(item.eventTime)}}</text>
+                <text wx:if="{{item.location}}" class="timeline-location">{{item.location}}</text>
+              </view>
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <view class="modal-footer">
+        <view class="btn btn-ghost" bindtap="closeTrackingModal">关闭</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 7. 退款申请弹窗 -->
+  <view class="modal-overlay" wx:if="{{showRefundModal}}" bindtap="closeRefundModal">
+    <view class="modal-content" catchtap="onRefundModalTap">
+      <view class="modal-header">
+        <view class="modal-title">申请退款</view>
+        <view class="modal-close" bindtap="closeRefundModal">
+          <mbs-icon name="close" size="36" color="var(--text-secondary)" />
+        </view>
+      </view>
+
+      <view class="modal-body">
         <view class="detail-row">
           <text class="detail-label">退款金额</text>
-          <text class="detail-value" style="color: var(--danger); font-weight: bold;">¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
+          <text class="refund-amount">¥{{fmt.formatMoney(detailOrder.payableAmount)}}</text>
         </view>
-        <view class="detail-row">
-          <text class="detail-label">退款原因</text>
-        </view>
+        <view class="refund-section-label">退款原因</view>
         <textarea
-          class="refund-reason-input"
+          class="refund-textarea"
           value="{{refundReason}}"
           bindinput="onRefundReasonInput"
           placeholder="请填写退款原因"
@@ -153,7 +321,8 @@
           auto-height
         />
       </view>
-      <view class="detail-actions">
+
+      <view class="modal-footer">
         <view class="btn btn-secondary" bindtap="closeRefundModal">取消</view>
         <view class="btn btn-danger {{submittingRefund ? 'btn-disabled' : ''}}" bindtap="requestRefund">
           {{submittingRefund ? '提交中...' : '提交申请'}}

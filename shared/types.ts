@@ -122,7 +122,7 @@ export interface ProductOrder {
   totalAmount: number;
   discountAmount: number;
   payableAmount: number;
-  status: 'pending' | 'paid' | 'preparing' | 'ready' | 'completed' | 'cancelled' | 'refunded' | 'refunding';
+  status: 'pending' | 'paid' | 'preparing' | 'ready' | 'shipped' | 'completed' | 'cancelled' | 'refunded' | 'refunding';
   paymentMethod?: 'balance' | 'store_pickup' | 'wechat' | 'alipay';
   paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded';
   paidAt?: Date;
@@ -135,6 +135,20 @@ export interface ProductOrder {
   completedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  // 发货相关字段
+  shippingCompany?: string;
+  shippingNo?: string;
+  shippedAt?: Date | null;
+  confirmedAt?: Date | null;
+  trackingInfo?: Array<{
+    id: string;
+    orderId: string;
+    shippingCompany: string;
+    shippingNo: string;
+    eventTime: string;
+    eventDescription: string;
+    location: string;
+  }>;
 }
 
 export interface ProductOrderItem {

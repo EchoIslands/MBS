@@ -3276,6 +3276,12 @@ const productOrderFromDb = (o: DbRecord): Record<string, unknown> => ({
   completedAt: o.completed_at,
   createdAt: o.created_at,
   updatedAt: o.updated_at,
+  // 发货相关字段
+  shippingCompany: o.shipping_company || '',
+  shippingNo: o.shipping_no || '',
+  shippedAt: o.shipped_at || null,
+  confirmedAt: o.confirmed_at || null,
+  trackingInfo: o.tracking_info || [],
 });
 
 const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => ({
@@ -4205,6 +4211,198 @@ productOrdersRouter.put('/refunds/:id/status', authMiddleware, async (req: Reque
   } catch (error) {
     console.error('[productOrders] 处理退款异常:', error);
     res.status(500).json({ success: false, error: '处理退款申请失败' });
+  }
+});
+
+/**
+ * POST /api/product-orders/:id/ship
+ * 店铺端发货：填写物流公司和运单号
+ */
+productOrdersRouter.post('/:id/ship', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { role, shopId } = req.employee!;
+    
+    if (role !== 'ceo' && role !== 'shop_manager' && role !== 'customer_service') {
+      return res.status(403).json({ success: false, error: '无权发货' });
+    }
+
+    const { company, no } = req.body;
+    if (!company || !no) {
+      return res.status(400).json({ success: false, error: '物流公司和运单号不能为空' });
+    }
+
+    // 查询订单
+    const { data: existing, error: findError } = await supabase
+      .from('product_orders')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (findError) {
+      console.error('[productOrders] 查询订单失败:', findError.message);
+      return res.status(500).json({ success: false, error: '查询订单失败' });
+    }
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    // 只有待提货（ready）状态的订单可以发货
+    if (existing.status !== 'ready' && existing.status !== 'paid' && existing.status !== 'preparing') {
+      return res.status(400).json({ success: false, error: `当前订单状态（${existing.status}）不可发货` });
+    }
+
+    const now = new Date().toISOString();
+    const updatePayload: Record<string, unknown> = {
+      status: 'shipped',
+      shipping_company: company,
+      shipping_no: no,
+      shipped_at: now,
+      updated_at: now,
+    };
+
+    const { data: updated, error } = await supabase
+      .from('product_orders')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[productOrders] 发货失败:', error.message);
+      return res.status(500).json({ success: false, error: '发货失败' });
+    }
+
+    // 添加物流轨迹记录
+    await supabase.from('shipment_tracking').insert({
+      order_id: id,
+      shipping_company: company,
+      shipping_no: no,
+      event_time: now,
+      event_description: '订单已发货',
+      location: '',
+    });
+
+    console.log(`[productOrders] 订单 ${id} 发货成功: ${company} ${no}`);
+    res.json({ success: true, data: productOrderFromDb(updated) });
+  } catch (error) {
+    console.error('[productOrders] 发货异常:', error);
+    res.status(500).json({ success: false, error: '发货失败' });
+  }
+});
+
+/**
+ * PUT /api/product-orders/:id/confirm
+ * 顾客端确认收货
+ */
+productOrdersRouter.put('/:id/confirm', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customerId } = req.body;
+
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: '缺少顾客信息' });
+    }
+
+    // 查询订单
+    const { data: existing, error: findError } = await supabase
+      .from('product_orders')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError) {
+      console.error('[productOrders] 查询订单失败:', findError.message);
+      return res.status(500).json({ success: false, error: '查询订单失败' });
+    }
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+
+    // 验证顾客权限
+    if (existing.customer_id !== customerId) {
+      return res.status(403).json({ success: false, error: '无权操作该订单' });
+    }
+
+    // 只有已发货状态可以确认收货
+    if (existing.status !== 'shipped') {
+      return res.status(400).json({ success: false, error: `当前订单状态（${existing.status}）不可确认收货` });
+    }
+
+    const now = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .from('product_orders')
+      .update({
+        status: 'completed',
+        confirmed_at: now,
+        completed_at: now,
+        updated_at: now,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[productOrders] 确认收货失败:', error.message);
+      return res.status(500).json({ success: false, error: '确认收货失败' });
+    }
+
+    // 添加物流轨迹记录
+    await supabase.from('shipment_tracking').insert({
+      order_id: id,
+      shipping_company: existing.shipping_company,
+      shipping_no: existing.shipping_no,
+      event_time: now,
+      event_description: '确认收货',
+      location: '',
+    });
+
+    console.log(`[productOrders] 订单 ${id} 确认收货成功`);
+    res.json({ success: true, data: productOrderFromDb(updated) });
+  } catch (error) {
+    console.error('[productOrders] 确认收货异常:', error);
+    res.status(500).json({ success: false, error: '确认收货失败' });
+  }
+});
+
+/**
+ * GET /api/product-orders/:id/tracking
+ * 查询物流轨迹
+ */
+productOrdersRouter.get('/:id/tracking', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // 查询物流轨迹
+    const { data: tracking, error } = await supabase
+      .from('shipment_tracking')
+      .select('*')
+      .eq('order_id', id)
+      .order('event_time', { ascending: false });
+
+    if (error) {
+      console.error('[productOrders] 查询物流失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询物流失败' });
+    }
+
+    res.json({
+      success: true,
+      data: (tracking || []).map(t => ({
+        id: t.id,
+        orderId: t.order_id,
+        shippingCompany: t.shipping_company,
+        shippingNo: t.shipping_no,
+        eventTime: t.event_time,
+        eventDescription: t.event_description,
+        location: t.location,
+      })),
+    });
+  } catch (error) {
+    console.error('[productOrders] 查询物流异常:', error);
+    res.status(500).json({ success: false, error: '查询物流失败' });
   }
 });
 

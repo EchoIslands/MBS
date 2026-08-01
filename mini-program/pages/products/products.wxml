@@ -1,49 +1,52 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="products-page">
-  <!-- 自定义头部 -->
+  <!-- 1. 自定义头部 -->
   <view class="products-header">
-    <view class="header-back" bindtap="goBack">
+    <view class="header-btn" bindtap="goBack">
       <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
     </view>
     <view class="header-title">商品商城</view>
-    <view class="header-cart" bindtap="goToCart">
+    <view class="header-btn" bindtap="goToCart">
       <mbs-icon name="shoppingBag" size="36" color="var(--text-primary)" />
-      <view wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount}}</view>
+      <view wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
     </view>
   </view>
 
-  <view class="container products-container">
-    <!-- 优惠券入口 -->
+  <view class="products-body">
+    <!-- 2. 优惠券横幅 -->
     <view wx:if="{{coupons.length > 0}}" class="coupon-banner" bindtap="toggleCouponModal">
       <view class="coupon-banner-left">
-        <view class="coupon-icon">券</view>
-        <view>
+        <view class="coupon-icon-wrap">
+          <mbs-icon name="ticket" size="36" color="#fff" />
+        </view>
+        <view class="coupon-text-group">
           <view class="coupon-banner-title">领取优惠券</view>
           <view class="coupon-banner-sub">共 {{coupons.length}} 张，已领 {{myCoupons.length}} 张</view>
         </view>
       </view>
-      <view class="coupon-banner-btn">去领取</view>
+      <view class="coupon-banner-action">去领取</view>
     </view>
 
-    <!-- 搜索 -->
+    <!-- 3. 搜索栏 -->
     <view class="search-bar">
       <mbs-icon name="search" size="28" color="var(--text-tertiary)" />
       <input
         type="text"
         placeholder="搜索商品..."
+        placeholder-class="search-placeholder"
         value="{{searchQuery}}"
         bindinput="onSearchInput"
         class="search-input"
       />
     </view>
 
-    <!-- 分类 -->
-    <view class="category-card card">
-      <view class="card-title">
-        <mbs-icon name="filter" size="28" color="var(--primary)" />
-        商品分类
+    <!-- 4. 分类筛选卡片 -->
+    <view class="category-card">
+      <view class="category-header">
+        <mbs-icon name="filter" size="28" color="var(--text-secondary)" />
+        <text class="category-title">商品分类</text>
       </view>
-      <scroll-view scroll-x class="category-scroll">
+      <scroll-view scroll-x class="category-scroll" enable-flex>
         <view
           wx:for="{{categories}}"
           wx:key="key"
@@ -56,7 +59,7 @@
       </scroll-view>
     </view>
 
-    <!-- 排序 -->
+    <!-- 5. 排序栏 -->
     <view class="sort-bar">
       <text class="sort-count">共 {{filteredProducts.length}} 件商品</text>
       <view class="sort-options">
@@ -83,12 +86,13 @@
       </view>
     </view>
 
-    <!-- 加载 -->
+    <!-- 加载中 -->
     <view wx:if="{{loading}}" class="empty-state">
+      <view class="empty-spinner"></view>
       <view class="empty-text">加载中...</view>
     </view>
 
-    <!-- 商品列表 -->
+    <!-- 6. 商品网格 -->
     <view wx:if="{{!loading && filteredProducts.length > 0}}" class="product-grid">
       <view
         wx:for="{{filteredProducts}}"
@@ -98,26 +102,47 @@
         bindtap="goToDetail"
       >
         <view class="product-image-wrap">
-          <image wx:if="{{item.images && item.images.length > 0}}" class="product-image" src="{{item.images[0]}}" mode="aspectFill" />
+          <image
+            wx:if="{{item.images && item.images.length > 0}}"
+            class="product-image"
+            src="{{item.images[0]}}"
+            mode="aspectFill"
+          />
           <view wx:else class="product-image-placeholder">
             <mbs-icon name="shoppingBag" size="56" color="var(--text-tertiary)" />
           </view>
           <view wx:if="{{item.displayTags && item.displayTags.length > 0}}" class="product-tags">
-            <text wx:for="{{item.displayTags}}" wx:for-item="tag" wx:key="*this" class="product-tag">{{tag}}</text>
+            <text
+              wx:for="{{item.displayTags}}"
+              wx:for-item="tag"
+              wx:key="*this"
+              class="product-tag"
+            >{{tag}}</text>
           </view>
         </view>
         <view class="product-info">
           <view class="product-name">{{item.name}}</view>
           <view class="product-meta">
-            <mbs-icon name="star" size="20" color="var(--warning)" />
+            <mbs-icon name="star" size="20" color="#facc15" />
             <text class="product-rating">{{item.ratingText}}</text>
             <text class="product-sales">已售{{item.sales || 0}}</text>
           </view>
           <view class="product-price-row">
-              <text wx:if="{{item.memberPrice < item.price}}" class="product-original-price">¥{{fmt.formatMoney(item.price)}}</text>
+            <view class="product-price-group">
               <text class="product-price">¥{{fmt.formatMoney(item.memberPrice)}}</text>
-              <text wx:if="{{item.memberPrice < item.price}}" class="product-vip-tag">会员价</text>
+              <text
+                wx:if="{{item.memberPrice < item.price}}"
+                class="product-original-price"
+              >¥{{fmt.formatMoney(item.price)}}</text>
+              <view
+                wx:if="{{item.memberPrice < item.price}}"
+                class="product-vip-tag"
+              >
+                <mbs-icon name="crown" size="16" color="var(--accent-dark)" />
+                <text>会员价</text>
+              </view>
             </view>
+          </view>
           <button
             class="product-add-btn"
             data-product="{{item}}"
@@ -130,36 +155,43 @@
       </view>
     </view>
 
-    <!-- 空状态 -->
+    <!-- 7. 空状态 -->
     <view wx:if="{{!loading && filteredProducts.length === 0}}" class="empty-state">
-      <mbs-icon name="shoppingBag" size="72" color="var(--text-tertiary)" />
+      <mbs-icon name="shoppingBag" size="80" color="var(--text-tertiary)" />
       <view class="empty-text">暂无相关商品</view>
     </view>
   </view>
 
-  <!-- 优惠券领取弹窗 -->
+  <!-- 8. 优惠券领取弹窗 -->
   <view wx:if="{{showCoupons}}" class="coupon-modal" bindtap="toggleCouponModal">
     <view class="coupon-modal-content" catchtap="preventBubble">
       <view class="coupon-modal-header">
         <text class="coupon-modal-title">领取优惠券</text>
-        <view class="coupon-modal-close" bindtap="toggleCouponModal">×</view>
+        <view class="coupon-modal-close" bindtap="toggleCouponModal">
+          <mbs-icon name="close" size="36" color="var(--text-secondary)" />
+        </view>
       </view>
       <view class="coupon-modal-body">
-        <view wx:if="{{coupons.length === 0}}" class="coupon-empty">暂无可用优惠券</view>
+        <view wx:if="{{coupons.length === 0}}" class="coupon-empty">
+          <mbs-icon name="ticket" size="64" color="var(--text-tertiary)" />
+          <view class="coupon-empty-text">暂无可用优惠券</view>
+        </view>
         <view
           wx:for="{{coupons}}"
           wx:key="id"
-          class="coupon-item"
+          class="coupon-item {{claimedMap[item.id] ? 'coupon-item-claimed' : ''}}"
         >
-          <view class="coupon-item-info">
-            <view class="coupon-item-name">{{item.name}}</view>
-            <view class="coupon-item-value">
-              <text wx:if="{{item.type === 'percentage'}}">{{item.value}}折</text>
-              <text wx:else>¥{{fmt.formatMoney(item.value)}}</text>
-              <text wx:if="{{item.minOrderAmount}}" class="coupon-item-limit">满¥{{item.minOrderAmount}}可用</text>
-              <text wx:else class="coupon-item-limit">无门槛</text>
+          <view class="coupon-item-left">
+            <view class="coupon-item-info">
+              <view class="coupon-item-name">{{item.name}}</view>
+              <view class="coupon-item-value">
+                <text wx:if="{{item.type === 'percentage'}}">{{item.value}}折</text>
+                <text wx:else>¥{{fmt.formatMoney(item.value)}}</text>
+                <text wx:if="{{item.minOrderAmount}}" class="coupon-item-limit">满¥{{item.minOrderAmount}}可用</text>
+                <text wx:else class="coupon-item-limit">无门槛</text>
+              </view>
+              <view class="coupon-item-expiry">有效期至 {{fmt.formatDate(item.endAt)}}</view>
             </view>
-            <view class="coupon-item-expiry">有效期至 {{fmt.formatDate(item.endAt)}}</view>
           </view>
           <button
             class="coupon-claim-btn {{claimedMap[item.id] ? 'coupon-claimed' : ''}}"

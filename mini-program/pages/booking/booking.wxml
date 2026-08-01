@@ -1,57 +1,62 @@
 <view class="booking-page">
-  <!-- 顶部返回栏 -->
-  <view class="page-top-bar" bindtap="goToShop">
-    <mbs-icon name="arrowLeft" size="32" color="var(--text-primary)" />
-    <text class="page-top-bar-text">返回店铺</text>
+  <!-- ========== 1) 顶部导航 ========== -->
+  <view class="nav-bar" bindtap="goToShop">
+    <view class="nav-btn">
+      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
+    </view>
+    <text class="nav-title">预约服务</text>
+    <view class="nav-spacer"></view>
   </view>
 
   <view class="container">
+    <!-- ========== Loading ========== -->
     <view wx:if="{{loading}}" class="empty-state">
       <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
       <view class="empty-text">店铺加载中...</view>
     </view>
 
+    <!-- ========== Error ========== -->
     <view wx:elif="{{error}}" class="card">
       <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
       <view class="btn btn-secondary" bindtap="loadShop">重新加载</view>
     </view>
 
     <block wx:elif="{{shop}}">
-      <!-- 店铺信息 -->
-      <view class="card shop-mini-card">
-        <view class="shop-mini-image">
-          <mbs-icon name="mapPin" size="48" color="var(--primary)" />
+      <!-- ========== 2) 店铺迷你信息卡 ========== -->
+      <view class="card shop-card">
+        <view class="shop-icon-wrap">
+          <mbs-icon name="mapPin" size="40" color="var(--primary)" />
         </view>
-        <view class="shop-mini-info">
-          <view class="shop-mini-name">{{shop.name}}</view>
-          <view class="shop-mini-address">{{shop.address || '暂无地址'}}</view>
+        <view class="shop-info">
+          <view class="shop-name">{{shop.name}}</view>
+          <view class="shop-address">{{shop.address || '暂无地址'}}</view>
         </view>
       </view>
 
-      <!-- 股东会员权益展示 -->
-      <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-benefit-card">
-        <view class="card-title">
-          <mbs-icon name="award" size="32" color="var(--amber-500)" />
+      <!-- ========== 3) 股东权益卡（条件渲染） ========== -->
+      <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-card">
+        <view class="stockholder-title">
+          <mbs-icon name="award" size="34" color="var(--amber-600)" />
           股东会员专享权益
         </view>
-        <view class="stockholder-benefit-tags">
-          <view wx:for="{{stockholderSummary.benefits}}" wx:key="*this" class="stockholder-benefit-tag">
+        <view class="stockholder-benefits">
+          <view wx:for="{{stockholderSummary.benefits}}" wx:key="*this" class="stockholder-tag">
             {{item}}
           </view>
         </view>
       </view>
 
-      <!-- 选择服务（可滑动，与 H5 Booking 对齐） -->
+      <!-- ========== 4) 服务选择卡 ========== -->
       <view class="card">
-        <view class="card-title">
-          <mbs-icon name="scissors" size="32" color="var(--accent)" />
-          选择服务
-          <text class="service-scroll-hint">滑动查看更多</text>
+        <view class="card-header">
+          <mbs-icon name="scissors" size="36" color="var(--accent)" />
+          <text class="card-header-text">选择服务</text>
         </view>
-        <view class="service-select-scroll-wrapper">
+
+        <view class="service-scroll-wrap">
           <scroll-view
             id="serviceScroll"
-            class="service-select-scroll"
+            class="service-scroll"
             scroll-y="true"
             enhanced="true"
             show-scrollbar="false"
@@ -60,92 +65,106 @@
             <view
               wx:for="{{shop.services}}"
               wx:key="id"
-              class="service-select-item {{selectedService === item.id ? 'service-select-item-active' : ''}}"
+              class="service-item {{selectedService === item.id ? 'service-item-active' : ''}}"
               bindtap="onServiceSelect"
               data-id="{{item.id}}"
             >
-              <view class="service-select-radio">
-                <view wx:if="{{selectedService === item.id}}" class="service-select-radio-inner"></view>
+              <view class="service-radio">
+                <view wx:if="{{selectedService === item.id}}" class="service-radio-inner"></view>
               </view>
-              <view class="service-select-content">
-                <view class="service-select-name">{{item.name}}</view>
-                <view wx:if="{{item.duration}}" class="service-select-desc">约 {{item.duration}} 分钟</view>
+
+              <view class="service-icon-wrap">
+                <mbs-icon name="scissors" size="36" color="var(--amber-600)" />
               </view>
-              <view wx:if="{{item.isStockholderDiscount}}" class="stockholder-price-wrapper">
-                <view wx:if="{{item.hasDiscount}}" class="stockholder-price-original">¥{{item.originalPriceStr}}</view>
-                <view class="stockholder-price-row">
-                  <view class="stockholder-price-tag">股东价</view>
-                  <view class="stockholder-price-current">¥{{item.priceStr}}</view>
+
+              <view class="service-info">
+                <view class="service-name">{{item.name}}</view>
+                <view wx:if="{{item.description}}" class="service-desc">{{item.description}}</view>
+                <view wx:if="{{item.duration}}" class="service-duration">
+                  <mbs-icon name="clock" size="20" color="var(--accent-dark)" />
+                  <text>约 {{item.duration}} 分钟</text>
                 </view>
               </view>
-              <mbs-price
-                wx:else
-                original="{{item.originalPrice}}"
-                current="{{item.memberPrice}}"
-                show-tag="{{item.hasDiscount}}"
-                size="sm"
-              />
+
+              <view wx:if="{{item.isStockholderDiscount}}" class="service-price-box">
+                <view wx:if="{{item.hasDiscount}}" class="service-price-original">¥{{item.originalPriceStr}}</view>
+                <view class="service-price-row">
+                  <view class="service-price-tag tag-amber">股东价</view>
+                  <view class="service-price-current">¥{{item.priceStr}}</view>
+                </view>
+              </view>
+              <view wx:else class="service-price-box">
+                <view wx:if="{{item.hasDiscount}}" class="service-price-original">¥{{item.originalPriceStr}}</view>
+                <view class="service-price-row">
+                  <view wx:if="{{item.hasDiscount}}" class="service-price-tag tag-orange">会员价</view>
+                  <view class="service-price-current">¥{{item.priceStr}}</view>
+                </view>
+              </view>
             </view>
           </scroll-view>
-          <view class="service-select-scrollbar" wx:if="{{showServiceScrollbar}}">
-            <view class="service-select-scrollbar-track">
-              <view class="service-select-scrollbar-thumb" style="top: {{serviceThumbTop}}px; height: {{serviceThumbHeight}}px;"></view>
+
+          <view class="custom-scrollbar" wx:if="{{showServiceScrollbar}}">
+            <view class="custom-scrollbar-track">
+              <view class="custom-scrollbar-thumb" style="top: {{serviceThumbTop}}px; height: {{serviceThumbHeight}}px;"></view>
             </view>
           </view>
         </view>
-        <view wx:if="{{!shop.services || shop.services.length === 0}}" class="empty-text">暂无可用服务</view>
+
+        <view wx:if="{{!shop.services || shop.services.length === 0}}" class="empty-hint">暂无可用服务</view>
       </view>
 
-      <!-- 选择日期 -->
+      <!-- ========== 5) 日期选择卡 ========== -->
       <view class="card">
-        <view class="card-title">
-          <mbs-icon name="calendar" size="32" color="var(--accent)" />
-          选择日期
+        <view class="card-header">
+          <mbs-icon name="calendar" size="36" color="var(--text-primary)" />
+          <text class="card-header-text">选择日期</text>
         </view>
-        <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false">
-          <view
-            wx:for="{{dates}}"
-            wx:key="value"
-            class="date-item {{selectedDate === item.value ? 'date-item-active' : ''}}"
-            bindtap="onDateSelect"
-            data-value="{{item.value}}"
-          >
-            <view class="date-label">{{item.label}}</view>
-            <view class="date-week">{{item.weekDay}}</view>
+        <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false" enhanced="true">
+          <view class="date-scroll-inner">
+            <view
+              wx:for="{{dates}}"
+              wx:key="value"
+              class="date-chip {{selectedDate === item.value ? 'date-chip-active' : ''}}"
+              bindtap="onDateSelect"
+              data-value="{{item.value}}"
+            >
+              <view class="date-chip-label">{{item.label}}</view>
+              <view class="date-chip-week">{{item.weekDay}}</view>
+            </view>
           </view>
         </scroll-view>
       </view>
 
-      <!-- 选择时间 -->
+      <!-- ========== 6) 时间选择卡 ========== -->
       <view class="card">
-        <view class="card-title">
-          <mbs-icon name="clock" size="32" color="var(--accent)" />
-          选择时间
+        <view class="card-header">
+          <mbs-icon name="clock" size="36" color="var(--text-primary)" />
+          <text class="card-header-text">选择时间</text>
         </view>
         <view class="time-grid">
           <view
-          wx:for="{{timeSlots}}"
-          wx:key="time"
-          class="time-item {{selectedTime === item.time ? 'time-item-active' : ''}} {{item.full ? 'time-item-disabled' : ''}}"
-          bindtap="onTimeSelect"
-          data-value="{{item.time}}"
-        >
-          {{item.time}}
-          <view wx:if="{{item.full}}" class="time-item-tag">已满</view>
-        </view>
+            wx:for="{{timeSlots}}"
+            wx:key="time"
+            class="time-chip {{selectedTime === item.time ? 'time-chip-active' : ''}} {{item.full ? 'time-chip-disabled' : ''}}"
+            bindtap="onTimeSelect"
+            data-value="{{item.time}}"
+          >
+            <text>{{item.time}}</text>
+            <view wx:if="{{item.full}}" class="time-chip-tag">已满</view>
+          </view>
         </view>
       </view>
 
-      <!-- 选择发型师 -->
+      <!-- ========== 7) 发型师选择卡 ========== -->
       <view class="card">
-        <view class="card-title">
-          <mbs-icon name="award" size="32" color="var(--accent)" />
-          选择发型师
+        <view class="card-header">
+          <mbs-icon name="scissors" size="36" color="var(--accent)" />
+          <text class="card-header-text">选择发型师</text>
         </view>
 
         <!-- 智能匹配 -->
         <view
-          class="barber-card {{selectionMode === 'fastest' ? 'barber-card-green' : ''}}"
+          class="barber-card barber-card-smart {{selectionMode === 'fastest' ? 'barber-card-smart-active' : ''}}"
           bindtap="onModeSelect"
           data-mode="fastest"
         >
@@ -153,79 +172,111 @@
             <view wx:if="{{selectionMode === 'fastest'}}" class="barber-radio-inner barber-radio-inner-green"></view>
           </view>
           <view class="barber-avatar barber-avatar-green">
-            <mbs-icon name="zap" size="36" color="var(--success)" />
+            <mbs-icon name="zap" size="40" color="var(--green-600)" />
           </view>
-          <view class="barber-content">
+          <view class="barber-info">
             <view class="barber-name-row">
               <text class="barber-name">智能匹配 · 最快服务</text>
               <text class="tag tag-green">推荐</text>
             </view>
             <view class="barber-desc">系统为您匹配当前最空闲的发型师，节省等待时间</view>
-            <view wx:if="{{fastest}}" class="barber-meta">
+            <view wx:if="{{fastest}}" class="barber-meta-row">
               <text class="tag tag-gray">{{fastest.name}}</text>
-              <text class="text-green">等待 {{fastestWaitTime}} 分钟</text>
+              <text class="barber-wait barber-wait-ok">等待 {{fastestWaitTime}} 分钟</text>
+            </view>
+            <view wx:else class="barber-meta-row">
+              <text class="barber-wait barber-wait-pending">正在计算...</text>
             </view>
           </view>
         </view>
 
-        <view class="barber-divider">或选择指定发型师</view>
+        <!-- 分隔线 -->
+        <view class="divider">
+          <view class="divider-line"></view>
+          <text class="divider-text">或选择指定发型师</text>
+          <view class="divider-line"></view>
+        </view>
 
         <!-- 发型师列表 -->
         <view
           wx:for="{{stylists}}"
           wx:key="id"
-          class="barber-card {{(selectionMode === 'specific' && selectedBarberId === item.id) ? 'barber-card-active' : ''}} {{!item.isAvailable ? 'barber-card-disabled' : ''}}"
+          class="barber-card {{(selectionMode === 'specific' && selectedBarberId === item.id) ? 'barber-card-selected' : ''}} {{!item.isAvailable ? 'barber-card-busy' : ''}}"
           bindtap="onBarberSelect"
           data-id="{{item.id}}"
         >
           <view class="barber-radio">
             <view wx:if="{{selectionMode === 'specific' && selectedBarberId === item.id}}" class="barber-radio-inner"></view>
           </view>
-          <view class="barber-avatar">
+
+          <view class="barber-avatar barber-avatar-orange">
             <mbs-icon name="user" size="36" color="var(--text-tertiary)" />
           </view>
-          <view class="barber-content">
+
+          <view class="barber-info">
             <view class="barber-name-row">
               <text class="barber-name">{{item.name}}</text>
               <text wx:if="{{item.title}}" class="tag tag-orange">{{item.title}}</text>
-              <text wx:if="{{!item.isAvailable}}" class="tag tag-gray">已约</text>
+              <text wx:if="{{!item.isAvailable}}" class="tag tag-red">已约</text>
             </view>
-            <view class="barber-meta">
-              <text class="barber-rating"><mbs-icon name="star" size="18" color="var(--warning)" /> {{item.displayRating}}</text>
-              <text class="barber-services">{{item.totalServices || 200}}+次</text>
+
+            <view class="barber-rating-row">
+              <view class="rating-value">
+                <mbs-icon name="award" size="24" color="var(--amber-400)" />
+                <text>{{item.displayRating}}</text>
+              </view>
+              <view class="services-count">
+                <mbs-icon name="user" size="24" color="var(--text-tertiary)" />
+                <text>{{item.totalServices || 200}}+次</text>
+              </view>
             </view>
+
             <view wx:if="{{item.tagsDisplay && item.tagsDisplay.length > 0}}" class="barber-tags">
-              <text wx:for="{{item.tagsDisplay}}" wx:key="*this" wx:for-item="tag" class="tag tag-gray">#{{tag}}</text>
+              <text wx:for="{{item.tagsDisplay}}" wx:for-item="tag" wx:key="*this" class="tag tag-gray-sm">#{{tag}}</text>
+              <text wx:if="{{item.tags.length > 2}}" class="tags-more">+{{item.tags.length - 2}}</text>
+            </view>
+
+            <view class="barber-wait-row">
+              <text wx:if="{{item.isAvailable}}" class="barber-wait barber-wait-ok">预计等待 {{item.waitTime}} 分钟</text>
+              <text wx:else class="barber-wait barber-wait-busy">当前时段已满</text>
             </view>
           </view>
         </view>
       </view>
 
-      <!-- 备注 -->
+      <!-- ========== 8) 备注卡 ========== -->
       <view class="card">
-        <view class="card-title">
-          <mbs-icon name="messageSquare" size="32" color="var(--accent)" />
-          备注
+        <view class="card-header">
+          <mbs-icon name="sparkles" size="36" color="var(--text-primary)" />
+          <text class="card-header-text">备注（可选）</text>
         </view>
         <textarea
-          class="textarea"
-          placeholder="如有特殊需求，请在此填写"
+          class="notes-textarea"
+          placeholder="您的发型偏好、特殊需求等..."
           value="{{notes}}"
           bindinput="onNotesInput"
+          maxlength="200"
         />
       </view>
+
+      <!-- 底部占位 -->
+      <view class="bottom-spacer"></view>
     </block>
   </view>
 
-  <!-- 底部固定栏 -->
+  <!-- ========== 9) 固定底部栏 ========== -->
   <view class="fixed-bottom-bar" wx:if="{{shop}}">
-    <view class="booking-summary">
-      <view>
-        <view class="booking-total-label">合计</view>
-        <mbs-price current="{{selectedServicePrice}}" size="lg" show-tag="{{false}}" align="left" />
+    <view class="bar-inner">
+      <view class="bar-price-area">
+        <view class="bar-price-label">合计</view>
+        <view class="bar-price-value">
+          <view wx:if="{{selectedServicePrice > 0}}" class="bar-price-current">¥{{selectedServicePrice}}</view>
+          <view wx:else class="bar-price-placeholder">请选择服务</view>
+        </view>
       </view>
-      <view class="btn btn-primary booking-submit {{booking ? 'btn-disabled' : ''}}" bindtap="handleBooking">
-        {{booking ? '预约中...' : '确认预约'}}
+      <view class="bar-btn {{booking ? 'bar-btn-disabled' : ''}}" bindtap="handleBooking">
+        <mbs-icon wx:if="{{!booking}}" name="checkCircle" size="36" color="#fff" />
+        <text>{{booking ? '预约中...' : '确认预约'}}</text>
       </view>
     </view>
   </view>

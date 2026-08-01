@@ -2,7 +2,7 @@ import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIP
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
- 
+
 interface AuthUser extends Employee {
   shopId?: string;
   phone?: string;
@@ -1813,6 +1813,57 @@ export const productOrderApi = {
       );
     }
     return null;
+  },
+  // 发货接口（店铺端）
+  shipOrder: async (orderId: string, shippingInfo: { company: string; no: string }): Promise<ProductOrder | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      return await httpThrowing<ProductOrder>(
+        `${API_BASE}/product-orders/${orderId}/ship`,
+        {
+          method: 'POST',
+          body: JSON.stringify(shippingInfo),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    }
+    return null;
+  },
+  // 确认收货接口（顾客端）
+  confirmReceipt: async (orderId: string, customerId: string): Promise<ProductOrder | null> => {
+    if (USE_REAL_API) {
+      return await httpThrowing<ProductOrder>(
+        `${API_BASE}/product-orders/${orderId}/confirm`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ customerId }),
+        }
+      );
+    }
+    return null;
+  },
+  // 查询物流轨迹
+  getTrackingInfo: async (orderId: string): Promise<Array<{
+    id: string;
+    orderId: string;
+    shippingCompany: string;
+    shippingNo: string;
+    eventTime: string;
+    eventDescription: string;
+    location: string;
+  }>> => {
+    if (USE_REAL_API) {
+      return await httpThrowing<Array<{
+        id: string;
+        orderId: string;
+        shippingCompany: string;
+        shippingNo: string;
+        eventTime: string;
+        eventDescription: string;
+        location: string;
+      }>>(`${API_BASE}/product-orders/${orderId}/tracking`);
+    }
+    return [];
   },
 };
 

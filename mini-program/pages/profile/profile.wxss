@@ -1,19 +1,44 @@
-/* 个人中心 —— 与 H5 Profile.tsx 视觉统一 */
+/* 个人中心 —— 与 H5 Profile.tsx 视觉严格统一 */
 
 .profile-page {
   min-height: 100vh;
-  background: var(--background);
-  padding-bottom: calc(24rpx + env(safe-area-inset-bottom, 0));
+  background: var(--bg);
+  padding-bottom: calc(48rpx + env(safe-area-inset-bottom, 0));
 }
 
-/* 顶部会员卡 */
+.profile-page .container {
+  padding: 32rpx;
+}
+
+/* ===== 渐变头部（按等级配色） ===== */
 .vip-header {
   position: relative;
   overflow: hidden;
-  color: var(--card-bg);
-  padding: 48rpx 24rpx calc(48rpx + env(safe-area-inset-top, 0));
+  color: #fff;
+  padding: 48rpx 24rpx calc(64rpx + env(safe-area-inset-top, 0));
 }
 
+.gradient-vip-regular {
+  background: linear-gradient(135deg, #9ca3af, #6b7280);
+}
+
+.gradient-vip-bronze {
+  background: linear-gradient(135deg, #fb923c, #f97316);
+}
+
+.gradient-vip-silver {
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+}
+
+.gradient-vip-gold {
+  background: linear-gradient(135deg, #facc15, #ca8a04);
+}
+
+.gradient-vip-diamond {
+  background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+}
+
+/* 装饰背景圆 */
 .vip-decor {
   position: absolute;
   border-radius: 50%;
@@ -49,6 +74,20 @@
   z-index: 1;
 }
 
+/* 基本信息行 */
+.vip-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32rpx;
+}
+
+.vip-info-left {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
 .vip-avatar {
   width: 112rpx;
   height: 112rpx;
@@ -58,6 +97,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.vip-identity {
+  display: flex;
+  flex-direction: column;
 }
 
 .vip-name {
@@ -70,6 +114,13 @@
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.8);
   margin-top: 4rpx;
+}
+
+.vip-info-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
 }
 
 .vip-badge {
@@ -90,11 +141,12 @@
   font-size: 24rpx;
 }
 
+/* 折扣卡 */
 .vip-discount-card {
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(8rpx);
   border-radius: 32rpx;
-  padding: 28rpx;
+  padding: 32rpx;
   margin-bottom: 24rpx;
 }
 
@@ -117,8 +169,10 @@
 .vip-discount-hint {
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.7);
+  line-height: 1.4;
 }
 
+/* 4 列数据速览 */
 .vip-stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -129,7 +183,7 @@
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(8rpx);
   border-radius: 24rpx;
-  padding: 20rpx;
+  padding: 24rpx;
 }
 
 .vip-stat-label {
@@ -146,6 +200,18 @@
   font-weight: 700;
 }
 
+.vip-stat-action {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 6rpx 16rpx;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 9999rpx;
+  font-size: 22rpx;
+  font-weight: 500;
+  color: #fff;
+}
+
+/* 到期提醒 */
 .vip-alert {
   display: flex;
   align-items: flex-start;
@@ -168,6 +234,7 @@
   border: 1rpx solid rgba(254, 215, 170, 0.3);
 }
 
+/* 股东专属 */
 .vip-stockholder {
   margin-top: 24rpx;
   background: rgba(255, 255, 255, 0.15);
@@ -185,6 +252,12 @@
   margin-bottom: 12rpx;
 }
 
+.vip-stockholder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .vip-stockholder-value {
   font-size: 44rpx;
   font-weight: 800;
@@ -198,12 +271,13 @@
 }
 
 .vip-stockholder-crown {
-  font-size: 80rpx;
-  opacity: 0.3;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.35;
 }
 
-/* 主内容区负 margin，与头部重叠 */
+/* 主内容区 */
 .profile-content {
   margin-top: -24rpx;
   position: relative;
@@ -243,6 +317,32 @@
   margin-bottom: 32rpx;
 }
 
+/* 股东权益说明卡 */
+.stockholder-benefits-card {
+  background: linear-gradient(to right, var(--amber-50), #fff7ed);
+  border: 1rpx solid var(--amber-100);
+}
+
+.stockholder-benefits-title {
+  color: #b45309;
+}
+
+.stockholder-benefits-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.stockholder-benefit-tag {
+  font-size: 24rpx;
+  padding: 8rpx 24rpx;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--amber-700);
+  border-radius: 9999rpx;
+  border: 1rpx solid var(--amber-200);
+  font-weight: 500;
+}
+
 /* 可用权益 */
 .benefit-list {
   display: flex;
@@ -254,9 +354,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 22rpx;
+  padding: 24rpx;
   background: var(--gray-50);
   border-radius: 24rpx;
+}
+
+.benefit-left {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
 .benefit-name {
@@ -300,7 +406,7 @@
 
 .benefits-cell {
   display: table-cell;
-  padding: 18rpx 8rpx;
+  padding: 20rpx 12rpx;
   text-align: center;
   vertical-align: middle;
 }
@@ -314,14 +420,25 @@
 
 /* 表格高亮背景 */
 .bg-orange-light { background: rgba(217, 122, 69, 0.06); }
-.bg-blue-light { background: rgba(107, 163, 250, 0.06); }
-.bg-yellow-light { background: rgba(212, 167, 58, 0.06); }
+.bg-blue-light { background: rgba(59, 130, 246, 0.06); }
+.bg-yellow-light { background: rgba(202, 138, 4, 0.08); }
 .bg-purple-light { background: rgba(168, 85, 247, 0.06); }
-.bg-green-light { background: rgba(82, 179, 126, 0.08); }
+.bg-green-light { background: rgba(34, 197, 94, 0.08); }
 .bg-cyan-light { background: rgba(6, 182, 212, 0.06); }
 .bg-indigo-light { background: rgba(99, 102, 241, 0.06); }
-.bg-red-light { background: rgba(217, 108, 108, 0.06); }
-.bg-gray-light { background: var(--gray-100); }
+.bg-red-light { background: rgba(239, 68, 68, 0.06); }
+
+.text-orange-600 { color: #ea580c; }
+.text-blue-600 { color: #2563eb; }
+.text-yellow-600 { color: #ca8a04; }
+.text-purple-600 { color: #9333ea; }
+.text-green-600 { color: #16a34a; }
+.text-cyan-600 { color: #0891b2; }
+.text-indigo-600 { color: #4f46e5; }
+.text-red-600 { color: #dc2626; }
+.text-gray-500 { color: var(--text-tertiary); }
+
+.font-bold { font-weight: 700; }
 
 /* 当前会员卡片 */
 .vip-current-card {
@@ -334,13 +451,18 @@
   padding: 24rpx;
 }
 
+.vip-current-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .vip-current-orange {
-  background: linear-gradient(90deg, var(--orange-50), var(--yellow-50));
-  border: 1rpx solid var(--orange-200);
+  background: linear-gradient(90deg, var(--amber-50), var(--yellow-50));
+  border: 1rpx solid var(--amber-200);
 }
 
 .vip-current-green {
-  background: linear-gradient(90deg, var(--green-50), var(--green-100));
+  background: linear-gradient(90deg, var(--green-50), #ecfdf5);
   border: 1rpx solid var(--green-200);
 }
 
@@ -350,7 +472,7 @@
   margin-bottom: 6rpx;
 }
 
-.vip-current-orange .vip-current-title { color: var(--orange-700); }
+.vip-current-orange .vip-current-title { color: var(--amber-700); }
 .vip-current-green .vip-current-title { color: var(--green-700); }
 
 .vip-current-desc {
@@ -358,8 +480,20 @@
   line-height: 1.4;
 }
 
-.vip-current-orange .vip-current-desc { color: var(--orange-600); }
+.vip-current-orange .vip-current-desc { color: var(--amber-600); }
 .vip-current-green .vip-current-desc { color: var(--green-600); }
+
+/* 预约头部 */
+.booking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.booking-title {
+  margin-bottom: 0;
+}
 
 /* Tab 切换 */
 .tab-switcher {
@@ -370,20 +504,50 @@
 }
 
 .tab-item {
-  padding: 10rpx 28rpx;
-  font-size: 24rpx;
+  padding: 12rpx 32rpx;
+  font-size: 26rpx;
   font-weight: 500;
   border-radius: 12rpx;
   color: var(--text-secondary);
+  transition: all 0.15s;
 }
 
 .tab-active {
-  background: var(--card-bg);
+  background: #fff;
   color: var(--text-primary);
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
 }
 
-/* 预约列表（个人中心复用 app.scss 基础，补充差异化） */
+/* 预约列表 */
+.booking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.booking-item {
+  border: 1rpx solid var(--gray-200);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  transition: box-shadow 0.15s;
+}
+
+.booking-item:active {
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.booking-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.booking-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .booking-shop {
   font-size: 30rpx;
   font-weight: 600;
@@ -394,7 +558,12 @@
   white-space: nowrap;
 }
 
-.booking-meta-row {
+.booking-service {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+}
+
+.booking-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -409,42 +578,40 @@
   color: var(--text-secondary);
 }
 
-.booking-price {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--accent);
-}
-
 /* 快捷功能 */
 .quick-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 16rpx;
-  margin-bottom: 24rpx;
+  margin-bottom: 32rpx;
 }
 
 .quick-item {
-  background: var(--card-bg);
+  background: #fff;
   border-radius: 32rpx;
   padding: 24rpx;
-  border: 1rpx solid var(--border);
+  border: 1rpx solid var(--gray-100);
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
   min-height: 160rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
 }
 
 .quick-title {
   font-size: 28rpx;
   font-weight: 600;
   color: var(--text-primary);
-  margin-top: 16rpx;
 }
 
 .quick-hint {
   font-size: 22rpx;
-  color: var(--text-secondary);
-  margin-top: 6rpx;
+  color: var(--text-tertiary);
 }
 
+/* 退出登录 */
 .btn-logout {
   display: flex;
   align-items: center;
@@ -455,7 +622,7 @@
   border-radius: 24rpx;
   background: #fff;
   color: var(--danger);
-  border: 2rpx solid #fecaca;
+  border: 2rpx solid var(--red-300);
   font-size: 30rpx;
   font-weight: 600;
 }
@@ -473,13 +640,13 @@
 }
 
 .modal-dialog {
-  background: var(--card-bg);
+  background: #fff;
   border-radius: 32rpx;
   width: 100%;
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.2);
+  box-shadow: 0 24rpx 64rpx rgba(0, 0, 0, 0.2);
 }
 
 .modal-header {
@@ -487,7 +654,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 28rpx 32rpx;
-  border-bottom: 1rpx solid var(--border);
+  border-bottom: 1rpx solid var(--gray-100);
 }
 
 .modal-title {
@@ -498,6 +665,7 @@
 
 .modal-close {
   padding: 8rpx;
+  border-radius: 12rpx;
 }
 
 .modal-body {
@@ -513,6 +681,7 @@
   border-radius: 20rpx;
   font-size: 28rpx;
   font-weight: 500;
+  background: var(--gray-50);
 }
 
 .modal-footer {
@@ -520,10 +689,54 @@
   flex-direction: column;
   gap: 16rpx;
   padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom, 0));
-  border-top: 1rpx solid var(--border);
+  border-top: 1rpx solid var(--gray-100);
 }
 
-/* 提现弹窗样式 —— 与 H5 Profile.tsx 视觉统一 */
+/* 信息列表 */
+.info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 24rpx;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--gray-100);
+  font-size: 28rpx;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row-start {
+  align-items: flex-start;
+}
+
+.info-row-start .info-value {
+  text-align: left;
+  flex: 1;
+}
+
+.info-label {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  color: var(--text-secondary);
+  font-size: 28rpx;
+}
+
+.info-value {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 28rpx;
+}
+
+/* 提现弹窗 */
 .withdraw-balance-card {
   background: rgba(217, 122, 69, 0.08);
   border: 1rpx solid rgba(217, 122, 69, 0.2);
@@ -534,14 +747,14 @@
 
 .withdraw-balance-label {
   font-size: 24rpx;
-  color: var(--orange-700);
+  color: var(--amber-700);
   margin-bottom: 8rpx;
 }
 
 .withdraw-balance-value {
   font-size: 48rpx;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--amber-600);
 }
 
 .withdraw-section {
@@ -564,14 +777,14 @@
 .withdraw-channel-item {
   padding: 24rpx;
   border-radius: 24rpx;
-  border: 2rpx solid var(--border);
+  border: 2rpx solid var(--gray-200);
   text-align: center;
   transition: all 0.2s;
 }
 
 .withdraw-channel-active {
   border-color: var(--accent);
-  background: rgba(217, 122, 69, 0.06);
+  background: rgba(245, 158, 11, 0.06);
 }
 
 .withdraw-channel-name {
@@ -587,10 +800,10 @@
   line-height: 1.4;
 }
 
-.withdraw-amount-input-wrap {
+.withdraw-amount-wrap {
   display: flex;
   align-items: center;
-  border: 2rpx solid var(--border);
+  border: 2rpx solid var(--gray-200);
   border-radius: 24rpx;
   padding: 20rpx 24rpx;
   background: var(--gray-50);
@@ -617,35 +830,9 @@
   margin-top: 12rpx;
 }
 
-/* 工具类补充 */
+/* 工具类 */
 .min-w-0 { min-width: 0; }
+.text-center { text-align: center; }
 
-/* 股东权益标签 */
-.vip-stockholder-benefits {
-  margin-top: 20rpx;
-  padding: 20rpx;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8rpx);
-  border-radius: 20rpx;
-}
-
-.vip-stockholder-benefit-title {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.85);
-  margin-bottom: 12rpx;
-}
-
-.vip-stockholder-benefit-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10rpx;
-}
-
-.vip-stockholder-benefit-tag {
-  font-size: 22rpx;
-  padding: 6rpx 16rpx;
-  background: rgba(255, 255, 255, 0.25);
-  color: #fff;
-  border-radius: 20rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
-}
+/* 未使用但保留给 JS 动态类 */
+.bg-gray-light { background: var(--gray-100); }

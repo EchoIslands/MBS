@@ -1,32 +1,37 @@
-<view class="my-coupons-page">
-  <view class="page-header">
-    <view class="header-back" bindtap="goBack">
-      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
+<view class="coupon-page">
+  <view class="coupon-header">
+    <view class="coupon-header__back" bindtap="goBack">
+      <mbs-icon name="arrowLeft" size="40" color="var(--gray-800)" />
     </view>
-    <view class="header-title">我的优惠券</view>
-    <view class="header-spacer"></view>
+    <view class="coupon-header__title">我的优惠券</view>
+    <view class="coupon-header__spacer"></view>
   </view>
 
-  <view class="tab-bar">
+  <view class="coupon-tabs">
     <view
       wx:for="{{tabs}}"
       wx:key="key"
       data-tab="{{item.key}}"
-      class="tab-item {{activeTab === item.key ? 'tab-active' : ''}}"
+      class="coupon-tab {{activeTab === item.key ? 'coupon-tab--active' : ''}}"
       bindtap="onTabTap"
     >
       {{item.label}}
     </view>
   </view>
 
-  <view class="coupon-list">
-    <view wx:if="{{loading}}" class="loading-state">加载中...</view>
+  <view class="coupon-body">
+    <view wx:if="{{loading}}" class="coupon-loading">
+      <view class="coupon-loading__spinner"></view>
+      <view class="coupon-loading__text">加载中...</view>
+    </view>
 
     <block wx:elif="{{coupons.length === 0}}">
-      <view class="empty-state">
-        <mbs-icon name="ticket" size="80" color="var(--text-tertiary)" />
-        <view class="empty-text">暂无{{activeTabLabel}}优惠券</view>
-        <view class="btn btn-primary btn-small" style="margin-top: 24rpx;" bindtap="goToClaim">去领券</view>
+      <view class="coupon-empty">
+        <view class="coupon-empty__icon">
+          <mbs-icon name="ticket" size="96" color="var(--gray-300)" />
+        </view>
+        <view class="coupon-empty__text">暂无{{activeTabLabel}}优惠券</view>
+        <view class="coupon-empty__btn btn btn-primary" bindtap="goToClaim">去领券</view>
       </view>
     </block>
 
@@ -34,25 +39,42 @@
       <view
         wx:for="{{coupons}}"
         wx:key="id"
-        class="coupon-card {{item.isUsable ? 'coupon-card-active' : 'coupon-card-disabled'}}"
+        class="coupon-card {{item.isUsable ? 'coupon-card--usable' : 'coupon-card--disabled'}}"
       >
-        <view class="coupon-main">
-          <view class="coupon-value">{{item.valueText}}</view>
-          <view class="coupon-info">
-            <view class="coupon-name">{{item.coupon.name || '优惠券'}}</view>
-            <view wx:if="{{item.coupon.minOrderAmount}}" class="coupon-threshold">满{{item.coupon.minOrderAmount}}元可用</view>
-            <view class="coupon-scope">{{item.scopeText}} · 有效期至 {{item.coupon.endAt}}</view>
-            <view wx:if="{{item.usedAt}}" class="coupon-used-at">使用时间：{{item.usedAt}}</view>
-          </view>
+        <view class="coupon-card__stub">
+          <view class="coupon-card__stub-value">{{item.valueText}}</view>
         </view>
-        <view class="coupon-side">
-          <view class="coupon-status {{item.statusClass}}">{{item.statusText}}</view>
-          <button
-            wx:if="{{item.isUsable}}"
-            class="btn btn-primary btn-small"
-            data-coupon="{{item.coupon}}"
-            bindtap="onUseTap"
-          >去使用</button>
+
+        <view class="coupon-card__divider"></view>
+
+        <view class="coupon-card__body">
+          <view class="coupon-card__top">
+            <view class="coupon-card__name">{{item.coupon.name || '优惠券'}}</view>
+            <view class="coupon-card__status {{item.statusClass}}">{{item.statusText}}</view>
+          </view>
+
+          <view wx:if="{{item.coupon.minOrderAmount}}" class="coupon-card__threshold">
+            满{{item.coupon.minOrderAmount}}元可用
+          </view>
+
+          <view class="coupon-card__meta">
+            <text class="coupon-card__scope">{{item.scopeText}}</text>
+            <text class="coupon-card__dot"></text>
+            <text class="coupon-card__expiry">有效期至 {{item.coupon.endAt}}</text>
+          </view>
+
+          <view wx:if="{{item.usedAt}}" class="coupon-card__used-at">
+            使用时间:{{item.usedAt}}
+          </view>
+
+          <view class="coupon-card__action-row">
+            <view wx:if="{{item.isUsable}}" class="coupon-card__action" hover-class="coupon-card__action--hover" data-coupon="{{item.coupon}}" bindtap="onUseTap">
+              去使用
+            </view>
+            <view wx:else class="coupon-card__action coupon-card__action--disabled">
+              {{item.statusText}}
+            </view>
+          </view>
         </view>
       </view>
     </block>

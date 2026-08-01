@@ -84,3 +84,25 @@ export async function requestProductOrderRefund(orderId, reason) {
   }
   return result?.data || null;
 }
+
+/**
+ * 查询商品订单物流轨迹
+ */
+export async function getProductOrderTracking(orderId) {
+  const result = await get(`/product-orders/${orderId}/tracking`);
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '获取物流信息失败');
+  }
+  return result?.data || [];
+}
+
+/**
+ * 顾客确认收货
+ */
+export async function confirmProductOrderReceipt(orderId, customerId) {
+  const result = await put(`/product-orders/${orderId}/confirm`, { customerId });
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '确认收货失败');
+  }
+  return result?.data || null;
+}
