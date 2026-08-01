@@ -38,7 +38,8 @@ create table if not exists employees (
   role text not null default 'stylist', -- stylist / manager / ceo / customer_service
   password_hash text default '123456',
   is_active boolean default true,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- ========== 客户表（核心） ==========
@@ -95,7 +96,8 @@ create table if not exists customers (
   openid_mini text,                               -- 小程序 openid
   unionid text,                                   -- 微信开放平台 unionid（跨端统一标识）
   wechat_avatar text,                             -- 微信头像
-  wechat_nickname text                            -- 微信昵称
+  wechat_nickname text,                           -- 微信昵称
+  updated_at timestamptz default now()            -- 最后更新时间
 );
 
 -- ========== 客户画像 ==========

@@ -1463,7 +1463,6 @@ customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
         stored_value_expires_at: new Date(Date.now() + 2 * 365 * 86400000).toISOString(),
         is_member: true,
         membership_level: customer.is_stockholder ? 'stockholder' : 'premium',
-        updated_at: now,
       })
       .eq('id', id)
       .eq('shop_id', shopId)

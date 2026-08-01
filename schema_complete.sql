@@ -129,6 +129,7 @@ alter table customers add column if not exists last_service_items text[] default
 alter table customers add column if not exists is_member boolean default false;
 alter table customers add column if not exists has_recharged boolean default false;
 alter table customers add column if not exists recharge_level text;
+alter table customers add column if not exists updated_at timestamptz default now();
 
 -- ========== 4. 客户画像 ==========
 create table if not exists customer_profiles (
