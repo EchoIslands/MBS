@@ -253,7 +253,7 @@ Page({
               this.setData({ paymentMethod: 'store_pickup' });
               this.doCheckout();
             } else if (res.tapIndex === 1) {
-              wx.navigateTo({ url: `/pages/profile/profile?shopId=${shopId}` });
+              wx.navigateTo({ url: `/pages/recharge/recharge?shopId=${shopId}` });
             }
           },
         });

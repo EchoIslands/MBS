@@ -89,7 +89,9 @@ Page({
       await this.loadCustomer();
       setTimeout(() => wx.navigateBack(), 800);
     } catch (err) {
-      wx.showToast({ title: err.message || '充值失败', icon: 'none' });
+      const message = err.response?.details || err.message || '充值失败';
+      console.error('[recharge] 充值失败:', message, err);
+      wx.showToast({ title: message.length > 20 ? message.slice(0, 20) + '...' : message, icon: 'none' });
     } finally {
       this.setData({ submitting: false });
     }

@@ -1490,8 +1490,9 @@ customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: toCamelCase(updatedCustomer) });
   } catch (err: unknown) {
-    console.error('[customers] 自助储值异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
+    const message = (err as Error).message || String(err);
+    console.error('[customers] 自助储值异常:', message);
+    res.status(500).json({ success: false, error: '服务器错误', details: message });
   }
 });
 
