@@ -2561,8 +2561,14 @@ const shopFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   longitude: s.longitude || 0,
   level: s.level || 'good',
   isActive: s.is_active !== false,
-  avatar: s.avatar || '',
-  images: s.images || [],
+  avatar: typeof s.avatar === 'string' && s.avatar.startsWith('data:')
+    ? s.avatar.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
+    : (s.avatar || ''),
+  images: ((s.images as unknown[]) || []).map((url) =>
+    typeof url === 'string' && url.startsWith('data:')
+      ? url.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
+      : url
+  ),
   services: s.services || [],
   products: truncateProductImages(s.products as unknown[]) || [],
   openingHours: s.opening_hours || {},
@@ -2650,7 +2656,9 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
           id: e.id,
           name: e.name,
           phone: e.phone,
-          avatar: e.avatar,
+          avatar: typeof e.avatar === 'string' && e.avatar.startsWith('data:')
+            ? e.avatar.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
+            : e.avatar,
           title: e.title,
           rating: e.rating || 5,
           isActive: e.is_active !== false,
@@ -3305,18 +3313,23 @@ const productOrderFromDb = (o: DbRecord): Record<string, unknown> => ({
   trackingInfo: o.tracking_info || [],
 });
 
-const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => ({
-  id: i.id,
-  orderId: i.order_id,
-  productId: i.product_id,
-  name: i.name,
-  image: i.image,
-  price: Number(i.price) || 0,
-  originalPrice: i.original_price ? Number(i.original_price) : undefined,
-  quantity: Number(i.quantity) || 1,
-  totalAmount: Number(i.total_amount) || 0,
-  category: i.category,
-});
+const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => {
+  const image = typeof i.image === 'string' && i.image.startsWith('data:')
+    ? i.image.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
+    : i.image;
+  return {
+    id: i.id,
+    orderId: i.order_id,
+    productId: i.product_id,
+    name: i.name,
+    image,
+    price: Number(i.price) || 0,
+    originalPrice: i.original_price ? Number(i.original_price) : undefined,
+    quantity: Number(i.quantity) || 1,
+    totalAmount: Number(i.total_amount) || 0,
+    category: i.category,
+  };
+};
 
 // 取消订单时回滚库存并记录变动
 const rollbackProductOrderInventory = async (orderId: string, shopId: string, cancelReason?: string) => {
@@ -3458,10 +3471,14 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       totalAmount += itemTotal;
       originalTotalAmount += itemOriginalTotal;
 
+      const rawImage = product.images?.[0] || null;
+      const image = typeof rawImage === 'string' && rawImage.startsWith('data:')
+        ? rawImage.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
+        : rawImage;
       orderItems.push({
         product_id: product.id,
         name: product.name,
-        image: product.images?.[0] || null,
+        image,
         price: unitPrice,
         original_price: product.original_price,
         quantity,
