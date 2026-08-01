@@ -1442,7 +1442,8 @@ customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
       .eq('shop_id', shopId)
       .single();
     if (fetchError || !customer) {
-      return res.status(404).json({ success: false, error: '客户不存在' });
+      const message = fetchError?.message || '客户不存在';
+      return res.status(404).json({ success: false, error: '客户不存在', details: message });
     }
 
     const currentBalance = Number(customer.stored_value_balance || 0);
@@ -1469,8 +1470,9 @@ customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
       .select()
       .single();
     if (updateError || !updatedCustomer) {
-      console.error('[customers] 自助储值失败:', updateError?.message);
-      return res.status(500).json({ success: false, error: '充值失败' });
+      const message = updateError?.message || '更新客户信息失败';
+      console.error('[customers] 自助储值失败:', message);
+      return res.status(500).json({ success: false, error: '充值失败', details: message });
     }
 
     if (addAmount > 0) {
