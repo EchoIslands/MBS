@@ -144,6 +144,12 @@ page {
   box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.22);
 }
 
+.btn-primary-plain {
+  background: var(--amber-50);
+  color: var(--accent-dark);
+  border: 2rpx solid var(--amber-200);
+}
+
 .btn-blue {
   background: linear-gradient(135deg, var(--primary-light), var(--primary));
   color: #fff;
@@ -184,12 +190,12 @@ page {
   z-index: 100;
 }
 
-.bottom-actions {
+.index-bottom-actions {
   display: flex;
   gap: 24rpx;
 }
 
-.bottom-btn {
+.index-bottom-btn {
   flex: 1;
   height: 96rpx;
   display: flex;
@@ -200,110 +206,74 @@ page {
   font-size: 30rpx;
   font-weight: 700;
   box-sizing: border-box;
-  text-align: center;
-  line-height: 1;
 }
 
-.bottom-btn:active { opacity: 0.85; }
-
-.bottom-btn-store {
-  background: var(--amber-50);
-  color: var(--accent-dark);
-  border: 2rpx solid var(--amber-200);
-}
-
-.bottom-btn-booking {
-  background: linear-gradient(to right, var(--primary-light), var(--primary));
-  color: #fff;
-  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.3);
-}
-
-.bottom-btn-icon {
+.index-bottom-btn .mbs-icon {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.index-bottom-btn text {
   line-height: 1;
-  vertical-align: middle;
 }
 
-.bottom-btn-text {
-  display: inline-block;
-  line-height: 1;
-  vertical-align: middle;
-}
-
-/* ===== 粘性头部 —— 与 H5 白色头部对齐 ===== */
-.sticky-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: #fff;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
-}
-
-.sticky-header-inner {
+/* ===== 顶部导航栏（与 H5 对齐） ===== */
+.index-nav-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24rpx 32rpx;
-  gap: 24rpx;
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-top, 0));
+  background: #fff;
+  border-bottom: 1rpx solid var(--gray-100);
 }
 
-.sticky-header-title {
-  font-size: 36rpx;
+.index-nav-title {
+  font-size: 34rpx;
   font-weight: 700;
-  color: var(--gray-800);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-primary);
 }
 
-.sticky-header-actions {
+.index-nav-actions {
   display: flex;
+  align-items: center;
   gap: 16rpx;
+}
+
+.index-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 0 24rpx;
+  height: 60rpx;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+
+.index-nav-btn .mbs-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 
-.sticky-header-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  padding: 16rpx 24rpx;
+.index-nav-btn text {
+  line-height: 1;
+}
+
+.index-nav-btn-primary {
   background: var(--primary);
   color: #fff;
-  border-radius: 16rpx;
-  font-size: 26rpx;
-  font-weight: 500;
-  line-height: 1;
 }
 
-.sticky-header-btn text {
-  display: inline-block;
-  line-height: 1;
-  vertical-align: middle;
-}
-
-.sticky-header-btn-outline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  padding: 16rpx 24rpx;
-  border: 2rpx solid var(--red-300);
+.index-nav-btn-outline {
+  background: #fff;
   color: var(--danger);
-  background: var(--red-50);
-  border-radius: 16rpx;
-  font-size: 26rpx;
-  font-weight: 500;
-  line-height: 1;
-}
-
-.sticky-header-btn-outline text {
-  display: inline-block;
-  line-height: 1;
-  vertical-align: middle;
+  border: 2rpx solid var(--red-300);
 }
 
 /* ===== 渐变头部（个人中心首页用） ===== */

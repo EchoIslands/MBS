@@ -3723,6 +3723,112 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// 顾客继续支付待支付订单
+productOrdersRouter.post('/:id/pay', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customerId, paymentMethod } = req.body || {};
+
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: '缺少顾客ID' });
+    }
+    if (!['balance', 'store_pickup'].includes(paymentMethod)) {
+      return res.status(400).json({ success: false, error: '暂不支持的支付方式' });
+    }
+
+    const { data: order, error: orderError } = await supabase
+      .from('product_orders')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (orderError || !order) {
+      return res.status(404).json({ success: false, error: '订单不存在' });
+    }
+    if (order.customer_id !== customerId) {
+      return res.status(403).json({ success: false, error: '无权操作该订单' });
+    }
+    if (order.status !== 'pending') {
+      return res.status(400).json({ success: false, error: '订单不是待支付状态' });
+    }
+
+    const payableAmount = Number(order.payable_amount || 0);
+    const shopId = order.shop_id;
+    const orderNo = order.order_no;
+
+    const updatePayload: Record<string, unknown> = {
+      status: 'paid',
+      payment_status: 'paid',
+      paid_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (paymentMethod === 'balance') {
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('stored_value_balance, withdrawable_referral_amount, name')
+        .eq('id', customerId)
+        .eq('shop_id', shopId)
+        .single();
+      if (customerError || !customer) {
+        return res.status(404).json({ success: false, error: '顾客不存在' });
+      }
+
+      const currentBalance = Number(customer.stored_value_balance || 0);
+      const currentReferral = Number(customer.withdrawable_referral_amount || 0);
+      if (currentBalance < payableAmount) {
+        return res.status(400).json({ success: false, error: '储值余额不足' });
+      }
+
+      const principal = Math.max(0, currentBalance - currentReferral);
+      const usedPrincipal = Math.min(payableAmount, principal);
+      const usedReferral = payableAmount - usedPrincipal;
+      const newBalance = Math.round((currentBalance - payableAmount) * 100) / 100;
+      const newReferral = Math.round((currentReferral - usedReferral) * 100) / 100;
+
+      await supabase
+        .from('customers')
+        .update({ stored_value_balance: newBalance, balance: newBalance, withdrawable_referral_amount: newReferral })
+        .eq('id', customerId)
+        .eq('shop_id', shopId);
+
+      await supabase.from('stored_value_transactions').insert({
+        id: `svt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        customer_id: customerId,
+        type: 'consume',
+        amount: -payableAmount,
+        balance_after: newBalance,
+        principal_portion: -usedPrincipal,
+        referral_portion: -usedReferral,
+        order_id: id,
+        note: `商品订单消费 ${orderNo}`,
+        created_at: new Date().toISOString(),
+        created_by: customerId,
+        created_by_name: customer.name || '顾客',
+      });
+    }
+
+    // store_pickup 支付：到店自提付款，顾客确认后标记为已付款
+    if (paymentMethod === 'store_pickup') {
+      updatePayload.payment_method = 'store_pickup';
+    }
+
+    const { data: updatedOrder, error: updateError } = await supabase
+      .from('product_orders')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateError) {
+      return res.status(500).json({ success: false, error: '支付订单失败' });
+    }
+
+    res.json({ success: true, data: productOrderFromDb(updatedOrder) });
+  } catch (error) {
+    console.error('[productOrders] 支付订单异常:', error);
+    res.status(500).json({ success: false, error: '支付订单失败' });
+  }
+});
+
 // 顾客查看自己的商品订单列表
 productOrdersRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
   try {

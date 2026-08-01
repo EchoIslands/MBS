@@ -1,5 +1,5 @@
 import { getCustomerPublic } from '../../api/customer';
-import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder, getProductOrderTracking, confirmProductOrderReceipt } from '../../api/product';
+import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder, getProductOrderTracking, confirmProductOrderReceipt, payProductOrder } from '../../api/product';
 import { getCustomerId } from '../../utils/storage';
 
 const statusLabels = {
@@ -137,17 +137,57 @@ Page({
     const index = e.currentTarget.dataset.index;
     const order = this.data.filteredOrders[index];
     if (!order) return;
-    wx.showModal({
-      title: '确认支付',
-      content: `订单金额 ¥${(order.payableAmount / 100).toFixed(2)}，是否前往支付？`,
-      confirmText: '去支付',
-      cancelText: '取消',
-      success: (res) => {
-        if (res.confirm) {
-          wx.showToast({ title: '支付功能开发中', icon: 'none' });
+    const amountText = `¥${(order.payableAmount / 100).toFixed(2)}`;
+    const customerId = getCustomerId();
+    if (!customerId) {
+      wx.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+
+    const actions = ['余额支付', '到店自提付款', '取消'];
+    wx.showActionSheet({
+      itemList: actions,
+      success: async (res) => {
+        const method = actions[res.tapIndex];
+        if (method === '取消') return;
+        const paymentMethod = method === '余额支付' ? 'balance' : 'store_pickup';
+
+        if (paymentMethod === 'balance') {
+          const balance = (this.data.customer?.storedValueBalance || 0);
+          if (balance < order.payableAmount / 100) {
+            wx.showModal({
+              title: '余额不足',
+              content: `订单金额 ${amountText}，当前余额 ¥${balance.toFixed(2)}，是否前往充值？`,
+              confirmText: '去充值',
+              cancelText: '到店自提付款',
+              success: (modalRes) => {
+                if (modalRes.confirm) {
+                  wx.navigateTo({ url: `/pages/recharge/recharge?shopId=${this.data.shopId}` });
+                } else {
+                  this.doPay(order.id, customerId, 'store_pickup');
+                }
+              },
+            });
+            return;
+          }
         }
+
+        this.doPay(order.id, customerId, paymentMethod);
       },
     });
+  },
+
+  async doPay(orderId, customerId, paymentMethod) {
+    wx.showLoading({ title: paymentMethod === 'balance' ? '支付中' : '处理中' });
+    try {
+      await payProductOrder(orderId, customerId, paymentMethod);
+      wx.hideLoading();
+      wx.showToast({ title: paymentMethod === 'balance' ? '支付成功' : '已切换为到店自提付款' });
+      this.onRefresh();
+    } catch (err) {
+      wx.hideLoading();
+      wx.showToast({ title: err.message || '支付失败', icon: 'none' });
+    }
   },
 
   handleReorder(e) {

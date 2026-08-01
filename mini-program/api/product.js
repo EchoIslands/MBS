@@ -1,4 +1,4 @@
-import { get, post } from '../utils/api';
+import { get, post, put } from '../utils/api';
 
 /**
  * 获取店铺优惠券列表（顾客端）
@@ -12,10 +12,10 @@ export async function getShopCoupons(shopId) {
  * 获取顾客优惠券列表
  */
 export async function getCustomerCoupons(customerId, shopId, status) {
-  const params = new URLSearchParams();
-  if (shopId) params.set('shopId', shopId);
-  if (status) params.set('status', status);
-  const query = params.toString() ? `?${params.toString()}` : '';
+  const parts = [];
+  if (shopId) parts.push(`shopId=${encodeURIComponent(shopId)}`);
+  if (status) parts.push(`status=${encodeURIComponent(status)}`);
+  const query = parts.length > 0 ? `?${parts.join('&')}` : '';
   const result = await get(`/coupons/customer/${customerId}${query}`);
   return result?.data || [];
 }
@@ -47,6 +47,17 @@ export async function createProductOrder(data) {
   const result = await post('/product-orders', data);
   if (!result || result.success === false) {
     throw new Error(result?.error || '创建订单失败');
+  }
+  return result.data || null;
+}
+
+/**
+ * 支付待支付商品订单
+ */
+export async function payProductOrder(orderId, customerId, paymentMethod) {
+  const result = await post(`/product-orders/${orderId}/pay`, { customerId, paymentMethod });
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '支付订单失败');
   }
   return result.data || null;
 }
