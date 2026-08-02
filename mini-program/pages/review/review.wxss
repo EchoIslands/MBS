@@ -1,0 +1,412 @@
+.review-page {
+  min-height: 100vh;
+  background-color: #f9fafb;
+  padding-bottom: 60rpx;
+}
+
+.container {
+  padding: 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+/* ===== 通用卡片 ===== */
+.card {
+  background: #ffffff;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  box-shadow: 0 2rpx 12rpx rgba(15, 23, 42, 0.04);
+  border: 1rpx solid #f1f5f9;
+}
+
+.card-subtitle {
+  font-size: 28rpx;
+  line-height: 1.5;
+  margin-bottom: 24rpx;
+}
+
+/* ===== 空状态/错误 ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80rpx 0;
+}
+.empty-icon {
+  margin-bottom: 24rpx;
+}
+.empty-text {
+  color: #94a3b8;
+  font-size: 28rpx;
+}
+.empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 12rpx;
+}
+.empty-hint {
+  font-size: 26rpx;
+  color: #94a3b8;
+  margin-top: 8rpx;
+}
+
+/* ===== 查看评价（已评价） ===== */
+.check-success {
+  margin-bottom: 24rpx;
+}
+.score-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 24rpx;
+}
+.score-stars {
+  display: flex;
+  gap: 8rpx;
+  margin-bottom: 12rpx;
+}
+.score-star {
+  display: inline-flex;
+}
+.score-number {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #ea580c;
+}
+.score-date {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #94a3b8;
+}
+.review-comment-box {
+  margin-top: 32rpx;
+  width: 100%;
+  padding: 24rpx;
+  background: #fff7ed;
+  border-radius: 16rpx;
+  border: 1rpx solid #fed7aa;
+}
+.review-comment-label {
+  font-size: 24rpx;
+  color: #c2410c;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+.review-comment-text {
+  font-size: 28rpx;
+  color: #7c2d12;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+/* ===== 服务信息卡片 ===== */
+.booking-info-card {
+  background: linear-gradient(135deg, #fff7ed 0%, #fefce8 100%);
+  border: 1rpx solid #fed7aa;
+}
+.booking-info-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 20rpx;
+}
+.booking-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 20rpx;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2rpx 8rpx rgba(249, 115, 22, 0.1);
+  flex-shrink: 0;
+}
+.booking-info-main {
+  flex: 1;
+  min-width: 0;
+}
+.booking-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 8rpx;
+}
+.booking-sub {
+  font-size: 26rpx;
+  color: #64748b;
+}
+.booking-hint {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 26rpx;
+  color: #a16207;
+  padding-top: 16rpx;
+  border-top: 1rpx dashed #fde68a;
+}
+
+/* ===== 评价表单卡片 ===== */
+.review-form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+.score-section {
+  background: #f8fafc;
+  border-radius: 20rpx;
+  padding: 24rpx;
+}
+.score-section-title {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 20rpx;
+}
+.score-value {
+  margin-left: auto;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #ea580c;
+}
+.star-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8rpx;
+}
+.star-slot {
+  width: 72rpx;
+  height: 72rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.star-half {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.star-half-left {
+  width: 100%;
+}
+
+.textarea-box {
+  margin-top: 8rpx;
+}
+.review-textarea {
+  width: 100%;
+  min-height: 120rpx;
+  padding: 24rpx;
+  background: #f8fafc;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  color: #334155;
+  box-sizing: border-box;
+  line-height: 1.6;
+}
+.review-textarea-large {
+  min-height: 200rpx;
+}
+
+/* ===== 知晓会员福利 ===== */
+.aware-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+.aware-label {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #334155;
+}
+.aware-btns {
+  display: flex;
+  gap: 20rpx;
+}
+.aware-btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  border-radius: 16rpx;
+  background: #ffffff;
+  border: 2rpx solid #e2e8f0;
+  color: #64748b;
+  font-size: 28rpx;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.aware-btn-active {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+/* ===== 提交按钮 ===== */
+.btn-submit {
+  margin-top: 16rpx;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  min-height: 96rpx;
+  font-size: 32rpx !important;
+  font-weight: 700 !important;
+  letter-spacing: 1rpx;
+}
+.btn-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ===== 成功页样式 ===== */
+.review-success-bg {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #fff7ed 0%, #fefce8 30%, #f9fafb 100%);
+  padding-bottom: 80rpx;
+}
+.success-card {
+  background: #ffffff;
+  border-radius: 32rpx;
+  padding: 48rpx 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(249, 115, 22, 0.08);
+  border: 1rpx solid #fed7aa;
+  text-align: center;
+}
+.success-icon-wrap {
+  width: 144rpx;
+  height: 144rpx;
+  margin: 0 auto 32rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 20rpx rgba(34, 197, 94, 0.25);
+}
+.success-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 20rpx;
+}
+.success-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-bottom: 12rpx;
+}
+.success-score-num {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #334155;
+  margin-left: 12rpx;
+}
+.success-hint {
+  font-size: 26rpx;
+  color: #94a3b8;
+}
+
+/* ===== 分享卡片 ===== */
+.share-card {
+  background: #ffffff;
+  border-radius: 32rpx;
+  padding: 36rpx 32rpx;
+  box-shadow: 0 4rpx 16rpx rgba(15, 23, 42, 0.06);
+  border: 1rpx solid #fed7aa;
+}
+.share-title {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 12rpx;
+}
+.share-hint {
+  font-size: 26rpx;
+  color: #64748b;
+  margin-bottom: 28rpx;
+}
+.share-ticket {
+  position: relative;
+  background: linear-gradient(135deg, #f97316 0%, #eab308 100%);
+  border-radius: 24rpx;
+  padding: 36rpx 28rpx;
+  margin-bottom: 28rpx;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.share-ticket::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: 38%;
+  width: 0;
+  height: 120%;
+  border-left: 4rpx dashed rgba(255, 255, 255, 0.35);
+}
+.share-ticket-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 38%;
+  flex-shrink: 0;
+}
+.ticket-score {
+  font-size: 64rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+.ticket-label {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  opacity: 0.92;
+}
+.share-ticket-side {
+  flex: 1;
+  padding-left: 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+.ticket-shop {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+.ticket-note {
+  font-size: 22rpx;
+  opacity: 0.92;
+}
+.share-ticket-dot {
+  position: absolute;
+  left: 38%;
+  transform: translate(-50%, -50%);
+  top: 0;
+  width: 28rpx;
+  height: 28rpx;
+  background: #fff7ed;
+  border-radius: 50%;
+}
+.share-ticket-dot-bottom {
+  top: 100%;
+  transform: translate(-50%, -50%);
+}

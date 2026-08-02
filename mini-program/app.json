@@ -10,7 +10,8 @@
     "pages/cart/cart",
     "pages/product-orders/product-orders",
     "pages/my-coupons/my-coupons",
-    "pages/recharge/recharge"
+    "pages/recharge/recharge",
+    "pages/review/review"
   ],
   "window": {
     "backgroundTextStyle": "light",

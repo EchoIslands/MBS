@@ -1,6 +1,7 @@
 import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
 import { getShop } from '../../api/shop';
 import { cancelBooking } from '../../api/booking';
+import { getCustomerReviews } from '../../api/review';
 import { getCustomerId, clearCustomerId, setRouteParams } from '../../utils/storage';
 import {
   PurchaseVIPLevel,
@@ -136,6 +137,9 @@ Page({
     // 预约详情弹窗
     viewingBooking: null,
     cancelling: false,
+    // 顾客评价映射：bookingId -> review对象
+    bookingReviewMap: {},
+    bookingReviewedMap: {},
     // 提现弹窗
     withdrawModalOpen: false,
     withdrawAmount: '',
@@ -195,6 +199,20 @@ Page({
       const rawBookings = await getCustomerBookings(customerId);
       const allBookings = slimBookings(rawBookings);
 
+      // 加载顾客评价，构建 bookingId → review 映射（三端协同，对齐H5 Profile的bookingReviewMap）
+      const rawReviews = await getCustomerReviews(customerId).catch((err) => {
+        console.warn('[profile] 加载顾客评价失败，继续展示其他内容:', err);
+        return [];
+      });
+      const bookingReviewMap = {};
+      const bookingReviewedMap = {};
+      (rawReviews || []).forEach((r) => {
+        if (r && r.bookingId) {
+          bookingReviewMap[r.bookingId] = r;
+          bookingReviewedMap[r.bookingId] = true;
+        }
+      });
+
       const purchaseLevel = customer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
       const storedLevel = customer?.storedValueLevel ?? StoredValueLevel.NONE;
       const effectiveDiscount = customer ? getCustomerEffectiveDiscount(customer) : 1;
@@ -232,6 +250,8 @@ Page({
         myBenefits: this.computeMyBenefits(customer),
         stockholderSummary,
         vipHeaderClass,
+        bookingReviewMap,
+        bookingReviewedMap,
       };
       const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
       if (sizeKB > 500) {
@@ -319,8 +339,14 @@ Page({
   },
 
   goToReview() {
+    const booking = this.data.viewingBooking;
+    if (!booking) {
+      wx.showToast({ title: '缺少预约信息', icon: 'none' });
+      return;
+    }
     this.setData({ viewingBooking: null });
-    wx.showToast({ title: '评价功能开发中', icon: 'none' });
+    setRouteParams({ bookingId: booking.id });
+    wx.navigateTo({ url: `/pages/review/review?bookingId=${encodeURIComponent(booking.id)}` });
   },
 
   goToBooking() {

@@ -40,6 +40,29 @@
     </view>
   </view>
 
+  <!-- 支付方式选择 -->
+  <view class="pay-methods">
+    <view class="pay-methods__title">选择支付方式</view>
+    <view
+      wx:for="{{payMethods}}"
+      wx:key="key"
+      class="pay-method {{payMethod === item.key ? 'pay-method--active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onSelectPayMethod"
+    >
+      <view class="pay-method__icon">
+        <mbs-icon name="{{item.icon}}" size="40" color="{{item.color}}" />
+      </view>
+      <view class="pay-method__info">
+        <view class="pay-method__name">{{item.label}}</view>
+        <view class="pay-method__desc">{{item.desc}}</view>
+      </view>
+      <view class="pay-method__radio">
+        <view wx:if="{{payMethod === item.key}}" class="pay-method__radio-dot"></view>
+      </view>
+    </view>
+  </view>
+
   <!-- 底部按钮 -->
   <view class="recharge-footer">
     <view class="recharge-summary">

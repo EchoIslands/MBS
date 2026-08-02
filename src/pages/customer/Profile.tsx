@@ -573,7 +573,7 @@ const Profile: React.FC = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(`/customer/shop/${booking.shopId}`);
+                                navigate(`/customer/review/${booking.id}`);
                               }}
                               className="text-green-600 hover:text-green-700 text-sm font-medium flex items-center gap-1"
                             >

@@ -168,6 +168,17 @@ page {
   border: 2rpx solid var(--red-300);
 }
 
+.btn-success {
+  background: linear-gradient(135deg, var(--green-500), var(--green-600));
+  color: #fff;
+  border: none;
+  box-shadow: 0 8rpx 20rpx rgba(34, 197, 94, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+}
+
 .btn-outline-amber {
   background: var(--amber-50);
   color: var(--accent-dark);
@@ -176,6 +187,27 @@ page {
 
 .btn-block { width: 100%; }
 .btn-full { width: 100%; }
+
+/* ===== 预约列表快捷链接（评价入口）三端协同对齐H5 ===== */
+.booking-actions {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx dashed var(--gray-200);
+}
+.booking-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  line-height: 1;
+}
+.booking-link-blue {
+  color: var(--primary);
+}
+.booking-link-green {
+  color: var(--green-600);
+}
 
 /* ===== 底部固定 CTA ===== */
 .fixed-bottom-bar {

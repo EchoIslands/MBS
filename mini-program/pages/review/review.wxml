@@ -1,0 +1,277 @@
+<view class="review-page">
+  <!-- ========== 加载中 ========== -->
+  <view wx:if="{{loading}}" class="empty-state">
+    <view class="empty-icon"><mbs-icon name="search" size="56" color="#cbd5e1" /></view>
+    <view class="empty-text">评价信息加载中...</view>
+  </view>
+
+  <!-- ========== 加载错误 ========== -->
+  <view wx:elif="{{error}}" class="card">
+    <view class="card-subtitle" style="color: #ef4444;">{{error}}</view>
+    <view class="btn btn-secondary" bindtap="onBack">返回</view>
+  </view>
+
+  <!-- ========== 服务未完成：不能评价 ========== -->
+  <view wx:elif="{{booking && booking.status !== 'completed'}}" class="container">
+    <view class="card">
+      <view class="empty-state" style="padding: 48rpx 0;">
+        <view class="empty-icon"><mbs-icon name="alertCircle" size="56" color="#f59e0b" /></view>
+        <view class="empty-title">服务完成后才能进行评价</view>
+        <view class="empty-hint">完成到店服务后，欢迎回来分享您的体验</view>
+      </view>
+      <view class="btn btn-primary" bindtap="goToProfile">返回个人中心</view>
+    </view>
+  </view>
+
+  <!-- ========== 已经评价过：查看评价 ========== -->
+  <view wx:elif="{{existingReview}}" class="container">
+    <view class="card">
+      <view class="empty-state" style="padding: 48rpx 0;">
+        <view class="check-success">
+          <mbs-icon name="checkCircle" size="72" color="#22c55e" />
+        </view>
+        <view class="empty-title">您已经评价过这次服务了</view>
+        <view class="score-summary">
+          <view class="score-stars">
+            <view wx:for="{{[1,2,3,4,5]}}" wx:key="*this" class="score-star {{item <= existingReview.overallScore ? 'score-star-filled' : ''}}">
+              <mbs-icon name="star" size="28" color="{{item <= existingReview.overallScore ? '#eab308' : '#cbd5e1'}}" />
+            </view>
+          </view>
+          <view class="score-number">综合评分 {{existingReview.overallScore}} 分</view>
+          <view class="score-date">{{existingReview.createdAt}}</view>
+        </view>
+        <view wx:if="{{existingReview.comment}}" class="review-comment-box">
+          <view class="review-comment-label">评价内容</view>
+          <view class="review-comment-text">{{existingReview.comment}}</view>
+        </view>
+      </view>
+      <view class="btn btn-primary" bindtap="goToProfile">返回个人中心</view>
+    </view>
+  </view>
+
+  <!-- ========== 提交前：评价表单 ========== -->
+  <block wx:elif="{{!submitted}}">
+    <view class="container">
+
+      <!-- 服务信息卡片 -->
+      <view class="card booking-info-card">
+        <view class="booking-info-row">
+          <view class="booking-avatar">
+            <mbs-icon name="user" size="40" color="#f97316" />
+          </view>
+          <view class="booking-info-main">
+            <view class="booking-name">{{booking.barberName || '发型师'}} · {{booking.shopName || '店铺'}}</view>
+            <view class="booking-sub">{{booking.serviceName || '服务'}} · ¥{{booking.price || 0}}</view>
+          </view>
+        </view>
+        <view class="booking-hint">
+          <mbs-icon name="sparkles" size="24" color="#eab308" />
+          <text>您的评价将帮助其他顾客做出更好的选择</text>
+        </view>
+      </view>
+
+      <!-- 评价表单卡片 -->
+      <view class="card review-form-card">
+
+        <!-- 店铺服务评分 -->
+        <view class="score-section">
+          <view class="score-section-title">
+            <mbs-icon name="heart" size="24" color="#ec4899" />
+            <text>本次店铺服务评价</text>
+            <text class="score-value">{{serviceScore}}</text>
+          </view>
+          <view class="star-row">
+            <block wx:for="{{[1,2,3,4,5]}}" wx:key="*this">
+              <view class="star-slot" data-score="{{item - 0.5}}" catchtap="onServiceScoreTap">
+                <!-- 左半部分：半星点击区 -->
+                <view class="star-half star-half-left"
+                      data-score="{{item - 0.5}}"
+                      catchtap="onServiceScoreTap">
+                  <mbs-icon
+                    wx:if="{{serviceScore >= item}}"
+                    name="star"
+                    size="44"
+                    color="#eab308"
+                  />
+                  <mbs-icon
+                    wx:elif="{{serviceScore >= item - 0.5}}"
+                    name="starHalf"
+                    size="44"
+                    color="#eab308"
+                  />
+                  <mbs-icon
+                    wx:else
+                    name="star"
+                    size="44"
+                    color="#cbd5e1"
+                  />
+                </view>
+              </view>
+            </block>
+          </view>
+        </view>
+        <view class="textarea-box">
+          <textarea
+            class="review-textarea"
+            value="{{serviceComment}}"
+            bindinput="onServiceCommentInput"
+            placeholder="对本次店铺服务进行补充描述（可选）"
+            auto-height
+            maxlength="300"
+          />
+        </view>
+
+        <!-- 发型师服务评分 -->
+        <view class="score-section">
+          <view class="score-section-title">
+            <mbs-icon name="award" size="24" color="#ca8a04" />
+            <text>本次发型师服务评价</text>
+            <text class="score-value">{{stylistScore}}</text>
+          </view>
+          <view class="star-row">
+            <block wx:for="{{[1,2,3,4,5]}}" wx:key="*this">
+              <view class="star-slot">
+                <view class="star-half star-half-left"
+                      data-score="{{item - 0.5}}"
+                      catchtap="onStylistScoreTap">
+                  <mbs-icon
+                    wx:if="{{stylistScore >= item}}"
+                    name="star"
+                    size="44"
+                    color="#eab308"
+                  />
+                  <mbs-icon
+                    wx:elif="{{stylistScore >= item - 0.5}}"
+                    name="starHalf"
+                    size="44"
+                    color="#eab308"
+                  />
+                  <mbs-icon
+                    wx:else
+                    name="star"
+                    size="44"
+                    color="#cbd5e1"
+                  />
+                </view>
+              </view>
+            </block>
+          </view>
+        </view>
+        <view class="textarea-box">
+          <textarea
+            class="review-textarea"
+            value="{{stylistComment}}"
+            bindinput="onStylistCommentInput"
+            placeholder="对本次发型师服务进行补充描述（可选）"
+            auto-height
+            maxlength="300"
+          />
+        </view>
+
+        <!-- 知晓会员福利 -->
+        <view class="aware-section">
+          <view class="aware-label">
+            <mbs-icon name="helpCircle" size="24" color="#64748b" />
+            <text>您是否知晓店铺会员制度、近期优惠活动？</text>
+          </view>
+          <view class="aware-btns">
+            <view
+              class="aware-btn {{isAwareOfMembershipBenefits ? 'aware-btn-active' : ''}}"
+              bindtap="onToggleAware"
+              wx:if="{{!isAwareOfMembershipBenefits}}"
+            >否，不清楚</view>
+            <view
+              class="aware-btn {{isAwareOfMembershipBenefits ? 'aware-btn-active' : ''}}"
+              bindtap="onToggleAware"
+              wx:else
+            >是，了解</view>
+          </view>
+        </view>
+
+        <!-- 整体评价 -->
+        <view class="aware-section">
+          <view class="aware-label">
+            <mbs-icon name="messageSquare" size="24" color="#64748b" />
+            <text>说点什么（可选）</text>
+          </view>
+          <textarea
+            class="review-textarea review-textarea-large"
+            value="{{comment}}"
+            bindinput="onCommentInput"
+            placeholder="分享您的服务体验、发型建议等..."
+            maxlength="500"
+            auto-height
+          />
+        </view>
+
+        <!-- 提交按钮 -->
+        <view
+          class="btn btn-primary btn-submit {{submitting ? 'btn-disabled' : ''}}"
+          bindtap="onSubmit"
+        >
+          <mbs-icon name="send" size="28" color="#ffffff" />
+          <text>{{submitting ? '提交中...' : '提交评价'}}</text>
+        </view>
+      </view>
+
+    </view>
+  </block>
+
+  <!-- ========== 提交成功：分享引导 ========== -->
+  <view wx:else class="review-success-bg">
+    <view class="container">
+
+      <view class="card success-card">
+        <view class="success-icon-wrap">
+          <mbs-icon name="checkCircle" size="96" color="#ffffff" />
+        </view>
+        <view class="success-title">评价提交成功，感谢您的反馈！</view>
+
+        <view class="success-score-row">
+          <block wx:for="{{[1,2,3,4,5]}}" wx:key="*this">
+            <mbs-icon
+              name="star"
+              size="32"
+              color="{{item <= (avgScore >= item ? 5 : item <= avgScore + 0.5 ? item : 0) ? '#eab308' : '#cbd5e1'}}"
+            />
+          </block>
+          <text class="success-score-num">{{avgScore}} 分</text>
+        </view>
+        <view class="success-hint">您的评价将在 24 小时内公开展示</view>
+      </view>
+
+      <view class="card share-card">
+        <view class="share-title">
+          <mbs-icon name="gift" size="32" color="#f97316" />
+          <text>分享给好友，双方各得 10 积分</text>
+        </view>
+        <view class="share-hint">好友通过您的分享链接完成首次服务，双方自动获得积分</view>
+
+        <view class="share-ticket">
+          <view class="share-ticket-dot"></view>
+          <view class="share-ticket-main">
+            <view class="ticket-score">10</view>
+            <view class="ticket-label">积分</view>
+          </view>
+          <view class="share-ticket-side">
+            <view class="ticket-shop">皓诗形象设计</view>
+            <view class="ticket-note">消费可累计积分</view>
+            <view class="ticket-note">全店服务通用</view>
+          </view>
+          <view class="share-ticket-dot share-ticket-dot-bottom"></view>
+        </view>
+
+        <view
+          class="btn btn-primary btn-submit"
+          bindtap="onCopyShareLink"
+        >
+          <mbs-icon name="copy" size="28" color="#ffffff" />
+          <text>复制邀请链接</text>
+        </view>
+      </view>
+
+      <view class="btn btn-secondary" bindtap="goToProfile">返回个人中心</view>
+
+    </view>
+  </view>
+</view>

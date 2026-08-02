@@ -185,3 +185,88 @@
 .recharge-btn::after {
   border: none;
 }
+
+/* 支付方式选择 */
+.pay-methods {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 40rpx;
+}
+
+.pay-methods__title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--gray-800);
+  margin-bottom: 24rpx;
+}
+
+.pay-method {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
+  border: 2rpx solid var(--gray-200);
+  border-radius: 20rpx;
+  margin-bottom: 16rpx;
+  transition: all 0.2s ease;
+}
+
+.pay-method:last-child {
+  margin-bottom: 0;
+}
+
+.pay-method--active {
+  border-color: var(--blue-500);
+  background: var(--blue-50);
+}
+
+.pay-method__icon {
+  width: 80rpx;
+  height: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gray-50);
+  border-radius: 20rpx;
+  flex-shrink: 0;
+}
+
+.pay-method__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pay-method__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--gray-900);
+  margin-bottom: 4rpx;
+}
+
+.pay-method__desc {
+  font-size: 22rpx;
+  color: var(--gray-500);
+}
+
+.pay-method__radio {
+  width: 40rpx;
+  height: 40rpx;
+  border: 2rpx solid var(--gray-300);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pay-method--active .pay-method__radio {
+  border-color: var(--blue-500);
+}
+
+.pay-method__radio-dot {
+  width: 20rpx;
+  height: 20rpx;
+  background: var(--blue-500);
+  border-radius: 50%;
+}

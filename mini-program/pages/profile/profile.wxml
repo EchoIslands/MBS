@@ -273,6 +273,30 @@
               </view>
               <mbs-price current="{{booking.price}}" size="sm" show-tag="{{false}}" />
             </view>
+
+            <!-- 三端协同：历史/已完成订单增加评价入口（对齐H5 Profile） -->
+            <view wx:if="{{activeTab === 'history' && booking.status === 'completed'}}" class="booking-actions">
+              <block wx:if="{{bookingReviewedMap[booking.id]}}">
+                <view
+                  class="booking-link booking-link-green"
+                  catchtap="onBookingTap"
+                  data-id="{{booking.id}}"
+                >
+                  <mbs-icon name="checkCircle" size="22" color="#16a34a" />
+                  <text>已评价，查看评价</text>
+                </view>
+              </block>
+              <block wx:else>
+                <view
+                  class="booking-link booking-link-blue"
+                  catchtap="onBookingTap"
+                  data-id="{{booking.id}}"
+                >
+                  <mbs-icon name="star" size="22" color="#2563eb" />
+                  <text>去评价，分享得积分</text>
+                </view>
+              </block>
+            </view>
           </view>
         </view>
       </block>
@@ -424,6 +448,19 @@
       <view class="modal-footer">
         <view wx:if="{{viewingBooking.status === 'confirmed'}}" class="btn btn-primary" bindtap="goToQueue">查看排队状态</view>
         <view wx:if="{{viewingBooking.status === 'pending'}}" class="btn btn-secondary">店铺确认后生成排队信息</view>
+
+        <!-- 已完成预约：评价入口（三端协同对齐H5） -->
+        <block wx:if="{{viewingBooking.status === 'completed'}}">
+          <view wx:if="{{bookingReviewedMap[viewingBooking.id]}}" class="btn btn-success" bindtap="goToReview">
+            <mbs-icon name="checkCircle" size="22" color="#ffffff" />
+            <text>已评价，查看</text>
+          </view>
+          <view wx:else class="btn btn-primary" bindtap="goToReview">
+            <mbs-icon name="star" size="22" color="#ffffff" />
+            <text>去评价，分享得积分</text>
+          </view>
+        </block>
+
         <view wx:if="{{viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed'}}" class="btn btn-danger {{cancelling ? 'btn-disabled' : ''}}" bindtap="handleCancelBooking">
           {{cancelling ? '取消中...' : '取消预约'}}
         </view>

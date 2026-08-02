@@ -16,6 +16,11 @@ const LEVEL_LABELS = {
   store_5000: '钻石储值会员',
 };
 
+const PAY_METHODS = [
+  { key: 'wechat', label: '微信支付', desc: '使用微信余额或银行卡', icon: 'wallet', color: '#22c55e' },
+  { key: 'store', label: '到店支付', desc: '到店后现金/转账', icon: 'mapPin', color: '#3b82f6' },
+];
+
 Page({
   data: {
     shopId: 'shop1',
@@ -26,6 +31,8 @@ Page({
     plans: PLANS,
     selectedLevel: 'store_500',
     selectedAmount: 500,
+    payMethods: PAY_METHODS,
+    payMethod: 'wechat',
     submitting: false,
   },
 
@@ -66,8 +73,25 @@ Page({
     this.setData({ selectedLevel: level, selectedAmount: plan.amount });
   },
 
+  onSelectPayMethod(e) {
+    const { key } = e.currentTarget.dataset;
+    this.setData({ payMethod: key });
+  },
+
+  // 预留微信支付：调用后端下单 -> 返回 prepay_id -> wx.requestPayment
+  // 目前商户号/小程序绑定未就绪，使用 mock 支付
+  async mockWechatPay(amount, customerId, storedValueLevel) {
+    return new Promise((resolve) => {
+      // 这里预留：真实环境需要调用后端下单接口，返回 prepay 参数
+      // const prepay = await request('/api/pay/wechat', { amount, ... });
+      // await wx.requestPayment({ timeStamp, nonceStr, package, signType, paySign });
+      console.log(`[recharge] mock 微信支付: amount=${amount}`);
+      setTimeout(resolve, 800);
+    });
+  },
+
   async onRecharge() {
-    const { customerId, shopId, selectedLevel, selectedAmount, balance } = this.data;
+    const { customerId, shopId, selectedLevel, selectedAmount, balance, payMethod } = this.data;
     if (!customerId) {
       wx.showToast({ title: '请先登录', icon: 'none' });
       return;
@@ -84,7 +108,17 @@ Page({
 
     this.setData({ submitting: true });
     try {
+      // 1. 支付流程（预留微信支付接口，当前为 mock）
+      if (payMethod === 'wechat') {
+        await this.mockWechatPay(needPay, customerId, selectedLevel);
+      } else if (payMethod === 'store') {
+        // 到店支付：记录待确认状态，到店后完成充值
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+
+      // 2. 支付完成后调用后端写余额
       await rechargeCustomer(customerId, shopId, selectedLevel);
+
       wx.showToast({ title: '充值成功', icon: 'success' });
       await this.loadCustomer();
       setTimeout(() => wx.navigateBack(), 800);
