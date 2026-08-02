@@ -82,30 +82,17 @@
           </view>
           <view class="star-row">
             <block wx:for="{{[1,2,3,4,5]}}" wx:key="*this">
-              <view class="star-slot" data-score="{{item - 0.5}}" catchtap="onServiceScoreTap">
-                <!-- 左半部分：半星点击区 -->
-                <view class="star-half star-half-left"
-                      data-score="{{item - 0.5}}"
-                      catchtap="onServiceScoreTap">
-                  <mbs-icon
-                    wx:if="{{serviceScore >= item}}"
-                    name="star"
-                    size="44"
-                    color="#eab308"
-                  />
-                  <mbs-icon
-                    wx:elif="{{serviceScore >= item - 0.5}}"
-                    name="starHalf"
-                    size="44"
-                    color="#eab308"
-                  />
-                  <mbs-icon
-                    wx:else
-                    name="star"
-                    size="44"
-                    color="#cbd5e1"
-                  />
+              <view class="star-slot">
+                <!-- 空星背景 -->
+                <mbs-icon name="star" size="44" color="#cbd5e1" />
+                <!-- 填充星：满星或左半星 -->
+                <view class="star-fill {{serviceScore >= item ? 'star-fill-full' : (serviceScore >= item - 0.5 ? 'star-fill-half' : '')}}">
+                  <mbs-icon name="star" size="44" color="#eab308" />
                 </view>
+                <!-- 左半星点击区 -->
+                <view class="star-hit star-hit-left" data-score="{{item - 0.5}}" catchtap="onServiceScoreTap"></view>
+                <!-- 右半星点击区 -->
+                <view class="star-hit star-hit-right" data-score="{{item}}" catchtap="onServiceScoreTap"></view>
               </view>
             </block>
           </view>
@@ -131,28 +118,16 @@
           <view class="star-row">
             <block wx:for="{{[1,2,3,4,5]}}" wx:key="*this">
               <view class="star-slot">
-                <view class="star-half star-half-left"
-                      data-score="{{item - 0.5}}"
-                      catchtap="onStylistScoreTap">
-                  <mbs-icon
-                    wx:if="{{stylistScore >= item}}"
-                    name="star"
-                    size="44"
-                    color="#eab308"
-                  />
-                  <mbs-icon
-                    wx:elif="{{stylistScore >= item - 0.5}}"
-                    name="starHalf"
-                    size="44"
-                    color="#eab308"
-                  />
-                  <mbs-icon
-                    wx:else
-                    name="star"
-                    size="44"
-                    color="#cbd5e1"
-                  />
+                <!-- 空星背景 -->
+                <mbs-icon name="star" size="44" color="#cbd5e1" />
+                <!-- 填充星：满星或左半星 -->
+                <view class="star-fill {{stylistScore >= item ? 'star-fill-full' : (stylistScore >= item - 0.5 ? 'star-fill-half' : '')}}">
+                  <mbs-icon name="star" size="44" color="#eab308" />
                 </view>
+                <!-- 左半星点击区 -->
+                <view class="star-hit star-hit-left" data-score="{{item - 0.5}}" catchtap="onStylistScoreTap"></view>
+                <!-- 右半星点击区 -->
+                <view class="star-hit star-hit-right" data-score="{{item}}" catchtap="onStylistScoreTap"></view>
               </view>
             </block>
           </view>
@@ -177,15 +152,16 @@
           <view class="aware-btns">
             <view
               class="aware-btn {{isAwareOfMembershipBenefits ? 'aware-btn-active' : ''}}"
-              bindtap="onToggleAware"
-              wx:if="{{!isAwareOfMembershipBenefits}}"
-            >否，不清楚</view>
-            <view
-              class="aware-btn {{isAwareOfMembershipBenefits ? 'aware-btn-active' : ''}}"
-              bindtap="onToggleAware"
-              wx:else
+              data-value="true"
+              catchtap="onSetAware"
             >是，了解</view>
+            <view
+              class="aware-btn {{!isAwareOfMembershipBenefits ? 'aware-btn-active' : ''}}"
+              data-value="false"
+              catchtap="onSetAware"
+            >否，不清楚</view>
           </view>
+          <view wx:if="{{!hasConfirmedAware}}" class="aware-hint">未选择时默认按“是，了解”提交</view>
         </view>
 
         <!-- 整体评价 -->

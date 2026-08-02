@@ -187,15 +187,35 @@
   justify-content: center;
   position: relative;
 }
-.star-half {
+.star-fill {
   position: absolute;
   inset: 0;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
+  opacity: 0;
+  pointer-events: none;
 }
-.star-half-left {
-  width: 100%;
+.star-fill-full {
+  opacity: 1;
+}
+.star-fill-half {
+  opacity: 1;
+  clip-path: inset(0 50% 0 0);
+  -webkit-clip-path: inset(0 50% 0 0);
+}
+.star-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 10;
+}
+.star-hit-left {
+  left: 0;
+}
+.star-hit-right {
+  right: 0;
 }
 
 .textarea-box {
@@ -252,6 +272,11 @@
   background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
   color: #ffffff;
   border-color: transparent;
+}
+.aware-hint {
+  font-size: 24rpx;
+  color: #94a3b8;
+  text-align: center;
 }
 
 /* ===== 提交按钮 ===== */

@@ -14,7 +14,7 @@ const ReviewPage: React.FC = () => {
   const [stylistScore, setStylistScore] = useState(5);
   const [serviceComment, setServiceComment] = useState('');
   const [stylistComment, setStylistComment] = useState('');
-  const [isAwareOfMembershipBenefits, setIsAwareOfMembershipBenefits] = useState(false);
+  const [isAwareOfMembershipBenefits, setIsAwareOfMembershipBenefits] = useState(true);
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [shared, setShared] = useState(false);

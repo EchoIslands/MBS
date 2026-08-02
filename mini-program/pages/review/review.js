@@ -19,7 +19,8 @@ Page({
     stylistScore: 5,
     serviceComment: '',
     stylistComment: '',
-    isAwareOfMembershipBenefits: false,
+    isAwareOfMembershipBenefits: true,
+    hasConfirmedAware: false,
     comment: '',
     submitting: false,
     submitted: false,
@@ -100,8 +101,9 @@ Page({
     this.setData({ comment: e.detail.value || '' });
   },
 
-  onToggleAware() {
-    this.setData({ isAwareOfMembershipBenefits: !this.data.isAwareOfMembershipBenefits });
+  onSetAware(e) {
+    const value = e.currentTarget.dataset.value === 'true';
+    this.setData({ isAwareOfMembershipBenefits: value, hasConfirmedAware: true });
   },
 
   // ========== 提交评价 ==========
@@ -123,6 +125,9 @@ Page({
     if (booking.status !== STATUS_COMPLETED) {
       wx.showToast({ title: '服务完成后才能评价', icon: 'none' });
       return;
+    }
+    if (!this.data.hasConfirmedAware) {
+      wx.showToast({ title: '未选择知晓度，默认按“是，了解”提交', icon: 'none', duration: 1800 });
     }
     this.setData({ submitting: true });
     wx.showLoading({ title: '提交中' });
