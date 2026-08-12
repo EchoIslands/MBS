@@ -721,6 +721,9 @@ const bookingFromDb = (b: Record<string, unknown>): Record<string, unknown> => (
   customerPhone: b.customer_phone,
   stylistId: b.stylist_id,
   stylistName: b.stylist_name,
+  // 兼容前端历史字段名 barberId / barberName
+  barberId: b.stylist_id,
+  barberName: b.stylist_name,
   serviceId: b.service_id,
   serviceName: b.service_name,
   price: b.price,

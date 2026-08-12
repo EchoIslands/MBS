@@ -95,7 +95,7 @@ function slimBookings(list) {
     status: b.status,
     scheduledTime: b.scheduledTime || b.scheduled_time,
     price: b.price,
-    barberName: truncate(b.barberName || b.barber_name, 30) || '待安排',
+    barberName: truncate(b.barberName || b.barber_name || b.stylistName || b.stylist_name, 30) || '待安排',
     queueNumber: b.queueNumber || b.queue_number,
     notes: truncate(b.notes, 200),
   }));

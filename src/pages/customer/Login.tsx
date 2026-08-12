@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Phone, User } from 'lucide-react';
 import { loginAsCustomer } from '../../store';
@@ -9,12 +9,14 @@ const CustomerLogin: React.FC = () => {
   const [phone, setPhone] = useState('13900000001');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setWarning('');
     setLoading(true);
 
     try {
@@ -31,6 +33,21 @@ const CustomerLogin: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // 监听真实 API 失败回退到 mock 的提示（由 api-base 打印 warn）
+  useEffect(() => {
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      const msg = args.join(' ');
+      if (msg.includes('/api/customers/login') && msg.includes('mock')) {
+        setWarning('服务器响应较慢，当前使用本地演示数据登录');
+      }
+      originalWarn.apply(console, args);
+    };
+    return () => {
+      console.warn = originalWarn;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-3 sm:p-4">
@@ -82,6 +99,12 @@ const CustomerLogin: React.FC = () => {
             </div>
           </div>
           
+          {warning && (
+            <div className="bg-yellow-50 text-yellow-700 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
+              {warning}
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 text-red-600 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
               {error}

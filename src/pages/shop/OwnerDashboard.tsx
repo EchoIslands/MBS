@@ -23,6 +23,7 @@ const OwnerDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('month');
+  const [chartsReady, setChartsReady] = useState(false);
 
   // 加载老板视图数据
   const fetchDashboard = async () => {
@@ -53,6 +54,15 @@ const OwnerDashboardPage: React.FC = () => {
 
     fetchDashboard();
   }, [userRole, navigate]);
+
+  // 等待布局稳定后再渲染图表，避免 ResponsiveContainer 读取到 0/-1 尺寸
+  useEffect(() => {
+    if (!loading && dashboard) {
+      const timer = setTimeout(() => setChartsReady(true), 100);
+      return () => clearTimeout(timer);
+    }
+    setChartsReady(false);
+  }, [loading, dashboard]);
 
   if (loading) {
     return (
@@ -175,9 +185,10 @@ const OwnerDashboardPage: React.FC = () => {
               <TrendingUp size={20} className="text-purple-600" />
               各店铺营收对比
             </h2>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+            <div className="h-80 min-h-[320px]">
+              {chartsReady ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="name" stroke="#6b7280" />
                   <YAxis stroke="#6b7280" />
@@ -191,7 +202,12 @@ const OwnerDashboardPage: React.FC = () => {
                   />
                   <Bar dataKey="revenue" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  图表加载中...
+                </div>
+              )}
             </div>
           </div>
 
@@ -200,27 +216,33 @@ const OwnerDashboardPage: React.FC = () => {
               <Store size={20} className="text-blue-600" />
               店铺服务占比
             </h2>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={dashboard.shopStats}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="services"
-                    nameKey="shopName"
-                  >
-                    {dashboard.shopStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+            <div className="h-80 min-h-[320px]">
+              {chartsReady ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={dashboard.shopStats}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="services"
+                      nameKey="shopName"
+                    >
+                      {dashboard.shopStats.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  图表加载中...
+                </div>
+              )}
             </div>
           </div>
         </div>

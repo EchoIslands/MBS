@@ -187,6 +187,16 @@
   justify-content: center;
   position: relative;
 }
+.star-empty {
+  font-size: 44rpx;
+  color: #cbd5e1;
+  line-height: 1;
+}
+.star-filled {
+  font-size: 44rpx;
+  color: #eab308;
+  line-height: 1;
+}
 .star-fill {
   position: absolute;
   inset: 0;

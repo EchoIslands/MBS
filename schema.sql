@@ -1,5 +1,5 @@
-# 数据库建表脚本
-# 在 Supabase 控制台的 SQL Editor 中完整执行一次即可
+-- 数据库建表脚本
+-- 在 Supabase 控制台的 SQL Editor 中完整执行一次即可
 
 -- ========== 店铺表 ==========
 create table if not exists shops (
