@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   TrendingUp, 
@@ -24,6 +24,7 @@ const OwnerDashboardPage: React.FC = () => {
   const [error, setError] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('month');
   const [chartsReady, setChartsReady] = useState(false);
+  const chartsRef = useRef<HTMLDivElement>(null);
 
   // 加载老板视图数据
   const fetchDashboard = async () => {
@@ -56,10 +57,24 @@ const OwnerDashboardPage: React.FC = () => {
   }, [userRole, navigate]);
 
   // 等待布局稳定后再渲染图表，避免 ResponsiveContainer 读取到 0/-1 尺寸
-  useEffect(() => {
-    if (!loading && dashboard) {
-      const timer = setTimeout(() => setChartsReady(true), 100);
-      return () => clearTimeout(timer);
+  useLayoutEffect(() => {
+    if (!loading && dashboard && chartsRef.current) {
+      const rect = chartsRef.current.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setChartsReady(true);
+        return;
+      }
+      // 若首次布局还没尺寸，等下一帧再测
+      const raf = requestAnimationFrame(() => {
+        const r = chartsRef.current?.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          setChartsReady(true);
+        } else {
+          // 兜底：再延迟一帧
+          requestAnimationFrame(() => setChartsReady(true));
+        }
+      });
+      return () => cancelAnimationFrame(raf);
     }
     setChartsReady(false);
   }, [loading, dashboard]);
@@ -179,29 +194,29 @@ const OwnerDashboardPage: React.FC = () => {
         </div>
 
         {/* 店铺对比图表 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div ref={chartsRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
               <TrendingUp size={20} className="text-purple-600" />
               各店铺营收对比
             </h2>
-            <div className="h-80 min-h-[320px]">
+            <div style={{ height: 320, position: 'relative' }}>
               {chartsReady ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="name" stroke="#6b7280" />
-                  <YAxis stroke="#6b7280" />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
-                      border: '1px solid #e5e7eb', 
-                      borderRadius: '8px' 
-                    }}
-                    formatter={(value: number) => [`¥${value.toLocaleString()}`, '营收']}
-                  />
-                  <Bar dataKey="revenue" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
-                </BarChart>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="name" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                      }}
+                      formatter={(value: number) => [`¥${value.toLocaleString()}`, '营收']}
+                    />
+                    <Bar dataKey="revenue" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -216,7 +231,7 @@ const OwnerDashboardPage: React.FC = () => {
               <Store size={20} className="text-blue-600" />
               店铺服务占比
             </h2>
-            <div className="h-80 min-h-[320px]">
+            <div style={{ height: 320, position: 'relative' }}>
               {chartsReady ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
