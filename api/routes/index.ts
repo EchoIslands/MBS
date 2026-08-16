@@ -4668,6 +4668,9 @@ const settlementFromDb = (s: Record<string, unknown>): Record<string, unknown> =
 
 // 创建结算记录
 settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const logStep = (step: string) => console.log(`[settlements] ${step}: +${Date.now() - startTime}ms`);
+
   try {
     const shopId = req.employee!.shopId;
     const {
@@ -4691,6 +4694,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
 
     const settlementId = id || `settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
+    logStep('开始创建结算记录');
     const { data: settlement, error: insertError } = await supabase
       .from('settlements')
       .insert({
@@ -4718,81 +4722,102 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       console.error('[settlements] 创建结算记录失败:', insertError.message);
       return res.status(500).json({ success: false, error: '创建结算记录失败: ' + insertError.message });
     }
+    logStep('结算记录创建成功');
+
+    // 核心后续操作并行执行：更新客户、核销权益、创建到店记录
+    const coreTasks: Promise<unknown>[] = [];
 
     // 更新客户消费统计
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount, points')
-      .eq('id', customerId)
-      .eq('shop_id', shopId)
-      .single();
+    coreTasks.push(
+      (async () => {
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount, points')
+          .eq('id', customerId)
+          .eq('shop_id', shopId)
+          .single();
 
-    if (customer) {
-      const newVisitCount = (customer.visit_count || 0) + 1;
-      const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
-      const earnedPoints = Math.round(Number(total || 0));
-      const updatePayload: Record<string, unknown> = {
-        visit_count: newVisitCount,
-        total_spent: newTotalSpent,
-        last_visit_at: new Date().toISOString(),
-        points: (Number(customer.points) || 0) + earnedPoints,
-      };
+        if (customer) {
+          const newVisitCount = (customer.visit_count || 0) + 1;
+          const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
+          const earnedPoints = Math.round(Number(total || 0));
+          const updatePayload: Record<string, unknown> = {
+            visit_count: newVisitCount,
+            total_spent: newTotalSpent,
+            last_visit_at: new Date().toISOString(),
+            points: (Number(customer.points) || 0) + earnedPoints,
+          };
 
-      // 储值支付：扣减余额
-      if (paymentMethod === 'balance') {
-        const currentBalance = Number(customer.stored_value_balance || 0);
-        const currentReferral = Number(customer.withdrawable_referral_amount || 0);
-        const principal = currentBalance - currentReferral;
-        const usedPrincipal = Math.min(Number(total), principal);
-        const usedReferral = Number(total) - usedPrincipal;
+          // 储值支付：扣减余额
+          if (paymentMethod === 'balance') {
+            const currentBalance = Number(customer.stored_value_balance || 0);
+            const currentReferral = Number(customer.withdrawable_referral_amount || 0);
+            const principal = currentBalance - currentReferral;
+            const usedPrincipal = Math.min(Number(total), principal);
+            const usedReferral = Number(total) - usedPrincipal;
 
-        updatePayload.stored_value_balance = Math.round((currentBalance - Number(total)) * 100) / 100;
-        updatePayload.balance = updatePayload.stored_value_balance;
-        if (usedReferral > 0) {
-          updatePayload.withdrawable_referral_amount = Math.round((currentReferral - usedReferral) * 100) / 100;
+            updatePayload.stored_value_balance = Math.round((currentBalance - Number(total)) * 100) / 100;
+            updatePayload.balance = updatePayload.stored_value_balance;
+            if (usedReferral > 0) {
+              updatePayload.withdrawable_referral_amount = Math.round((currentReferral - usedReferral) * 100) / 100;
+            }
+          }
+
+          await supabase.from('customers').update(updatePayload).eq('id', customerId).eq('shop_id', shopId);
         }
-      }
-
-      await supabase.from('customers').update(updatePayload).eq('id', customerId).eq('shop_id', shopId);
-    }
+      })()
+    );
 
     // 核销权益
     const benefits = usedBenefitIds || [];
     if (benefits.length > 0) {
-      await supabase
-        .from('member_benefit_records')
-        .update({
-          status: 'used',
-          used_at: new Date().toISOString(),
-          used_by: req.employee!.id,
-          used_by_name: req.employee!.name,
-          used_order_id: settlementId,
-        })
-        .in('id', benefits)
-        .eq('customer_id', customerId);
+      coreTasks.push(
+        (async () => {
+          await supabase
+            .from('member_benefit_records')
+            .update({
+              status: 'used',
+              used_at: new Date().toISOString(),
+              used_by: req.employee!.id,
+              used_by_name: req.employee!.name,
+              used_order_id: settlementId,
+            })
+            .in('id', benefits)
+            .eq('customer_id', customerId);
+        })()
+      );
     }
 
     // 创建到店记录
-    const visitRecord = {
-      id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      customer_id: customerId,
-      shop_id: shopId,
-      booking_id: bookingId || null,
-      stylist_id: null,
-      stylist_name: req.employee!.name,
-      service_ids: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.id),
-      service_names: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.name),
-      total_amount: total || 0,
-      check_in_time: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-    await supabase.from('customer_visit_records').insert(visitRecord);
+    coreTasks.push(
+      (async () => {
+        await supabase.from('customer_visit_records').insert({
+          id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          customer_id: customerId,
+          shop_id: shopId,
+          booking_id: bookingId || null,
+          stylist_id: null,
+          stylist_name: req.employee!.name,
+          service_ids: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.id),
+          service_names: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.name),
+          total_amount: total || 0,
+          check_in_time: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+      })()
+    );
 
-    // 自动发放股东权益（三方协同）
-    await grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null);
+    await Promise.all(coreTasks);
+    logStep('核心后续操作完成');
 
-    // 处理推荐人自动升级股东并发放推荐奖励
-    await processReferralPromotion(shopId, customerId, total || 0, bookingId || null);
+    // 股东权益与推荐奖励为非核心操作，失败不应影响结算结果
+    Promise.all([
+      grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null),
+      processReferralPromotion(shopId, customerId, total || 0, bookingId || null),
+    ]).catch((err: unknown) => {
+      console.error('[settlements] 股东权益/推荐奖励处理失败（非阻塞）:', (err as Error).message);
+    });
+    logStep('股东权益/推荐奖励已异步触发');
 
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {
