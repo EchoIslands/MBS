@@ -37,7 +37,7 @@ import {
   isVIPExpiringSoon,
   calcSettlementDiscountDetail,
 } from '../../lib/membership';
-import { customerApi, shopApi, bookingApi, settlementApi, memberBenefitApi } from '../../api';
+import { shopApi, customerApi, settlementApi, memberBenefitApi, WechatPaymentResult } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
@@ -90,6 +90,10 @@ const Checkout: React.FC = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [showWechatModal, setShowWechatModal] = useState(false);
+  const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [pendingSettlementId, setPendingSettlementId] = useState<string | null>(null);
 
   const services = shop?.services || [];
   const products = shop?.products || [];
@@ -365,7 +369,16 @@ const Checkout: React.FC = () => {
     };
 
     try {
-      await settlementApi.create(newSettlement);
+      const result = await settlementApi.create(newSettlement);
+
+      // 微信支付/支付宝：进入待支付流程，显示二维码
+      if ('payment' in result) {
+        setWechatPayment(result.payment);
+        setPendingSettlementId(result.settlement.id);
+        setShowWechatModal(true);
+        setSubmitting(false);
+        return;
+      }
 
       // 本地同步更新客户余额，让 UI 立即反映
       if (paymentMethod === 'balance' && selectedCustomer) {
@@ -397,6 +410,23 @@ const Checkout: React.FC = () => {
     } catch (err: unknown) {
       alert((err as Error).message || '结算失败，请重试');
       setSubmitting(false);
+    }
+  };
+
+  // 微信支付：顾客已扫码付款后，店铺端确认收款
+  const handleConfirmWechatPayment = async () => {
+    if (!pendingSettlementId) return;
+    setConfirming(true);
+    try {
+      await settlementApi.confirmPayment(pendingSettlementId);
+      setShowWechatModal(false);
+      setWechatPayment(null);
+      setPendingSettlementId(null);
+      setSuccess(true);
+    } catch (err: unknown) {
+      alert((err as Error).message || '确认收款失败');
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -897,6 +927,68 @@ const Checkout: React.FC = () => {
                 确认使用
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 微信支付二维码弹窗 */}
+      {showWechatModal && wechatPayment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-bold text-gray-800">微信支付</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                请顾客扫码支付 ¥{wechatPayment.amount.toFixed(2)}
+              </p>
+            </div>
+
+            {wechatPayment.message && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 text-sm text-yellow-800">
+                {wechatPayment.message}
+              </div>
+            )}
+
+            {wechatPayment.codeUrl && (
+              <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="w-48 h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center mb-2 mx-auto">
+                    <span className="text-xs text-gray-400 text-center px-2">
+                      微信支付二维码
+                      <br />
+                      （商户号配置后自动生成）
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400">{wechatPayment.codeUrl}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <button
+                onClick={handleConfirmWechatPayment}
+                disabled={confirming}
+                className="w-full py-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-xl font-bold transition-colors"
+              >
+                {confirming ? '确认中...' : '确认已收款'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowWechatModal(false);
+                  setWechatPayment(null);
+                  setPendingSettlementId(null);
+                }}
+                disabled={confirming}
+                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+              >
+                取消
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-400 text-center mt-4">
+              当前为 mock 模式：顾客扫码动作由店员确认后完成收款。
+              <br />
+              配置微信商户号后将自动调起真实微信支付。
+            </p>
           </div>
         </div>
       )}

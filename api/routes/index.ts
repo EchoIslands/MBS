@@ -11,6 +11,7 @@ import {
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory } from '../../shared/types.js';
+import { createPayment, queryPaymentStatus, PaymentChannel } from '../services/paymentService.js';
 
 const mainRouter = Router();
 
@@ -4666,6 +4667,136 @@ const settlementFromDb = (s: Record<string, unknown>): Record<string, unknown> =
   createdAt: s.created_at,
 });
 
+/**
+ * 结算支付成功后的核心后续操作：更新客户消费统计、核销权益、创建到店记录。
+ * 微信/支付宝等异步支付在确认收款后调用；现金/余额支付在创建结算时直接调用。
+ */
+async function processSettlementAfterPayment(params: {
+  shopId: string;
+  customerId: string;
+  settlementId: string;
+  bookingId: string | null;
+  total: number;
+  paymentMethod: string;
+  usedBenefitIds: string[];
+  processedByEmployee: AuthEmployee;
+  logStep?: (step: string) => void;
+}): Promise<void> {
+  const {
+    shopId,
+    customerId,
+    settlementId,
+    bookingId,
+    total,
+    paymentMethod,
+    usedBenefitIds,
+    processedByEmployee,
+    logStep,
+  } = params;
+
+  // 核心后续操作并行执行：更新客户、核销权益、创建到店记录
+  const coreTasks: Promise<unknown>[] = [];
+
+  // 更新客户消费统计
+  coreTasks.push(
+    (async () => {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount, points')
+        .eq('id', customerId)
+        .eq('shop_id', shopId)
+        .single();
+
+      if (customer) {
+        const newVisitCount = (customer.visit_count || 0) + 1;
+        const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
+        const earnedPoints = Math.round(Number(total || 0));
+        const updatePayload: Record<string, unknown> = {
+          visit_count: newVisitCount,
+          total_spent: newTotalSpent,
+          last_visit_at: new Date().toISOString(),
+          points: (Number(customer.points) || 0) + earnedPoints,
+        };
+
+        // 储值支付：扣减余额
+        if (paymentMethod === 'balance') {
+          const currentBalance = Number(customer.stored_value_balance || 0);
+          const currentReferral = Number(customer.withdrawable_referral_amount || 0);
+          const principal = currentBalance - currentReferral;
+          const usedPrincipal = Math.min(Number(total), principal);
+          const usedReferral = Number(total) - usedPrincipal;
+
+          updatePayload.stored_value_balance = Math.round((currentBalance - Number(total)) * 100) / 100;
+          updatePayload.balance = updatePayload.stored_value_balance;
+          if (usedReferral > 0) {
+            updatePayload.withdrawable_referral_amount = Math.round((currentReferral - usedReferral) * 100) / 100;
+          }
+        }
+
+        await supabase.from('customers').update(updatePayload).eq('id', customerId).eq('shop_id', shopId);
+      }
+    })()
+  );
+
+  // 核销权益
+  const benefits = usedBenefitIds || [];
+  if (benefits.length > 0) {
+    coreTasks.push(
+      (async () => {
+        await supabase
+          .from('member_benefit_records')
+          .update({
+            status: 'used',
+            used_at: new Date().toISOString(),
+            used_by: processedByEmployee.id,
+            used_by_name: processedByEmployee.name,
+            used_order_id: settlementId,
+          })
+          .in('id', benefits)
+          .eq('customer_id', customerId);
+      })()
+    );
+  }
+
+  // 创建到店记录
+  coreTasks.push(
+    (async () => {
+      const { data: settlementRow } = await supabase
+        .from('settlements')
+        .select('items')
+        .eq('id', settlementId)
+        .single();
+
+      const items = (settlementRow?.items as Array<Record<string, unknown>>) || [];
+      await supabase.from('customer_visit_records').insert({
+        id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        customer_id: customerId,
+        shop_id: shopId,
+        booking_id: bookingId || null,
+        stylist_id: null,
+        stylist_name: processedByEmployee.name,
+        service_ids: items.filter((i) => i.type === 'service').map((i) => i.id),
+        service_names: items.filter((i) => i.type === 'service').map((i) => i.name),
+        total_amount: total || 0,
+        check_in_time: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      });
+    })()
+  );
+
+  await Promise.all(coreTasks);
+  if (logStep) logStep('核心后续操作完成');
+
+  // 股东权益与推荐奖励为非核心操作，失败不应影响结算结果
+  Promise.all([
+    grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null),
+    processReferralPromotion(shopId, customerId, total || 0, bookingId || null),
+  ]).catch((err: unknown) => {
+    console.error('[settlements] 股东权益/推荐奖励处理失败（非阻塞）:', (err as Error).message);
+  });
+  if (logStep) logStep('股东权益/推荐奖励已异步触发');
+}
+
 // 创建结算记录
 settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
   const startTime = Date.now();
@@ -4673,6 +4804,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
 
   try {
     const shopId = req.employee!.shopId;
+    const employee = req.employee!;
     const {
       id,
       customerId,
@@ -4692,6 +4824,8 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
 
+    const method = paymentMethod || 'cash';
+    const isAsyncPayment = method === 'wechat' || method === 'alipay';
     const settlementId = id || `settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     logStep('开始创建结算记录');
@@ -4709,10 +4843,10 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
         discount: discount || 0,
         tax: tax || 0,
         total: total || 0,
-        payment_method: paymentMethod || 'cash',
-        payment_status: 'completed',
+        payment_method: method,
+        payment_status: isAsyncPayment ? 'pending' : 'completed',
         used_benefit_ids: usedBenefitIds || [],
-        processed_by: req.employee!.name,
+        processed_by: employee.name,
         created_at: new Date().toISOString(),
       })
       .select()
@@ -4724,105 +4858,157 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     }
     logStep('结算记录创建成功');
 
-    // 核心后续操作并行执行：更新客户、核销权益、创建到店记录
-    const coreTasks: Promise<unknown>[] = [];
+    // 微信支付/支付宝：创建 payment 记录并返回支付参数，不立即执行后续业务
+    if (method === 'wechat') {
+      const paymentResult = await createPayment({
+        shopId,
+        customerId,
+        settlementId,
+        amount: Number(total) || 0,
+        channel: 'wechat_native',
+        description: `MBS 门店结算 ${settlementId}`,
+      });
 
-    // 更新客户消费统计
-    coreTasks.push(
-      (async () => {
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount, points')
-          .eq('id', customerId)
-          .eq('shop_id', shopId)
-          .single();
+      const { error: paymentInsertError } = await supabase.from('payments').insert({
+        id: paymentResult.paymentId,
+        shop_id: shopId,
+        customer_id: customerId,
+        booking_id: bookingId || null,
+        settlement_id: settlementId,
+        channel: 'wechat_native',
+        amount: Number(total) || 0,
+        status: paymentResult.status,
+        prepay_id: paymentResult.prepayId || null,
+        created_at: new Date().toISOString(),
+      });
 
-        if (customer) {
-          const newVisitCount = (customer.visit_count || 0) + 1;
-          const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
-          const earnedPoints = Math.round(Number(total || 0));
-          const updatePayload: Record<string, unknown> = {
-            visit_count: newVisitCount,
-            total_spent: newTotalSpent,
-            last_visit_at: new Date().toISOString(),
-            points: (Number(customer.points) || 0) + earnedPoints,
-          };
+      if (paymentInsertError) {
+        console.error('[settlements] 创建 payment 记录失败:', paymentInsertError.message);
+      }
 
-          // 储值支付：扣减余额
-          if (paymentMethod === 'balance') {
-            const currentBalance = Number(customer.stored_value_balance || 0);
-            const currentReferral = Number(customer.withdrawable_referral_amount || 0);
-            const principal = currentBalance - currentReferral;
-            const usedPrincipal = Math.min(Number(total), principal);
-            const usedReferral = Number(total) - usedPrincipal;
-
-            updatePayload.stored_value_balance = Math.round((currentBalance - Number(total)) * 100) / 100;
-            updatePayload.balance = updatePayload.stored_value_balance;
-            if (usedReferral > 0) {
-              updatePayload.withdrawable_referral_amount = Math.round((currentReferral - usedReferral) * 100) / 100;
-            }
-          }
-
-          await supabase.from('customers').update(updatePayload).eq('id', customerId).eq('shop_id', shopId);
-        }
-      })()
-    );
-
-    // 核销权益
-    const benefits = usedBenefitIds || [];
-    if (benefits.length > 0) {
-      coreTasks.push(
-        (async () => {
-          await supabase
-            .from('member_benefit_records')
-            .update({
-              status: 'used',
-              used_at: new Date().toISOString(),
-              used_by: req.employee!.id,
-              used_by_name: req.employee!.name,
-              used_order_id: settlementId,
-            })
-            .in('id', benefits)
-            .eq('customer_id', customerId);
-        })()
-      );
+      logStep('微信支付参数已生成');
+      return res.status(201).json({
+        success: true,
+        data: {
+          settlement: settlementFromDb(settlement),
+          payment: paymentResult,
+        },
+      });
     }
 
-    // 创建到店记录
-    coreTasks.push(
-      (async () => {
-        await supabase.from('customer_visit_records').insert({
-          id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-          customer_id: customerId,
-          shop_id: shopId,
-          booking_id: bookingId || null,
-          stylist_id: null,
-          stylist_name: req.employee!.name,
-          service_ids: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.id),
-          service_names: items.filter((i: Record<string, unknown>) => i.type === 'service').map((i: Record<string, unknown>) => i.name),
-          total_amount: total || 0,
-          check_in_time: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-        });
-      })()
-    );
-
-    await Promise.all(coreTasks);
-    logStep('核心后续操作完成');
-
-    // 股东权益与推荐奖励为非核心操作，失败不应影响结算结果
-    Promise.all([
-      grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null),
-      processReferralPromotion(shopId, customerId, total || 0, bookingId || null),
-    ]).catch((err: unknown) => {
-      console.error('[settlements] 股东权益/推荐奖励处理失败（非阻塞）:', (err as Error).message);
+    // 现金 / 余额 / 刷卡：立即完成业务闭环
+    await processSettlementAfterPayment({
+      shopId,
+      customerId,
+      settlementId,
+      bookingId: bookingId || null,
+      total: Number(total) || 0,
+      paymentMethod: method,
+      usedBenefitIds: usedBenefitIds || [],
+      processedByEmployee: employee,
+      logStep,
     });
-    logStep('股东权益/推荐奖励已异步触发');
 
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {
     console.error('[settlements] 创建结算异常:', error);
     res.status(500).json({ success: false, error: '创建结算失败' });
+  }
+});
+
+// 手动确认收款（mock 阶段或顾客已扫码付款后，店铺端确认收款）
+settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const employee = req.employee!;
+    const { id } = req.params;
+    const { transactionId } = req.body || {};
+
+    const { data: settlement, error: findError } = await supabase
+      .from('settlements')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (findError || !settlement) {
+      return res.status(404).json({ success: false, error: '结算记录不存在' });
+    }
+
+    if (settlement.payment_status !== 'pending') {
+      return res.status(400).json({ success: false, error: '该结算记录不在待支付状态' });
+    }
+
+    const { error: updateError } = await supabase
+      .from('settlements')
+      .update({ payment_status: 'completed' })
+      .eq('id', id);
+
+    if (updateError) {
+      console.error('[settlements] 确认收款更新失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '确认收款失败' });
+    }
+
+    // 更新 payment 记录
+    await supabase
+      .from('payments')
+      .update({ status: 'paid', transaction_id: transactionId || null, paid_at: new Date().toISOString() })
+      .eq('settlement_id', id);
+
+    // 执行业务闭环
+    await processSettlementAfterPayment({
+      shopId,
+      customerId: settlement.customer_id as string,
+      settlementId: id,
+      bookingId: (settlement.booking_id as string) || null,
+      total: Number(settlement.total) || 0,
+      paymentMethod: settlement.payment_method as string,
+      usedBenefitIds: (settlement.used_benefit_ids as string[]) || [],
+      processedByEmployee: employee,
+    });
+
+    res.json({ success: true, data: settlementFromDb(settlement) });
+  } catch (error) {
+    console.error('[settlements] 确认收款异常:', error);
+    res.status(500).json({ success: false, error: '确认收款失败' });
+  }
+});
+
+// 查询结算支付状态
+settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { id } = req.params;
+
+    const { data: settlement, error } = await supabase
+      .from('settlements')
+      .select('payment_status')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (error || !settlement) {
+      return res.status(404).json({ success: false, error: '结算记录不存在' });
+    }
+
+    const { data: payment } = await supabase
+      .from('payments')
+      .select('id, status, transaction_id, prepay_id, paid_at')
+      .eq('settlement_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    res.json({
+      success: true,
+      data: {
+        settlementStatus: settlement.payment_status,
+        payment: payment || null,
+      },
+    });
+  } catch (error) {
+    console.error('[settlements] 查询支付状态异常:', error);
+    res.status(500).json({ success: false, error: '查询支付状态失败' });
   }
 });
 

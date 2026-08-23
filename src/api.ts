@@ -1158,17 +1158,39 @@ export const stylistApi = {
   },
 };
 
+// 微信支付调起参数（由后端生成，前端展示二维码或调起 JS-SDK）
+export interface WechatPaymentResult {
+  paymentId: string;
+  status: 'pending' | 'paid' | 'failed';
+  amount: number;
+  codeUrl?: string;          // Native 支付二维码链接
+  prepayId?: string;
+  jsapiParams?: {
+    appId: string;
+    timeStamp: string;
+    nonceStr: string;
+    package: string;
+    signType: string;
+    paySign: string;
+  };
+  message?: string;
+}
+
 // 结算相关 API
 export const settlementApi = {
-  create: async (data: Partial<Settlement>): Promise<Settlement> => {
+  create: async (data: Partial<Settlement>): Promise<Settlement | { settlement: Settlement; payment: WechatPaymentResult }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Settlement }>(`${API_BASE}/settlements`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const result = await http<{ success: boolean; data: Settlement | { settlement: Settlement; payment: WechatPaymentResult } }>(
+        `${API_BASE}/settlements`,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
       if (result?.success) return result.data;
+      throw new Error(result?.error || '创建结算失败');
     }
     // Mock fallback
     const newSettlement = {
@@ -1276,6 +1298,44 @@ export const settlementApi = {
       if (result?.data) return result.data;
     }
     return mockSettlements.filter((s) => s.shopId === shopId);
+  },
+
+  confirmPayment: async (settlementId: string, transactionId?: string): Promise<Settlement> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Settlement }>(`${API_BASE}/settlements/${settlementId}/confirm-payment`, {
+        method: 'POST',
+        body: JSON.stringify({ transactionId }),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.success) return result.data;
+      throw new Error(result?.error || '确认收款失败');
+    }
+    // Mock fallback
+    const idx = mockSettlements.findIndex((s) => s.id === settlementId);
+    if (idx !== -1) {
+      mockSettlements[idx] = { ...mockSettlements[idx], paymentStatus: 'completed' };
+      saveSettlementsToCache();
+    }
+    return mockSettlements[idx];
+  },
+
+  getPaymentStatus: async (settlementId: string): Promise<{ settlementStatus: string; payment: WechatPaymentResult | null }> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: { settlementStatus: string; payment: WechatPaymentResult | null } }>(
+        `${API_BASE}/settlements/${settlementId}/payment-status`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.success) return result.data;
+      throw new Error(result?.error || '查询支付状态失败');
+    }
+    // Mock fallback
+    const settlement = mockSettlements.find((s) => s.id === settlementId);
+    return {
+      settlementStatus: settlement?.paymentStatus || 'completed',
+      payment: null,
+    };
   },
 };
 

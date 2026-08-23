@@ -23,8 +23,10 @@ const OwnerDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('month');
-  const [chartsReady, setChartsReady] = useState(false);
-  const chartsRef = useRef<HTMLDivElement>(null);
+  const [barReady, setBarReady] = useState(false);
+  const [pieReady, setPieReady] = useState(false);
+  const barChartRef = useRef<HTMLDivElement>(null);
+  const pieChartRef = useRef<HTMLDivElement>(null);
 
   // 加载老板视图数据
   const fetchDashboard = async () => {
@@ -57,26 +59,24 @@ const OwnerDashboardPage: React.FC = () => {
   }, [userRole, navigate]);
 
   // 等待布局稳定后再渲染图表，避免 ResponsiveContainer 读取到 0/-1 尺寸
+  // ref 必须绑定到固定高度的图表容器上，而不是外层 grid
   useLayoutEffect(() => {
-    if (!loading && dashboard && chartsRef.current) {
-      const rect = chartsRef.current.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setChartsReady(true);
-        return;
-      }
-      // 若首次布局还没尺寸，等下一帧再测
-      const raf = requestAnimationFrame(() => {
-        const r = chartsRef.current?.getBoundingClientRect();
-        if (r && r.width > 0 && r.height > 0) {
-          setChartsReady(true);
-        } else {
-          // 兜底：再延迟一帧
-          requestAnimationFrame(() => setChartsReady(true));
-        }
-      });
-      return () => cancelAnimationFrame(raf);
+    if (loading || !dashboard) {
+      setBarReady(false);
+      setPieReady(false);
+      return;
     }
-    setChartsReady(false);
+
+    const check = () => {
+      const bar = barChartRef.current?.getBoundingClientRect();
+      const pie = pieChartRef.current?.getBoundingClientRect();
+      if (bar && bar.width > 0 && bar.height > 0) setBarReady(true);
+      if (pie && pie.width > 0 && pie.height > 0) setPieReady(true);
+    };
+
+    check();
+    const raf = requestAnimationFrame(check);
+    return () => cancelAnimationFrame(raf);
   }, [loading, dashboard]);
 
   if (loading) {
@@ -194,14 +194,14 @@ const OwnerDashboardPage: React.FC = () => {
         </div>
 
         {/* 店铺对比图表 */}
-        <div ref={chartsRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
               <TrendingUp size={20} className="text-purple-600" />
               各店铺营收对比
             </h2>
-            <div style={{ height: 320, position: 'relative' }}>
-              {chartsReady ? (
+            <div ref={barChartRef} style={{ height: 320, position: 'relative' }}>
+              {barReady ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -231,8 +231,8 @@ const OwnerDashboardPage: React.FC = () => {
               <Store size={20} className="text-blue-600" />
               店铺服务占比
             </h2>
-            <div style={{ height: 320, position: 'relative' }}>
-              {chartsReady ? (
+            <div ref={pieChartRef} style={{ height: 320, position: 'relative' }}>
+              {pieReady ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
