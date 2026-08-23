@@ -370,12 +370,20 @@ const Checkout: React.FC = () => {
 
     try {
       const result = await settlementApi.create(newSettlement);
+      console.log('settlementApi.create result:', result);
 
       // 微信支付/支付宝：进入待支付流程，显示二维码
-      if ('payment' in result) {
+      if (result && typeof result === 'object' && 'payment' in result && 'settlement' in result) {
         setWechatPayment(result.payment);
         setPendingSettlementId(result.settlement.id);
         setShowWechatModal(true);
+        setSubmitting(false);
+        return;
+      }
+
+      // 若异步支付方式未返回 payment，说明支付流程未启动，不应显示结算成功
+      if (paymentMethod === 'wechat' || paymentMethod === 'alipay') {
+        alert('支付流程未正确启动，请检查网络或联系管理员');
         setSubmitting(false);
         return;
       }
