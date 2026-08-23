@@ -1193,14 +1193,30 @@ export const settlementApi = {
       return result.data;
     }
     // Mock fallback
+    const isAsyncPayment = data.paymentMethod === 'wechat' || data.paymentMethod === 'alipay';
     const newSettlement = {
       id: `settle_${Date.now()}`,
       ...data,
-      paymentStatus: data.paymentStatus || 'completed',
+      paymentStatus: isAsyncPayment ? 'pending' : (data.paymentStatus || 'completed'),
       createdAt: new Date(),
     } as Settlement;
     mockSettlements.push(newSettlement);
     saveSettlementsToCache();
+
+    // 微信支付/支付宝 mock：返回待支付流程
+    if (data.paymentMethod === 'wechat') {
+      return {
+        settlement: newSettlement,
+        payment: {
+          paymentId: `pay_${Date.now()}`,
+          status: 'pending' as const,
+          amount: Number(data.total) || 0,
+          codeUrl: `https://mock.wechat.qrcode/pay/mock?amount=${data.total}`,
+          prepayId: `mock_prepay_${Date.now()}`,
+          message: '微信支付配置未完成（mock 模式），请使用余额/现金支付或确认收款后继续',
+        },
+      };
+    }
 
     // 如果有关联预约，更新预约状态为已完成
     if (data.bookingId) {
