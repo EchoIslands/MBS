@@ -37,7 +37,7 @@ import {
   isVIPExpiringSoon,
   calcSettlementDiscountDetail,
 } from '../../lib/membership';
-import { shopApi, customerApi, settlementApi, memberBenefitApi, WechatPaymentResult } from '../../api';
+import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, WechatPaymentResult } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 

@@ -71,6 +71,11 @@
 | 定位失败 / 到店距离 1km / 浏览器定位权限 | 3.15.6 |
 | 网页提醒 / 手机浏览器通知 / 铃声限制 | 3.15.6 |
 | 股东自动转化 / 推荐奖励 10% / 提现管理 | 3.15.7 |
+| 结算 500 / settlements 缺字段 / schema cache | 3.15.10 坑 63、坑 67 |
+| Vercel 函数超时 / 非阻塞异步 / Promise.all 并行 | 3.15.10 坑 64 |
+| 小程序星星不显示 / 退出按钮空白 / mbs-icon | 3.15.10 坑 65 |
+| 老板视图图表 warning / Recharts 尺寸为负 | 3.15.10 坑 66 |
+| 微信支付直接成功 / 未接入 / B 方案 mock | 3.15.10 坑 68 |
 | 微信渠道 / 小程序 / 公众号 / H5 支付 / unionid | 4.7 微信生态接入决策与规范、微信渠道接入规划与指南.md |
 | UI 统一 / 三端视觉一致 / 设计 Token / 小程序图标 | 1.3 核心原则、2.5.4 小程序 UI 统一规范 |
 | 版本号 / 发布检查 | 4.5 版本与发布 |
@@ -146,6 +151,12 @@
 | 坑 60 | Vercel 部署报 `TS2339`/`TS2538`，`unknown` 类型上直接访问属性 | 严重 | 3.15.8 |
 | 坑 61 | 本地 `npm run build` 不检查 `api/` 目录，Vercel 构建时才暴露后端类型错误 | 严重 | 3.15.8 |
 | 坑 62 | Vercel 项目 Git 绑定损坏：Connect 显示成功但 GitHub webhook 为空，push 不触发部署 | 严重 | 3.15.9 |
+| 坑 63 | settlements 表缺字段导致结算接口 500 | 严重 ⭐ | 3.15.10 |
+| 坑 64 | Vercel 函数串行执行非核心操作导致响应慢 / 超时 | 中 | 3.15.10 |
+| 坑 65 | 小程序自定义图标组件在部分基础库渲染异常 | 中 | 3.15.10 |
+| 坑 66 | 老板视图 Recharts 图表容器尺寸为负 warning | 轻微 | 3.15.10 |
+| 坑 67 | 线上 schema 变更只改 schema.sql 不执行迁移脚本 | 中 | 3.15.10 |
+| 坑 68 | 微信支付未接入却直接标记为结算成功 | 严重 ⭐ | 3.15.10 |
 
 ---
 
@@ -2402,6 +2413,140 @@ Vercel 项目最早通常通过 **GitHub OAuth 集成** 创建，并自动在 Gi
 
 ---
 
+### 3.15.10 结算、图表与小程序组件渲染修复（2026-08-04）
+
+> 本小节记录 2026-08-01 至 2026-08-04 期间线上结算 500、老板视图图表 warning、小程序星星/退出按钮/发型师显示等问题的修复。核心主题是：**线上数据库 schema 必须与代码同步，Vercel Serverless Function 要避免串行阻塞，小程序不要依赖可能渲染异常的自定义图标组件**。
+
+#### 1. 结算接口 500：settlements 表缺字段（坑 63）
+
+- **场景**：CEO 在网页端完成服务后点击「开单结算」，支付方式选「现金支付」，提交后 `/api/settlements` 返回 500 Internal Server Error。
+- **现象**：Vercel Functions 日志报错 `Could not find the 'items' column of 'settlements' in the schema cache`。
+- **根因**：
+  - 本地 `schema.sql` 已包含 `items`、`discount_detail`、`used_benefit_ids` 等字段，但线上 Supabase 的 `settlements` 表仍是旧结构，缺少这些列；
+  - 代码里 `INSERT` 时直接写入了这些字段，Supabase schema cache 找不到对应列，insert 失败。
+- **解决**：
+  1. 新建迁移脚本 `migrations/fix_settlements_schema.sql`，用 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 为线上表补齐缺失字段，并补充常用索引；
+  2. 在 Supabase SQL Editor 手动执行该迁移脚本；
+  3. 优化 `api/routes/index.ts` 的 `POST /api/settlements`：核心后续操作（更新客户消费统计、核销权益、创建到店记录）改为 `Promise.all` 并行执行；股东权益发放与推荐奖励改为非阻塞异步，失败不影响结算主流程。
+- **关键验证点**：
+  - 迁移脚本执行后，`/api/settlements` 现金支付不再报 500；
+  - 结算成功后客户消费金额、权益核销、到店记录均正确写入；
+  - 股东权益/推荐奖励处理失败时，结算本身仍返回 201 成功。
+- **教训**：
+  - 线上 schema 变更必须走增量迁移脚本，不能只做本地 `schema.sql`；
+  - 遇到 schema cache 报错，先用 `information_schema.columns` 或 Supabase Table Editor 核对线上实际字段；
+  - Serverless Function 里要把非核心操作异步化，避免超时或次要失败拖垮主流程。
+- **相关文件**：`migrations/fix_settlements_schema.sql`、`api/routes/index.ts`。
+- **相关坑**：3.11 坑 41 Schema 变更没有迁移脚本、3.7 坑 21.5 API 返回 500 Internal Server Error。
+
+#### 2. 老板视图图表尺寸 warning（坑 66）
+
+- **场景**：网页端老板视图报表页面控制台出现警告 `The width(-1) and height(-1) of chart should be greater than 0`。
+- **现象**：Recharts 图表在容器尚未完成布局时就开始渲染，拿到负尺寸。
+- **根因**：图表容器初始没有确定宽高，Recharts 在 `useEffect` 执行时读取到未就绪的尺寸。
+- **解决**：
+  - `src/pages/shop/OwnerDashboard.tsx` 改用 `useLayoutEffect` + `requestAnimationFrame`，等待容器尺寸稳定后再渲染图表；
+  - 给图表容器设置固定高度和 `relative` 定位，确保 Recharts 始终能拿到正尺寸。
+- **关键验证点**：
+  - 刷新老板视图页面，控制台无 chart 尺寸 warning；
+  - 图表正常渲染，resize 后不会丢失尺寸。
+- **教训**：Recharts / ECharts 这类图表库必须在容器有明确尺寸后再渲染，不能依赖 useEffect 的默认时机。
+- **相关文件**：`src/pages/shop/OwnerDashboard.tsx`。
+
+#### 3. Vercel 函数串行执行非核心操作导致响应慢（坑 64）
+
+- **场景**：结算接口在 Vercel Serverless Function 上偶尔超过 10 秒才返回，或在网络慢时超时。
+- **现象**：结算提交后页面长时间 loading，最终可能 504 / 500；Vercel Functions 日志显示函数执行时间接近上限。
+- **根因**：`POST /api/settlements` 中更新客户、核销权益、创建到店记录、发放股东权益、处理推荐奖励等操作按顺序 await，串行执行放大了网络和 Supabase 延迟。
+- **解决**：
+  - 把更新客户、核销权益、创建到店记录等核心但彼此独立的操作放入 `Promise.all` 并行执行；
+  - 股东权益发放与推荐奖励对结算结果不是强依赖，改为非阻塞异步，`.catch()` 捕获并打印日志，失败不影响结算响应；
+  - 接口内加入 `logStep` 打点，便于后续继续观察耗时分布。
+- **关键验证点**：
+  - 现金支付结算响应时间明显下降；
+  - 股东权益/推荐奖励处理失败时，结算仍返回 201，且前端提示成功；
+  - Vercel Functions 日志中无未捕获异常。
+- **教训**：
+  - Vercel Hobby 函数有执行时间和响应时间限制，API 内部必须识别核心路径和非核心路径；
+  - 非核心操作应异步化，并用 try/catch 或 `.catch()` 兜底，避免拖垮主流程；
+  - 并行化之前要确认操作之间没有依赖和竞态条件。
+- **相关文件**：`api/routes/index.ts`。
+
+#### 4. 小程序自定义图标组件渲染异常（坑 65）
+
+- **场景**：小程序评价页星星、首页退出按钮等位置在开发者工具或真机上不显示图标。
+- **现象**：`mbs-icon` 自定义组件在部分页面 / 基础库下对 `star` 等 SVG 图标渲染异常，导致星星空白、退出按钮只剩空壳。
+- **根因**：自定义组件在特定基础库下存在渲染兼容性问题；部分按钮只放图标没有文字兜底。
+- **解决**：
+  - 评价页星星改用原生 `<text>★</text>` 字符渲染，不再依赖 `mbs-icon`；
+  - 首页退出按钮增加 `<text>退出</text>` 文字兜底；
+  - 全量扫描 `mini-program/**/*.wxss`，确认无 SCSS `&` 嵌套语法残留。
+- **关键验证点**：
+  - 小程序评价页星星可见且支持半星/整星点击；
+  - 首页退出按钮在不同基础库 / 真机上均可见；
+  - 开发者工具控制台无 WXSS 编译错误。
+- **教训**：小程序自定义图标组件要谨慎使用，关键 UI 元素（评分、操作按钮）应有文字或原生字符兜底；视觉统一优先通过 CSS 变量和原生元素实现，不要依赖易出错的 SVG 组件。
+- **相关文件**：`mini-program/pages/review/review.wxml`、`mini-program/pages/index/index.wxml`、`mini-program/app.wxss`。
+
+#### 5. 预约详情发型师显示“待安排”（坑 53 补充实战）
+
+- **场景**：小程序预约详情页发型师显示为“待安排”，但店铺端已指定真实发型师。
+- **现象**：`bookingFromDb` 只返回 `stylistId`/`stylistName`，小程序 `slimBookings` 和 WXML 使用 `barberName`，字段名不匹配。
+- **解决**：
+  - 后端 `api/routes/index.ts` 的 `bookingFromDb` 增加 `barberId`/`barberName` 兼容字段；
+  - 小程序 `mini-program/pages/profile/profile.js` 的 `slimBookings` 同时兼容 `stylistName`/`stylist_name`。
+- **教训**：`stylistId/barberId`、`stylistName/barberName` 两套命名长期并存是技术债务，新增兼容字段时要双写两端，避免只改一处；长期应统一废弃 barber 命名（参见 4.4.1 技术债务清单）。
+- **相关文件**：`api/routes/index.ts`、`mini-program/pages/profile/profile.js`。
+- **相关坑**：3.15.5 坑 53 stylistId / barberId 两套命名混用。
+
+#### 6. 线上 schema 变更必须走迁移脚本（坑 67）
+
+- **参考坑**：3.11 坑 41
+- **场景**：本次 settlements 表修复以及此前 shops 表、reviews 表评分字段、shipping 字段等多次出现“本地有字段、线上没有”。
+- **现象**：本地 `npm run build` 通过，功能也正常；推到 Vercel 后线上报 500，提示找不到某列。
+- **根因**：
+  - 开发者习惯直接改 `schema.sql`，认为它就是真相源；
+  - 但线上 Supabase 不会自动同步 `schema.sql` 的变更，必须手动执行增量 SQL；
+  - 多人多轮修改后，本地 schema.sql 与线上实际表结构差异越来越大。
+- **解决**：
+  - 每次改表结构都新增 `migrations/YYYYMMDD_描述.sql` 或 `migrations/序号_描述.sql` 迁移文件；
+  - 文件内容使用 `ADD COLUMN IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS`，保证可重复执行；
+  - 上线流程中明确增加一步：在 Supabase SQL Editor 执行对应迁移脚本；
+  - 执行后用 `SELECT * FROM information_schema.columns WHERE table_name = 'xxx';` 核对字段是否到位。
+- **教训**：
+  - `schema.sql` 是新项目的真相源，`migrations/` 是线上增量变更的真相源；
+  - 提交代码后必须同步执行数据库迁移，否则就是“代码领先于 schema”的半成品；
+  - 出现 schema cache 类报错，第一反应是核对线上表结构，而不是反复改代码。
+- **相关文件**：`schema.sql`、`migrations/`。
+
+#### 7. 微信支付直接成功与 B 方案接入准备（坑 68）
+
+- **场景**：网页端店铺完成服务后点击「开单结算」，支付方式选择「微信支付」并提交，页面直接显示「结算成功」，没有跳转、没有二维码、没有调起任何支付。
+- **现象**：结算记录里 `payment_method='wechat'`，但 `payment_status='completed'`，顾客并未实际付款。
+- **根因**：
+  - 前端只是将 `paymentMethod: 'wechat'` 传给后端；
+  - 后端 `POST /api/settlements` 对所有支付方式统一写 `payment_status='completed'`，没有调起微信统一下单，也没有生成收款二维码；
+  - 微信支付在项目中一直没有被真正接入，只作为一个「记账标记」存在。
+- **解决**：
+  - 引入统一支付服务抽象 `api/services/paymentService.ts`，定义 `createPayment / queryPaymentStatus / handleWechatCallback` 接口；
+  - 当前为 mock 模式，未配置商户号时返回占位二维码和提示文案；配置 `WECHAT_PAY_MOCK=false` 并补充商户号/证书后可切换为真实微信 SDK；
+  - 修改 `POST /api/settlements`：微信支付创建 `payment_status='pending'` 的结算记录，并写入 `payments` 表；现金/余额支付仍直接完成；
+  - 新增 `POST /settlements/:id/confirm-payment`（店员确认已收款）和 `GET /settlements/:id/payment-status`；
+  - 新增 `migrations/create_payments_table.sql` 创建 `payments` 表；
+  - 前端 `Checkout.tsx` 选择微信支付后弹出二维码/确认收款弹窗，不再直接跳转成功页。
+- **关键验证点**：
+  - 选择微信支付后弹出「请顾客扫码支付」弹窗，结算状态为 pending；
+  - 店员点击「确认已收款」后，结算状态变为 completed，客户消费统计、权益核销、到店记录正确写入；
+  - 现金/余额支付流程不受影响。
+- **教训**：
+  - 第三方支付不能只作为文本选项，必须有真实支付通道接入或明确禁用；
+  - 接入前用 mock 模式跑通完整流程（创建待支付 → 展示支付参数 → 确认收款 → 业务闭环），拿到资质后只需替换实现；
+  - 微信 Native / JSAPI / 小程序支付的调起参数不同，后端应统一抽象，前端按渠道分发。
+- **相关文件**：`api/services/paymentService.ts`、`api/routes/index.ts`、`src/pages/shop/Checkout.tsx`、`src/api.ts`、`migrations/create_payments_table.sql`。
+- **相关坑**：3.15.10 坑 64 Vercel 函数串行超时（支付相关接口也要注意超时）。
+
+---
+
 # 第四卷：治理机制
 
 ## 4.1 需求变更管理
@@ -2593,9 +2738,11 @@ git push --force               # 强制推送（谨慎！）
 | 财务报表趋势图/排名用随机数 | `src/pages/shop/FinancialReport.tsx` | `Math.random()` 生成假数据 | 经营者无法看到真实经营状况 | ✅ 已偿还（2026-07-14）：改为基于 `settlements` 真实记录聚合计算 |
 | 员工头像用 base64 存在数据库 | `employees.avatar` | 前端图片转 base64 后存字符串 | 单张图片过大时增加数据库体积和传输开销；未来应迁移到对象存储（如 Supabase Storage / 阿里云 OSS） | 🟡 新增债务（2026-07-14）：当前方案满足 MVP，图片限制 2MB；长期建议接入对象存储 |
 | 手机号修改未校验唯一性 | `api/routes/index.ts` `PUT /api/employees/me` | 直接更新 phone 字段 | 可能导致重复手机号，影响登录 | 🟡 新增债务（2026-07-14）：当前满足自助修改需求；生产环境建议加唯一性校验和冲突提示 |
-| `stylistId` / `barberId` 两套命名混用 | `shared/types.ts`、各预约相关组件 | 同时存在两套字段，兼容读取和双写 | 数据不一致来源，新增功能容易只改一套 | 🟡 新增债务（2026-07-15）：过渡期用 getBarberName() 统一读取和双写；长期建议废弃 barber 命名，统一用 stylist |
+| `stylistId` / `barberId` 两套命名混用 | `shared/types.ts`、各预约相关组件 | 同时存在两套字段，兼容读取和双写 | 数据不一致来源，新增功能容易只改一套 | 🟡 部分偿还（2026-08-04）：`bookingFromDb` 增加 `barberId`/`barberName` 兼容字段，小程序 `slimBookings` 兼容 `stylistName`/`stylist_name`；长期仍建议废弃 barber 命名，统一用 stylist |
 | 顾客端与员工端认证体系不统一 | `api/routes/index.ts`、`src/api.ts` | 员工走 JWT token + authMiddleware，顾客走 customerId 参数传递 | 权限校验逻辑分散，顾客身份易伪造（参数传递）；是小程序与 H5 共用安全接口的前提 | 🔴 新增债务（2026-07-15）：用户决定待小程序资质到位后再启动；届时统一为顾客端签发 JWT，替代明文 customerId |
 | 预约状态变更缺少操作日志 | `api/routes/index.ts` | 直接更新 status，不记录操作人和操作时间 | 出问题无法追溯是谁、什么时候改的状态 | 🟡 新增债务（2026-07-15）：当前功能满足 MVP；长期建议增加 booking_status_logs 表，记录每次状态变更的操作人、时间、原因 |
+| 小程序依赖 `mbs-icon` 自定义图标组件 | `mini-program/components/icon/*` | 多处使用 SVG 图标，部分基础库渲染异常 | 星星、退出按钮等关键 UI 可能空白 | 🟡 部分偿还（2026-08-04）：评价页星星、退出按钮已改为原生 `<text>` 字符兜底；长期建议统一审查所有 `mbs-icon` 使用点，关键操作按钮必须带文字兜底 |
+| 线上 schema 与本地 schema.sql 不同步 | `schema.sql` / `migrations/` | 改表结构只改 schema.sql，未同步执行线上迁移 | 本地正常、线上 500，反复排查代码 | 🟡 部分偿还（2026-08-04）：已建立 `migrations/fix_settlements_schema.sql`、`migrations/add_shops_missing_columns.sql` 等增量迁移；长期每次改表必须新增迁移并执行 |
 
 ### 4.4.2 债务偿还计划
 
@@ -2638,6 +2785,24 @@ git push --force               # 强制推送（谨慎！）
 - [x] 制定微信渠道接入规划：明确小程序优先支付、公众号做宣传/预约入口；
 - [x] 小程序前期技术准备：`customers` 表扩展微信字段，`payments` 支付记录表设计，`shared/types.ts` 同步；
 - [ ] 顾客端鉴权改造（token 替代明文 customerId）：用户决定暂时不做，待资质到位后再启动。
+
+**v2.8（线上结算稳定性与小程序组件渲染修复，2026-08-04）**
+- [x] 修复 settlements 表缺字段导致 `/api/settlements` 500；
+- [x] 优化结算接口，核心后续操作并行化、非核心操作非阻塞异步化；
+- [x] 修复老板视图 Recharts 图表容器尺寸为负 warning；
+- [x] 修复小程序评价页星星、首页退出按钮自定义图标渲染异常；
+- [x] 修复小程序预约详情发型师显示“待安排”（兼容 stylist/barber 字段）；
+- [ ] 验证余额支付、权益抵扣等结算场景线上稳定；
+- [ ] 重新部署 Vercel 验证老板视图 warning 是否彻底修复；
+- [ ] 统一审查小程序剩余 `mbs-icon` 使用点，关键按钮加文字兜底（可选，债务偿还）。
+
+**v2.9（微信支付 B 方案接入准备，2026-08-04）**
+- [x] 修复「点击微信支付直接成功」的问题，改为 pending + 确认收款流程；
+- [x] 新增统一支付服务抽象 `api/services/paymentService.ts`，mock 模式可切换；
+- [x] 新增 `migrations/create_payments_table.sql` 创建线上 `payments` 表；
+- [x] 新增 `POST /settlements/:id/confirm-payment` 和 `GET /settlements/:id/payment-status`；
+- [ ] 拿到微信商户号、API 证书、小程序资质后切换 `WECHAT_PAY_MOCK=false` 并接入真实微信 SDK；
+- [ ] 在 Supabase SQL Editor 执行 `migrations/create_payments_table.sql`。
 
 **v3.0（功能恢复与质量，预计 3-5 天）**
 - [ ] 逐步恢复预约、店铺、技师等核心路由；
@@ -3101,3 +3266,5 @@ npm run seed-db
 | v2.5 | 2026-07-15 | 版本升级到 v2.5；在宪章总纲（1.1 节和文首）增加「AI 智能体协作开发白皮书」远期愿景定位；新增 3.15.5「预约权限控制与发型师调配」专项记录；新增坑 52-54（权限判断散落、stylist/barber 命名混用、顾客取消预约 403）；更新快速索引和坑号定位表；更新技术债务清单，新增 stylist/barber 命名混用、顾客端认证不统一、预约状态无操作日志三项债务；更新 4.4.2 债务偿还计划，新增 v2.5 阶段。 |
 | v2.6 | 2026-07-16 | 版本升级到 v2.6；新增 3.15.6「定位失败兜底距离 1km、网页提醒限制、顾客取消预约接口 401」专项记录；重写 3.14.11「开发环境约定」并明确「Trae → 下载到本地 → 本地 push GitHub」工作流；更新 3.15.5 坑 54 的顾客取消预约方案；更新快速索引和坑号定位表；补充 AI 协作金鱼脑教训。 |
 | v2.7 | 2026-07-24 | 版本升级到 v2.7；新增 3.15.7「股东自动转化与提现管理」专项记录；明确股东按推荐新客户首次消费金额 10% 自动奖励、顾客端两种提现方式、店铺端审核状态机；新增坑 55-57；更新快速索引和坑号定位表；相关代码已完成本地 `npm run build` 验证。 |
+| v2.8 | 2026-08-04 | 版本升级到 v2.8；新增 3.15.10「结算、图表与小程序组件渲染修复」专项记录；记录 settlements 表缺字段 500、Vercel 函数串行超时、Recharts 图表尺寸 warning、小程序 mbs-icon 渲染异常、stylist/barber 字段兼容等修复；新增坑 63-67；更新快速索引、坑号定位表、技术债务清单与项目状态日志。 |
+| v2.9 | 2026-08-04 | 版本升级到 v2.9；在 3.15.10 中补充「微信支付直接成功与 B 方案接入准备」实战记录；新增坑 68；更新快速索引、坑号定位表、版本历史；补充微信支付 mock 模式、统一支付服务抽象、payments 表迁移等最佳实践。 |

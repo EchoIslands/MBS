@@ -1189,8 +1189,8 @@ export const settlementApi = {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (result?.success) return result.data;
-      throw new Error(result?.error || '创建结算失败');
+      if (!result || !result.success) throw new Error('创建结算失败');
+      return result.data;
     }
     // Mock fallback
     const newSettlement = {
@@ -1308,8 +1308,8 @@ export const settlementApi = {
         body: JSON.stringify({ transactionId }),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.success) return result.data;
-      throw new Error(result?.error || '确认收款失败');
+      if (!result || !result.success) throw new Error('确认收款失败');
+      return result.data;
     }
     // Mock fallback
     const idx = mockSettlements.findIndex((s) => s.id === settlementId);
@@ -1327,8 +1327,8 @@ export const settlementApi = {
         `${API_BASE}/settlements/${settlementId}/payment-status`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (result?.success) return result.data;
-      throw new Error(result?.error || '查询支付状态失败');
+      if (!result || !result.success) throw new Error('查询支付状态失败');
+      return result.data;
     }
     // Mock fallback
     const settlement = mockSettlements.find((s) => s.id === settlementId);
