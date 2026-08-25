@@ -739,6 +739,7 @@ export const bookingApi = {
       params.set('shopId', shopId);
       if (dateStart) params.set('dateStart', dateStart);
       if (status) params.set('status', status);
+      params.set('pageSize', '1000');
       const result = await http<{ success: boolean; data: Booking[] }>(
         `${API_BASE}/bookings?${params.toString()}`
       );

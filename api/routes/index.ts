@@ -743,7 +743,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     // 兼容小程序传入 date=YYYY-MM-DD 与 H5 传入 dateStart=YYYY-MM-DD
     const dateStart = (req.query.dateStart || req.query.date) as string | undefined;
     const page = String(req.query.page || '1');
-    const pageSize = String(req.query.pageSize || '20');
+    const pageSize = String(req.query.pageSize || '1000');
 
     let query = supabase
       .from('bookings')
