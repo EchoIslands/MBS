@@ -5,6 +5,7 @@ import apiRouter from './routes/index.js';
 // express 内部属性 _body 未在类型定义中暴露
 interface RequestWithBody extends Request {
   _body?: boolean;
+  rawBody?: string;
 }
 
 const app = express();
@@ -44,6 +45,7 @@ const jsonBodyParser = async (req: RequestWithBody, _res: Response, next: NextFu
   try {
     const raw = await getRawBody(req);
     console.log('[body-parser] raw body:', raw);
+    req.rawBody = raw;
     req.body = raw ? JSON.parse(raw) : {};
     req._body = true;
     next();

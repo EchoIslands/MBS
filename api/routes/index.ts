@@ -11,7 +11,7 @@ import {
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory } from '../../shared/types.js';
-import { createPayment, queryPaymentStatus, PaymentChannel } from '../services/paymentService.js';
+import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 
 const mainRouter = Router();
 
@@ -6001,5 +6001,104 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
 });
 
 mainRouter.use('/owner', ownerRouter);
+
+// ===================== webhook: 微信支付回调 =====================
+// 微信支付成功后会主动推送通知到此端点，不需要员工登录态。
+mainRouter.post('/webhook/wechat-pay', async (req: Request, res: Response) => {
+  try {
+    const serial = req.headers['wechatpay-serial'] as string;
+    const signature = req.headers['wechatpay-signature'] as string;
+    const timestamp = req.headers['wechatpay-timestamp'] as string;
+    const nonce = req.headers['wechatpay-nonce'] as string;
+    const rawBody = (req as Request & { rawBody?: string }).rawBody || '';
+
+    console.log('[wechatpay-webhook] 收到回调:', {
+      serial,
+      signature: signature ? `${signature.slice(0, 16)}...` : '',
+      timestamp,
+      nonce,
+      hasRawBody: !!rawBody,
+    });
+
+    if (!rawBody) {
+      console.error('[wechatpay-webhook] 缺少原始请求体，无法验签');
+      return res.status(400).json({ code: 'FAIL', message: '缺少原始请求体' });
+    }
+
+    const result = await handleWechatCallback({
+      rawBody,
+      parsedBody: req.body || {},
+      serial,
+      signature,
+      timestamp,
+      nonce,
+    });
+
+    if (!result.success) {
+      console.error('[wechatpay-webhook] 处理失败:', result.message);
+      return res.status(400).json({ code: 'FAIL', message: result.message });
+    }
+
+    // 支付成功：更新 settlements 与 payments 状态，并执行业务闭环
+    if (result.paymentId && result.transactionId) {
+      const { data: paymentRow } = await supabase
+        .from('payments')
+        .select('settlement_id')
+        .eq('id', result.paymentId)
+        .single();
+
+      const settlementId = paymentRow?.settlement_id as string | undefined;
+
+      if (settlementId) {
+        // 幂等：只有 pending 才更新
+        const { data: settlement } = await supabase
+          .from('settlements')
+          .select('*')
+          .eq('id', settlementId)
+          .single();
+
+        if (settlement && settlement.payment_status === 'pending') {
+          await supabase
+            .from('settlements')
+            .update({ payment_status: 'completed' })
+            .eq('id', settlementId);
+
+          await supabase
+            .from('payments')
+            .update({ status: 'paid', transaction_id: result.transactionId, paid_at: new Date().toISOString() })
+            .eq('id', result.paymentId);
+
+          // 执行客户统计、权益核销、到店记录等业务闭环
+          const fallbackEmployee: AuthEmployee = {
+            id: 'system_wechat',
+            shopId: (settlement.shop_id as string) || '',
+            name: (settlement.processed_by as string) || '微信支付',
+            role: 'system',
+            phone: '',
+          };
+
+          await processSettlementAfterPayment({
+            shopId: (settlement.shop_id as string) || '',
+            customerId: (settlement.customer_id as string) || '',
+            settlementId,
+            bookingId: (settlement.booking_id as string) || null,
+            total: Number(settlement.total) || 0,
+            paymentMethod: (settlement.payment_method as string) || 'wechat',
+            usedBenefitIds: (settlement.used_benefit_ids as string[]) || [],
+            processedByEmployee: fallbackEmployee,
+          });
+
+          console.log('[wechatpay-webhook] 结算完成:', settlementId);
+        }
+      }
+    }
+
+    // 必须返回 200 和 {code: 'SUCCESS'}，否则微信会重试
+    res.status(200).json({ code: 'SUCCESS', message: 'OK' });
+  } catch (error) {
+    console.error('[wechatpay-webhook] 回调异常:', error);
+    res.status(500).json({ code: 'FAIL', message: '服务器处理异常' });
+  }
+});
 
 export default mainRouter;
