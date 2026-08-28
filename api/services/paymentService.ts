@@ -95,7 +95,9 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
     throw new Error(`createPayment 暂不支持非微信渠道: ${channel}`);
   }
 
-  const paymentId = `pay_${randomUUID().replace(/-/g, '')}`;
+  // 微信支付要求 out_trade_no 长度 6~32 位，只能用字母/数字/-/_；
+  // 去掉横杠的 UUID 正好 32 位，满足要求。
+  const paymentId = randomUUID().replace(/-/g, '');
 
   if (WECHAT_PAY_MOCK) {
     // mock 模式：返回一个可识别的占位二维码，前端提示"配置中"
