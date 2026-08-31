@@ -16,9 +16,10 @@ import {
   Package,
 } from 'lucide-react';
 import { Settlement, Customer } from '../../../shared/types';
-import { settlementApi, customerApi } from '../../api';
+import { settlementApi, customerApi, WechatPaymentResult } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
+import QRCode from 'qrcode';
 
 const SettlementManagement: React.FC = () => {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
@@ -38,6 +39,9 @@ const SettlementManagement: React.FC = () => {
   const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
   const [newAmount, setNewAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // 微信支付二维码弹窗
+  const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const { currentShop, currentEmployee } = useAppStore();
 
   // 加载结算记录和客户列表
@@ -516,7 +520,7 @@ const SettlementManagement: React.FC = () => {
                   try {
                     const amount = Number(newAmount);
                     const customer = customers.find(c => c.id === newCustomerId);
-                    await settlementApi.create({
+                    const result = await settlementApi.create({
                       shopId: currentShop?.id || 'shop1',
                       customerId: newCustomerId,
                       customerName: customer?.name || '',
@@ -546,19 +550,34 @@ const SettlementManagement: React.FC = () => {
                       usedBenefitIds: [],
                       processedBy: currentEmployee?.name,
                     });
-                    // 刷新列表
-                    const list = await settlementApi.getByShop(currentShop?.id || 'shop1');
-                    setSettlements((list || []).map((s: unknown) => {
-                      const item = s as Partial<Settlement> & { created_at?: string | Date };
-                      return {
-                        ...item,
-                        createdAt: item.createdAt || item.created_at,
-                      } as Settlement;
-                    }));
-                    setShowAddModal(false);
-                    setNewCustomerId('');
-                    setNewAmount('');
-                    setNewPaymentMethod('cash');
+
+                    // 微信支付：展示二维码弹窗
+                    if (
+                      result &&
+                      typeof result === 'object' &&
+                      'payment' in result &&
+                      result.payment?.codeUrl
+                    ) {
+                      const payment = result.payment as WechatPaymentResult;
+                      const qr = await QRCode.toDataURL(payment.codeUrl!);
+                      setQrCodeUrl(qr);
+                      setWechatPayment(payment);
+                      // 不关闭新建结算弹窗，二维码弹窗会覆盖在它上面
+                    } else {
+                      // 非微信支付：刷新列表并关闭弹窗
+                      const list = await settlementApi.getByShop(currentShop?.id || 'shop1');
+                      setSettlements((list || []).map((s: unknown) => {
+                        const item = s as Partial<Settlement> & { created_at?: string | Date };
+                        return {
+                          ...item,
+                          createdAt: item.createdAt || item.created_at,
+                        } as Settlement;
+                      }));
+                      setShowAddModal(false);
+                      setNewCustomerId('');
+                      setNewAmount('');
+                      setNewPaymentMethod('cash');
+                    }
                   } catch (err: unknown) {
                     alert((err as Error).message || '创建结算失败');
                   } finally {
@@ -568,6 +587,64 @@ const SettlementManagement: React.FC = () => {
                 className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-xl font-medium transition-colors"
               >
                 {submitting ? '提交中...' : '确认结算'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 微信支付二维码弹窗 */}
+      {wechatPayment && qrCodeUrl && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">微信支付</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              请顾客使用微信扫描下方二维码完成支付
+            </p>
+            <div className="text-2xl font-bold text-green-600 mb-4">
+              ¥{wechatPayment.amount.toFixed(2)}
+            </div>
+            <div className="bg-white p-3 rounded-xl border border-gray-200 inline-block mb-4">
+              <img
+                src={qrCodeUrl}
+                alt="微信支付二维码"
+                className="w-48 h-48"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mb-6">
+              支付完成后，系统会自动更新结算状态
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  setWechatPayment(null);
+                  setQrCodeUrl('');
+                  setShowAddModal(false);
+                  setNewCustomerId('');
+                  setNewAmount('');
+                  setNewPaymentMethod('cash');
+                  // 刷新列表
+                  const list = await settlementApi.getByShop(currentShop?.id || 'shop1');
+                  setSettlements((list || []).map((s: unknown) => {
+                    const item = s as Partial<Settlement> & { created_at?: string | Date };
+                    return {
+                      ...item,
+                      createdAt: item.createdAt || item.created_at,
+                    } as Settlement;
+                  }));
+                }}
+                className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors"
+              >
+                已完成支付
+              </button>
+              <button
+                onClick={() => {
+                  setWechatPayment(null);
+                  setQrCodeUrl('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+              >
+                关闭
               </button>
             </div>
           </div>
