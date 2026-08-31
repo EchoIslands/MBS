@@ -2,7 +2,7 @@ import {
   randomUUID,
   createVerify,
   createSign,
-  createDecipherGCM,
+  createDecipheriv,
   X509Certificate,
   randomBytes,
 } from 'crypto';
@@ -108,7 +108,7 @@ function decryptAesGcm(ciphertext: string, associatedData: string, nonce: string
   const tag = encrypted.slice(-16);
   const data = encrypted.slice(0, -16);
 
-  const decipher = createDecipherGCM('aes-256-gcm', Buffer.from(key));
+  const decipher = createDecipheriv('aes-256-gcm', Buffer.from(key), Buffer.from(nonce));
   decipher.setAuthTag(tag);
   decipher.setAAD(Buffer.from(associatedData));
   let decrypted = decipher.update(data, undefined, 'utf8');
