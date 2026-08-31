@@ -1,4 +1,11 @@
-import { randomUUID } from 'crypto';
+import {
+  randomUUID,
+  createVerify,
+  createSign,
+  createDecipherGCM,
+  X509Certificate,
+  randomBytes,
+} from 'crypto';
 import WxPay from 'wechatpay-node-v3';
 
 export type PaymentChannel = 'wechat_h5' | 'wechat_mini' | 'wechat_native' | 'alipay' | 'cash' | 'balance';
@@ -82,6 +89,127 @@ function getNotifyUrl(): string {
     process.env.WECHAT_NOTIFY_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/api/webhook/wechat-pay` : '')
   );
+}
+
+/** 从 PEM 证书中提取微信支付要求的序列号（大写十六进制，无冒号） */
+function getCertSerialNumber(certPem: string): string {
+  try {
+    const cert = new X509Certificate(certPem);
+    return cert.serialNumber.replace(/:/g, '').toUpperCase();
+  } catch (err) {
+    console.error('[wechatpay] 解析证书序列号失败:', err);
+    return '';
+  }
+}
+
+/** AES-256-GCM 解密（微信支付 v3 回调 / 平台证书） */
+function decryptAesGcm(ciphertext: string, associatedData: string, nonce: string, key: string): string {
+  const encrypted = Buffer.from(ciphertext, 'base64');
+  const tag = encrypted.slice(-16);
+  const data = encrypted.slice(0, -16);
+
+  const decipher = createDecipherGCM('aes-256-gcm', Buffer.from(key));
+  decipher.setAuthTag(tag);
+  decipher.setAAD(Buffer.from(associatedData));
+  let decrypted = decipher.update(data, undefined, 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
+/** 验证微信支付回调签名 */
+function verifyWechatSignature(params: {
+  rawBody: string;
+  signature: string;
+  timestamp: string;
+  nonce: string;
+  publicKey: string;
+}): boolean {
+  const { rawBody, signature, timestamp, nonce, publicKey } = params;
+  const signStr = `${timestamp}\n${nonce}\n${rawBody}\n`;
+  const verifier = createVerify('RSA-SHA256');
+  verifier.update(signStr);
+  return verifier.verify(publicKey, signature, 'base64');
+}
+
+/** 手动拉取微信平台证书，避免 wechatpay-node-v3 在 serverless 环境缓存失败 */
+async function fetchWechatPlatformCerts(): Promise<Record<string, string> | null> {
+  const mchid = process.env.WECHAT_MCH_ID;
+  const apiv3Key = process.env.WECHAT_API_V3_KEY;
+  const cert = process.env.WECHAT_API_CERT;
+  const key = process.env.WECHAT_API_KEY;
+
+  if (!mchid || !apiv3Key || !cert || !key) {
+    console.error('[wechatpay] 缺少拉取平台证书的配置');
+    return null;
+  }
+
+  const serial = getCertSerialNumber(cert);
+  if (!serial) return null;
+
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = randomBytes(16).toString('hex');
+  const method = 'GET';
+  const urlPath = '/v3/certificates';
+  const body = '';
+
+  const signStr = `${method}\n${urlPath}\n${timestamp}\n${nonce}\n${body}\n`;
+  const signature = createSign('RSA-SHA256').update(signStr).sign(key, 'base64');
+  const authorization = `WECHATPAY2-SHA256-RSA2048 mchid="${mchid}",nonce_str="${nonce}",signature="${signature}",timestamp="${timestamp}",serial_no="${serial}"`;
+
+  try {
+    console.log('[wechatpay] 正在拉取微信平台证书...');
+    const res = await fetch('https://api.mch.weixin.qq.com/v3/certificates', {
+      method,
+      headers: {
+        Authorization: authorization,
+        Accept: 'application/json',
+      },
+    });
+
+    const data = (await res.json()) as Record<string, unknown>;
+    if (!res.ok) {
+      console.error('[wechatpay] 拉取平台证书失败:', data);
+      return null;
+    }
+
+    const certs = (data.data || []) as Array<Record<string, unknown>>;
+    if (!certs.length) {
+      console.error('[wechatpay] 平台证书返回为空');
+      return null;
+    }
+
+    const result: Record<string, string> = {};
+    for (const certInfo of certs) {
+      const serialNo = certInfo.serial_no as string;
+      const encCert = certInfo.encrypt_certificate as Record<string, string> | undefined;
+      if (!serialNo || !encCert) continue;
+
+      try {
+        const certPem = decryptAesGcm(
+          encCert.ciphertext,
+          encCert.associated_data,
+          encCert.nonce,
+          apiv3Key
+        );
+        const platformCert = new X509Certificate(certPem);
+        const publicKey = platformCert.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+        result[serialNo] = publicKey;
+      } catch (decryptErr) {
+        console.error('[wechatpay] 解密平台证书失败:', serialNo, decryptErr);
+      }
+    }
+
+    if (Object.keys(result).length === 0) {
+      console.error('[wechatpay] 没有成功解析任何平台证书');
+      return null;
+    }
+
+    console.log('[wechatpay] 平台证书拉取成功, serials:', Object.keys(result).join(', '));
+    return result;
+  } catch (err) {
+    console.error('[wechatpay] 拉取平台证书异常:', err);
+    return null;
+  }
 }
 
 /**
@@ -240,22 +368,34 @@ export async function handleWechatCallback(params: {
     return { success: true, message: 'mock 回调已忽略' };
   }
 
-  const wxpay = getWxPayInstance();
-  if (!wxpay) {
-    throw new Error('微信支付配置不完整，无法处理回调');
+  const apiv3Key = process.env.WECHAT_API_V3_KEY;
+  if (!apiv3Key) {
+    throw new Error('缺少 WECHAT_API_V3_KEY，无法处理回调');
   }
 
   try {
-    const valid = await wxpay.verifySign({
-      serial: params.serial,
+    console.log('[wechatpay-webhook] 开始手动拉取平台证书并验签...');
+    const platformCerts = await fetchWechatPlatformCerts();
+    if (!platformCerts) {
+      return { success: false, message: '拉取平台证书失败' };
+    }
+
+    const publicKey = platformCerts[params.serial];
+    if (!publicKey) {
+      console.error('[wechatpay-webhook] 找不到对应 serial 的平台证书:', params.serial);
+      return { success: false, message: '找不到对应平台证书' };
+    }
+
+    const valid = verifyWechatSignature({
+      rawBody: params.rawBody,
       signature: params.signature,
       timestamp: params.timestamp,
       nonce: params.nonce,
-      body: params.rawBody,
+      publicKey,
     });
 
     if (!valid) {
-      console.error('[wechatpay] 回调签名验证失败');
+      console.error('[wechatpay-webhook] 回调签名验证失败');
       return { success: false, message: '签名验证失败' };
     }
 
@@ -268,8 +408,9 @@ export async function handleWechatCallback(params: {
       return { success: false, message: '回调数据格式不正确' };
     }
 
-    const decrypted = wxpay.decipher_gcm<Record<string, unknown>>(ciphertext, associatedData, nonce);
-    console.log('[wechatpay] 回调解密结果:', decrypted);
+    const decryptedRaw = decryptAesGcm(ciphertext, associatedData, nonce, apiv3Key);
+    const decrypted = JSON.parse(decryptedRaw) as Record<string, unknown>;
+    console.log('[wechatpay-webhook] 回调解密结果:', decrypted);
 
     if (decrypted.trade_state !== 'SUCCESS') {
       return { success: true, message: `交易状态: ${decrypted.trade_state}` };
@@ -283,7 +424,7 @@ export async function handleWechatCallback(params: {
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[wechatpay] 处理回调异常:', message);
+    console.error('[wechatpay-webhook] 处理回调异常:', message);
     return { success: false, message: `处理异常: ${message}` };
   }
 }
