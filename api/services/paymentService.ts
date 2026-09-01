@@ -318,7 +318,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
     if (channel === 'wechat_h5') {
       // H5 支付：返回跳转链接
       const h5Body = {
-        ...body,
+        ...requestBody,
         scene_info: {
           payer_client_ip: '0.0.0.0',
           h5_info: { type: 'Wap', app_name: 'MBS', app_url: 'https://mbs.vercel.app' },
