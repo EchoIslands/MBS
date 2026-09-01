@@ -163,6 +163,7 @@ async function fetchWechatPlatformCerts(): Promise<Record<string, string> | null
       headers: {
         Authorization: authorization,
         Accept: 'application/json',
+        'Accept-Language': 'zh-CN',
       },
     });
 
