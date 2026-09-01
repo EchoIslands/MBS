@@ -376,15 +376,21 @@ export async function handleWechatCallback(params: {
 
   try {
     console.log('[wechatpay-webhook] 开始手动拉取平台证书并验签...');
-    const platformCerts = await fetchWechatPlatformCerts();
-    if (!platformCerts) {
-      return { success: false, message: '拉取平台证书失败' };
-    }
 
-    const publicKey = platformCerts[params.serial];
-    if (!publicKey) {
-      console.error('[wechatpay-webhook] 找不到对应 serial 的平台证书:', params.serial);
-      return { success: false, message: '找不到对应平台证书' };
+    // 优先使用微信支付公钥（新商户推荐）
+    let publicKey = process.env.WECHAT_PAY_PUBLIC_KEY?.trim();
+    if (publicKey) {
+      console.log('[wechatpay-webhook] 使用 WECHAT_PAY_PUBLIC_KEY 验签');
+    } else {
+      const platformCerts = await fetchWechatPlatformCerts();
+      if (!platformCerts) {
+        return { success: false, message: '拉取平台证书失败' };
+      }
+      publicKey = platformCerts[params.serial];
+      if (!publicKey) {
+        console.error('[wechatpay-webhook] 找不到对应 serial 的平台证书:', params.serial);
+        return { success: false, message: '找不到对应平台证书' };
+      }
     }
 
     const valid = verifyWechatSignature({
