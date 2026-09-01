@@ -252,9 +252,11 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
 
   const appid = process.env.WECHAT_APP_ID!;
   const mchid = process.env.WECHAT_MCH_ID!;
+  const cert = process.env.WECHAT_API_CERT!;
+  const key = process.env.WECHAT_API_KEY!;
 
   try {
-    const body = {
+    const requestBody = {
       appid,
       mchid,
       description: description || 'MBS 门店结算',
@@ -269,13 +271,39 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
     console.log('[wechatpay] 创建支付订单:', { channel, paymentId, amount, notifyUrl });
 
     if (channel === 'wechat_native') {
-      // Native 支付：返回二维码链接
-      const result = await wxpay.transactions_native(body);
-      console.log('[wechatpay] Native 支付结果:', result);
+      // Native 支付：使用 fetch 直接调用，避免 wechatpay-node-v3 在 serverless 环境超时
+      const bodyString = JSON.stringify(requestBody);
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const nonce = randomBytes(16).toString('hex');
+      const method = 'POST';
+      const urlPath = '/v3/pay/transactions/native';
 
-      const codeUrl = result?.data?.code_url as string | undefined;
+      const signStr = `${method}\n${urlPath}\n${timestamp}\n${nonce}\n${bodyString}\n`;
+      const signature = createSign('RSA-SHA256').update(signStr).sign(key, 'base64');
+      const serial = getCertSerialNumber(cert);
+      const authorization = `WECHATPAY2-SHA256-RSA2048 mchid="${mchid}",nonce_str="${nonce}",signature="${signature}",timestamp="${timestamp}",serial_no="${serial}"`;
+
+      const res = await fetch(`https://api.mch.weixin.qq.com${urlPath}`, {
+        method,
+        headers: {
+          Authorization: authorization,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Accept-Language': 'zh-CN',
+        },
+        body: bodyString,
+      });
+
+      const result = (await res.json()) as Record<string, unknown>;
+      console.log('[wechatpay] Native 支付结果:', { status: res.status, result });
+
+      if (!res.ok) {
+        throw new Error(`微信支付下单失败: ${JSON.stringify(result)}`);
+      }
+
+      const codeUrl = result.code_url as string | undefined;
       if (!codeUrl) {
-        throw new Error(`微信支付未返回二维码链接: ${JSON.stringify(result?.error || result?.data)}`);
+        throw new Error(`微信支付未返回二维码链接: ${JSON.stringify(result)}`);
       }
 
       return {
