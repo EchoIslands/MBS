@@ -36,6 +36,8 @@ const SettlementManagement: React.FC = () => {
 
   // 新建结算弹窗状态
   const [newCustomerId, setNewCustomerId] = useState('');
+  const [newCustomerSearch, setNewCustomerSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
   const [newAmount, setNewAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -102,6 +104,12 @@ const SettlementManagement: React.FC = () => {
     
     return matchesSearch && matchesPaymentMethod && matchesStatus;
   });
+
+  const filteredNewCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(newCustomerSearch.toLowerCase()) ||
+      c.phone.includes(newCustomerSearch)
+  );
 
   const getPaymentMethodLabel = (method: string) => {
     return paymentMethods.find(p => p.value === method)?.label || method;
@@ -290,7 +298,12 @@ const SettlementManagement: React.FC = () => {
                   filteredSettlements.map((settlement) => (
                     <tr key={settlement.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-4 px-4">
-                        <span className="font-medium text-gray-800">{settlement.id}</span>
+                        <span
+                          className="font-medium text-gray-800 block max-w-[140px] overflow-x-auto whitespace-nowrap"
+                          title={settlement.id}
+                        >
+                          {settlement.id}
+                        </span>
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-2">
@@ -459,20 +472,68 @@ const SettlementManagement: React.FC = () => {
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
             <h3 className="text-lg font-bold text-gray-800 mb-4">新建结算</h3>
             <div className="space-y-4">
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-2">选择客户</label>
-                <select
-                  value={newCustomerId}
-                  onChange={(e) => setNewCustomerId(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                >
-                  <option value="">请选择客户</option>
-                  {customers.map(customer => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} ({customer.phone})
-                    </option>
-                  ))}
-                </select>
+                {!newCustomerId ? (
+                  <>
+                    <div className="relative">
+                      <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="搜索客户姓名或手机号..."
+                        value={newCustomerSearch}
+                        onChange={(e) => {
+                          setNewCustomerSearch(e.target.value);
+                          setShowCustomerDropdown(true);
+                        }}
+                        onFocus={() => setShowCustomerDropdown(true)}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    {showCustomerDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 max-h-64 overflow-y-auto z-30">
+                        {filteredNewCustomers.length > 0 ? (
+                          filteredNewCustomers.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => {
+                                setNewCustomerId(c.id);
+                                setNewCustomerSearch(c.name);
+                                setShowCustomerDropdown(false);
+                              }}
+                              className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="font-medium text-gray-800">{c.name}</div>
+                              <div className="text-sm text-gray-500">{c.phone}</div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-4 py-3 text-sm text-gray-500">无匹配客户</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between px-4 py-3 border border-gray-300 rounded-xl bg-gray-50">
+                    <div>
+                      <div className="font-medium text-gray-800">
+                        {customers.find((c) => c.id === newCustomerId)?.name}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {customers.find((c) => c.id === newCustomerId)?.phone}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setNewCustomerId('');
+                        setNewCustomerSearch('');
+                      }}
+                      className="text-sm text-green-600 hover:text-green-700 font-medium"
+                    >
+                      更换
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">支付方式</label>
@@ -508,7 +569,11 @@ const SettlementManagement: React.FC = () => {
             </div>
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={() => {
+                  setShowAddModal(false);
+                  setNewCustomerSearch('');
+                  setShowCustomerDropdown(false);
+                }}
                 className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
               >
                 取消
@@ -575,6 +640,8 @@ const SettlementManagement: React.FC = () => {
                       }));
                       setShowAddModal(false);
                       setNewCustomerId('');
+                      setNewCustomerSearch('');
+                      setShowCustomerDropdown(false);
                       setNewAmount('');
                       setNewPaymentMethod('cash');
                     }
@@ -621,6 +688,8 @@ const SettlementManagement: React.FC = () => {
                   setQrCodeUrl('');
                   setShowAddModal(false);
                   setNewCustomerId('');
+                  setNewCustomerSearch('');
+                  setShowCustomerDropdown(false);
                   setNewAmount('');
                   setNewPaymentMethod('cash');
                   // 刷新列表

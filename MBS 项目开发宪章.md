@@ -4,7 +4,7 @@
 >
 > **远期愿景**：本宪章不仅是 MBS 项目的内部规范，也在逐步沉淀为一套可复用的「AI 智能体协作开发白皮书」——如何让人类与 AI Agent 高效协作、如何控制范围与质量、如何把踩过的坑变成团队资产。宪章中的工作流、协作协议、治理机制，未来可直接迁移到任何 AI 辅助开发的项目中。
 >
-> **当前宪章版本：v2.7 | 生效日期：2026-07-24**
+> **当前宪章版本：v3.0 | 生效日期：2026-09-01**
 
 ---
 
@@ -75,7 +75,7 @@
 | Vercel 函数超时 / 非阻塞异步 / Promise.all 并行 | 3.15.10 坑 64 |
 | 小程序星星不显示 / 退出按钮空白 / mbs-icon | 3.15.10 坑 65 |
 | 老板视图图表 warning / Recharts 尺寸为负 | 3.15.10 坑 66 |
-| 微信支付直接成功 / 未接入 / B 方案 mock | 3.15.10 坑 68 |
+| 微信支付直接成功 / 未接入 / B 方案 mock / 真实 Native 支付接入 | 3.15.10 坑 68-72 |
 | 微信渠道 / 小程序 / 公众号 / H5 支付 / unionid | 4.7 微信生态接入决策与规范、微信渠道接入规划与指南.md |
 | UI 统一 / 三端视觉一致 / 设计 Token / 小程序图标 | 1.3 核心原则、2.5.4 小程序 UI 统一规范 |
 | 版本号 / 发布检查 | 4.5 版本与发布 |
@@ -157,8 +157,12 @@
 | 坑 66 | 老板视图 Recharts 图表容器尺寸为负 warning | 轻微 | 3.15.10 |
 | 坑 67 | 线上 schema 变更只改 schema.sql 不执行迁移脚本 | 中 | 3.15.10 |
 | 坑 68 | 微信支付未接入却直接标记为结算成功 | 严重 ⭐ | 3.15.10 |
+| 坑 69 | 微信 Native 支付商户订单号长度限制 32 位 | 严重 | 3.15.10 |
+| 坑 70 | 微信支付回调验签：新商户无平台证书，需改用微信支付公钥 | 严重 | 3.15.10 |
+| 坑 71 | Vercel Serverless 微信支付下单超时，需 fetch 直连 | 严重 | 3.15.10 |
+| 坑 72 | 微信支付 v3 接口要求显式 Accept-Language 头 | 中 | 3.15.10 |
 
----
+----
 
 # 第二卷：工作流规范
 
@@ -2519,31 +2523,55 @@ Vercel 项目最早通常通过 **GitHub OAuth 集成** 创建，并自动在 Gi
   - 出现 schema cache 类报错，第一反应是核对线上表结构，而不是反复改代码。
 - **相关文件**：`schema.sql`、`migrations/`。
 
-#### 7. 微信支付直接成功与 B 方案接入准备（坑 68）
+#### 7. 微信支付真实 Native 支付接入与踩坑（坑 68-72）
+
+##### 坑 68：微信支付未接入却直接标记为结算成功
 
 - **场景**：网页端店铺完成服务后点击「开单结算」，支付方式选择「微信支付」并提交，页面直接显示「结算成功」，没有跳转、没有二维码、没有调起任何支付。
 - **现象**：结算记录里 `payment_method='wechat'`，但 `payment_status='completed'`，顾客并未实际付款。
-- **根因**：
-  - 前端只是将 `paymentMethod: 'wechat'` 传给后端；
-  - 后端 `POST /api/settlements` 对所有支付方式统一写 `payment_status='completed'`，没有调起微信统一下单，也没有生成收款二维码；
-  - 微信支付在项目中一直没有被真正接入，只作为一个「记账标记」存在。
-- **解决**：
-  - 引入统一支付服务抽象 `api/services/paymentService.ts`，定义 `createPayment / queryPaymentStatus / handleWechatCallback` 接口；
-  - 当前为 mock 模式，未配置商户号时返回占位二维码和提示文案；配置 `WECHAT_PAY_MOCK=false` 并补充商户号/证书后可切换为真实微信 SDK；
-  - 修改 `POST /api/settlements`：微信支付创建 `payment_status='pending'` 的结算记录，并写入 `payments` 表；现金/余额支付仍直接完成；
-  - 新增 `POST /settlements/:id/confirm-payment`（店员确认已收款）和 `GET /settlements/:id/payment-status`；
-  - 新增 `migrations/create_payments_table.sql` 创建 `payments` 表；
-  - 前端 `Checkout.tsx` 选择微信支付后弹出二维码/确认收款弹窗，不再直接跳转成功页。
-- **关键验证点**：
-  - 选择微信支付后弹出「请顾客扫码支付」弹窗，结算状态为 pending；
-  - 店员点击「确认已收款」后，结算状态变为 completed，客户消费统计、权益核销、到店记录正确写入；
-  - 现金/余额支付流程不受影响。
-- **教训**：
-  - 第三方支付不能只作为文本选项，必须有真实支付通道接入或明确禁用；
-  - 接入前用 mock 模式跑通完整流程（创建待支付 → 展示支付参数 → 确认收款 → 业务闭环），拿到资质后只需替换实现；
-  - 微信 Native / JSAPI / 小程序支付的调起参数不同，后端应统一抽象，前端按渠道分发。
+- **根因**：后端 `POST /api/settlements` 对所有支付方式统一写 `payment_status='completed'`，没有调起微信统一下单。
+- **解决**：引入统一支付服务抽象 `api/services/paymentService.ts`；微信支付创建 `payment_status='pending'` 结算记录并写入 `payments` 表；新增 `POST /settlements/:id/confirm-payment` 手动确认收款；前端弹出二维码/确认收款弹窗。
 - **相关文件**：`api/services/paymentService.ts`、`api/routes/index.ts`、`src/pages/shop/Checkout.tsx`、`src/api.ts`、`migrations/create_payments_table.sql`。
-- **相关坑**：3.15.10 坑 64 Vercel 函数串行超时（支付相关接口也要注意超时）。
+
+##### 坑 69：微信 Native 支付商户订单号长度限制 32 位
+
+- **场景**：配置真实微信支付后，创建结算时微信返回 `PARAM_ERROR: 商户订单号错误，请核实后再试`。
+- **根因**：微信支付 v3 要求 `out_trade_no` 长度 6~32 位，且只能包含字母、数字、`-`、`_`。项目原使用 `pay_` + UUID（36 位），超过长度上限。
+- **解决**：去掉 UUID 中的横杠，生成 32 位纯字母数字订单号：`randomUUID().replace(/-/g, '')`。
+- **教训**：对接第三方支付时，`out_trade_no` / `order_no` 等字段必须严格核对对方文档的长度和字符集限制，不能想当然地用内部 ID 格式。
+
+##### 坑 70：微信支付回调验签：新商户无平台证书，需改用微信支付公钥
+
+- **场景**：顾客扫码支付成功后，结算状态没有自动更新为 completed。Vercel Logs 显示回调已到达，但处理失败：`RESOURCE_NOT_EXISTS: 无可用的平台证书，请在商户平台-API安全申请使用微信支付公钥`。
+- **根因**：微信支付 v3 早期通过 `/v3/certificates` 接口下发平台证书用于回调验签；2024 年后新商户不再提供平台证书，改为在商户平台下载「微信支付公钥」并手动配置。
+- **解决**：
+  - 在微信商户平台「账户中心 → API 安全 → 微信支付公钥」下载公钥；
+  - 将公钥 PEM 内容添加到 Vercel 环境变量 `WECHAT_PAY_PUBLIC_KEY`；
+  - 回调处理优先读取 `WECHAT_PAY_PUBLIC_KEY` 验签，无则 fallback 到 `/v3/certificates`（兼容老商户）。
+- **教训**：微信支付文档更新较快，遇到「拉取平台证书失败」类错误时，优先检查商户后台是否已切换为「微信支付公钥」模式。
+
+##### 坑 71：Vercel Serverless 微信支付下单超时
+
+- **场景**：创建微信支付结算时，Vercel 报 `Runtime Timeout Error: Task timed out after 10 seconds`，前端显示「创建结算失败」。
+- **根因**：`wechatpay-node-v3` 在 Vercel Serverless 环境下调用微信统一下单接口时，整体响应时间偶发超过 10 秒；Hobby 计划函数最长只支持 10 秒。
+- **解决**：Native 支付下单改用原生 `fetch` 直连 `https://api.mch.weixin.qq.com/v3/pay/transactions/native`，手动构造 Authorization 签名。减少了 SDK 中间层开销，响应时间稳定在 1-3 秒内。
+- **教训**：Serverless 平台有硬性超时限制时，尽量减少第三方 SDK 的不可控开销；核心外部接口建议用原生 HTTP 调用 + 手动签名，便于控制和排错。
+
+##### 坑 72：微信支付 v3 接口要求显式 Accept-Language 头
+
+- **场景**：手动拉取微信平台证书（兼容老商户的 fallback 路径）时，微信返回 `PARAM_ERROR: 传入了不支持的Accept-Language`。
+- **根因**：`fetch` 默认会发送浏览器/运行时的 `Accept-Language` 头，微信 `/v3/certificates` 接口不接受某些默认值。
+- **解决**：在调用微信 v3 接口时显式设置请求头 `'Accept-Language': 'zh-CN'`。
+- **教训**：调用微信支付 v3 接口时，除了 Authorization、Accept、Content-Type，还应显式设置 `Accept-Language: zh-CN`，避免运行时默认值触发 PARAM_ERROR。
+
+- **关键验证点（真实 Native 支付已跑通）**：
+  - 店铺端创建 0.01 元结算，选择微信支付；
+  - 前端在 2-3 秒内弹出真实微信收款二维码；
+  - 顾客微信扫码支付 0.01 元；
+  - 微信回调到达 `/api/webhook/wechat-pay`，验签、解密成功后自动更新结算状态为 completed。
+- **当前状态**：✅ 真实微信 Native 支付已接入并通过 0.01 元实测。后续待 `hsxx8888.cn` 备案通过后将回调域名切换为店铺自有域名。
+- **相关文件**：`api/services/paymentService.ts`、`api/routes/index.ts`、`src/pages/shop/SettlementManagement.tsx`、`package.json`。
+- **相关环境变量**：`WECHAT_PAY_MOCK=false`、`WECHAT_MCH_ID`、`WECHAT_APP_ID`、`WECHAT_API_V3_KEY`、`WECHAT_API_CERT`、`WECHAT_API_KEY`、`WECHAT_PAY_PUBLIC_KEY`、`WECHAT_NOTIFY_URL`。
 
 ---
 
@@ -3268,3 +3296,4 @@ npm run seed-db
 | v2.7 | 2026-07-24 | 版本升级到 v2.7；新增 3.15.7「股东自动转化与提现管理」专项记录；明确股东按推荐新客户首次消费金额 10% 自动奖励、顾客端两种提现方式、店铺端审核状态机；新增坑 55-57；更新快速索引和坑号定位表；相关代码已完成本地 `npm run build` 验证。 |
 | v2.8 | 2026-08-04 | 版本升级到 v2.8；新增 3.15.10「结算、图表与小程序组件渲染修复」专项记录；记录 settlements 表缺字段 500、Vercel 函数串行超时、Recharts 图表尺寸 warning、小程序 mbs-icon 渲染异常、stylist/barber 字段兼容等修复；新增坑 63-67；更新快速索引、坑号定位表、技术债务清单与项目状态日志。 |
 | v2.9 | 2026-08-04 | 版本升级到 v2.9；在 3.15.10 中补充「微信支付直接成功与 B 方案接入准备」实战记录；新增坑 68；更新快速索引、坑号定位表、版本历史；补充微信支付 mock 模式、统一支付服务抽象、payments 表迁移等最佳实践。 |
+| v3.0 | 2026-09-01 | 版本升级到 v3.0；将 3.15.10 坑 68 从「B 方案接入准备」升级为「真实微信 Native 支付接入完成」；新增坑 69-72（商户订单号长度、微信支付公钥验签、Vercel Serverless 超时改用 fetch 直连、Accept-Language 头）；更新快速索引、坑号定位表、版本历史；真实 Native 支付已通过 0.01 元线上实测。 |

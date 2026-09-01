@@ -74,6 +74,9 @@
   font-size: 24rpx;
   color: var(--text-secondary);
   font-weight: 500;
+  max-width: 420rpx;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .order-status-badge {
@@ -234,7 +237,9 @@
   text-align: right;
   flex: 1;
   margin-left: 24rpx;
-  word-break: break-all;
+  max-width: 60%;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .detail-section-title {
@@ -424,6 +429,9 @@
 .order-shipping-no {
   font-size: 24rpx;
   color: var(--indigo-500, #6366F1);
+  max-width: 420rpx;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 /* 详情 - 物流信息区块 */
@@ -515,6 +523,9 @@
 .tracking-company-no {
   font-size: 26rpx;
   color: var(--indigo-500, #6366F1);
+  max-width: 420rpx;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 /* 物流时间线 */

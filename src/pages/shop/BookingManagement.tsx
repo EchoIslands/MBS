@@ -731,60 +731,60 @@ const BookingManagement: React.FC = () => {
 
               {/* 基本信息 */}
               <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500 flex items-center gap-2">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                  <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                     <User size={16} /> 客户姓名
                   </span>
-                  <span className="font-medium text-gray-800">{viewingBooking.customerName}</span>
+                  <span className="font-medium text-gray-800 text-right truncate max-w-[60%]">{viewingBooking.customerName}</span>
                 </div>
                 {viewingBooking.customerPhone && (
-                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-500 flex items-center gap-2">
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                    <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                       <Phone size={16} /> 手机号
                     </span>
-                    <span className="font-medium text-gray-800">{viewingBooking.customerPhone}</span>
+                    <span className="font-medium text-gray-800 text-right truncate max-w-[60%]">{viewingBooking.customerPhone}</span>
                   </div>
                 )}
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500 flex items-center gap-2">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                  <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                     <Scissors size={16} /> 服务项目
                   </span>
-                  <span className="font-medium text-gray-800">{viewingBooking.serviceName}</span>
+                  <span className="font-medium text-gray-800 text-right truncate max-w-[60%]">{viewingBooking.serviceName}</span>
                 </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500 flex items-center gap-2">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                  <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                     <Calendar size={16} /> 预约时间
                   </span>
-                  <span className="font-medium text-gray-800">
+                  <span className="font-medium text-gray-800 text-right truncate max-w-[60%]">
                     {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
                   </span>
                 </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500 flex items-center gap-2">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                  <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                     <User size={16} /> 指定发型师
                   </span>
-                  <span className="font-medium text-gray-800">{getBarberName(viewingBooking) || '未指定'}</span>
+                  <span className="font-medium text-gray-800 text-right truncate max-w-[60%]">{getBarberName(viewingBooking) || '未指定'}</span>
                 </div>
                 {viewingBooking.price && (
-                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-500 flex items-center gap-2">
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                    <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                       ¥ 服务价格
                     </span>
-                    <span className="font-bold text-orange-500">¥{viewingBooking.price}</span>
+                    <span className="font-bold text-orange-500 text-right truncate max-w-[60%]">¥{viewingBooking.price}</span>
                   </div>
                 )}
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500 flex items-center gap-2">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
+                  <span className="text-gray-500 flex items-center gap-2 flex-shrink-0">
                     # 排队号
                   </span>
-                  <span className="font-medium text-gray-800">#{viewingBooking.queueNumber || '-'}</span>
+                  <span className="font-medium text-gray-800 text-right truncate max-w-[60%]">#{viewingBooking.queueNumber || '-'}</span>
                 </div>
                 {viewingBooking.notes && (
                   <div className="py-2 border-b border-gray-100">
                     <span className="text-gray-500 text-sm flex items-center gap-2 mb-1">
                       <MessageSquare size={16} /> 备注
                     </span>
-                    <p className="text-gray-700 mt-1">{viewingBooking.notes}</p>
+                    <p className="text-gray-700 mt-1 break-words">{viewingBooking.notes}</p>
                   </div>
                 )}
               </div>

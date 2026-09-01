@@ -532,8 +532,13 @@ const ProductOrderManagement: React.FC = () => {
                 className="bg-white rounded-2xl shadow-sm p-5 cursor-pointer hover:shadow-md transition-shadow"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <div>
-                    <p className="text-sm text-gray-500">订单号：{order.orderNo}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-500 flex items-center gap-1">
+                      <span className="flex-shrink-0">订单号：</span>
+                      <span className="font-medium text-gray-800 block max-w-[200px] overflow-x-auto whitespace-nowrap" title={order.orderNo}>
+                        {order.orderNo}
+                      </span>
+                    </p>
                     <p className="text-xs text-gray-400 mt-1">下单时间：{formatDate(order.createdAt)}</p>
                   </div>
                   <span className={`text-xs px-3 py-1 rounded-full font-medium ${statusColors[order.status] || 'text-gray-600 bg-gray-100'}`}>
@@ -651,7 +656,12 @@ const ProductOrderManagement: React.FC = () => {
               </div>
               
               <div className="space-y-4 text-sm mb-5">
-                <p className="text-gray-500">订单号：<span className="text-gray-800">{shipModal.order.orderNo}</span></p>
+                <p className="text-gray-500 flex items-center gap-1">
+                  <span className="flex-shrink-0">订单号：</span>
+                  <span className="text-gray-800 block max-w-[280px] overflow-x-auto whitespace-nowrap" title={shipModal.order.orderNo}>
+                    {shipModal.order.orderNo}
+                  </span>
+                </p>
                 <p className="text-gray-500">顾客：<span className="text-gray-800">{shipModal.order.customerName || '-'}</span></p>
                 <p className="text-gray-500">
                   手机号：<span className="text-gray-800">{shipModal.order.customerPhone || '-'}</span>

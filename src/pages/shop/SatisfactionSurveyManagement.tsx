@@ -31,6 +31,10 @@ const SatisfactionSurveyManagement: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedBookingId, setSelectedBookingId] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [bookingSearch, setBookingSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [showBookingDropdown, setShowBookingDropdown] = useState(false);
   const [newRating, setNewRating] = useState(5);
   const [newRecommended, setNewRecommended] = useState(true);
   const [newComment, setNewComment] = useState('');
@@ -114,6 +118,19 @@ const SatisfactionSurveyManagement: React.FC = () => {
     return matchesSearch && matchesRating;
   });
 
+  const filteredCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      c.phone.includes(customerSearch)
+  );
+
+  const filteredBookings = bookings.filter(
+    (b) =>
+      b.id.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      (b.serviceName?.toLowerCase().includes(bookingSearch.toLowerCase()) ?? false) ||
+      new Date(b.scheduledTime).toLocaleDateString('zh-CN').includes(bookingSearch)
+  );
+
   const totalSurveys = surveys.length;
   const avgRating = totalSurveys > 0
     ? (surveys.reduce((sum, s) => sum + s.rating, 0) / totalSurveys).toFixed(1)
@@ -170,6 +187,10 @@ const SatisfactionSurveyManagement: React.FC = () => {
         // 重置表单
         setSelectedCustomerId('');
         setSelectedBookingId('');
+        setCustomerSearch('');
+        setBookingSearch('');
+        setShowCustomerDropdown(false);
+        setShowBookingDropdown(false);
         setNewRating(5);
         setNewRecommended(true);
         setNewComment('');
@@ -331,39 +352,144 @@ const SatisfactionSurveyManagement: React.FC = () => {
             发起回访
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">选择客户</label>
-              <select
-                value={selectedCustomerId}
-                onChange={(e) => {
-                  setSelectedCustomerId(e.target.value);
-                  setSelectedBookingId('');
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-              >
-                <option value="">请选择客户</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name} ({customer.phone})
-                  </option>
-                ))}
-              </select>
+              {!selectedCustomerId ? (
+                <>
+                  <div className="relative">
+                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="搜索客户姓名或手机号..."
+                      value={customerSearch}
+                      onChange={(e) => {
+                        setCustomerSearch(e.target.value);
+                        setShowCustomerDropdown(true);
+                      }}
+                      onFocus={() => setShowCustomerDropdown(true)}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  {showCustomerDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 max-h-64 overflow-y-auto z-30">
+                      {filteredCustomers.length > 0 ? (
+                        filteredCustomers.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              setSelectedCustomerId(c.id);
+                              setCustomerSearch(c.name);
+                              setSelectedBookingId('');
+                              setBookingSearch('');
+                              setShowCustomerDropdown(false);
+                            }}
+                            className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-800">{c.name}</div>
+                            <div className="text-sm text-gray-500">{c.phone}</div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-gray-500">无匹配客户</div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center justify-between px-4 py-3 border border-gray-300 rounded-xl bg-gray-50">
+                  <div>
+                    <div className="font-medium text-gray-800">
+                      {customers.find((c) => c.id === selectedCustomerId)?.name}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {customers.find((c) => c.id === selectedCustomerId)?.phone}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedCustomerId('');
+                      setSelectedBookingId('');
+                      setCustomerSearch('');
+                      setBookingSearch('');
+                    }}
+                    className="text-sm text-teal-600 hover:text-teal-700 font-medium"
+                  >
+                    更换
+                  </button>
+                </div>
+              )}
             </div>
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">预约单号</label>
-              <select
-                value={selectedBookingId}
-                onChange={(e) => setSelectedBookingId(e.target.value)}
-                disabled={!selectedCustomerId || bookings.length === 0}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none disabled:bg-gray-100"
-              >
-                <option value="">{selectedCustomerId ? (bookings.length === 0 ? '暂无预约' : '请选择预约') : '请先选择客户'}</option>
-                {bookings.map((booking) => (
-                  <option key={booking.id} value={booking.id}>
-                    {booking.id} - {booking.serviceName || '服务'} ({new Date(booking.scheduledTime).toLocaleDateString()})
-                  </option>
-                ))}
-              </select>
+              {!selectedBookingId ? (
+                <>
+                  <div className="relative">
+                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder={selectedCustomerId ? (bookings.length === 0 ? '暂无预约' : '搜索预约单号、服务或日期...') : '请先选择客户'}
+                      value={bookingSearch}
+                      onChange={(e) => {
+                        setBookingSearch(e.target.value);
+                        setShowBookingDropdown(true);
+                      }}
+                      onFocus={() => setShowBookingDropdown(true)}
+                      disabled={!selectedCustomerId || bookings.length === 0}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none disabled:bg-gray-100 disabled:text-gray-400"
+                    />
+                  </div>
+                  {showBookingDropdown && selectedCustomerId && bookings.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 max-h-64 overflow-y-auto z-30">
+                      {filteredBookings.length > 0 ? (
+                        filteredBookings.map((b) => (
+                          <button
+                            key={b.id}
+                            onClick={() => {
+                              setSelectedBookingId(b.id);
+                              setBookingSearch(
+                                `${b.id} - ${b.serviceName || '服务'} (${new Date(b.scheduledTime).toLocaleDateString('zh-CN')})`
+                              );
+                              setShowBookingDropdown(false);
+                            }}
+                            className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-800 truncate">
+                              {b.id} - {b.serviceName || '服务'}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {new Date(b.scheduledTime).toLocaleString('zh-CN')}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-gray-500">无匹配预约</div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center justify-between px-4 py-3 border border-gray-300 rounded-xl bg-gray-50">
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-800 truncate">
+                      {bookings.find((b) => b.id === selectedBookingId)?.id} - {bookings.find((b) => b.id === selectedBookingId)?.serviceName || '服务'}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {bookings.find((b) => b.id === selectedBookingId)?.scheduledTime
+                        ? new Date(bookings.find((b) => b.id === selectedBookingId)!.scheduledTime).toLocaleString('zh-CN')
+                        : ''}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedBookingId('');
+                      setBookingSearch('');
+                    }}
+                    className="text-sm text-teal-600 hover:text-teal-700 font-medium flex-shrink-0 ml-2"
+                  >
+                    更换
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
