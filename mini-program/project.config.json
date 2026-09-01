@@ -46,5 +46,6 @@
   "libVersion": "3.17.0",
   "appid": "wxe9a36d7a5c55c325",
   "projectname": "mbs-mini-program",
-  "condition": {}
+  "condition": {},
+  "isGameTourist": false
 }

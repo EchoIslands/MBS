@@ -234,7 +234,11 @@
 }
 
 /* ===== 服务项目 ===== */
-.service-item {
+.service-scroll {
+  max-height: 480rpx;
+}
+
+.service-item-h5 {
   display: flex;
   align-items: center;
   gap: 24rpx;
@@ -245,11 +249,11 @@
   border: 1rpx solid var(--gray-100);
 }
 
-.service-item:last-child {
+.service-item-h5:last-child {
   margin-bottom: 0;
 }
 
-.service-icon {
+.service-icon-h5 {
   width: 96rpx;
   height: 96rpx;
   background: linear-gradient(135deg, var(--amber-100), #ffdcc2);
@@ -260,19 +264,19 @@
   flex-shrink: 0;
 }
 
-.service-info {
+.service-content-h5 {
   flex: 1;
   min-width: 0;
 }
 
-.service-name {
+.service-name-h5 {
   font-size: 30rpx;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 8rpx;
 }
 
-.service-desc {
+.service-desc-h5 {
   font-size: 24rpx;
   color: var(--text-secondary);
   overflow: hidden;
@@ -281,7 +285,7 @@
   margin-bottom: 8rpx;
 }
 
-.service-duration {
+.service-duration-h5 {
   display: inline-flex;
   align-items: center;
   gap: 6rpx;
@@ -293,16 +297,13 @@
   font-weight: 500;
 }
 
-.service-price {
+.service-price-h5 {
   text-align: right;
   margin-left: 16rpx;
   padding: 16rpx 24rpx;
   background: #fff;
   border-radius: 20rpx;
   border: 1rpx solid var(--gray-100);
-  font-size: 34rpx;
-  font-weight: 700;
-  color: var(--accent);
 }
 
 /* ===== 顾客评价 ===== */

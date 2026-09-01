@@ -598,6 +598,7 @@ function normalizeBooking(b: unknown): Booking {
     price: typeof raw.price === 'number' ? raw.price : 0,
     customerName: (raw.customerName || raw.customer_name || '顾客') as string,
     shopName: (raw.shopName || raw.shop_name || '店铺') as string,
+    notes: (raw.notes as string | undefined),
     createdAt: raw.createdAt ? (raw.createdAt instanceof Date ? raw.createdAt : new Date(raw.createdAt as string | number)) : new Date(),
   };
 }

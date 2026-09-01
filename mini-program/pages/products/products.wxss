@@ -4,47 +4,45 @@
   padding-bottom: calc(24rpx + env(safe-area-inset-bottom, 0));
 }
 
-/* ===== 1. 自定义头部 ===== */
-.products-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
+/* ===== 1. 悬浮购物车入口 ===== */
+.fab-cart {
+  position: fixed;
+  right: 32rpx;
+  bottom: calc(48rpx + env(safe-area-inset-bottom, 0));
+  height: 80rpx;
+  padding: 0 28rpx;
+  border-radius: 9999rpx;
   background: #fff;
+  border: 1rpx solid var(--primary-light);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: calc(16rpx + var(--status-bar-height, 0)) 24rpx 16rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  gap: 10rpx;
+  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.18);
+  z-index: 100;
 }
 
-.header-btn {
-  width: 72rpx;
-  height: 72rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  border-radius: 16rpx;
+.fab-cart:active {
+  background: var(--blue-50);
 }
 
-.header-title {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: var(--text-primary);
+.fab-cart-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--primary);
 }
 
-.cart-badge {
+.fab-cart-badge {
   position: absolute;
-  top: 0;
-  right: 0;
-  min-width: 32rpx;
-  height: 32rpx;
+  top: -8rpx;
+  right: -8rpx;
+  min-width: 36rpx;
+  height: 36rpx;
   padding: 0 8rpx;
   background: var(--danger);
   color: #fff;
   font-size: 20rpx;
   font-weight: 600;
-  border-radius: 16rpx;
+  border-radius: 18rpx;
   display: flex;
   align-items: center;
   justify-content: center;

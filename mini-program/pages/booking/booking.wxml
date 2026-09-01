@@ -74,30 +74,33 @@
               </view>
 
               <view class="service-icon-wrap">
-                <mbs-icon name="scissors" size="36" color="var(--amber-600)" />
+                <mbs-icon name="scissors" size="32" color="var(--amber-600)" />
               </view>
 
-              <view class="service-info">
-                <view class="service-name">{{item.name}}</view>
-                <view wx:if="{{item.description}}" class="service-desc">{{item.description}}</view>
-                <view wx:if="{{item.duration}}" class="service-duration">
-                  <mbs-icon name="clock" size="20" color="var(--accent-dark)" />
-                  <text>约 {{item.duration}} 分钟</text>
+              <view class="service-main">
+                <view class="service-top-row">
+                  <view class="service-name">{{item.name}}</view>
+                  <view wx:if="{{item.isStockholderDiscount}}" class="service-price-box">
+                    <view wx:if="{{item.hasDiscount}}" class="service-price-original">¥{{item.originalPriceStr}}</view>
+                    <view class="service-price-row">
+                      <view class="service-price-tag tag-amber">股东价</view>
+                      <view class="service-price-current">¥{{item.priceStr}}</view>
+                    </view>
+                  </view>
+                  <view wx:else class="service-price-box">
+                    <view wx:if="{{item.hasDiscount}}" class="service-price-original">¥{{item.originalPriceStr}}</view>
+                    <view class="service-price-row">
+                      <view wx:if="{{item.hasDiscount}}" class="service-price-tag tag-orange">会员价</view>
+                      <view class="service-price-current">¥{{item.priceStr}}</view>
+                    </view>
+                  </view>
                 </view>
-              </view>
-
-              <view wx:if="{{item.isStockholderDiscount}}" class="service-price-box">
-                <view wx:if="{{item.hasDiscount}}" class="service-price-original">¥{{item.originalPriceStr}}</view>
-                <view class="service-price-row">
-                  <view class="service-price-tag tag-amber">股东价</view>
-                  <view class="service-price-current">¥{{item.priceStr}}</view>
-                </view>
-              </view>
-              <view wx:else class="service-price-box">
-                <view wx:if="{{item.hasDiscount}}" class="service-price-original">¥{{item.originalPriceStr}}</view>
-                <view class="service-price-row">
-                  <view wx:if="{{item.hasDiscount}}" class="service-price-tag tag-orange">会员价</view>
-                  <view class="service-price-current">¥{{item.priceStr}}</view>
+                <view class="service-bottom-row">
+                  <view wx:if="{{item.duration}}" class="service-duration">
+                    <mbs-icon name="clock" size="18" color="var(--accent-dark)" />
+                    <text>约 {{item.duration}} 分钟</text>
+                  </view>
+                  <view wx:if="{{item.description}}" class="service-desc">{{item.description}}</view>
                 </view>
               </view>
             </view>

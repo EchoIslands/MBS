@@ -219,7 +219,14 @@ Page({
   },
 
   goBack() {
-    wx.navigateBack();
+    const pages = getCurrentPages();
+    if (pages.length > 1) {
+      wx.navigateBack();
+    } else {
+      wx.redirectTo({
+        url: `/pages/index/index?shopId=${this.data.shopId}`,
+      });
+    }
   },
 
   preventBubble() {

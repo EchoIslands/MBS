@@ -1,5 +1,5 @@
 {
-  "navigationStyle": "custom",
+  "navigationBarTitleText": "商品商城",
   "usingComponents": {
     "mbs-icon": "/components/icon/icon"
   }

@@ -1,15 +1,10 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="products-page">
-  <!-- 1. 自定义头部 -->
-  <view class="products-header">
-    <view class="header-btn" bindtap="goBack">
-      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
-    </view>
-    <view class="header-title">商品商城</view>
-    <view class="header-btn" bindtap="goToCart">
-      <mbs-icon name="shoppingBag" size="36" color="var(--text-primary)" />
-      <view wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
-    </view>
+  <!-- 1. 悬浮购物车入口 -->
+  <view class="fab-cart" bindtap="goToCart">
+    <mbs-icon name="shoppingBag" size="32" color="var(--primary)" />
+    <text class="fab-cart-text">购物车</text>
+    <view wx:if="{{cartCount > 0}}" class="fab-cart-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
   </view>
 
   <view class="products-body">
