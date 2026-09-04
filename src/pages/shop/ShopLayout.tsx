@@ -63,7 +63,7 @@ const menuItems: MenuItem[] = [
     label: '预约管理',
     path: '/shop/bookings',
     icon: <Calendar size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
+    roles: [UserRole.CEO, UserRole.SHOP_MANAGER, UserRole.STYLIST],
   },
   {
     label: '客户管理',
