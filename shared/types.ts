@@ -1126,6 +1126,49 @@ export interface Customer {
   wechatNickname?: string;       // 微信昵称
 }
 
+// 客户洞察看板数据
+export interface CustomerInsights {
+  // 经营概览（今日 / 本周 / 本月）
+  overview: {
+    today: { revenue: number; customers: number; orders: number; avgOrderValue: number };
+    week: { revenue: number; customers: number; orders: number; avgOrderValue: number };
+    month: { revenue: number; customers: number; orders: number; avgOrderValue: number };
+  };
+  // RFM 客户分层统计
+  rfmSegments: {
+    highValueActive: number; // 高价值活跃
+    activeMaintain: number;  // 活跃维护
+    sleepWarning: number;    // 沉睡预警
+    churned: number;         // 流失客户
+  };
+  // 营收趋势（近 30 天，每天一个点）
+  revenueTrend: Array<{ date: string; revenue: number; orders: number }>;
+  // 热门服务排行
+  topServices: Array<{ name: string; count: number; revenue: number }>;
+  // 沉睡/流失客户列表（按流失风险排序）
+  sleepingCustomers: Array<{
+    id: string;
+    name: string;
+    phone: string;
+    lastVisitAt?: Date;
+    daysSinceLastVisit: number;
+    totalSpent: number;
+    visitCount: number;
+    churnRisk: 'low' | 'medium' | 'high';
+    segment: 'highValueActive' | 'activeMaintain' | 'sleepWarning' | 'churned';
+  }>;
+  // 高价值客户列表
+  highValueCustomers: Array<{
+    id: string;
+    name: string;
+    phone: string;
+    totalSpent: number;
+    visitCount: number;
+    lastVisitAt?: Date;
+    avgOrderValue: number;
+  }>;
+}
+
 export interface AppState {
   userRole: UserRole;
   currentCustomer: Customer | null;

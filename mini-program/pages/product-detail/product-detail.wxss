@@ -285,8 +285,15 @@
   background: var(--gray-50);
 }
 
+.quantity-btn-text {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
 .quantity-value {
-  width: 80rpx;
+  width: 72rpx;
   text-align: center;
   font-size: 30rpx;
   font-weight: 500;
@@ -300,8 +307,8 @@
   flex: 1;
 }
 
-.cart-icon-btn {
-  width: 88rpx;
+.cart-text-btn {
+  width: 120rpx;
   height: 88rpx;
   display: flex;
   align-items: center;
@@ -309,6 +316,31 @@
   border: 2rpx solid var(--accent);
   border-radius: 20rpx;
   background: var(--amber-50);
+  position: relative;
+}
+
+.cart-text-btn-label {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.cart-text-btn-badge {
+  position: absolute;
+  top: -8rpx;
+  right: -8rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 6rpx;
+  background: var(--danger);
+  color: #fff;
+  font-size: 18rpx;
+  font-weight: 600;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .add-to-cart-btn {

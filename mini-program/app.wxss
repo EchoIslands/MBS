@@ -247,7 +247,8 @@ page {
   flex-shrink: 0;
 }
 
-.index-bottom-btn text {
+.index-bottom-btn text,
+.index-bottom-btn-text {
   line-height: 1;
 }
 

@@ -5,11 +5,9 @@
     <view class="index-nav-title">{{shop.name || '皓诗形象设计'}}</view>
     <view class="index-nav-actions">
       <view class="index-nav-btn index-nav-btn-primary" bindtap="goToProfile">
-        <mbs-icon name="user" size="28" color="#ffffff" />
         <text>个人中心</text>
       </view>
       <view class="index-nav-btn index-nav-btn-outline" bindtap="handleLogout">
-        <mbs-icon name="logOut" size="28" color="#ef4444" />
         <text>退出登录</text>
       </view>
     </view>
@@ -189,12 +187,10 @@
   <view class="fixed-bottom-bar" wx:if="{{shop}}">
     <view class="index-bottom-actions">
       <view class="btn btn-primary-plain index-bottom-btn" bindtap="goToProducts">
-        <mbs-icon name="shoppingBag" size="32" color="var(--accent)" />
-        商品商城
+        <text class="index-bottom-btn-text">商品商城</text>
       </view>
       <view class="btn btn-blue index-bottom-btn" bindtap="goToBooking">
-        <mbs-icon name="calendar" size="32" color="var(--card-bg)" />
-        立即预约
+        <text class="index-bottom-btn-text">立即预约</text>
       </view>
     </view>
   </view>

@@ -83,18 +83,19 @@
         <text class="quantity-label">数量</text>
         <view class="quantity-control">
           <view class="quantity-btn" bindtap="onQuantityMinus">
-            <mbs-icon name="minus" size="24" color="var(--text-primary)" />
+            <text class="quantity-btn-text">-</text>
           </view>
           <text class="quantity-value">{{quantity}}</text>
           <view class="quantity-btn" bindtap="onQuantityPlus">
-            <mbs-icon name="plus" size="24" color="var(--text-primary)" />
+            <text class="quantity-btn-text">+</text>
           </view>
         </view>
       </view>
 
       <view class="footer-actions">
-        <view class="cart-icon-btn" bindtap="goToCart">
-          <mbs-icon name="shoppingBag" size="36" color="var(--accent)" />
+        <view class="cart-text-btn" bindtap="goToCart">
+          <text class="cart-text-btn-label">购物车</text>
+          <view wx:if="{{cartCount > 0}}" class="cart-text-btn-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
         </view>
         <view
           class="add-to-cart-btn {{product.stock <= 0 ? 'disabled' : ''}}"

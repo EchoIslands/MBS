@@ -26,6 +26,7 @@ import {
   X,
   Lock,
   Edit3,
+  Activity,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { employeeApi } from '../../api';
@@ -51,6 +52,12 @@ const menuItems: MenuItem[] = [
     path: '/shop',
     icon: <Home size={18} />,
     roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
+  },
+  {
+    label: '客户洞察',
+    path: '/shop/customer-insights',
+    icon: <Activity size={18} />,
+    roles: [UserRole.CEO],
   },
   {
     label: '预约管理',

@@ -278,7 +278,6 @@
         </view>
       </view>
       <view class="bar-btn {{booking ? 'bar-btn-disabled' : ''}}" bindtap="handleBooking">
-        <mbs-icon wx:if="{{!booking}}" name="checkCircle" size="36" color="#fff" />
         <text>{{booking ? '预约中...' : '确认预约'}}</text>
       </view>
     </view>

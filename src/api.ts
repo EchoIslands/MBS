@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1554,6 +1554,228 @@ export const refundApi = {
       if (result?.data) return result.data;
     }
     return null;
+  },
+};
+
+// 客户洞察分析 API（前端聚合现有交易数据，无需等待后端埋点）
+export const customerAnalyticsApi = {
+  getCustomerInsights: async (shopId?: string): Promise<CustomerInsights> => {
+    // 并行拉取客户、结算、预约、商品订单
+    const [customers, settlements, bookings, productOrders] = await Promise.all([
+      customerApi.getAll(),
+      shopId ? settlementApi.getByShop(shopId) : Promise.resolve(mockSettlements),
+      shopId ? bookingApi.getBookingsByShop(shopId) : Promise.resolve(mockBookings),
+      shopId
+        ? productOrderApi.getByShop(shopId).then((r) => r.list)
+        : Promise.resolve([] as ProductOrder[]),
+    ]);
+
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(startOfDay);
+    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const isInRange = (d: Date, start: Date) =>
+      new Date(d).getTime() >= start.getTime();
+
+    // 只统计已完成/已支付的结算与订单
+    const completedSettlements = settlements.filter(
+      (s) => s.paymentStatus === 'completed'
+    );
+    const paidProductOrders = productOrders.filter(
+      (o) => o.paymentStatus === 'paid' || o.status === 'completed'
+    );
+
+    // 按客户聚合交易
+    type EnrichedCustomer = Customer & {
+      orders: Array<{ amount: number; createdAt: Date; type: 'service' | 'product' }>;
+    };
+    const customerMap = new Map<string, EnrichedCustomer>();
+    customers.forEach((c) => customerMap.set(c.id, { ...c, orders: [] }));
+
+    const addOrder = (
+      customerId: string,
+      amount: number,
+      createdAt: Date,
+      type: 'service' | 'product'
+    ) => {
+      const c = customerMap.get(customerId);
+      if (!c) return;
+      c.orders.push({ amount, createdAt, type });
+    };
+
+    completedSettlements.forEach((s) => {
+      addOrder(s.customerId, s.total, new Date(s.createdAt), 'service');
+    });
+    paidProductOrders.forEach((o) => {
+      addOrder(o.customerId, o.payableAmount, new Date(o.createdAt), 'product');
+    });
+
+    // 计算每位客户的 RFM
+    type Segment = CustomerInsights['sleepingCustomers'][number]['segment'];
+    const analyzedCustomers = Array.from(customerMap.values()).map((c) => {
+      const orders = c.orders.sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+      );
+      const totalSpent = orders.reduce((sum, o) => sum + o.amount, 0);
+      const visitCount = orders.length;
+      const lastOrder = orders[0];
+      const lastVisitAt = lastOrder?.createdAt || c.lastVisitAt;
+      const daysSinceLastVisit = lastVisitAt
+        ? Math.floor((now.getTime() - new Date(lastVisitAt).getTime()) / 86400000)
+        : 9999;
+      const avgOrderValue = visitCount > 0 ? totalSpent / visitCount : 0;
+
+      let segment: Segment = 'churned';
+      let churnRisk: 'low' | 'medium' | 'high' = 'high';
+      if (daysSinceLastVisit <= 30 && totalSpent >= 500) {
+        segment = 'highValueActive';
+        churnRisk = 'low';
+      } else if (daysSinceLastVisit <= 30) {
+        segment = 'activeMaintain';
+        churnRisk = 'low';
+      } else if (daysSinceLastVisit <= 90) {
+        segment = 'sleepWarning';
+        churnRisk = 'medium';
+      }
+
+      return {
+        ...c,
+        totalSpent,
+        visitCount,
+        lastVisitAt,
+        daysSinceLastVisit,
+        avgOrderValue,
+        segment,
+        churnRisk,
+      };
+    });
+
+    // RFM 分层统计
+    const rfmSegments = {
+      highValueActive: analyzedCustomers.filter((c) => c.segment === 'highValueActive').length,
+      activeMaintain: analyzedCustomers.filter((c) => c.segment === 'activeMaintain').length,
+      sleepWarning: analyzedCustomers.filter((c) => c.segment === 'sleepWarning').length,
+      churned: analyzedCustomers.filter((c) => c.segment === 'churned').length,
+    };
+
+    // 概览数据
+    const calcOverview = (start: Date) => {
+      const periodSettlements = completedSettlements.filter((s) =>
+        isInRange(new Date(s.createdAt), start)
+      );
+      const periodOrders = paidProductOrders.filter((o) =>
+        isInRange(new Date(o.createdAt), start)
+      );
+      const revenue =
+        periodSettlements.reduce((sum, s) => sum + s.total, 0) +
+        periodOrders.reduce((sum, o) => sum + o.payableAmount, 0);
+      const orders = periodSettlements.length + periodOrders.length;
+      const customerIds = new Set<string>();
+      periodSettlements.forEach((s) => customerIds.add(s.customerId));
+      periodOrders.forEach((o) => customerIds.add(o.customerId));
+      return {
+        revenue,
+        customers: customerIds.size,
+        orders,
+        avgOrderValue: orders > 0 ? revenue / orders : 0,
+      };
+    };
+
+    // 近 30 天营收趋势
+    const revenueTrend: CustomerInsights['revenueTrend'] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(startOfDay);
+      d.setDate(d.getDate() - i);
+      const nextD = new Date(d);
+      nextD.setDate(d.getDate() + 1);
+      const daySettlements = completedSettlements.filter((s) => {
+        const t = new Date(s.createdAt).getTime();
+        return t >= d.getTime() && t < nextD.getTime();
+      });
+      const dayOrders = paidProductOrders.filter((o) => {
+        const t = new Date(o.createdAt).getTime();
+        return t >= d.getTime() && t < nextD.getTime();
+      });
+      revenueTrend.push({
+        date: `${d.getMonth() + 1}/${d.getDate()}`,
+        revenue:
+          daySettlements.reduce((sum, s) => sum + s.total, 0) +
+          dayOrders.reduce((sum, o) => sum + o.payableAmount, 0),
+        orders: daySettlements.length + dayOrders.length,
+      });
+    }
+
+    // 热门服务排行（从结算记录 items 中汇总服务项，并用预约数据补充）
+    const serviceStats = new Map<string, { count: number; revenue: number }>();
+    completedSettlements.forEach((s) => {
+      s.items.forEach((item) => {
+        if (item.type === 'service' || item.category === 'service') {
+          const existing = serviceStats.get(item.name) || { count: 0, revenue: 0 };
+          existing.count += item.quantity;
+          existing.revenue += item.total;
+          serviceStats.set(item.name, existing);
+        }
+      });
+    });
+    bookings.forEach((b) => {
+      if (b.status === 'completed' && b.serviceName && b.price) {
+        const existing = serviceStats.get(b.serviceName) || { count: 0, revenue: 0 };
+        existing.count += 1;
+        existing.revenue += b.price;
+        serviceStats.set(b.serviceName, existing);
+      }
+    });
+    const topServices = Array.from(serviceStats.entries())
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 6);
+
+    // 沉睡/流失客户列表
+    const sleepingCustomers = analyzedCustomers
+      .filter((c) => c.segment === 'sleepWarning' || c.segment === 'churned')
+      .sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit)
+      .slice(0, 20)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        lastVisitAt: c.lastVisitAt,
+        daysSinceLastVisit: c.daysSinceLastVisit,
+        totalSpent: c.totalSpent,
+        visitCount: c.visitCount,
+        churnRisk: c.churnRisk,
+        segment: c.segment,
+      }));
+
+    // 高价值客户列表
+    const highValueCustomers = analyzedCustomers
+      .filter((c) => c.segment === 'highValueActive')
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 10)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        totalSpent: c.totalSpent,
+        visitCount: c.visitCount,
+        lastVisitAt: c.lastVisitAt,
+        avgOrderValue: c.avgOrderValue,
+      }));
+
+    return {
+      overview: {
+        today: calcOverview(startOfDay),
+        week: calcOverview(startOfWeek),
+        month: calcOverview(startOfMonth),
+      },
+      rfmSegments,
+      revenueTrend,
+      topServices,
+      sleepingCustomers,
+      highValueCustomers,
+    };
   },
 };
 

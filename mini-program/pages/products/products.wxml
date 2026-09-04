@@ -2,7 +2,6 @@
 <view class="products-page">
   <!-- 1. 悬浮购物车入口 -->
   <view class="fab-cart" bindtap="goToCart">
-    <mbs-icon name="shoppingBag" size="32" color="var(--primary)" />
     <text class="fab-cart-text">购物车</text>
     <view wx:if="{{cartCount > 0}}" class="fab-cart-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
   </view>
@@ -138,14 +137,13 @@
               </view>
             </view>
           </view>
-          <button
-            class="product-add-btn"
+          <view
+            class="product-add-btn {{item.stock <= 0 ? 'disabled' : ''}}"
             data-product="{{item}}"
             catchtap="onAddToCart"
-            disabled="{{item.stock <= 0}}"
           >
             {{item.stock > 0 ? '加入购物车' : '暂时缺货'}}
-          </button>
+          </view>
         </view>
       </view>
     </view>
