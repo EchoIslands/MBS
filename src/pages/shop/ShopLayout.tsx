@@ -57,7 +57,7 @@ const menuItems: MenuItem[] = [
     label: '客户洞察',
     path: '/shop/customer-insights',
     icon: <Activity size={18} />,
-    roles: [UserRole.CEO],
+    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE],
   },
   {
     label: '预约管理',

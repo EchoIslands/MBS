@@ -89,7 +89,7 @@ const CustomerInsightsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (![UserRole.CEO, UserRole.SHOP_OWNER].includes(userRole as UserRole)) {
+    if (![UserRole.CEO, UserRole.SHOP_OWNER, UserRole.CUSTOMER_SERVICE].includes(userRole as UserRole)) {
       navigate('/shop');
       return;
     }
