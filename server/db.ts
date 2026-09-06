@@ -100,8 +100,9 @@ export const bookingQueries = {
   },
   create: async (data: unknown) => {
     const db = getDb();
-    if (!db) return { id: generateId(), ...data };
-    const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
+    const safeData = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    if (!db) return { id: generateId(), ...safeData };
+    const insertData = { id: generateId(), ...safeData, created_at: new Date().toISOString() };
     const { data: result, error } = await db.from('bookings').insert(insertData).select().single();
     if (error) { console.error('[db]', error.message); return insertData; }
     return result;
@@ -126,8 +127,9 @@ export const reviewQueries = {
   },
   create: async (data: unknown) => {
     const db = getDb();
-    if (!db) return { id: generateId(), ...data };
-    const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
+    const safeData = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    if (!db) return { id: generateId(), ...safeData };
+    const insertData = { id: generateId(), ...safeData, created_at: new Date().toISOString() };
     const { data: result, error } = await db.from('reviews').insert(insertData).select().single();
     if (error) { console.error('[db]', error.message); return insertData; }
     return result;
@@ -188,8 +190,9 @@ export const customerQueries = {
   },
   create: async (data: unknown) => {
     const db = getDb();
-    if (!db) return { id: generateId(), ...data };
-    const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
+    const safeData = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    if (!db) return { id: generateId(), ...safeData };
+    const insertData = { id: generateId(), ...safeData, created_at: new Date().toISOString() };
     const { data: result, error } = await db.from('customers').insert(insertData).select().single();
     if (error) { console.error('[db]', error.message); return insertData; }
     return result;
@@ -200,16 +203,23 @@ export const customerQueries = {
 export const customerEventQueries = {
   create: async (data: unknown) => {
     const db = getDb();
-    if (!db) return { id: generateId(), ...data };
-    const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
+    const safeData = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    if (!db) return { id: generateId(), ...safeData };
+    const insertData = { id: generateId(), ...safeData, created_at: new Date().toISOString() };
     const { data: result, error } = await db.from('customer_events').insert(insertData).select().single();
     if (error) { console.error('[db]', error.message); return insertData; }
     return result;
   },
   batchCreate: async (events: unknown[]) => {
     const db = getDb();
-    if (!db) return events.map((e) => ({ id: generateId(), ...e }));
-    const rows = events.map((e) => ({ id: generateId(), ...e, created_at: new Date().toISOString() }));
+    if (!db) return events.map((e) => {
+      const safe = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>;
+      return { id: generateId(), ...safe };
+    });
+    const rows = events.map((e) => {
+      const safe = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>;
+      return { id: generateId(), ...safe, created_at: new Date().toISOString() };
+    });
     const { data: result, error } = await db.from('customer_events').insert(rows).select();
     if (error) { console.error('[db]', error.message); return rows; }
     return result || rows;

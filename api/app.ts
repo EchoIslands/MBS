@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import apiRouter from './routes/index.js';
+import analyticsRoutes from '../server/routes/analytics.js';
 
 // express 内部属性 _body 未在类型定义中暴露
 interface RequestWithBody extends Request {
@@ -72,6 +73,9 @@ app.get('/api/health', (req, res) => {
 
 // 挂载路由
 app.use('/api', apiRouter);
+
+// 埋点路由（server/routes 下独立维护，便于三端复用）
+app.use('/api/analytics', analyticsRoutes);
 
 // 未匹配的 /api/* 返回 404
 app.all('/api/*', (req, res) => {
