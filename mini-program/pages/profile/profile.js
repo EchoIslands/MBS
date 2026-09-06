@@ -370,6 +370,14 @@ Page({
     wx.navigateTo({ url: `/pages/my-coupons/my-coupons?shopId=${customer.shopId || 'shop1'}` });
   },
 
+  goToPrivacy() {
+    wx.navigateTo({ url: '/pages/privacy/privacy' });
+  },
+
+  goToAgreement() {
+    wx.navigateTo({ url: '/pages/agreement/agreement' });
+  },
+
   closeWithdrawModal() {
     this.setData({ withdrawModalOpen: false });
   },

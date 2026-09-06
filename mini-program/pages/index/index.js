@@ -230,4 +230,23 @@ Page({
       wx.navigateTo({ url: '/pages/booking/booking' });
     }
   },
+
+  onPrivacyAccept() {
+    // 用户同意协议，正常展示首页
+  },
+
+  onPrivacyDecline() {
+    // 用户不同意协议，友好提示并退出小程序
+    wx.showModal({
+      title: '需要同意协议',
+      content: '您需要同意《用户协议》和《隐私政策》才能继续使用本小程序。',
+      showCancel: false,
+      confirmText: '我知道了',
+      success: () => {
+        if (typeof wx.exitMiniProgram === 'function') {
+          wx.exitMiniProgram();
+        }
+      },
+    });
+  },
 });

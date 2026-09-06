@@ -200,4 +200,9 @@
     bind:success="onLoginSuccess"
     bind:close="onLoginClose"
   />
+
+  <privacy-modal
+    bind:accept="onPrivacyAccept"
+    bind:decline="onPrivacyDecline"
+  />
 </view>

@@ -293,7 +293,7 @@
                   data-id="{{booking.id}}"
                 >
                   <mbs-icon name="star" size="22" color="#2563eb" />
-                  <text>去评价，分享得积分</text>
+                  <text>去评价</text>
                 </view>
               </block>
             </view>
@@ -321,7 +321,25 @@
       </view>
     </view>
 
-    <!-- 11) 退出登录 -->
+    <!-- 11) 协议与政策 -->
+    <view class="profile-legal-section">
+      <view class="legal-item" bindtap="goToAgreement">
+        <view class="legal-item-left">
+          <mbs-icon name="fileText" size="28" color="var(--text-secondary)" />
+          <text class="legal-item-text">用户协议</text>
+        </view>
+        <mbs-icon name="arrowLeft" size="28" color="var(--text-tertiary)" class="legal-item-arrow" />
+      </view>
+      <view class="legal-item" bindtap="goToPrivacy">
+        <view class="legal-item-left">
+          <mbs-icon name="shield" size="28" color="var(--text-secondary)" />
+          <text class="legal-item-text">隐私政策</text>
+        </view>
+        <mbs-icon name="arrowLeft" size="28" color="var(--text-tertiary)" class="legal-item-arrow" />
+      </view>
+    </view>
+
+    <!-- 12) 退出登录 -->
     <view class="btn btn-logout" bindtap="handleLogout">
       <mbs-icon name="logOut" size="28" color="var(--danger)" />
       退出登录
@@ -457,7 +475,7 @@
           </view>
           <view wx:else class="btn btn-primary" bindtap="goToReview">
             <mbs-icon name="star" size="22" color="#ffffff" />
-            <text>去评价，分享得积分</text>
+            <text>去评价</text>
           </view>
         </block>
 

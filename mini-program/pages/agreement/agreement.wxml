@@ -1,0 +1,70 @@
+<view class="agreement-page">
+  <view class="agreement-header">
+    <view class="header-back" bindtap="goBack">
+      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
+    </view>
+    <view class="header-title">用户协议</view>
+    <view class="header-spacer"></view>
+  </view>
+
+  <view class="agreement-content">
+    <view class="agreement-section">
+      <view class="agreement-title">协议范围</view>
+      <view class="agreement-text">
+        本协议是您与 {{shopName}} 之间关于使用本小程序服务的协议。请您在使用本服务前仔细阅读本协议，如您不同意本协议任何内容，请停止使用本服务。
+      </view>
+    </view>
+
+    <view class="agreement-section">
+      <view class="agreement-title">服务内容</view>
+      <view class="agreement-text">
+        我们通过本小程序向您提供以下服务：
+      </view>
+      <view class="agreement-list">
+        <view class="agreement-item">在线预约理发、烫染、护理等服务；</view>
+        <view class="agreement-item">浏览和购买店内商品；</view>
+        <view class="agreement-item">会员权益、积分、优惠券管理；</view>
+        <view class="agreement-item">订单查询、评价及售后服务。</view>
+      </view>
+    </view>
+
+    <view class="agreement-section">
+      <view class="agreement-title">账号与登录</view>
+      <view class="agreement-text">
+        您可以使用微信授权登录本小程序。您应妥善保管您的账号信息，因您保管不善导致的损失由您自行承担。您同意提供真实、准确、完整的个人信息，并在信息变更时及时更新。
+      </view>
+    </view>
+
+    <view class="agreement-section">
+      <view class="agreement-title">用户行为规范</view>
+      <view class="agreement-text">
+        在使用本服务时，您应当遵守法律法规，不得发布违法违规、侵犯他人权益、虚假欺诈等内容。我们有权对违反本协议的行为采取删除内容、限制功能、终止服务等措施。
+      </view>
+    </view>
+
+    <view class="agreement-section">
+      <view class="agreement-title">预约与订单</view>
+      <view class="agreement-text">
+        您提交预约或订单后，我们将根据实际情况进行确认。如因不可抗力或店铺原因无法履约，我们将及时通知您并协商处理。商品订单的退换货规则以具体商品页面说明为准。
+      </view>
+    </view>
+
+    <view class="agreement-section">
+      <view class="agreement-title">知识产权</view>
+      <view class="agreement-text">
+        本小程序中的所有内容，包括但不限于文字、图片、标识、代码等，均受相关法律法规保护。未经我们书面许可，您不得擅自复制、修改、传播或用于商业目的。
+      </view>
+    </view>
+
+    <view class="agreement-section">
+      <view class="agreement-title">协议变更</view>
+      <view class="agreement-text">
+        我们可能会根据业务发展需要修改本协议。修改后的协议将在小程序内公示，如您继续使用本服务，视为您同意修改后的协议。
+      </view>
+    </view>
+
+    <view class="agreement-footer">
+      <text class="footer-text">本协议最后更新于 2026 年 9 月 4 日</text>
+    </view>
+  </view>
+</view>

@@ -106,6 +106,27 @@ Page({
     this.setData({ isAwareOfMembershipBenefits: value, hasConfirmedAware: true });
   },
 
+  // 内容安全校验
+  async checkContentSecurity(content) {
+    if (!content || !content.trim()) return true;
+    if (!wx.security || !wx.security.msgSecCheck) {
+      // 基础库不支持时跳过，避免阻断正常评价
+      return true;
+    }
+    return new Promise((resolve) => {
+      wx.security.msgSecCheck({
+        content: content.trim(),
+        success: (res) => {
+          resolve(res && res.result && res.result.suggest === 'risky' ? false : true);
+        },
+        fail: () => {
+          // 校验失败时不阻断，避免误判影响体验
+          resolve(true);
+        },
+      });
+    });
+  },
+
   // ========== 提交评价 ==========
   async onSubmit() {
     const {
@@ -132,6 +153,19 @@ Page({
     this.setData({ submitting: true });
     wx.showLoading({ title: '提交中' });
     try {
+      const combinedContent = [serviceComment, stylistComment, comment].filter(Boolean).join('\n');
+      const isContentSafe = await this.checkContentSecurity(combinedContent);
+      if (!isContentSafe) {
+        wx.hideLoading();
+        this.setData({ submitting: false });
+        wx.showModal({
+          title: '内容未通过审核',
+          content: '您输入的内容可能包含敏感信息，请修改后重新提交。',
+          showCancel: false,
+          confirmText: '我知道了',
+        });
+        return;
+      }
       await createReview({
         shopId: booking.shopId,
         customerId,
@@ -162,7 +196,7 @@ Page({
     const shopId = (this.data.booking && this.data.booking.shopId) || this.data.shopId;
     const url = `https://www.hfmbs.cn/s/${shopId}`;
     wx.setClipboardData({
-      data: `我刚在这家店做了发型，服务超棒，推荐给你！${url}`,
+      data: url,
       success: () => {
         wx.showToast({ title: '链接已复制', icon: 'success' });
       },

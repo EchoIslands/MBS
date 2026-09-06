@@ -11,7 +11,9 @@
     "pages/product-orders/product-orders",
     "pages/my-coupons/my-coupons",
     "pages/recharge/recharge",
-    "pages/review/review"
+    "pages/review/review",
+    "pages/privacy/privacy",
+    "pages/agreement/agreement"
   ],
   "window": {
     "backgroundTextStyle": "light",

@@ -4,6 +4,7 @@
   "navigationBarBackgroundColor": "#4f8ef7",
   "usingComponents": {
     "login-modal": "/components/login-modal/login-modal",
+    "privacy-modal": "/components/privacy-modal/privacy-modal",
     "mbs-icon": "/components/icon/icon",
     "mbs-price": "/components/mbs-price/mbs-price"
   }

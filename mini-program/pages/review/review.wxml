@@ -206,31 +206,17 @@
 
       <view class="card share-card">
         <view class="share-title">
-          <mbs-icon name="gift" size="32" color="#f97316" />
-          <text>分享给好友，双方各得 10 积分</text>
+          <mbs-icon name="share" size="32" color="#f97316" />
+          <text>分享您的体验给好友</text>
         </view>
-        <view class="share-hint">好友通过您的分享链接完成首次服务，双方自动获得积分</view>
-
-        <view class="share-ticket">
-          <view class="share-ticket-dot"></view>
-          <view class="share-ticket-main">
-            <view class="ticket-score">10</view>
-            <view class="ticket-label">积分</view>
-          </view>
-          <view class="share-ticket-side">
-            <view class="ticket-shop">皓诗形象设计</view>
-            <view class="ticket-note">消费可累计积分</view>
-            <view class="ticket-note">全店服务通用</view>
-          </view>
-          <view class="share-ticket-dot share-ticket-dot-bottom"></view>
-        </view>
+        <view class="share-hint">把优质店铺推荐给身边的朋友</view>
 
         <view
           class="btn btn-primary btn-submit"
           bindtap="onCopyShareLink"
         >
           <mbs-icon name="copy" size="28" color="#ffffff" />
-          <text>复制邀请链接</text>
+          <text>复制店铺链接</text>
         </view>
       </view>
 

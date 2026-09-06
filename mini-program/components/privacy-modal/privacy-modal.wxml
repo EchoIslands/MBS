@@ -1,0 +1,26 @@
+<view class="privacy-modal-mask" wx:if="{{visible}}" catchtap="onDecline">
+  <view class="privacy-modal-dialog" catchtap="stopPropagation">
+    <view class="privacy-modal-header">
+      <mbs-icon name="shield" size="48" color="var(--accent)" />
+      <view class="privacy-modal-title">服务协议与隐私保护</view>
+    </view>
+
+    <view class="privacy-modal-body">
+      <view class="privacy-modal-text">
+        欢迎使用本小程序。我们依据
+        <text class="privacy-link" catchtap="onAgreementTap">《用户协议》</text>
+        和
+        <text class="privacy-link" catchtap="onPrivacyTap">《隐私政策》</text>
+        为您提供服务。我们可能会收集、使用您的必要个人信息，用于预约、订单、会员等服务。
+      </view>
+      <view class="privacy-modal-hint">
+        点击「同意」即表示您已阅读并同意上述协议。如不同意，将无法使用本小程序服务。
+      </view>
+    </view>
+
+    <view class="privacy-modal-footer">
+      <view class="privacy-btn privacy-btn-decline" catchtap="onDecline">不同意</view>
+      <view class="privacy-btn privacy-btn-accept" catchtap="onAccept">同意</view>
+    </view>
+  </view>
+</view>

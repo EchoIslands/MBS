@@ -1,0 +1,6 @@
+{
+  "component": true,
+  "usingComponents": {
+    "mbs-icon": "/components/icon/icon"
+  }
+}

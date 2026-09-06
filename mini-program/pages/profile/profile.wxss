@@ -611,6 +611,41 @@
   color: var(--text-tertiary);
 }
 
+/* 协议与政策 */
+.profile-legal-section {
+  background: #fff;
+  border-radius: 24rpx;
+  margin-bottom: 32rpx;
+  overflow: hidden;
+}
+
+.legal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid var(--gray-100);
+}
+
+.legal-item:last-child {
+  border-bottom: none;
+}
+
+.legal-item-left {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.legal-item-text {
+  font-size: 30rpx;
+  color: var(--text-primary);
+}
+
+.legal-item-arrow {
+  transform: rotate(180deg);
+}
+
 /* 退出登录 */
 .btn-logout {
   display: flex;
