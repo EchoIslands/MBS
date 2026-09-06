@@ -191,4 +191,24 @@ export const customerQueries = {
   },
 };
 
+// ---------- 客户行为事件（埋点） ----------
+export const customerEventQueries = {
+  create: async (data: unknown) => {
+    const db = getDb();
+    if (!db) return { id: generateId(), ...data };
+    const insertData = { id: generateId(), ...data, created_at: new Date().toISOString() };
+    const { data: result, error } = await db.from('customer_events').insert(insertData).select().single();
+    if (error) { console.error('[db]', error.message); return insertData; }
+    return result;
+  },
+  batchCreate: async (events: unknown[]) => {
+    const db = getDb();
+    if (!db) return events.map((e) => ({ id: generateId(), ...e }));
+    const rows = events.map((e) => ({ id: generateId(), ...e, created_at: new Date().toISOString() }));
+    const { data: result, error } = await db.from('customer_events').insert(rows).select();
+    if (error) { console.error('[db]', error.message); return rows; }
+    return result || rows;
+  },
+};
+
 export default getDb;

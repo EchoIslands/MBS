@@ -3,6 +3,7 @@ import { createBooking, getBookingsByShop } from '../../api/booking';
 import { getCustomerPublic } from '../../api/customer';
 import { getCustomerId, setRouteParams, takeRouteParams } from '../../utils/storage';
 import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../utils/membership';
+import { trackPageView, trackBookingStart, trackBookingComplete } from '../../utils/tracking';
 
 // 与 H5 的 shared/types.ts 中 UserRole.STYLIST 保持一致
 const STYLIST_ROLE = 'stylist';
@@ -170,6 +171,12 @@ Page({
     }
 
     await this.loadBookings();
+
+    trackBookingStart(
+      this.data.selectedService,
+      this.data.selectedServiceName,
+      { shop_id: this.data.shop?.id || 'shop1' }
+    );
   },
 
   async onShow() {
@@ -183,6 +190,10 @@ Page({
         selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
       });
     }
+    trackPageView('pages/booking/booking', {
+      shop_id: this.data.shop?.id || 'shop1',
+      service_id: this.data.selectedService,
+    });
   },
 
   async loadShop() {
@@ -464,6 +475,13 @@ Page({
       });
 
       if (newBooking && newBooking.id) {
+        trackBookingComplete(
+          newBooking.id,
+          this.data.selectedService,
+          this.data.selectedServiceName,
+          this.data.selectedServicePrice,
+          { shop_id: this.data.shop?.id || 'shop1', barber_id: target.id }
+        );
         setRouteParams({ bookingId: newBooking.id });
         wx.redirectTo({ url: '/pages/queue/queue' });
       } else {

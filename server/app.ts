@@ -26,6 +26,7 @@ import refundsRoutes from './routes/refunds.js'
 import reviewsManageRoutes from './routes/reviews-manage.js'
 import productsRoutes from './routes/products.js'
 import ordersRoutes from './routes/orders.js'
+import analyticsRoutes from './routes/analytics.js'
 
 // 导入中间件
 import { logger, errorHandler } from './middleware/index.js'
@@ -62,6 +63,7 @@ app.use('/api/refunds', refundsRoutes)
 app.use('/api/reviews-manage', reviewsManageRoutes)
 app.use('/api/products', productsRoutes)
 app.use('/api/orders', ordersRoutes)
+app.use('/api/analytics', analyticsRoutes)
 
 /**
  * health

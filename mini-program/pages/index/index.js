@@ -1,5 +1,6 @@
 import { getShop, getShopReviews } from '../../api/shop';
 import { getCustomerId, setRouteParams, clearCustomerId } from '../../utils/storage';
+import { trackPageView, trackServiceDetailView } from '../../utils/tracking';
 
 function toTwoDigits(n) {
   return String(n).padStart(2, '0');
@@ -48,6 +49,10 @@ Page({
 
   async onLoad() {
     await this.loadShop();
+  },
+
+  onShow() {
+    trackPageView('pages/index/index', { shop_id: 'shop1' });
   },
 
   isStylist(e) {
@@ -195,6 +200,8 @@ Page({
 
   onServiceTap(e) {
     const serviceId = e.currentTarget.dataset.id;
+    const service = (this.data.shop?.services || []).find((s) => s.id === serviceId);
+    trackServiceDetailView(serviceId, service?.name || '', { shop_id: 'shop1' });
     if (!getCustomerId()) {
       this.setData({ showLogin: true, pendingServiceId: serviceId });
       return;

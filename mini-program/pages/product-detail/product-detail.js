@@ -3,6 +3,7 @@ import { getCustomerPublic } from '../../api/customer';
 import { addToCart, getCartCount } from '../../utils/cart';
 import { getCustomerId } from '../../utils/storage';
 import { calcDiscountedItemPrice } from '../../utils/membership';
+import { trackPageView, trackAddToCart } from '../../utils/tracking';
 
 Page({
   data: {
@@ -46,6 +47,10 @@ Page({
 
   onShow() {
     this.refreshCartCount();
+    trackPageView('pages/product-detail/product-detail', {
+      shop_id: this.data.shopId,
+      product_id: this.data.productId,
+    });
   },
 
   async loadProduct() {
@@ -96,6 +101,13 @@ Page({
     }
     addToCart(product, quantity);
     this.refreshCartCount();
+    trackAddToCart(
+      product.id,
+      product.name,
+      quantity,
+      (product.memberPrice ?? product.price) * quantity,
+      { shop_id: this.data.shopId, category: product.category }
+    );
     wx.showToast({ title: `已加入 ${quantity} 件`, icon: 'success' });
     this.setData({ quantity: 1 });
   },

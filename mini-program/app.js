@@ -34,6 +34,14 @@ App({
         console.warn('[app] 未处理的 Promise 拒绝:', reason);
       }
     });
+
+    // 启动行为埋点自动上报
+    try {
+      const tracking = require('./utils/tracking');
+      tracking.startAutoFlush();
+    } catch (e) {
+      console.warn('[app] 埋点初始化失败:', e);
+    }
   },
 
   onError(err) {
