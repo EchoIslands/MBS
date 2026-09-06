@@ -32,13 +32,45 @@ export const EventType = {
   BOOKING_COMPLETE: 'booking_complete',
 };
 
+// 生成更安全的随机字符串（UUID v4 风格，冲突概率极低）
+function generateSecureId() {
+  const hex = '0123456789abcdef';
+  const parts = [8, 4, 4, 4, 12];
+  return parts
+    .map((len) => {
+      let s = '';
+      for (let i = 0; i < len; i++) {
+        s += hex[Math.floor(Math.random() * 16)];
+      }
+      return s;
+    })
+    .join('-');
+}
+
+// 获取小程序版本号（优先 getAppBaseInfo，兼容旧基础库）
+function getAppVersion() {
+  try {
+    if (typeof wx.getAppBaseInfo === 'function') {
+      const info = wx.getAppBaseInfo();
+      return info.appVersion || '';
+    }
+    if (typeof wx.getAccountInfoSync === 'function') {
+      const info = wx.getAccountInfoSync();
+      return info.miniProgram?.version || '';
+    }
+  } catch (e) {
+    console.warn('[tracking] 获取小程序版本号失败:', e);
+  }
+  return '';
+}
+
 // 生成会话 ID（每次小程序冷启动或会话过期时生成）
 function ensureSessionId() {
   const now = Date.now();
   let session = wx.getStorageSync(SESSION_KEY);
   if (!session || now - session.startTime > 30 * 60 * 1000) {
     session = {
-      id: `${now}_${Math.random().toString(36).slice(2, 8)}`,
+      id: generateSecureId(),
       startTime: now,
     };
     wx.setStorageSync(SESSION_KEY, session);
@@ -80,6 +112,7 @@ function buildEvent(eventType, properties = {}) {
     customer_id: customerId || undefined,
     shop_id: properties.shop_id || 'shop1',
     session_id: ensureSessionId(),
+    app_version: getAppVersion(),
     timestamp: new Date().toISOString(),
     properties: properties || {},
   };

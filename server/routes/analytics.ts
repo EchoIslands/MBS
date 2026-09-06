@@ -10,6 +10,7 @@ interface CustomerEvent {
   customer_id?: string;
   shop_id?: string;
   session_id?: string;
+  app_version?: string;
   timestamp?: string;
   properties?: Record<string, unknown>;
 }
@@ -31,6 +32,7 @@ router.post('/events/batch', async (req: Request, res: Response) => {
       customer_id: e.customer_id ? String(e.customer_id) : undefined,
       shop_id: e.shop_id ? String(e.shop_id) : undefined,
       session_id: e.session_id ? String(e.session_id) : undefined,
+      app_version: e.app_version ? String(e.app_version) : undefined,
       timestamp: e.timestamp ? String(e.timestamp) : new Date().toISOString(),
       properties: e.properties && typeof e.properties === 'object' ? e.properties : {},
     }));

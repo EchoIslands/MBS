@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import 'dotenv/config';
 import { createRequire } from 'module';
+import crypto from 'crypto';
 
 // Node.js 20 以下没有原生 WebSocket，需要通过 ws 包提供。
 // 如果 ws 没装（比如用户只跑了一次 npm install 后才新增这个依赖），要优雅降级。
@@ -49,8 +50,12 @@ export const getDb = (): SupabaseClient | null => {
 
 export const isDbReady = (): boolean => getDb() !== null;
 
-const generateId = () =>
-  Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+const generateId = () => {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+};
 
 // ---------- 店铺 ----------
 export const shopQueries = {
