@@ -137,7 +137,7 @@ export async function flush() {
   flushing = true;
   try {
     const batch = queue.slice(0, 20);
-    await request('/api/analytics/events/batch', {
+    await request('/analytics/events/batch', {
       method: 'POST',
       body: { events: batch },
     });
