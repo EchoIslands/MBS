@@ -145,7 +145,6 @@ export async function flush() {
     // 上报成功后移除已发送事件
     const remaining = queue.slice(batch.length);
     writeQueue(remaining);
-    console.log(`[tracking] 上报 ${batch.length} 条事件，剩余 ${remaining.length}`);
   } catch (err) {
     console.warn('[tracking] 上报失败，保留本地队列:', err.message || err);
   } finally {

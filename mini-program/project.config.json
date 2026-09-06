@@ -43,9 +43,8 @@
     "useCompilerPlugins": []
   },
   "compileType": "miniprogram",
-  "libVersion": "3.17.0",
+  "libVersion": "3.0.0",
   "appid": "wxe9a36d7a5c55c325",
   "projectname": "mbs-mini-program",
-  "condition": {},
-  "isGameTourist": false
+  "condition": {}
 }

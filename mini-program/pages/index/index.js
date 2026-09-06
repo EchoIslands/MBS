@@ -63,11 +63,8 @@ Page({
 
   async loadShop() {
     this.setData({ loading: true, error: '' });
-    const startTime = Date.now();
     try {
-      console.log('[index] 开始加载店铺 shop1');
       const rawShop = await getShop('shop1');
-      console.log(`[index] 店铺加载完成，耗时 ${Date.now() - startTime}ms`);
       if (!rawShop) {
         this.setData({ error: '店铺信息加载失败', loading: false });
         return;

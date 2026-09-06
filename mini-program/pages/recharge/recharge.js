@@ -85,7 +85,6 @@ Page({
       // 这里预留：真实环境需要调用后端下单接口，返回 prepay 参数
       // const prepay = await request('/api/pay/wechat', { amount, ... });
       // await wx.requestPayment({ timeStamp, nonceStr, package, signType, paySign });
-      console.log(`[recharge] mock 微信支付: amount=${amount}`);
       setTimeout(resolve, 800);
     });
   },

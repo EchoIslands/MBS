@@ -24,8 +24,6 @@ export function request(url, options = {}) {
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
   const timeout = options.timeout || DEFAULT_TIMEOUT;
 
-  console.log(`[mini-api] 发起请求: ${options.method || 'GET'} ${fullUrl} (超时:${timeout}ms)`);
-
   return new Promise((resolve, reject) => {
     let timeoutId = null;
     let completed = false;
@@ -43,8 +41,6 @@ export function request(url, options = {}) {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
-
-        console.log(`[mini-api] 响应: ${fullUrl} -> ${res.statusCode}`);
 
         // 微信返回 200 但后端可能返回错误信息
         if (res.statusCode >= 200 && res.statusCode < 300) {

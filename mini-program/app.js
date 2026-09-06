@@ -22,7 +22,6 @@ App({
   },
 
   onLaunch() {
-    console.log('[app] MBS 小程序启动');
     wx.onError((err) => {
       if (!shouldIgnoreError(err)) {
         console.warn('[app] 全局 onError:', err);
