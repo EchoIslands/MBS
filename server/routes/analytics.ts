@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { customerEventQueries } from '../db';
+import { customerEventQueries } from '../db.js';
 
 const router = Router();
 
