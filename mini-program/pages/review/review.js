@@ -194,7 +194,7 @@ Page({
   // ========== 分享引导（复制链接） ==========
   onCopyShareLink() {
     const shopId = (this.data.booking && this.data.booking.shopId) || this.data.shopId;
-    const url = `https://www.hfmbs.cn/s/${shopId}`;
+    const url = `https://www.hsxx8888.cn/s/${shopId}`;
     wx.setClipboardData({
       data: url,
       success: () => {

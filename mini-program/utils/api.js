@@ -14,7 +14,7 @@ function getApiBase() {
   const customBase = wx.getStorageSync('mbs_api_base');
   if (customBase) return customBase;
   // 默认使用生产域名（已备案，国内访问稳定）
-  return 'https://www.hfmbs.cn/api';
+  return 'https://www.hsxx8888.cn/api';
 }
 
 const DEFAULT_TIMEOUT = 30000; // 小程序网络环境复杂，给予更充裕的超时时间

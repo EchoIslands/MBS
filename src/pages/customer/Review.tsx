@@ -27,7 +27,7 @@ const ReviewPage: React.FC = () => {
   const { currentCustomer } = useAppStore();
 
   const shareUrl = useMemo(
-    () => `https://www.hfmbs.cn/s/${booking?.shopId || 'shop1'}`,
+    () => `https://www.hsxx8888.cn/s/${booking?.shopId || 'shop1'}`,
     [booking]
   );
   const shareTitle = '我刚在这家店做了发型，服务超棒，推荐给你！';
