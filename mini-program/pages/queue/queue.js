@@ -53,20 +53,6 @@ function formatTimeSlot(date) {
   return `${fmt(start)} - ${fmt(end)}`;
 }
 
-function calcDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
 Page({
   data: {
     shopId: 'shop1',
@@ -170,25 +156,12 @@ Page({
   },
 
   loadLocation() {
-    wx.getLocation({
-      type: 'gcj02',
-      success: (res) => {
-        const { shop } = this.data;
-        if (shop && shop.latitude && shop.longitude) {
-          const distance = calcDistance(res.latitude, res.longitude, shop.latitude, shop.longitude);
-          const walkTime = Math.max(5, Math.ceil(distance / 0.083));
-          this.setData({ distance, walkTime });
-          this.refreshComputed();
-        }
-      },
-      fail: () => {
-        const { shop } = this.data;
-        const distance = shop && typeof shop.distance === 'number' ? shop.distance : 1.0;
-        const walkTime = Math.max(5, Math.ceil(distance / 0.083));
-        this.setData({ distance, walkTime });
-        this.refreshComputed();
-      },
-    });
+    // 为避免小程序地理位置权限审核，暂不使用 wx.getLocation，直接采用店铺默认距离
+    const { shop } = this.data;
+    const distance = shop && typeof shop.distance === 'number' ? shop.distance : 1.0;
+    const walkTime = Math.max(5, Math.ceil(distance / 0.083));
+    this.setData({ distance, walkTime });
+    this.refreshComputed();
   },
 
   refreshComputed() {
