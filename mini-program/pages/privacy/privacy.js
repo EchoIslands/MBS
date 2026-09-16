@@ -9,7 +9,7 @@ Page({
 
   onCopyContact() {
     wx.setClipboardData({
-      data: 'contact@hfmbs.cn',
+      data: 'xcl1206@126.com',
       success: () => {
         wx.showToast({ title: '邮箱已复制', icon: 'success' });
       },

@@ -64,7 +64,7 @@
       </view>
       <view class="privacy-contact" bindtap="onCopyContact">
         <mbs-icon name="mail" size="32" color="var(--accent)" />
-        <text class="contact-text">contact@hfmbs.cn</text>
+        <text class="contact-text">xcl1206@126.com</text>
         <text class="contact-hint">点击复制</text>
       </view>
     </view>
