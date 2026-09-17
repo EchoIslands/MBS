@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory, ProductInventoryLog } from '../../../shared/types';
-import { productApi, uploadImage } from '../../api';
+import { productApi } from '../../api';
+import { uploadImage } from '../../api/upload';
 import ShopLayout from './ShopLayout';
 
 const categoryNames: Record<ProductCategory, string> = {
