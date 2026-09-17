@@ -36,6 +36,7 @@ import {
   getEffectiveStoredValueLevel,
   isVIPExpiringSoon,
   calcSettlementDiscountDetail,
+  isDiscountable,
 } from '../../lib/membership';
 import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, WechatPaymentResult } from '../../api';
 import { useAppStore } from '../../store';
@@ -324,7 +325,7 @@ const Checkout: React.FC = () => {
 
     const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item) => {
       const discountedUnit = Math.round(
-        (item.type === 'product' && item.category === ProductCategory.WIG
+        (item.type === 'product' && !isDiscountable(item.category)
           ? item.originalPrice
           : item.originalPrice *
               getCustomerEffectiveDiscount(selectedCustomer!)) *
@@ -672,7 +673,7 @@ const Checkout: React.FC = () => {
                         <div>
                           <div className="font-medium text-gray-800 text-sm">{product.name}</div>
                           <div className="text-xs text-gray-500">
-                            {product.category === ProductCategory.WIG ? '假发（不参与折扣）' : '参与会员折扣'}
+                            {!isDiscountable(product.category) ? '不参与会员折扣' : '参与会员折扣'}
                           </div>
                         </div>
                       </div>

@@ -3558,7 +3558,12 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
 
       const originalPrice = Number(product.price || 0);
       // 应用与 H5/小程序一致的会员折扣（假发不参与折扣）
-      const unitPrice = calcDiscountedItemPrice(originalPrice, purchaseLevel, storedLevel, product.category as ProductCategory | 'service');
+      const unitPrice = calcDiscountedItemPrice(
+        originalPrice,
+        purchaseLevel,
+        storedLevel,
+        product.category as ProductCategory | 'service'
+      );
       const itemTotal = Math.round(unitPrice * quantity * 100) / 100;
       const itemOriginalTotal = Math.round(originalPrice * quantity * 100) / 100;
       totalAmount += itemTotal;

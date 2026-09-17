@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory, ProductInventoryLog } from '../../../shared/types';
-import { productApi } from '../../api';
+import { productApi, uploadImage } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const categoryNames: Record<ProductCategory, string> = {
@@ -32,6 +32,7 @@ const ProductManagement: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [inventoryModal, setInventoryModal] = useState<{ open: boolean; product?: Product; stock: string; reason: string }>({ open: false, stock: '', reason: '' });
@@ -169,7 +170,7 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -180,11 +181,21 @@ const ProductManagement: React.FC = () => {
       alert('图片大小不能超过 2MB');
       return;
     }
+
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64 = event.target?.result as string;
-      if (base64) {
-        setFormData((prev) => ({ ...prev, images: [base64] }));
+      if (!base64) return;
+
+      try {
+        setUploading(true);
+        const url = await uploadImage(base64);
+        setFormData((prev) => ({ ...prev, images: [url] }));
+      } catch (err: unknown) {
+        console.error('[ProductManagement] 图片上传失败:', err);
+        alert('图片上传失败：' + ((err as Error).message || '未知错误'));
+      } finally {
+        setUploading(false);
       }
     };
     reader.readAsDataURL(file);
@@ -549,10 +560,11 @@ const ProductManagement: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => imageInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                    disabled={uploading}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Upload size={16} />
-                    {formData.images?.[0] && !formData.images[0].includes('unsplash.com') ? '更换图片' : '上传图片'}
+                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    {uploading ? '上传中...' : formData.images?.[0] && !formData.images[0].includes('unsplash.com') ? '更换图片' : '上传图片'}
                   </button>
                   <input
                     ref={imageInputRef}
@@ -737,11 +749,11 @@ const ProductManagement: React.FC = () => {
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || uploading}
                 className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                {saving ? '保存中...' : '保存'}
+                {saving || uploading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {saving || uploading ? '请稍候...' : '保存'}
               </button>
             </div>
           </div>

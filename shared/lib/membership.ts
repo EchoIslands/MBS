@@ -72,11 +72,14 @@ export function getFinalDiscount(
 
 /**
  * 判断商品/服务是否参与会员折扣
+ * - 服务默认参与
+ * - 假发默认不参与
+ * - 其他商品默认参与
  */
 export function isDiscountable(category?: ProductCategory | 'service'): boolean {
   if (category === 'service') return true;
   if (category === ProductCategory.WIG) return false;
-  // 假发以外的商品均参与折扣
+  // 假发以外的商品默认参与折扣
   return category !== undefined;
 }
 
