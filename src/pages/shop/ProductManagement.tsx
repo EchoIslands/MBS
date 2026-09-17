@@ -34,6 +34,7 @@ const ProductManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [inventoryModal, setInventoryModal] = useState<{ open: boolean; product?: Product; stock: string; reason: string }>({ open: false, stock: '', reason: '' });
@@ -85,6 +86,7 @@ const ProductManagement: React.FC = () => {
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
+    setPreviewUrl(null);
     setFormData({
       ...product,
       isRecommended: product.isRecommended ?? false,
@@ -97,6 +99,7 @@ const ProductManagement: React.FC = () => {
 
   const handleAdd = () => {
     setEditingProduct(null);
+    setPreviewUrl(null);
     setFormData({
       name: '',
       category: ProductCategory.OTHER,
@@ -163,6 +166,7 @@ const ProductManagement: React.FC = () => {
       }
       setShowModal(false);
       setEditingProduct(null);
+      setPreviewUrl(null);
     } catch (err: unknown) {
       console.error('[ProductManagement] 保存商品失败:', err);
       alert('保存失败：' + (err as Error).message);
@@ -183,23 +187,28 @@ const ProductManagement: React.FC = () => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      if (!base64) return;
+    // 用 object URL 做本地预览，避免 base64 渲染报错
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
 
-      try {
-        setUploading(true);
-        const url = await uploadImage(base64);
-        setFormData((prev) => ({ ...prev, images: [url] }));
-      } catch (err: unknown) {
-        console.error('[ProductManagement] 图片上传失败:', err);
-        alert('图片上传失败：' + ((err as Error).message || '未知错误'));
-      } finally {
-        setUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      setUploading(true);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve((event.target?.result as string) || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const url = await uploadImage(base64);
+      setFormData((prev) => ({ ...prev, images: [url] }));
+    } catch (err: unknown) {
+      console.error('[ProductManagement] 图片上传失败:', err);
+      alert('图片上传失败：' + ((err as Error).message || '未知错误'));
+    } finally {
+      setUploading(false);
+      URL.revokeObjectURL(objectUrl);
+      setPreviewUrl(null);
+    }
   };
 
   const handleRemoveImage = () => {
@@ -543,7 +552,7 @@ const ProductManagement: React.FC = () => {
                 <div className="flex items-center gap-4">
                   <div className="relative group">
                     <img
-                      src={formData.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
+                      src={previewUrl || formData.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
                       alt="商品预览"
                       className="w-24 h-24 rounded-xl object-cover border border-gray-200"
                     />
