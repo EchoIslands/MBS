@@ -2644,6 +2644,19 @@ mainRouter.use('/reviews', reviewsRouter);
 // ===================== shops =====================
 const shopsRouter = Router();
 
+// 计算两点之间的直线距离（公里）
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 const shopFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   id: s.id,
   name: s.name,
@@ -2741,10 +2754,25 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
       console.error('[shops] 查询员工失败:', empError.message);
     }
 
+    const shop = shopFromDb(data) as Record<string, unknown>;
+
+    // 根据用户坐标计算到店铺的直线距离
+    const { lat, lon } = req.query;
+    const userLat = lat ? parseFloat(lat as string) : undefined;
+    const userLon = lon ? parseFloat(lon as string) : undefined;
+    if (
+      userLat !== undefined &&
+      userLon !== undefined &&
+      typeof shop.latitude === 'number' &&
+      typeof shop.longitude === 'number'
+    ) {
+      shop.distance = calculateDistance(userLat, userLon, shop.latitude, shop.longitude);
+    }
+
     res.json({
       success: true,
       data: {
-        ...shopFromDb(data),
+        ...shop,
         employees: (employees || []).map((e: Record<string, unknown>) => ({
           id: e.id,
           name: e.name,
