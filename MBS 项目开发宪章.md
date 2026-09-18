@@ -280,6 +280,8 @@ npm run server:api
 | 69 | 微信 Native 支付商户订单号长度限制 32 位 | ⭐ | 支付 |
 | 70 | 微信支付回调验签需改用公钥 | ⭐ | 支付 |
 | 71 | Vercel Serverless 微信支付下单超时 | ⭐ | 支付 |
+| 73 | Vercel ESM 不支持目录导入 | ⭐ | 部署 |
+| 74 | `api/app.ts` 引用了不存在的路由文件 | ⭐ | 部署 |
 
 ### 4.2 关键坑点详解
 
@@ -368,6 +370,16 @@ npm run server:api
 **坑 62：Vercel 项目 Git 绑定损坏**
 - 现象：Connect 显示成功但 GitHub webhook 为空，push 不触发部署。
 - 解决：Vercel 里 Disconnect 后重新 Connect，或重建项目。
+
+**坑 73：Vercel ESM 不支持目录导入**
+- 现象：本地 `npm run build` 通过，Vercel build 时报 `ERR_UNSUPPORTED_DIR_IMPORT: Directory import '/var/task/server/db' is not supported resolving ES modules`。
+- 根因：Vercel Runtime 使用原生 ESM，所有相对路径导入必须显式写 `.js` 扩展名，不能写 `../db`，必须写 `../db.js`。
+- 解决：所有 `import` 和 `require` 的相对路径都补全 `.js`；项目加 CI 或在本地用 `npm run build` 验证时额外用 `npx tsc -p api/tsconfig.json` 检查 api/ 目录。
+
+**坑 74：`api/app.ts` 引用了不存在的路由文件**
+- 现象：Vercel build 时报 `error TS2307: Cannot find module '../server/routes/upload.js' or its corresponding type declarations`。
+- 根因：`api/app.ts` 里 `import uploadRouter from '../server/routes/upload.js'`，但项目里没有 `server/routes/upload.ts` 或 `upload.js`；可能是文件被误删、重命名，或 PR 合并时遗漏。
+- 解决：补充缺失的路由文件；本地用 `npm run build` 验证通过后再 push；删除引用前先确认该路由是否还有用途。
 
 #### 4.2.8 网络与环境
 

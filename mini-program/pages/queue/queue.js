@@ -121,11 +121,22 @@ Page({
 
   async loadShop() {
     try {
-      const shop = await getShop(this.data.shopId);
+      const { latitude, longitude } = await this.getUserLocation();
+      const shop = await getShop(this.data.shopId, latitude, longitude);
       this.setData({ shop });
     } catch (err) {
       console.warn('[queue] 加载店铺信息失败:', err);
     }
+  },
+
+  getUserLocation() {
+    return new Promise((resolve) => {
+      wx.getLocation({
+        type: 'gcj02',
+        success: (res) => resolve({ latitude: res.latitude, longitude: res.longitude }),
+        fail: () => resolve({ latitude: undefined, longitude: undefined }),
+      });
+    });
   },
 
   async loadQueue() {
@@ -156,7 +167,6 @@ Page({
   },
 
   loadLocation() {
-    // 为避免小程序地理位置权限审核，暂不使用 wx.getLocation，直接采用店铺默认距离
     const { shop } = this.data;
     const distance = shop && typeof shop.distance === 'number' ? shop.distance : 1.0;
     const walkTime = Math.max(5, Math.ceil(distance / 0.083));

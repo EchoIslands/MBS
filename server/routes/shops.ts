@@ -69,15 +69,27 @@ router.get('/', async (req: Request, res: Response) => {
 
 // 获取单个店铺详情
 router.get('/:id', async (req: Request, res: Response) => {
+  const { lat, lon } = req.query;
   const dbShop = await shopQueries.get(req.params.id);
-  if (dbShop) {
-    res.json(shopFromDb(dbShop));
-    return;
+  let shop: unknown | undefined = dbShop ? shopFromDb(dbShop) : undefined;
+  if (!shop) {
+    shop = mockShops.find((s: unknown) => s.id === req.params.id);
   }
-  const shop = mockShops.find((s: unknown) => s.id === req.params.id);
   if (!shop) {
     return res.status(404).json({ message: '店铺不存在' });
   }
+
+  const userLat = lat ? parseFloat(lat as string) : undefined;
+  const userLon = lon ? parseFloat(lon as string) : undefined;
+  if (
+    userLat !== undefined &&
+    userLon !== undefined &&
+    typeof shop.latitude === 'number' &&
+    typeof shop.longitude === 'number'
+  ) {
+    shop.distance = calculateDistance(userLat, userLon, shop.latitude, shop.longitude);
+  }
+
   res.json(shop);
 });
 
