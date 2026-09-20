@@ -24,7 +24,6 @@
           bindinput="onNameInput"
         />
       </view>
-      <view class="login-input-tip">称呼只需填写一次，之后登录仅需手机号</view>
     </view>
 
     <view class="login-field">
@@ -34,7 +33,7 @@
           class="login-input"
           type="number"
           maxlength="11"
-          placeholder="请输入手机号"
+          placeholder="试用手机号：13900000001"
           value="{{phone}}"
           bindinput="onPhoneInput"
         />
