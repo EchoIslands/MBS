@@ -12,18 +12,10 @@ const DEFAULT_SHOP_ID = 'shop1';
 type LoginMode = 'ceo' | 'cs' | 'manager' | 'stylist';
 
 const ShopLogin: React.FC = () => {
-  // 各角色演示手机号（与数据库 seed 数据保持一致）
-  const modeDefaultPhone: Record<LoginMode, string> = {
-    ceo: '13900000100',
-    cs: '13900000101',
-    manager: '13900000102',
-    stylist: '13900000011',
-  };
-
   const [loginMode, setLoginMode] = useState<LoginMode>('manager');
-  const [phone, setPhone] = useState<string>(modeDefaultPhone.manager);
-  const [password, setPassword] = useState<string>('123456');
-  const [showPassword, setShowPassword] = useState<boolean>(true);
+  const [phone, setPhone] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const navigate = useNavigate();
@@ -31,9 +23,9 @@ const ShopLogin: React.FC = () => {
   const handleModeChange = (mode: LoginMode) => {
     setLoginMode(mode);
     setError('');
-    setPhone(modeDefaultPhone[mode]);
-    setPassword('123456');
-    setShowPassword(true);
+    setPhone('');
+    setPassword('');
+    setShowPassword(false);
   };
 
   const handleLogin = async (e?: React.FormEvent | React.MouseEvent) => {
@@ -113,25 +105,25 @@ const ShopLogin: React.FC = () => {
     ceo: {
       title: 'CEO',
       subtitle: '最高权限，可查看所有数据',
-      placeholder: `CEO 手机号（演示：${modeDefaultPhone.ceo}）`,
+      placeholder: '请输入 CEO 手机号',
       icon: <Crown size={22} />,
     },
     cs: {
       title: '客服专员',
       subtitle: '客户管理 / 评价回复 / 回访',
-      placeholder: `客服手机号（演示：${modeDefaultPhone.cs}）`,
+      placeholder: '请输入客服手机号',
       icon: <Headphones size={22} />,
     },
     manager: {
       title: '店长',
       subtitle: '店铺运营 / 预约管理 / 员工管理',
-      placeholder: `店长手机号（演示：${modeDefaultPhone.manager}）`,
+      placeholder: '请输入店长手机号',
       icon: <UserCheck size={22} />,
     },
     stylist: {
       title: '发型师',
       subtitle: '个人业绩 / 客户服务 / 排队状态',
-      placeholder: `发型师手机号（演示：${modeDefaultPhone.stylist}）`,
+      placeholder: '请输入发型师手机号',
       icon: <User size={22} />,
     },
   };
@@ -187,6 +179,7 @@ const ShopLogin: React.FC = () => {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder={current.placeholder}
+                autoComplete="off"
                 disabled={loading}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all disabled:bg-gray-100"
               />
@@ -204,7 +197,8 @@ const ShopLogin: React.FC = () => {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="请输入密码（演示密码：123456）"
+                placeholder="请输入密码"
+                autoComplete="new-password"
                 disabled={loading}
                 className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all disabled:bg-gray-100"
               />

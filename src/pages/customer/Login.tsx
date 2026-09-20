@@ -6,7 +6,7 @@ import { loginAsCustomer } from '../../store';
 const DEFAULT_SHOP_ID = "shop1";
 
 const CustomerLogin: React.FC = () => {
-  const [phone, setPhone] = useState('13900000001');
+  const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
@@ -25,7 +25,7 @@ const CustomerLogin: React.FC = () => {
       if (customer) {
         navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
       } else {
-        setError('手机号不存在，试用账号：13900000001');
+        setError('手机号不存在，请检查输入');
       }
     } catch (_err) {
       setError('登录失败，请稍后重试');
@@ -75,6 +75,7 @@ const CustomerLogin: React.FC = () => {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="请输入称呼"
+                autoComplete="off"
                 className="w-full pl-10 pr-4 py-3 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm sm:text-base"
               />
             </div>
@@ -94,6 +95,7 @@ const CustomerLogin: React.FC = () => {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="请输入手机号"
+                autoComplete="off"
                 className="w-full pl-10 pr-4 py-3 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm sm:text-base"
               />
             </div>
@@ -119,9 +121,6 @@ const CustomerLogin: React.FC = () => {
             {loading ? '登录中...' : '登录'}
           </button>
           
-          <div className="text-center text-xs sm:text-sm text-gray-500">
-            试用账号：13900000001
-          </div>
         </form>
       </div>
     </div>
