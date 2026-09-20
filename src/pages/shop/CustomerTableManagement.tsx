@@ -59,7 +59,7 @@ const CustomerTableManagement: React.FC = () => {
       // 添加扩展字段（兼容表格展示）
       const extended = data.map((c: Customer) => ({
         ...c,
-        wechat: c.wechat || `wechat_${c.id}`,
+        wechat: c.wechat || `-`,
         idCardNumber: c.idCardNumber || '',
         hobbies: c.hobbies || '',
         lastServiceItems: c.lastServiceItems || c.visitRecords?.[0]?.serviceNames || ['精剪'],
