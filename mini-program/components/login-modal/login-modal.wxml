@@ -33,7 +33,7 @@
           class="login-input"
           type="number"
           maxlength="11"
-          placeholder="试用手机号：13900000001"
+          placeholder="请输入手机号"
           value="{{phone}}"
           bindinput="onPhoneInput"
         />
@@ -46,7 +46,5 @@
       <mbs-icon wx:if="{{!loggingIn}}" name="phone" size="32" color="#ffffff" />
       <text>{{loggingIn ? '登录中...' : '立即登录'}}</text>
     </view>
-
-    <view class="login-demo">试用账号：13900000001</view>
   </view>
 </view>

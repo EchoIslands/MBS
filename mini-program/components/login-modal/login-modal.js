@@ -10,7 +10,7 @@ Component({
   },
 
   data: {
-    phone: '13900000001',
+    phone: '',
     name: '',
     loggingIn: false,
     error: '',
