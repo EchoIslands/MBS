@@ -145,6 +145,9 @@ Page({
     withdrawAmount: '',
     withdrawChannel: 'consume',
     withdrawLoading: false,
+    // 页面状态标志，避免 onShow 重复加载
+    _profileLoaded: false,
+    _needRefresh: false,
   },
 
   async onLoad() {
@@ -152,7 +155,11 @@ Page({
   },
 
   async onShow() {
-    await this.loadProfile({ autoShowLogin: true });
+    // 首次加载由 onLoad 完成；只有显式需要刷新时才重新加载
+    if (!this.data._profileLoaded || this.data._needRefresh) {
+      this.setData({ _needRefresh: false });
+      await this.loadProfile({ autoShowLogin: true });
+    }
   },
 
   openLogin() {
@@ -168,6 +175,7 @@ Page({
     this.setData({ showLogin: false });
     wx.showToast({ title: '登录成功', icon: 'success' });
     try {
+      this.setData({ _needRefresh: false });
       await this.loadProfile({ autoShowLogin: false, prefetchedCustomer: loggedInCustomer });
     } catch (err) {
       console.error('[profile] 登录成功后加载资料失败:', err);
@@ -252,6 +260,8 @@ Page({
         vipHeaderClass,
         bookingReviewMap,
         bookingReviewedMap,
+        _profileLoaded: true,
+        _needRefresh: false,
       };
       const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
       if (sizeKB > 500) {
@@ -290,6 +300,7 @@ Page({
   },
 
   onRefresh() {
+    this.setData({ _needRefresh: true });
     this.loadProfile();
   },
 
