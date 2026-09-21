@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1866,6 +1866,116 @@ export const couponApi = {
   },
 };
 
+// 外部团购券 API
+export const groupBuyApi = {
+  getBatches: async (shopId: string): Promise<GroupBuyBatch[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: GroupBuyBatch[] }>(
+        `${API_BASE}/group-buy/batches?shopId=${shopId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  createBatch: async (data: Partial<GroupBuyBatch>): Promise<GroupBuyBatch | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: GroupBuyBatch }>(
+        `${API_BASE}/group-buy/batches`,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+  updateBatch: async (batchId: string, data: Partial<GroupBuyBatch>): Promise<GroupBuyBatch | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: GroupBuyBatch }>(
+        `${API_BASE}/group-buy/batches/${batchId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(data),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+  deleteBatch: async (batchId: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean }>(
+        `${API_BASE}/group-buy/batches/${batchId}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      return result?.success === true;
+    }
+    return false;
+  },
+  verifyVoucher: async (code: string, serviceId?: string, servicePrice?: number): Promise<{
+    voucher?: GroupBuyVoucher;
+    batch?: GroupBuyBatch;
+    priceInfo?: { price: number; description: string };
+    availableBatches?: GroupBuyBatch[];
+    needBind?: boolean;
+  } | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const user = getAuthUser() as AuthUser | null;
+      const shopId = user?.shopId;
+      const result = await http<{ success: boolean; data: any }>(
+        `${API_BASE}/group-buy/vouchers/verify`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ code, serviceId, servicePrice, shopId }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+  redeemVoucher: async (params: {
+    code: string;
+    batchId?: string;
+    customerId?: string;
+    orderId?: string;
+    servicePrice?: number;
+    serviceId?: string;
+  }): Promise<{
+    voucher?: GroupBuyVoucher;
+    batch?: GroupBuyBatch;
+    priceInfo?: { price: number; description: string };
+  } | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const user = getAuthUser() as AuthUser | null;
+      const shopId = user?.shopId;
+      const result = await http<{ success: boolean; data: any }>(
+        `${API_BASE}/group-buy/vouchers/redeem`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ ...params, shopId }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return null;
+  },
+};
+
 // 商品管理 API
 export const productApi = {
   getByShop: async (shopId: string): Promise<Product[]> => {
@@ -1943,6 +2053,23 @@ export const productApi = {
     }
     return [];
   },
+};
+
+// 图片上传（base64 → Supabase Storage URL）
+export const uploadImage = async (base64Image: string): Promise<string> => {
+  if (!USE_REAL_API) {
+    throw new Error('本地 mock 模式不支持图片上传');
+  }
+  const token = getAuthToken();
+  return await httpThrowing<string>(
+    `${API_BASE}/upload/image`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ image: base64Image }),
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    60000
+  );
 };
 
 /**

@@ -226,4 +226,125 @@ export const customerEventQueries = {
   },
 };
 
+// ---------- 团购券批次 ----------
+export const groupBuyBatchQueries = {
+  listByShop: async (shopId: string) => {
+    const db = getDb();
+    if (!db) return [];
+    const { data, error } = await db
+      .from('group_buy_batches')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('[db]', error.message); return []; }
+    return data || [];
+  },
+  get: async (id: string) => {
+    const db = getDb();
+    if (!db) return null;
+    const { data, error } = await db.from('group_buy_batches').select('*').eq('id', id).single();
+    if (error) { console.error('[db]', error.message); return null; }
+    return data;
+  },
+  create: async (data: Record<string, unknown>) => {
+    const db = getDb();
+    if (!db) return { id: generateId(), ...data };
+    const insertData = { id: generateId(), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const { data: result, error } = await db.from('group_buy_batches').insert(insertData).select().single();
+    if (error) { console.error('[db]', error.message); return insertData; }
+    return result;
+  },
+  update: async (id: string, data: Record<string, unknown>) => {
+    const db = getDb();
+    if (!db) return null;
+    const updateData = { ...data, updated_at: new Date().toISOString() };
+    const { data: result, error } = await db.from('group_buy_batches').update(updateData).eq('id', id).select().single();
+    if (error) { console.error('[db]', error.message); return null; }
+    return result;
+  },
+  delete: async (id: string) => {
+    const db = getDb();
+    if (!db) return false;
+    const { error } = await db.from('group_buy_batches').delete().eq('id', id);
+    if (error) { console.error('[db]', error.message); return false; }
+    return true;
+  },
+};
+
+// ---------- 团购券实例 ----------
+export const groupBuyVoucherQueries = {
+  listByBatch: async (batchId: string) => {
+    const db = getDb();
+    if (!db) return [];
+    const { data, error } = await db
+      .from('group_buy_vouchers')
+      .select('*')
+      .eq('batch_id', batchId)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('[db]', error.message); return []; }
+    return data || [];
+  },
+  listByShop: async (shopId: string, filters?: { batchId?: string; status?: string }) => {
+    const db = getDb();
+    if (!db) return [];
+    let query = db.from('group_buy_vouchers').select('*').eq('shop_id', shopId);
+    if (filters?.batchId) query = query.eq('batch_id', filters.batchId);
+    if (filters?.status) query = query.eq('status', filters.status);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) { console.error('[db]', error.message); return []; }
+    return data || [];
+  },
+  getByCode: async (shopId: string, code: string) => {
+    const db = getDb();
+    if (!db) return null;
+    const { data, error } = await db
+      .from('group_buy_vouchers')
+      .select('*, group_buy_batches(*)')
+      .eq('shop_id', shopId)
+      .eq('code', code)
+      .single();
+    if (error) { console.error('[db]', error.message); return null; }
+    return data;
+  },
+  batchCreate: async (rows: Record<string, unknown>[]) => {
+    const db = getDb();
+    if (!db) return rows.map((r) => ({ id: generateId(), ...r }));
+    const inserts = rows.map((r) => ({ id: generateId(), ...r, created_at: new Date().toISOString() }));
+    const { data: result, error } = await db.from('group_buy_vouchers').insert(inserts).select();
+    if (error) { console.error('[db]', error.message); return inserts; }
+    return result || inserts;
+  },
+  redeem: async (id: string, data: { used_by_customer_id?: string; used_order_id?: string }) => {
+    const db = getDb();
+    if (!db) return null;
+    const updateData = {
+      status: 'used',
+      used_at: new Date().toISOString(),
+      ...data,
+    };
+    const { data: result, error } = await db
+      .from('group_buy_vouchers')
+      .update(updateData)
+      .eq('id', id)
+      .eq('status', 'unused')
+      .select()
+      .single();
+    if (error) { console.error('[db]', error.message); return null; }
+    return result;
+  },
+  revoke: async (id: string) => {
+    const db = getDb();
+    if (!db) return null;
+    const { data: result, error } = await db
+      .from('group_buy_vouchers')
+      .update({ status: 'unused', used_at: null, used_by_customer_id: null, used_order_id: null })
+      .eq('id', id)
+      .eq('status', 'used')
+      .select()
+      .single();
+    if (error) { console.error('[db]', error.message); return null; }
+    return result;
+  },
+};
+
 export default getDb;

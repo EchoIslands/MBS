@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Gift,
   Crown,
+  Ticket,
 } from 'lucide-react';
 import {
   Customer,
@@ -27,6 +28,8 @@ import {
   PurchaseVIPLevel,
   StoredValueLevel,
   MemberBenefitRecord,
+  GroupBuyBatch,
+  GroupBuyVoucher,
 } from '../../../shared/types';
 import {
   getPurchaseVIPLabel,
@@ -38,7 +41,7 @@ import {
   calcSettlementDiscountDetail,
   isDiscountable,
 } from '../../lib/membership';
-import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, WechatPaymentResult } from '../../api';
+import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, groupBuyApi, WechatPaymentResult } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
@@ -52,6 +55,12 @@ interface CartItem {
   employeeId?: string;
   employeeName?: string;
   employeeLevel?: 'normal' | 'gold' | 'director';
+  groupBuyInfo?: {
+    voucherId: string;
+    code: string;
+    price: number;
+    description: string;
+  };
 }
 
 const designerPriceMap: Record<string, number> = {
@@ -95,6 +104,21 @@ const Checkout: React.FC = () => {
   const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [pendingSettlementId, setPendingSettlementId] = useState<string | null>(null);
+
+  // 团购券
+  const [showGroupBuyModal, setShowGroupBuyModal] = useState(false);
+  const [groupBuyCode, setGroupBuyCode] = useState('');
+  const [groupBuyVerifying, setGroupBuyVerifying] = useState(false);
+  const [groupBuyVerifyResult, setGroupBuyVerifyResult] = useState<{
+    voucher?: GroupBuyVoucher;
+    batch?: GroupBuyBatch;
+    priceInfo?: { price: number; description: string };
+    availableBatches?: GroupBuyBatch[];
+    needBind?: boolean;
+  } | null>(null);
+  const [selectedGroupBuyBatchId, setSelectedGroupBuyBatchId] = useState('');
+  const [selectedGroupBuyCartIndex, setSelectedGroupBuyCartIndex] = useState<number | null>(null);
+  const [groupBuyRedeeming, setGroupBuyRedeeming] = useState(false);
 
   const services = shop?.services || [];
   const products = shop?.products || [];
@@ -211,8 +235,12 @@ const Checkout: React.FC = () => {
       ? getEffectiveStoredValueLevel(selectedCustomer)
       : StoredValueLevel.NONE;
     const usedBenefits = availableBenefits.filter((b) => selectedBenefits.includes(b.id));
-    return calcSettlementDiscountDetail(
-      cartWithAdjustedPrices.map((i) => ({
+
+    const groupBuyItems = cartWithAdjustedPrices.filter((i) => i.groupBuyInfo);
+    const normalItems = cartWithAdjustedPrices.filter((i) => !i.groupBuyInfo);
+
+    const normalResult = calcSettlementDiscountDetail(
+      normalItems.map((i) => ({
         originalPrice: i.originalPrice,
         quantity: i.quantity,
         category: i.category,
@@ -221,6 +249,24 @@ const Checkout: React.FC = () => {
       storedLevel,
       usedBenefits
     );
+
+    const groupBuySubtotal = groupBuyItems.reduce((sum, i) => sum + i.originalPrice * i.quantity, 0);
+    const groupBuyTotal = groupBuyItems.reduce(
+      (sum, i) => sum + (i.groupBuyInfo?.price || i.originalPrice) * i.quantity,
+      0
+    );
+    const groupBuyDiscount = Math.round((groupBuySubtotal - groupBuyTotal) * 100) / 100;
+
+    return {
+      ...normalResult,
+      subtotal: Math.round((normalResult.subtotal + groupBuySubtotal) * 100) / 100,
+      total: Math.round((normalResult.total + groupBuyTotal) * 100) / 100,
+      discount: Math.round((normalResult.discount + groupBuyDiscount) * 100) / 100,
+      purchaseVIPDiscountAmount: normalResult.purchaseVIPDiscountAmount,
+      storedValueDiscountAmount: normalResult.storedValueDiscountAmount,
+      benefitDiscountAmount: normalResult.benefitDiscountAmount,
+      groupBuyDiscountAmount: groupBuyDiscount,
+    };
   }, [cartWithAdjustedPrices, selectedCustomer, selectedBenefits, availableBenefits]);
 
   const total = discountResult.total;
@@ -296,6 +342,111 @@ const Checkout: React.FC = () => {
     );
   };
 
+  const openGroupBuyModal = () => {
+    setGroupBuyCode('');
+    setGroupBuyVerifyResult(null);
+    setSelectedGroupBuyBatchId('');
+    setSelectedGroupBuyCartIndex(null);
+    setShowGroupBuyModal(true);
+  };
+
+  const handleVerifyGroupBuy = async () => {
+    if (!groupBuyCode.trim()) {
+      alert('请输入券码');
+      return;
+    }
+    setGroupBuyVerifying(true);
+    setGroupBuyVerifyResult(null);
+    try {
+      const result = await groupBuyApi.verifyVoucher(groupBuyCode.trim());
+      setGroupBuyVerifyResult(result);
+      if (result?.needBind && result.availableBatches && result.availableBatches.length > 0) {
+        setSelectedGroupBuyBatchId(result.availableBatches[0].id);
+      }
+    } catch (err: unknown) {
+      alert('验证失败：' + (err as Error).message);
+    } finally {
+      setGroupBuyVerifying(false);
+    }
+  };
+
+  const handleRedeemGroupBuy = async () => {
+    if (!groupBuyVerifyResult) return;
+    const { voucher, batch, needBind, availableBatches } = groupBuyVerifyResult;
+    if (selectedGroupBuyCartIndex === null) {
+      alert('请选择要应用团购券的服务项目');
+      return;
+    }
+    const cartItem = cartWithAdjustedPrices[selectedGroupBuyCartIndex];
+    if (!cartItem || cartItem.type !== 'service') {
+      alert('团购券只能用于服务项目');
+      return;
+    }
+
+    let batchId = batch?.id;
+    if (voucher && batch) {
+      if (!batch.serviceIds?.includes(cartItem.id)) {
+        alert('该券码不适用所选服务项目');
+        return;
+      }
+    } else if (!voucher && needBind) {
+      batchId = selectedGroupBuyBatchId;
+      if (!batchId) {
+        alert('请先选择团购批次');
+        return;
+      }
+      const selectedBatch = availableBatches?.find((b) => b.id === batchId);
+      if (selectedBatch && !selectedBatch.serviceIds?.includes(cartItem.id)) {
+        alert('该批次不包含所选服务项目');
+        return;
+      }
+    }
+
+    setGroupBuyRedeeming(true);
+    try {
+      const result = await groupBuyApi.redeemVoucher({
+        code: groupBuyCode.trim(),
+        batchId,
+        customerId: selectedCustomer?.id,
+        servicePrice: cartItem.originalPrice,
+        serviceId: cartItem.id,
+      });
+      if (result?.voucher) {
+        setCart((prev) => {
+          const next = [...prev];
+          const item = next[selectedGroupBuyCartIndex];
+          if (item) {
+            item.groupBuyInfo = {
+              voucherId: result.voucher!.id,
+              code: groupBuyCode.trim(),
+              price: result.priceInfo?.price ?? item.originalPrice,
+              description: result.priceInfo?.description || '',
+            };
+          }
+          return next;
+        });
+        setShowGroupBuyModal(false);
+      } else {
+        alert('核销失败');
+      }
+    } catch (err: unknown) {
+      alert('核销失败：' + (err as Error).message);
+    } finally {
+      setGroupBuyRedeeming(false);
+    }
+  };
+
+  const removeGroupBuy = (index: number) => {
+    setCart((prev) => {
+      const next = [...prev];
+      const item = next[index];
+      if (item) {
+        delete item.groupBuyInfo;
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = async () => {
     if (!selectedCustomer) {
       alert('请先选择客户');
@@ -324,13 +475,14 @@ const Checkout: React.FC = () => {
     setSubmitting(true);
 
     const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item) => {
-      const discountedUnit = Math.round(
-        (item.type === 'product' && !isDiscountable(item.category)
-          ? item.originalPrice
-          : item.originalPrice *
-              getCustomerEffectiveDiscount(selectedCustomer!)) *
-          100
-      ) / 100;
+      let discountedUnit: number;
+      if (item.groupBuyInfo) {
+        discountedUnit = item.groupBuyInfo.price;
+      } else if (item.type === 'product' && !isDiscountable(item.category)) {
+        discountedUnit = item.originalPrice;
+      } else {
+        discountedUnit = Math.round(item.originalPrice * getCustomerEffectiveDiscount(selectedCustomer!) * 100) / 100;
+      }
       return {
         type: item.type,
         id: item.id,
@@ -764,6 +916,26 @@ const Checkout: React.FC = () => {
                           </select>
                         )}
 
+                        {item.groupBuyInfo && (
+                          <div className="mb-2 p-2 bg-pink-50 border border-pink-100 rounded-lg flex items-start justify-between">
+                            <div className="text-xs text-pink-700">
+                              <div className="font-medium flex items-center gap-1">
+                                <Ticket size={12} /> 已用团购券
+                              </div>
+                              <div className="text-pink-600/80">{item.groupBuyInfo.description || `券码 ${item.groupBuyInfo.code}`}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-pink-700">¥{item.groupBuyInfo.price.toFixed(2)}</div>
+                              <button
+                                onClick={() => removeGroupBuy(index)}
+                                className="text-xs text-gray-500 hover:text-red-500"
+                              >
+                                移除
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <button
@@ -787,6 +959,15 @@ const Checkout: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                )}
+
+                {cart.some((i) => i.type === 'service' && !i.groupBuyInfo) && (
+                  <button
+                    onClick={openGroupBuyModal}
+                    className="w-full mb-4 py-2 border border-dashed border-purple-300 rounded-xl text-purple-600 text-sm font-medium hover:bg-purple-50 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Ticket size={16} /> 核销外部团购券
+                  </button>
                 )}
 
                 {/* 折扣明细 */}
@@ -816,6 +997,12 @@ const Checkout: React.FC = () => {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500">权益抵扣</span>
                         <span className="text-orange-500">-¥{discountResult.benefitDiscountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {discountResult.groupBuyDiscountAmount > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">团购券抵扣</span>
+                        <span className="text-orange-500">-¥{discountResult.groupBuyDiscountAmount.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex items-center justify-between text-base font-bold pt-2 border-t border-gray-100">
@@ -998,6 +1185,144 @@ const Checkout: React.FC = () => {
               <br />
               配置微信商户号后将自动调起真实微信支付。
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* 外部团购券核销弹窗 */}
+      {showGroupBuyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Ticket size={20} className="text-purple-500" />
+                核销外部团购券
+              </h3>
+              <button
+                onClick={() => setShowGroupBuyModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">券码</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={groupBuyCode}
+                    onChange={(e) => setGroupBuyCode(e.target.value)}
+                    placeholder="输入美团等平台券码"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                  />
+                  <button
+                    onClick={handleVerifyGroupBuy}
+                    disabled={groupBuyVerifying || !groupBuyCode.trim()}
+                    className="px-4 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 text-white rounded-xl text-sm font-medium transition-colors"
+                  >
+                    {groupBuyVerifying ? '验证中...' : '验证'}
+                  </button>
+                </div>
+              </div>
+
+              {groupBuyVerifyResult && (
+                <div className="space-y-3">
+                  {groupBuyVerifyResult.needBind ? (
+                    <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-xl text-sm">
+                      <div className="font-medium text-yellow-800 mb-1">首次使用，请选择对应团购批次</div>
+                      <select
+                        value={selectedGroupBuyBatchId}
+                        onChange={(e) => setSelectedGroupBuyBatchId(e.target.value)}
+                        className="w-full mt-1 border border-yellow-200 rounded-lg px-2 py-1.5 outline-none"
+                      >
+                        <option value="">选择批次</option>
+                        {groupBuyVerifyResult.availableBatches?.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({b.priceType === 'fixed' ? `固定价 ¥${b.fixedPrice}` : `按${b.vipLevel}折扣`})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-sm">
+                      <div className="font-medium text-green-800 mb-1">券码有效</div>
+                      <div className="text-green-700">
+                        批次：{groupBuyVerifyResult.batch?.name}
+                      </div>
+                      <div className="text-green-700">
+                        {groupBuyVerifyResult.priceInfo?.description}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">选择要抵扣的服务项目</label>
+                    <div className="space-y-2">
+                      {cartWithAdjustedPrices
+                        .map((item, idx) => ({ item, idx }))
+                        .filter(({ item }) => item.type === 'service' && !item.groupBuyInfo)
+                        .map(({ item, idx }) => {
+                          const matchedBatch = groupBuyVerifyResult.needBind
+                            ? groupBuyVerifyResult.availableBatches?.find((b) => b.id === selectedGroupBuyBatchId)
+                            : groupBuyVerifyResult.batch;
+                          const applicable = matchedBatch ? matchedBatch.serviceIds?.includes(item.id) : false;
+                          return (
+                            <label
+                              key={idx}
+                              className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer transition-colors ${
+                                selectedGroupBuyCartIndex === idx
+                                  ? 'border-purple-500 bg-purple-50'
+                                  : applicable
+                                  ? 'border-gray-200 hover:bg-gray-50'
+                                  : 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="radio"
+                                  name="groupBuyCartItem"
+                                  checked={selectedGroupBuyCartIndex === idx}
+                                  onChange={() => setSelectedGroupBuyCartIndex(idx)}
+                                  disabled={!applicable}
+                                  className="text-purple-500 focus:ring-purple-500"
+                                />
+                                <div>
+                                  <div className="text-sm font-medium text-gray-800">{item.name}</div>
+                                  <div className="text-xs text-gray-500">原价 ¥{item.originalPrice}</div>
+                                </div>
+                              </div>
+                              {!applicable && (
+                                <span className="text-xs text-gray-400">不适用</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      {cartWithAdjustedPrices.filter((i) => i.type === 'service' && !i.groupBuyInfo).length === 0 && (
+                        <div className="text-sm text-gray-500 p-2">没有可使用的服务项目</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowGroupBuyModal(false)}
+                  className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleRedeemGroupBuy}
+                  disabled={groupBuyRedeeming || !groupBuyVerifyResult || selectedGroupBuyCartIndex === null}
+                  className="flex-1 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 text-white rounded-xl font-medium transition-colors"
+                >
+                  {groupBuyRedeeming ? '核销中...' : '确认核销'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
