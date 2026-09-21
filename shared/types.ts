@@ -82,6 +82,41 @@ export interface CustomerCoupon {
   coupon?: Coupon;
 }
 
+// 外部团购券价格类型
+export type GroupBuyPriceType = 'fixed' | 'vip_level';
+
+// 外部团购活动批次（美团等平台）
+export interface GroupBuyBatch {
+  id: string;
+  shopId: string;
+  name: string;
+  serviceIds: string[];
+  priceType: GroupBuyPriceType;
+  fixedPrice?: number;
+  vipLevel?: 'bronze' | 'silver' | 'gold' | 'diamond';
+  validFrom: Date;
+  validTo: Date;
+  totalQuantity: number;
+  usedQuantity: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// 外部团购券实例
+export interface GroupBuyVoucher {
+  id: string;
+  batchId: string;
+  shopId: string;
+  code: string;
+  status: 'unused' | 'used';
+  usedAt?: Date;
+  usedByCustomerId?: string;
+  usedOrderId?: string;
+  createdAt: Date;
+  batch?: GroupBuyBatch;
+}
+
 // 商品库存变动类型
 export type ProductInventoryLogType = 'sale' | 'refund' | 'manual_adjust' | 'init' | 'cancel';
 
