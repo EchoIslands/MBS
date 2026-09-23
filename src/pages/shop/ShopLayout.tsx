@@ -144,6 +144,12 @@ const menuItems: MenuItem[] = [
     roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
   },
   {
+    label: '外部团购券',
+    path: '/shop/group-buy',
+    icon: <Ticket size={18} />,
+    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
+  },
+  {
     label: '开单结算',
     path: '/shop/checkout',
     icon: <CreditCard size={18} />,

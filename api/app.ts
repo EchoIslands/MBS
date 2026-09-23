@@ -3,6 +3,7 @@ import cors from 'cors';
 import apiRouter from './routes/index.js';
 import analyticsRoutes from '../server/routes/analytics.js';
 import uploadRoutes from '../server/routes/upload.js';
+import groupBuyRoutes from '../server/routes/groupBuy.js';
 
 // express 内部属性 _body 未在类型定义中暴露
 interface RequestWithBody extends Request {
@@ -80,6 +81,9 @@ app.use('/api/analytics', analyticsRoutes);
 
 // 图片上传路由
 app.use('/api/upload', uploadRoutes);
+
+// 团购券路由
+app.use('/api/group-buy', groupBuyRoutes);
 
 // 未匹配的 /api/* 返回 404
 app.all('/api/*', (req, res) => {
