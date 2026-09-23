@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingCart, Plus, Minus, Star, Package, Crown } from 'luci
 import { useAppStore } from '../../store';
 import { Product } from '../../../shared/types';
 import { productApi } from '../../api';
+import ProductImage from '../../components/ProductImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const ProductDetail: React.FC = () => {
@@ -96,8 +97,8 @@ const ProductDetail: React.FC = () => {
       <div className="max-w-4xl mx-auto">
         {/* 商品图片 */}
         <div className="relative bg-white">
-          <img
-            src={product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=600&h=600&fit=crop'}
+          <ProductImage
+            src={product.images?.[0]}
             alt={product.name}
             className="w-full h-72 sm:h-96 object-cover"
           />

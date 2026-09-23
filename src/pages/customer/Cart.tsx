@@ -4,6 +4,7 @@ import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, Al
 import { useAppStore } from '../../store';
 import { ProductCategory, CustomerCoupon, Coupon } from '../../../shared/types';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
+import ProductImage from '../../components/ProductImage';
 import { productOrderApi, couponApi } from '../../api';
 
 const Cart: React.FC = () => {
@@ -242,8 +243,8 @@ const Cart: React.FC = () => {
                           onChange={() => toggleCartItemSelection(item.id)}
                           className="w-5 h-5 text-orange-500 rounded mt-1"
                         />
-                        <img
-                          src={item.product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=200&h=200&fit=crop'}
+                        <ProductImage
+                          src={item.product.images?.[0]}
                           alt={item.product.name}
                           className="w-24 h-24 rounded-lg object-cover"
                         />

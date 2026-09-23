@@ -18,6 +18,7 @@ import { shopApi } from '../../api';
 import { useAppStore } from '../../store';
 import { getAvatarUrl } from '../../lib/avatar';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
+import ProductImage from '../../components/ProductImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const ShopDetail: React.FC = () => {
@@ -244,8 +245,8 @@ const ShopDetail: React.FC = () => {
                     onClick={() => navigate(`/customer/products/${shop.id}`)}
                     className="bg-gray-50 rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
                   >
-                    <img
-                      src={product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
+                    <ProductImage
+                      src={product.images?.[0]}
                       alt={product.name}
                       className="w-full h-32 object-cover"
                     />

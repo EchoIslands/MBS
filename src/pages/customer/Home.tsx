@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { MapPin, Star, Filter, User } from 'lucide-react';
 import { Shop } from '../../../shared/types';
 import { shopApi } from '../../api';
+import ProductImage from '../../components/ProductImage';
 import { useAppStore } from '../../store';
 
 // 移除等级映射
@@ -187,7 +188,7 @@ const CustomerHome: React.FC = () => {
               >
                 <div className="flex gap-3 sm:gap-6">
                   <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl overflow-hidden flex-shrink-0">
-                    <img
+                    <ProductImage
                       src={shop.images[0]}
                       alt={shop.name}
                       className="w-full h-full object-cover"

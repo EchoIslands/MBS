@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingCart, Search, Filter, Star, Loader2, Crown, Ticket, 
 import { useAppStore } from '../../store';
 import { Product, ProductCategory, Coupon, CustomerCoupon } from '../../../shared/types';
 import { productApi, couponApi } from '../../api';
+import ProductImage from '../../components/ProductImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const categoryNames: Record<ProductCategory, string> = {
@@ -308,8 +309,8 @@ const ProductList: React.FC = () => {
               onClick={() => navigate(`/customer/product/${shopId}/${product.id}`)}
             >
               <div className="relative">
-                <img
-                  src={product.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
+                <ProductImage
+                  src={product.images?.[0]}
                   alt={product.name}
                   className="w-full h-40 sm:h-48 object-cover"
                 />

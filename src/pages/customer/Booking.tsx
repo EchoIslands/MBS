@@ -9,6 +9,7 @@ import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
 import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../lib/membership';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
+import ProductImage from '../../components/ProductImage';
 
 type SelectionMode = 'specific' | 'fastest';
 
@@ -287,7 +288,7 @@ const BookingPage: React.FC = () => {
         {/* 店铺信息 */}
         <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 mt-4">
           <div className="flex items-center gap-3 sm:gap-4">
-            <img
+            <ProductImage
               src={shop.images[0]}
               alt={shop.name}
               className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover flex-shrink-0"
