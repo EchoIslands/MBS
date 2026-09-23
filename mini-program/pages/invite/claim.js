@@ -86,4 +86,20 @@ Page({
   onGoHome() {
     wx.switchTab({ url: '/pages/index/index' });
   },
+
+  onShareAppMessage() {
+    const { ref, referrerName } = this.data;
+    return {
+      title: `${referrerName || '会员'} 送你一张 MBS 新人优惠券`,
+      path: ref ? `/pages/invite/claim?ref=${ref}` : '/pages/invite/claim',
+    };
+  },
+
+  onShareTimeline() {
+    const { ref, referrerName } = this.data;
+    return {
+      title: `${referrerName || '会员'} 送你一张 MBS 新人优惠券`,
+      query: ref ? `ref=${ref}` : '',
+    };
+  },
 });

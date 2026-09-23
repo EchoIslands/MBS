@@ -85,11 +85,21 @@ Page({
   },
 
   onShareAppMessage() {
-    const { inviteUrl, referrerName } = this.data;
+    const { inviteUrl, referrerName, qrCodeDataUrl } = this.data;
+    const ref = inviteUrl ? inviteUrl.split('ref=')[1] : '';
     return {
-      title: `${referrerName} 邀请你体验 MBS 美发服务`,
-      path: `/pages/invite/claim?ref=${this.data.inviteUrl.split('ref=')[1]}`,
-      imageUrl: this.data.qrCodeDataUrl,
+      title: `${referrerName || '会员'} 邀请你体验 MBS 美发服务`,
+      path: ref ? `/pages/invite/claim?ref=${ref}` : '/pages/invite/claim',
+      imageUrl: qrCodeDataUrl || '',
+    };
+  },
+
+  onShareTimeline() {
+    const { inviteUrl, referrerName } = this.data;
+    const ref = inviteUrl ? inviteUrl.split('ref=')[1] : '';
+    return {
+      title: `${referrerName || '会员'} 邀请你加入 MBS`,
+      query: ref ? `ref=${ref}` : '',
     };
   },
 });

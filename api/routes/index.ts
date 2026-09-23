@@ -5422,7 +5422,7 @@ async function ensureDefaultReferralCoupon(shopId: string): Promise<Record<strin
       shop_id: shopId,
       name: '新人体验券',
       type: 'fixed_amount',
-      value: 20,
+      value: 10,
       min_order_amount: 100,
       valid_days: 30,
       is_active: true,

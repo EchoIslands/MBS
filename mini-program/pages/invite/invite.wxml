@@ -6,7 +6,7 @@
       </view>
       <view class="invite-info">
         <view class="invite-name">{{referrerName}}</view>
-        <view class="invite-desc">邀请你成为 MBS 新会员</view>
+        <view class="invite-desc">邀请您体验皓诗形象服务</view>
       </view>
     </view>
 
@@ -29,7 +29,7 @@
 
     <view wx:if="{{!loading && !error}}" class="invite-actions">
       <view class="btn btn-primary" bindtap="onSaveQrCode">保存二维码</view>
-      <button class="btn btn-primary-plain share-btn" open-type="share">分享给好友</button>
+      <button class="btn btn-blue share-btn" open-type="share">分享给好友</button>
     </view>
   </view>
 
