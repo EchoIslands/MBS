@@ -140,19 +140,21 @@
     <!-- 邀请好友 -->
     <view wx:if="{{customer && isMember}}" class="card invite-card" bindtap="goToInvite">
       <view class="invite-left">
-        <mbs-icon name="share-2" size="36" color="var(--primary)" />
+        <view class="share-pulse">
+          <mbs-icon name="share-2" size="40" color="#ffffff" />
+        </view>
         <view class="invite-text">
-          <view class="invite-title">邀请好友</view>
-          <view class="invite-hint">好友消费后获得 {{(customer.referralBonusRate || 0.10) * 100}}% 返现</view>
+          <view class="invite-title">邀请好友 · 一起变美</view>
+          <view class="invite-hint">好友消费后，你最高可赚 {{(customer.referralBonusRate || 0.10) * 100}}% 现金返现</view>
         </view>
       </view>
-      <mbs-icon name="chevronRight" size="28" color="var(--text-tertiary)" />
+      <mbs-icon name="chevronRight" size="32" color="#ffffff" />
     </view>
 
     <!-- 6) 我的可用权益 -->
     <view wx:if="{{myBenefits.length > 0}}" class="card">
-      <view class="card-title">
-        <mbs-icon name="gift" size="32" color="var(--pink-500)" />
+      <view class="card-title" style="color: #db2777;">
+        <mbs-icon name="gift" size="32" color="#db2777" />
         我的可用权益
       </view>
       <view class="benefit-list">
@@ -168,8 +170,8 @@
 
     <!-- 7) 购买 VIP 权益对比 -->
     <view class="card">
-      <view class="card-title">
-        <mbs-icon name="crown" size="32" color="var(--accent)" />
+      <view class="card-title" style="color: #d97706;">
+        <mbs-icon name="crown" size="32" color="#d97706" />
         购买 VIP 权益
       </view>
 
@@ -203,8 +205,8 @@
 
     <!-- 8) 储值会员权益对比 -->
     <view class="card">
-      <view class="card-title">
-        <mbs-icon name="wallet" size="32" color="var(--success)" />
+      <view class="card-title" style="color: #059669;">
+        <mbs-icon name="wallet" size="32" color="#059669" />
         储值会员权益（折上折）
       </view>
 
@@ -238,8 +240,8 @@
     <!-- 9) 我的预约 -->
     <view class="card">
       <view class="booking-header">
-        <view class="card-title booking-title">
-          <mbs-icon name="calendar" size="32" color="var(--primary)" />
+        <view class="card-title booking-title" style="color: #2563eb;">
+          <mbs-icon name="calendar" size="32" color="#2563eb" />
           我的预约
         </view>
         <view class="tab-switcher">
