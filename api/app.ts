@@ -3,7 +3,7 @@ import cors from 'cors';
 import apiRouter from './routes/index.js';
 import analyticsRoutes from '../server/routes/analytics.js';
 import uploadRoutes from '../server/routes/upload.js';
-import groupBuyRoutes from '../server/routes/groupBuy.js';
+import groupBuyRoutes from './routes/groupBuy.js';
 
 // express 内部属性 _body 未在类型定义中暴露
 interface RequestWithBody extends Request {

@@ -128,6 +128,7 @@ const GroupBuyManagement: React.FC = () => {
     try {
       const payload = {
         ...formData,
+        shopId,
         validFrom: formData.validFrom ? new Date(formData.validFrom).toISOString() : new Date().toISOString(),
         validTo: new Date(formData.validTo).toISOString(),
       } as unknown as Partial<GroupBuyBatch>;
