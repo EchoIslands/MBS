@@ -317,18 +317,37 @@ const GroupBuyManagement: React.FC = () => {
                     batch.isActive ? 'border-gray-100 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'
                   }`}
                 >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-bold text-gray-800">{batch.name}</h3>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${
-                          batch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {batch.isActive ? '启用中' : '已停用'}
-                      </span>
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-gray-800 truncate">{batch.name}</h3>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${
+                            batch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {batch.isActive ? '启用中' : '已停用'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        有效期：{formatDate(batch.validFrom)} 至 {formatDate(batch.validTo)}
+                      </p>
+                      {(() => {
+                        const serviceNames = (batch.serviceIds || [])
+                          .map((sid) => services.find((s) => s.id === sid)?.name || sid)
+                          .filter(Boolean);
+                        const showNames = serviceNames.slice(0, 2);
+                        const restCount = serviceNames.length - showNames.length;
+                        if (serviceNames.length === 0) return null;
+                        return (
+                          <p className="text-sm text-gray-500 mt-1 truncate">
+                            适用：{showNames.join('、')}
+                            {restCount > 0 && <span className="text-gray-400"> 等{restCount}项</span>}
+                          </p>
+                        );
+                      })()}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 ml-4">
                       <button
                         onClick={() => handleView(batch)}
                         title="查看详情"
