@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1997,6 +1997,36 @@ export const groupBuyApi = {
       if (result?.data) return result.data;
     }
     return null;
+  },
+};
+
+// VIP 权益自定义配置 API
+export const vipConfigApi = {
+  getPurchaseConfigs: async (shopId: string): Promise<PurchaseVIPPlan[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: PurchaseVIPPlan[] }>(
+        `${API_BASE}/vip-configs/purchase?shopId=${shopId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  updatePurchaseConfigs: async (shopId: string, plans: PurchaseVIPPlan[]): Promise<PurchaseVIPPlan[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: PurchaseVIPPlan[] }>(
+        `${API_BASE}/vip-configs/purchase`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ shopId, plans }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
   },
 };
 

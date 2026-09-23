@@ -40,6 +40,7 @@ import CustomerManagement from "./pages/shop/CustomerManagement";
 import CustomerTableManagement from "./pages/shop/CustomerTableManagement";
 import SettlementManagement from "./pages/shop/SettlementManagement";
 import MembershipManagement from "./pages/shop/MembershipManagement";
+import VIPConfigManagement from "./pages/shop/VIPConfigManagement";
 import SatisfactionSurveyManagement from "./pages/shop/SatisfactionSurveyManagement";
 import ReviewManagement from "./pages/shop/ReviewManagement";
 import CustomerProfileForm from "./pages/shop/CustomerProfileForm";
@@ -197,6 +198,7 @@ export default function App() {
           <Route path="/shop/checkout" element={<Checkout />} />
           <Route path="/shop/settlement" element={<SettlementManagement />} />
           <Route path="/shop/membership" element={<MembershipManagement />} />
+          <Route path="/shop/vip-configs" element={<VIPConfigManagement />} />
           <Route path="/shop/survey" element={<SatisfactionSurveyManagement />} />
           <Route path="/shop/review-management" element={<ReviewManagement />} />
           <Route path="/shop/customer-profile" element={<CustomerManagement />} />

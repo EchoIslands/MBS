@@ -10,7 +10,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, PurchaseVIPLevel } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
 
@@ -5747,6 +5747,99 @@ referralsRouter.post('/claim', async (req: Request, res: Response) => {
 });
 
 mainRouter.use('/referrals', referralsRouter);
+
+// ===================== VIP 权益自定义配置（仅 CEO） =====================
+const vipConfigsRouter = Router();
+
+function purchaseVIPConfigFromDb(s: Record<string, unknown>): PurchaseVIPPlan {
+  return {
+    level: s.level as PurchaseVIPLevel,
+    name: String(s.name || ''),
+    price: Number(s.price || 0),
+    period: String(s.period || '年'),
+    discount: Number(s.discount || 1),
+    pointsRate: Number(s.points_rate || 1),
+    benefits: Array.isArray(s.benefits) ? s.benefits.map(String) : [],
+    color: String(s.color || 'gray'),
+  };
+}
+
+// 查询购买型 VIP 配置（仅 CEO，但读取权限可放宽给已登录员工）
+vipConfigsRouter.get('/purchase', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = (req.query.shopId as string) || req.employee?.shopId || 'shop1';
+    const { data, error } = await supabase
+      .from('purchase_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('level', { ascending: true });
+
+    if (error) {
+      console.error('[vip-configs] 查询失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询 VIP 配置失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(purchaseVIPConfigFromDb) });
+  } catch (err: unknown) {
+    console.error('[vip-configs] 查询异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+// 更新购买型 VIP 配置（仅 CEO）
+vipConfigsRouter.put('/purchase', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.employee?.role !== 'ceo') {
+      return res.status(403).json({ success: false, error: '仅 CEO 可修改会员权益配置' });
+    }
+
+    const { shopId = req.employee.shopId || 'shop1', plans } = req.body || {};
+    if (!Array.isArray(plans) || plans.length === 0) {
+      return res.status(400).json({ success: false, error: '缺少配置数据' });
+    }
+
+    const now = new Date().toISOString();
+    const rows = plans.map((plan: PurchaseVIPPlan) => ({
+      id: `pvc_${shopId}_${plan.level}`,
+      shop_id: shopId,
+      level: plan.level,
+      name: plan.name,
+      price: plan.price,
+      period: plan.period,
+      discount: plan.discount,
+      points_rate: plan.pointsRate,
+      benefits: plan.benefits || [],
+      color: plan.color,
+      is_active: true,
+      updated_at: now,
+    }));
+
+    const { error } = await supabase.from('purchase_vip_configs').upsert(rows, { onConflict: 'shop_id,level' });
+    if (error) {
+      console.error('[vip-configs] 保存失败:', error.message);
+      return res.status(500).json({ success: false, error: '保存 VIP 配置失败' });
+    }
+
+    const { data: saved, error: queryError } = await supabase
+      .from('purchase_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('level', { ascending: true });
+
+    if (queryError) {
+      return res.json({ success: true, data: plans });
+    }
+
+    res.json({ success: true, data: (saved || []).map(purchaseVIPConfigFromDb) });
+  } catch (err: unknown) {
+    console.error('[vip-configs] 保存异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+mainRouter.use('/vip-configs', vipConfigsRouter);
 
 // ===================== satisfaction surveys =====================
 const surveysRouter = Router();

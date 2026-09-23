@@ -108,6 +108,12 @@ const menuItems: MenuItem[] = [
     roles: [UserRole.CEO],
   },
   {
+    label: '会员权益配置',
+    path: '/shop/vip-configs',
+    icon: <Crown size={18} />,
+    roles: [UserRole.CEO],
+  },
+  {
     label: '会员管理',
     path: '/shop/membership',
     icon: <Crown size={18} />,

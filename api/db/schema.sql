@@ -139,3 +139,24 @@ CREATE TABLE IF NOT EXISTS customer_coupons (
 CREATE INDEX IF NOT EXISTS idx_customer_coupons_customer_id ON customer_coupons(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_coupons_status ON customer_coupons(status);
 CREATE INDEX IF NOT EXISTS idx_customer_coupons_valid_end ON customer_coupons(valid_end);
+
+-- 购买型 VIP 权益自定义配置表（仅 CEO 可维护）
+CREATE TABLE IF NOT EXISTS purchase_vip_configs (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  level TEXT NOT NULL,
+  name TEXT NOT NULL,
+  price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  period TEXT NOT NULL DEFAULT '年',
+  discount NUMERIC(3,2) NOT NULL DEFAULT 1,
+  points_rate NUMERIC(4,2) NOT NULL DEFAULT 1,
+  benefits JSONB NOT NULL DEFAULT '[]'::jsonb,
+  color TEXT NOT NULL DEFAULT 'gray',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(shop_id, level)
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_vip_configs_shop_id ON purchase_vip_configs(shop_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_vip_configs_level ON purchase_vip_configs(level);
