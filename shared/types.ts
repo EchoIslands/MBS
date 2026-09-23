@@ -83,7 +83,7 @@ export interface CustomerCoupon {
 }
 
 // 外部团购券价格类型
-export type GroupBuyPriceType = 'fixed' | 'vip_level';
+export type GroupBuyPriceType = 'fixed' | 'per_service' | 'vip_level';
 
 // 外部团购活动批次（美团等平台）
 export interface GroupBuyBatch {
@@ -91,9 +91,10 @@ export interface GroupBuyBatch {
   shopId: string;
   name: string;
   serviceIds: string[];
+  servicePrices?: Record<string, number>;
   priceType: GroupBuyPriceType;
   fixedPrice?: number;
-  vipLevel?: 'bronze' | 'silver' | 'gold' | 'diamond';
+  vipLevel?: string;
   validFrom: Date;
   validTo: Date;
   totalQuantity: number;

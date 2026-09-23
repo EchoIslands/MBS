@@ -12,13 +12,19 @@ import {
 import { useAppStore } from '../../store';
 import { GroupBuyBatch, Service } from '../../../shared/types';
 import { groupBuyApi, shopApi } from '../../api';
+import { purchaseVIPPlans, storedValuePlans } from '../../../shared/membershipPlans';
 import ShopLayout from './ShopLayout';
 
+const priceTypeOptions = [
+  { value: 'fixed', label: '固定团购价' },
+  { value: 'per_service', label: '按服务项目自定义价' },
+  { value: 'vip_level', label: '按会员等级折扣价' },
+];
+
 const vipLevelOptions = [
-  { value: 'bronze', label: '普卡 VIP（8.8折）' },
-  { value: 'silver', label: '银卡 VIP（7.8折）' },
-  { value: 'gold', label: '金卡 VIP（6.8折）' },
-  { value: 'diamond', label: '钻石 VIP（5.8折）' },
+  { value: 'regular', label: '普通用户（无折扣）' },
+  ...purchaseVIPPlans.filter((p) => p.level !== 'regular').map((p) => ({ value: p.level, label: `${p.name}（${Math.round(p.discount * 100)}折）` })),
+  ...storedValuePlans.filter((p) => p.level !== 'none').map((p) => ({ value: p.level, label: `${p.name} ${p.amount}（${Math.round(p.discount * 100)}折）` })),
 ];
 
 const GroupBuyManagement: React.FC = () => {
@@ -64,6 +70,7 @@ const GroupBuyManagement: React.FC = () => {
   const [formData, setFormData] = useState<Partial<GroupBuyBatch>>({
     name: '',
     serviceIds: [],
+    servicePrices: {},
     priceType: 'fixed',
     fixedPrice: 0,
     vipLevel: 'bronze',
@@ -78,6 +85,7 @@ const GroupBuyManagement: React.FC = () => {
     setFormData({
       name: '',
       serviceIds: [],
+      servicePrices: {},
       priceType: 'fixed',
       fixedPrice: 0,
       vipLevel: 'bronze',
@@ -94,6 +102,7 @@ const GroupBuyManagement: React.FC = () => {
     setFormData({
       name: batch.name,
       serviceIds: batch.serviceIds || [],
+      servicePrices: batch.servicePrices || {},
       priceType: batch.priceType,
       fixedPrice: batch.fixedPrice,
       vipLevel: batch.vipLevel,
@@ -291,6 +300,8 @@ const GroupBuyManagement: React.FC = () => {
                         价格类型：
                         {batch.priceType === 'fixed'
                           ? `固定价 ¥${batch.fixedPrice}`
+                          : batch.priceType === 'per_service'
+                          ? '按服务项目自定义价'
                           : `按${vipLevelOptions.find((o) => o.value === batch.vipLevel)?.label.split('（')[0]}折扣`}
                       </p>
                       <p className="text-xs text-gray-400 mt-1">
@@ -370,15 +381,18 @@ const GroupBuyManagement: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">价格类型</label>
                 <select
                   value={formData.priceType}
-                  onChange={(e) => setFormData({ ...formData, priceType: e.target.value as 'fixed' | 'vip_level' })}
+                  onChange={(e) => setFormData({ ...formData, priceType: e.target.value as GroupBuyBatch['priceType'] })}
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="fixed">固定团购价</option>
-                  <option value="vip_level">按会员等级折扣价</option>
+                  {priceTypeOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              {formData.priceType === 'fixed' ? (
+              {formData.priceType === 'fixed' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">固定团购价（元）</label>
                   <input
@@ -388,12 +402,43 @@ const GroupBuyManagement: React.FC = () => {
                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-              ) : (
+              )}
+
+              {formData.priceType === 'per_service' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">各服务项目团购价（元）</label>
+                  <div className="space-y-2 border border-gray-100 rounded-xl p-3">
+                    {services
+                      .filter((s) => (formData.serviceIds || []).includes(s.id))
+                      .map((service) => (
+                        <div key={service.id} className="flex items-center justify-between gap-3">
+                          <span className="text-sm text-gray-700 flex-1">{service.name}（原价 ¥{service.price}）</span>
+                          <input
+                            type="number"
+                            value={formData.servicePrices?.[service.id] ?? service.price}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                servicePrices: { ...(prev.servicePrices || {}), [service.id]: Number(e.target.value) },
+                              }))
+                            }
+                            className="w-32 px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </div>
+                      ))}
+                    {(formData.serviceIds || []).length === 0 && (
+                      <p className="text-xs text-gray-400">请先选择适用服务项目</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {formData.priceType === 'vip_level' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">对应会员等级</label>
                   <select
                     value={formData.vipLevel}
-                    onChange={(e) => setFormData({ ...formData, vipLevel: e.target.value as GroupBuyBatch['vipLevel'] })}
+                    onChange={(e) => setFormData({ ...formData, vipLevel: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {vipLevelOptions.map((o) => (

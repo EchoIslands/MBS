@@ -358,7 +358,12 @@ const Checkout: React.FC = () => {
     setGroupBuyVerifying(true);
     setGroupBuyVerifyResult(null);
     try {
-      const result = await groupBuyApi.verifyVoucher(groupBuyCode.trim());
+      const cartItem = selectedGroupBuyCartIndex !== null ? cartWithAdjustedPrices[selectedGroupBuyCartIndex] : null;
+      const result = await groupBuyApi.verifyVoucher(
+        groupBuyCode.trim(),
+        cartItem?.type === 'service' ? cartItem.id : undefined,
+        cartItem?.type === 'service' ? cartItem.originalPrice : undefined
+      );
       setGroupBuyVerifyResult(result);
       if (result?.needBind && result.availableBatches && result.availableBatches.length > 0) {
         setSelectedGroupBuyBatchId(result.availableBatches[0].id);

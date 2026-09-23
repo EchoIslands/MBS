@@ -1,7 +1,39 @@
 import { Router, Request, Response } from 'express';
 import { groupBuyBatchQueries, groupBuyVoucherQueries } from '../db.js';
+import { purchaseVIPPlans, storedValuePlans } from '../../shared/membershipPlans.js';
 
 const router = Router();
+
+// 根据批次价格配置计算服务项目团购价
+function calcGroupBuyPrice(
+  batch: Record<string, unknown>,
+  serviceId?: string,
+  originalPrice?: number
+): { price: number; description: string } {
+  const priceType = batch.price_type as string;
+  const servicePrices = (batch.service_prices as Record<string, number>) || {};
+
+  if (priceType === 'per_service' && serviceId && servicePrices[serviceId] !== undefined) {
+    return { price: servicePrices[serviceId], description: '服务项目自定义价' };
+  }
+
+  if (priceType === 'fixed' && batch.fixed_price !== undefined && batch.fixed_price !== null) {
+    return { price: Number(batch.fixed_price), description: '固定团购价' };
+  }
+
+  if (priceType === 'vip_level') {
+    const vipLevel = batch.vip_level as string;
+    const purchasePlan = purchaseVIPPlans.find((p) => p.level === vipLevel);
+    const storedPlan = storedValuePlans.find((p) => p.level === vipLevel);
+    const plan = purchasePlan || storedPlan;
+    const discount = plan?.discount ?? 1;
+    const label = plan?.name ?? '普通价';
+    const price = originalPrice !== undefined ? Math.round(originalPrice * discount * 100) / 100 : 0;
+    return { price, description: `${label}折扣价` };
+  }
+
+  return { price: originalPrice ?? 0, description: '原价' };
+}
 
 // 工具：统一返回成功响应
 const success = <T>(data: T) => ({ success: true, data });
@@ -260,16 +292,7 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
   }
 
   // 计算团购价
-  const servicePrices = (batch.service_prices as Record<string, number>) || {};
-  let price = servicePrice;
-  let description = '团购价';
-  if (serviceId && servicePrices[serviceId] !== undefined) {
-    price = servicePrices[serviceId];
-    description = `批次团购价`;
-  } else if (batch.fixed_price !== undefined && batch.fixed_price !== null) {
-    price = Number(batch.fixed_price);
-    description = `固定团购价`;
-  }
+  const { price, description } = calcGroupBuyPrice(batch, serviceId, servicePrice);
 
   res.json(success({
     voucher,
@@ -307,16 +330,7 @@ router.post('/vouchers/redeem', async (req: Request, res: Response) => {
     return;
   }
 
-  const servicePrices = (batch.service_prices as Record<string, number>) || {};
-  let price = servicePrice;
-  let description = '团购价';
-  if (serviceId && servicePrices[serviceId] !== undefined) {
-    price = servicePrices[serviceId];
-    description = `批次团购价`;
-  } else if (batch.fixed_price !== undefined && batch.fixed_price !== null) {
-    price = Number(batch.fixed_price);
-    description = `固定团购价`;
-  }
+  const { price, description } = calcGroupBuyPrice(batch, serviceId, servicePrice);
 
   const result = await groupBuyVoucherQueries.redeem(voucher.id, {
     used_by_customer_id: customerId,
