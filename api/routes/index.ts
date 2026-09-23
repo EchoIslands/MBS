@@ -5509,7 +5509,7 @@ referralsRouter.post('/invite', async (req: Request, res: Response) => {
 
     if (insertError) {
       console.error('[referrals] 创建推荐记录失败:', insertError.message);
-      return res.status(500).json({ success: false, error: '创建邀请记录失败' });
+      return res.status(500).json({ success: false, error: `创建邀请记录失败: ${insertError.message}` });
     }
 
     // 生成二维码图片（Data URL）
@@ -5530,7 +5530,7 @@ referralsRouter.post('/invite', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('[referrals] 生成邀请二维码异常:', error);
-    res.status(500).json({ success: false, error: '生成邀请二维码失败' });
+    res.status(500).json({ success: false, error: `生成邀请二维码失败: ${(error as Error).message}` });
   }
 });
 

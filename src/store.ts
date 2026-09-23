@@ -171,6 +171,21 @@ const loadEmployeeSession = (): { currentShop: Shop | null; currentEmployee: Emp
   } catch (_e) { return null; }
 };
 
+// 员工自定义密码持久化（自助修改密码）
+const EMPLOYEE_PASSWORD_KEY_PREFIX = 'mbs_employee_password_';
+
+export const getEmployeePassword = (employeeId: string): string | undefined => {
+  try {
+    return localStorage.getItem(`${EMPLOYEE_PASSWORD_KEY_PREFIX}${employeeId}`) || undefined;
+  } catch (_e) { return undefined; }
+};
+
+export const setEmployeePassword = (employeeId: string, password: string) => {
+  try {
+    localStorage.setItem(`${EMPLOYEE_PASSWORD_KEY_PREFIX}${employeeId}`, password);
+  } catch (_e) { /* ignore */ }
+};
+
 // 应用启动时恢复员工会话
 export const restoreEmployeeSession = () => {
   const session = loadEmployeeSession();
@@ -239,9 +254,13 @@ export const loginAsStylist = (shopId: string, stylistId: string, password?: str
   const shop = mockShops.find(s => s.id === shopId);
   const stylist = shop?.employees.find(e => e.id === stylistId);
   if (shop && stylist) {
-    // 如果提供了密码，则验证密码
-    if (password !== undefined && stylistPasswords[stylistId] && password !== stylistPasswords[stylistId]) {
-      return null;
+    // 如果提供了密码，则验证密码（优先使用员工自定义密码）
+    if (password !== undefined) {
+      const customPassword = getEmployeePassword(stylistId);
+      const expected = customPassword ?? stylistPasswords[stylistId];
+      if (expected && password !== expected) {
+        return null;
+      }
     }
     const employee: Employee = { ...stylist, role: UserRole.STYLIST };
     useAppStore.setState({ currentShop: shop, currentEmployee: employee, userRole: employee.role });
@@ -260,14 +279,16 @@ export const loginAsEmployee = (
   const shop = mockShops.find((s) => s.id === shopId);
   const employee = shop?.employees.find((e) => e.id === employeeId);
   if (shop && employee) {
-    // 验证密码（根据角色选择对应的密码映射表）
+    // 验证密码（优先使用员工自定义密码，回退到默认映射表）
     if (password !== undefined) {
-      let expected: string | undefined;
-      if (employee.role === UserRole.CEO) expected = ceoPasswords[employeeId];
-      else if (employee.role === UserRole.CUSTOMER_SERVICE) expected = csPasswords[employeeId];
-      else if (employee.role === UserRole.SHOP_MANAGER) expected = managerPasswords[employeeId];
-      else expected = stylistPasswords[employeeId] || shopPasswords[shopId];
+      const customPassword = getEmployeePassword(employeeId);
+      let defaultPassword: string | undefined;
+      if (employee.role === UserRole.CEO) defaultPassword = ceoPasswords[employeeId];
+      else if (employee.role === UserRole.CUSTOMER_SERVICE) defaultPassword = csPasswords[employeeId];
+      else if (employee.role === UserRole.SHOP_MANAGER) defaultPassword = managerPasswords[employeeId];
+      else defaultPassword = stylistPasswords[employeeId] || shopPasswords[shopId];
 
+      const expected = customPassword ?? defaultPassword;
       if (expected && password !== expected) {
         return null;
       }

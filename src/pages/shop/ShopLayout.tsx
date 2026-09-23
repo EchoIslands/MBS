@@ -28,7 +28,7 @@ import {
   Edit3,
   Activity,
 } from 'lucide-react';
-import { useAppStore } from '../../store';
+import { useAppStore, setEmployeePassword } from '../../store';
 import { employeeApi } from '../../api';
 import { getAvatarUrl } from '../../lib/avatar';
 import { UserRole, Employee } from '../../../shared/types';
@@ -296,6 +296,9 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
           avatar: updated.avatar,
           specialty: updated.specialty,
         });
+        if (profileForm.password.trim() && currentEmployee?.id) {
+          setEmployeePassword(currentEmployee.id, profileForm.password.trim());
+        }
         setProfileOpen(false);
       } else {
         alert('保存失败，请重试');
