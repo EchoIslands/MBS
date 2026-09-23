@@ -8,9 +8,14 @@ import {
   X,
   Save,
   CheckCircle,
+  Eye,
+  Users,
+  Hash,
+  Clock,
+  CreditCard,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { GroupBuyBatch, Service } from '../../../shared/types';
+import { GroupBuyBatch, GroupBuyVoucher, Service } from '../../../shared/types';
 import { groupBuyApi, shopApi } from '../../api';
 import { purchaseVIPPlans, storedValuePlans } from '../../../shared/membershipPlans';
 import ShopLayout from './ShopLayout';
@@ -39,6 +44,13 @@ const GroupBuyManagement: React.FC = () => {
   const [redeemCode, setRedeemCode] = useState('');
   const [redeemLoading, setRedeemLoading] = useState(false);
   const [redeemResult, setRedeemResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // 批次详情/预览弹窗
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [viewingBatch, setViewingBatch] = useState<GroupBuyBatch | null>(null);
+  const [viewVouchers, setViewVouchers] = useState<GroupBuyVoucher[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewFilter, setViewFilter] = useState<'all' | 'unused' | 'used'>('all');
 
   const shopId = currentShop?.id || '';
 
@@ -194,6 +206,30 @@ const GroupBuyManagement: React.FC = () => {
     }
   };
 
+  const handleView = async (batch: GroupBuyBatch) => {
+    setViewingBatch(batch);
+    setShowDetailModal(true);
+    setViewLoading(true);
+    setViewFilter('all');
+    try {
+      const vouchers = await groupBuyApi.getVouchers(batch.id);
+      setViewVouchers(vouchers || []);
+    } catch (err: unknown) {
+      console.error('[GroupBuyManagement] 加载券码失败:', err);
+      alert('加载券码失败：' + (err as Error).message);
+      setViewVouchers([]);
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const closeDetail = () => {
+    setShowDetailModal(false);
+    setViewingBatch(null);
+    setViewVouchers([]);
+    setViewFilter('all');
+  };
+
   const toggleService = (serviceId: string) => {
     setFormData((prev) => {
       const ids = prev.serviceIds || [];
@@ -311,13 +347,22 @@ const GroupBuyManagement: React.FC = () => {
                     </div>
                     <div className="flex gap-2">
                       <button
+                        onClick={() => handleView(batch)}
+                        title="查看详情"
+                        className="p-2 text-gray-500 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
+                      >
+                        <Eye size={18} />
+                      </button>
+                      <button
                         onClick={() => handleEdit(batch)}
+                        title="编辑"
                         className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
                       >
                         <Edit2 size={18} />
                       </button>
                       <button
                         onClick={() => handleDelete(batch.id)}
+                        title="删除"
                         className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       >
                         <Trash2 size={18} />
@@ -507,6 +552,195 @@ const GroupBuyManagement: React.FC = () => {
               >
                 {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批次详情/预览弹窗 */}
+      {showDetailModal && viewingBatch && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">{viewingBatch.name}</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  有效期：{formatDate(viewingBatch.validFrom)} 至 {formatDate(viewingBatch.validTo)}
+                </p>
+              </div>
+              <button
+                onClick={closeDetail}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {/* 基本信息 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                    <CreditCard size={14} /> 价格类型
+                  </p>
+                  <p className="text-sm font-medium text-gray-800">
+                    {viewingBatch.priceType === 'fixed'
+                      ? `固定价 ¥${viewingBatch.fixedPrice}`
+                      : viewingBatch.priceType === 'per_service'
+                      ? '按服务项目自定义价'
+                      : `按${vipLevelOptions.find((o) => o.value === viewingBatch.vipLevel)?.label.split('（')[0]}折扣`}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                    <Clock size={14} /> 状态
+                  </p>
+                  <p className="text-sm font-medium">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${
+                        viewingBatch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {viewingBatch.isActive ? '启用中' : '已停用'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              {/* 适用服务 */}
+              <div className="mb-6">
+                <p className="text-sm font-medium text-gray-700 mb-2">适用服务项目</p>
+                <div className="flex flex-wrap gap-2">
+                  {(viewingBatch.serviceIds || []).length === 0 ? (
+                    <span className="text-sm text-gray-400">未配置</span>
+                  ) : (
+                    viewingBatch.serviceIds?.map((sid) => {
+                      const service = services.find((s) => s.id === sid);
+                      return (
+                        <span key={sid} className="px-2 py-1 bg-blue-50 text-blue-600 text-xs rounded-lg">
+                          {service?.name || sid}
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* 统计 */}
+              {(() => {
+                const total = viewVouchers.length;
+                const used = viewVouchers.filter((v) => v.status === 'used').length;
+                const unused = total - used;
+                const rate = total > 0 ? Math.round((used / total) * 100) : 0;
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-orange-50 rounded-xl p-4 text-center">
+                      <p className="text-xs text-orange-600 mb-1 flex items-center justify-center gap-1">
+                        <Hash size={14} /> 总券数
+                      </p>
+                      <p className="text-2xl font-bold text-orange-700">{total}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-xl p-4 text-center">
+                      <p className="text-xs text-green-600 mb-1">已核销</p>
+                      <p className="text-2xl font-bold text-green-700">{used}</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-4 text-center">
+                      <p className="text-xs text-blue-600 mb-1">未核销</p>
+                      <p className="text-2xl font-bold text-blue-700">{unused}</p>
+                    </div>
+                    <div className="bg-purple-50 rounded-xl p-4 text-center">
+                      <p className="text-xs text-purple-600 mb-1">核销率</p>
+                      <p className="text-2xl font-bold text-purple-700">{rate}%</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 筛选 */}
+              <div className="flex items-center gap-2 mb-4">
+                {(['all', 'unused', 'used'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setViewFilter(f)}
+                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      viewFilter === f
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {f === 'all' ? '全部' : f === 'unused' ? '未使用' : '已使用'}
+                  </button>
+                ))}
+              </div>
+
+              {/* 券码列表 */}
+              {viewLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 size={24} className="animate-spin text-blue-500" />
+                </div>
+              ) : (
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-medium">券码</th>
+                        <th className="text-left px-4 py-3 font-medium">状态</th>
+                        <th className="text-left px-4 py-3 font-medium">核销时间</th>
+                        <th className="text-left px-4 py-3 font-medium">关联订单</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {viewVouchers
+                        .filter((v) => (viewFilter === 'all' ? true : v.status === viewFilter))
+                        .slice(0, 50)
+                        .map((v) => (
+                          <tr key={v.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-mono text-gray-800">{v.code}</td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${
+                                  v.status === 'used'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-orange-100 text-orange-700'
+                                }`}
+                              >
+                                {v.status === 'used' ? '已核销' : '未使用'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">
+                              {v.usedAt ? formatDate(v.usedAt) : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">
+                              {v.usedOrderId || '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      {viewVouchers.filter((v) => (viewFilter === 'all' ? true : v.status === viewFilter))
+                        .length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">
+                            暂无券码记录
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {viewVouchers.filter((v) => (viewFilter === 'all' ? true : v.status === viewFilter)).length > 50 && (
+                    <p className="px-4 py-3 text-xs text-gray-400 text-center border-t border-gray-100">
+                      仅展示前 50 条，可在筛选中查看不同状态
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={closeDetail}
+                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+              >
+                关闭
               </button>
             </div>
           </div>

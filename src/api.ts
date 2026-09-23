@@ -1946,6 +1946,23 @@ export const groupBuyApi = {
     }
     return null;
   },
+  getVouchers: async (batchId?: string, status?: string): Promise<GroupBuyVoucher[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const user = getAuthUser() as AuthUser | null;
+      const shopId = user?.shopId;
+      if (!shopId) return [];
+      const params = new URLSearchParams({ shopId });
+      if (batchId) params.append('batchId', batchId);
+      if (status) params.append('status', status);
+      const result = await http<{ success: boolean; data: GroupBuyVoucher[] }>(
+        `${API_BASE}/group-buy/vouchers?${params.toString()}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
   redeemVoucher: async (params: {
     code: string;
     batchId?: string;

@@ -4,6 +4,42 @@ import { purchaseVIPPlans, storedValuePlans } from '../../shared/membershipPlans
 
 const router = Router();
 
+// 将 Supabase 返回的 snake_case 批次数据转换为前端 camelCase
+function toBatchCamelCase(batch: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: batch.id,
+    shopId: batch.shop_id,
+    name: batch.name,
+    serviceIds: batch.service_ids || [],
+    servicePrices: batch.service_prices || {},
+    priceType: batch.price_type,
+    fixedPrice: batch.fixed_price,
+    vipLevel: batch.vip_level,
+    validFrom: batch.valid_from,
+    validTo: batch.valid_to,
+    totalQuantity: batch.total_quantity,
+    usedQuantity: batch.used_quantity,
+    isActive: batch.is_active,
+    createdAt: batch.created_at,
+    updatedAt: batch.updated_at,
+  };
+}
+
+// 将 Supabase 返回的 snake_case 券码数据转换为前端 camelCase
+function toVoucherCamelCase(voucher: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: voucher.id,
+    batchId: voucher.batch_id,
+    shopId: voucher.shop_id,
+    code: voucher.code,
+    status: voucher.status,
+    usedAt: voucher.used_at,
+    usedByCustomerId: voucher.used_by_customer_id,
+    usedOrderId: voucher.used_order_id,
+    createdAt: voucher.created_at,
+  };
+}
+
 // 根据批次价格配置计算服务项目团购价
 function calcGroupBuyPrice(
   batch: Record<string, unknown>,
@@ -85,7 +121,7 @@ router.get('/batches', async (req: Request, res: Response) => {
       res.status(500).json(fail('查询批次失败'));
       return;
     }
-    res.json(success(data || []));
+    res.json(success((data || []).map(toBatchCamelCase)));
   } catch (err: unknown) {
     console.error('[group-buy] 查询批次异常:', err);
     res.status(500).json(fail('查询批次异常'));
@@ -496,7 +532,7 @@ router.get('/vouchers', async (req: Request, res: Response) => {
       res.status(500).json(fail('查询券码失败'));
       return;
     }
-    res.json(success(data || []));
+    res.json(success((data || []).map(toVoucherCamelCase)));
   } catch (err: unknown) {
     console.error('[group-buy] 查询券码异常:', err);
     res.status(500).json(fail('查询券码异常'));
