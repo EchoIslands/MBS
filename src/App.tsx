@@ -19,6 +19,7 @@ import ProductDetail from "./pages/customer/ProductDetail";
 import Cart from "./pages/customer/Cart";
 import ProductOrders from "./pages/customer/ProductOrders";
 import MyCoupons from "./pages/customer/MyCoupons";
+import CustomerInvite from "./pages/customer/Invite";
 import InviteLanding from "./pages/InviteLanding";
 
 // 理发店端
@@ -165,6 +166,7 @@ export default function App() {
         <Route path="/customer/queue/:bookingId" element={<Queue />} />
         <Route element={<CustomerRouteGuard />}>
           <Route path="/customer/profile" element={<Profile />} />
+          <Route path="/customer/invite" element={<CustomerInvite />} />
           <Route path="/customer/cart/:shopId" element={<Cart />} />
           <Route path="/customer/product-orders/:shopId" element={<ProductOrders />} />
           <Route path="/customer/coupons" element={<MyCoupons />} />

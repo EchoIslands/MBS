@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   User, Calendar, Star, LogOut, Clock, CheckCircle, AlertCircle, MessageSquare,
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
-  X, Phone, Scissors, MapPin, Loader2, Ticket,
+  X, Phone, Scissors, MapPin, Loader2, Ticket, Share2,
 } from 'lucide-react';
 import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType } from '../../../shared/types';
 import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
@@ -173,6 +173,14 @@ const Profile: React.FC = () => {
   const points = currentCustomer?.points ?? 0;
   const totalSpent = currentCustomer?.totalSpent ?? 0;
 
+  // 是否为会员（可生成邀请码）
+  const isMember = !!(
+    currentCustomer &&
+    (currentCustomer.isStockholder ||
+      currentCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ||
+      currentCustomer.storedValueLevel !== StoredValueLevel.NONE)
+  );
+
   // 当前店铺信息（默认取第一个）
   const shop = mockShops[0];
 
@@ -315,6 +323,29 @@ const Profile: React.FC = () => {
                 </div>
                 <div className="text-4xl opacity-30">👑</div>
               </div>
+            </div>
+          )}
+
+          {/* 会员邀请入口 */}
+          {isMember && (
+            <div className="mt-4">
+              <button
+                onClick={() => navigate('/customer/invite')}
+                className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-xl p-4 flex items-center justify-between transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                    <Share2 size={20} className="text-white" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-white font-medium">邀请好友</div>
+                    <div className="text-xs text-white/70">
+                      好友消费后获得 {(currentCustomer?.referralBonusRate || 0.10) * 100}% 返现
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight size={20} className="text-white/70" />
+              </button>
             </div>
           )}
         </div>
