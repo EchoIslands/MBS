@@ -2,6 +2,7 @@ import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIP
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
+import { getEmployeePassword } from './lib/employeePassword';
 
 interface AuthUser extends Employee {
   shopId?: string;
@@ -299,8 +300,14 @@ export const authApi = {
       s.employees.map((e) => ({ ...e, shopId: s.id }))
     );
     const employee = allEmployees.find((e) => e.phone === phone);
-    
-    if (!employee || password !== '123456') {
+
+    if (!employee) {
+      throw new Error('手机号或密码错误');
+    }
+
+    const customPassword = getEmployeePassword(employee.id);
+    const expectedPassword = customPassword ?? '123456';
+    if (password !== expectedPassword) {
       throw new Error('手机号或密码错误');
     }
     
