@@ -497,6 +497,19 @@ export interface StoredValuePlan {
   color: string;                 // UI 主题色
 }
 
+// CEO 专用特殊 VIP 配置（不展示在普通顾客端）
+export interface SpecialVIPConfig {
+  id?: string;
+  shopId?: string;
+  key: string;                   // 唯一标识，如 black-card
+  name: string;                  // 显示名称，如"黑卡至尊"
+  discount: number;              // 消费折扣
+  pointsRate: number;            // 积分倍率
+  benefits: string[];            // 权益说明
+  color: string;                 // UI 主题色
+  isActive?: boolean;
+}
+
 // 会员权益记录（可核销）
 export interface MemberBenefitRecord {
   id: string;

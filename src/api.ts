@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -2053,6 +2053,46 @@ export const vipConfigApi = {
       if (result?.data) return result.data;
     }
     return [];
+  },
+  getSpecialConfigs: async (shopId: string): Promise<SpecialVIPConfig[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: SpecialVIPConfig[] }>(
+        `${API_BASE}/vip-configs/special?shopId=${shopId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  saveSpecialConfig: async (shopId: string, config: SpecialVIPConfig): Promise<SpecialVIPConfig[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: SpecialVIPConfig[] }>(
+        `${API_BASE}/vip-configs/special`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ shopId, config }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  deleteSpecialConfig: async (shopId: string, key: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean }>(
+        `${API_BASE}/vip-configs/special/${key}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      return result?.success === true;
+    }
+    return false;
   },
 };
 

@@ -10,7 +10,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, PurchaseVIPLevel, StoredValuePlan, StoredValueLevel } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, PurchaseVIPLevel, StoredValuePlan, StoredValueLevel, SpecialVIPConfig } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
 
@@ -5777,13 +5777,14 @@ vipConfigsRouter.get('/purchase', authMiddleware, async (req: Request, res: Resp
 
     if (error) {
       console.error('[vip-configs] 查询失败:', error.message);
-      return res.status(500).json({ success: false, error: '查询 VIP 配置失败' });
+      return res.status(500).json({ success: false, error: `查询 VIP 配置失败: ${error.message}` });
     }
 
     res.json({ success: true, data: (data || []).map(purchaseVIPConfigFromDb) });
   } catch (err: unknown) {
-    console.error('[vip-configs] 查询异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 查询异常:', msg);
+    res.status(500).json({ success: false, error: `查询异常: ${msg}` });
   }
 });
 
@@ -5805,11 +5806,11 @@ vipConfigsRouter.put('/purchase', authMiddleware, async (req: Request, res: Resp
       shop_id: shopId,
       level: plan.level,
       name: plan.name,
-      price: plan.price,
+      price: Number(plan.price) || 0,
       period: plan.period,
-      discount: plan.discount,
-      points_rate: plan.pointsRate,
-      benefits: plan.benefits || [],
+      discount: Number(plan.discount) || 1,
+      points_rate: Number(plan.pointsRate) || 1,
+      benefits: Array.isArray(plan.benefits) ? plan.benefits : [],
       color: plan.color,
       is_active: true,
       updated_at: now,
@@ -5818,7 +5819,7 @@ vipConfigsRouter.put('/purchase', authMiddleware, async (req: Request, res: Resp
     const { error } = await supabase.from('purchase_vip_configs').upsert(rows, { onConflict: 'shop_id,level' });
     if (error) {
       console.error('[vip-configs] 保存失败:', error.message);
-      return res.status(500).json({ success: false, error: '保存 VIP 配置失败' });
+      return res.status(500).json({ success: false, error: `保存 VIP 配置失败: ${error.message}` });
     }
 
     const { data: saved, error: queryError } = await supabase
@@ -5834,8 +5835,9 @@ vipConfigsRouter.put('/purchase', authMiddleware, async (req: Request, res: Resp
 
     res.json({ success: true, data: (saved || []).map(purchaseVIPConfigFromDb) });
   } catch (err: unknown) {
-    console.error('[vip-configs] 保存异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 保存异常:', msg);
+    res.status(500).json({ success: false, error: `保存异常: ${msg}` });
   }
 });
 
@@ -5864,13 +5866,14 @@ vipConfigsRouter.get('/stored', authMiddleware, async (req: Request, res: Respon
 
     if (error) {
       console.error('[vip-configs] 查询储值配置失败:', error.message);
-      return res.status(500).json({ success: false, error: '查询储值配置失败' });
+      return res.status(500).json({ success: false, error: `查询储值配置失败: ${error.message}` });
     }
 
     res.json({ success: true, data: (data || []).map(storedValueConfigFromDb) });
   } catch (err: unknown) {
-    console.error('[vip-configs] 查询储值配置异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 查询储值配置异常:', msg);
+    res.status(500).json({ success: false, error: `查询异常: ${msg}` });
   }
 });
 
@@ -5892,10 +5895,10 @@ vipConfigsRouter.put('/stored', authMiddleware, async (req: Request, res: Respon
       shop_id: shopId,
       level: plan.level,
       name: plan.name,
-      amount: plan.amount,
-      discount: plan.discount,
-      points_rate: plan.pointsRate,
-      benefits: plan.benefits || [],
+      amount: Number(plan.amount) || 0,
+      discount: Number(plan.discount) || 1,
+      points_rate: Number(plan.pointsRate) || 1,
+      benefits: Array.isArray(plan.benefits) ? plan.benefits : [],
       color: plan.color,
       is_active: true,
       updated_at: now,
@@ -5904,7 +5907,7 @@ vipConfigsRouter.put('/stored', authMiddleware, async (req: Request, res: Respon
     const { error } = await supabase.from('stored_value_configs').upsert(rows, { onConflict: 'shop_id,level' });
     if (error) {
       console.error('[vip-configs] 保存储值配置失败:', error.message);
-      return res.status(500).json({ success: false, error: '保存储值配置失败' });
+      return res.status(500).json({ success: false, error: `保存储值配置失败: ${error.message}` });
     }
 
     const { data: saved, error: queryError } = await supabase
@@ -5920,8 +5923,126 @@ vipConfigsRouter.put('/stored', authMiddleware, async (req: Request, res: Respon
 
     res.json({ success: true, data: (saved || []).map(storedValueConfigFromDb) });
   } catch (err: unknown) {
-    console.error('[vip-configs] 保存储值配置异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 保存储值配置异常:', msg);
+    res.status(500).json({ success: false, error: `保存异常: ${msg}` });
+  }
+});
+
+function specialVIPConfigFromDb(s: Record<string, unknown>): SpecialVIPConfig {
+  return {
+    id: String(s.id || ''),
+    shopId: String(s.shop_id || ''),
+    key: String(s.key || ''),
+    name: String(s.name || ''),
+    discount: Number(s.discount || 1),
+    pointsRate: Number(s.points_rate || 1),
+    benefits: Array.isArray(s.benefits) ? s.benefits.map(String) : [],
+    color: String(s.color || 'gray'),
+    isActive: Boolean(s.is_active),
+  };
+}
+
+// 查询 CEO 专用特殊 VIP 配置
+vipConfigsRouter.get('/special', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = (req.query.shopId as string) || req.employee?.shopId || 'shop1';
+    const { data, error } = await supabase
+      .from('special_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('[vip-configs] 查询特殊 VIP 失败:', error.message);
+      return res.status(500).json({ success: false, error: `查询特殊 VIP 失败: ${error.message}` });
+    }
+
+    res.json({ success: true, data: (data || []).map(specialVIPConfigFromDb) });
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 查询特殊 VIP 异常:', msg);
+    res.status(500).json({ success: false, error: `查询异常: ${msg}` });
+  }
+});
+
+// 保存 CEO 专用特殊 VIP 配置（仅 CEO）
+vipConfigsRouter.put('/special', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.employee?.role !== 'ceo') {
+      return res.status(403).json({ success: false, error: '仅 CEO 可修改特殊 VIP 配置' });
+    }
+
+    const { shopId = req.employee.shopId || 'shop1', config } = req.body || {};
+    if (!config || !config.key || !config.name) {
+      return res.status(400).json({ success: false, error: '缺少特殊 VIP 数据' });
+    }
+
+    const now = new Date().toISOString();
+    const row = {
+      id: `svc_${shopId}_${config.key}`,
+      shop_id: shopId,
+      key: config.key,
+      name: config.name,
+      discount: Number(config.discount) || 1,
+      points_rate: Number(config.pointsRate) || 1,
+      benefits: Array.isArray(config.benefits) ? config.benefits : [],
+      color: config.color || 'gray',
+      is_active: true,
+      updated_at: now,
+    };
+
+    const { error } = await supabase.from('special_vip_configs').upsert(row, { onConflict: 'shop_id,key' });
+    if (error) {
+      console.error('[vip-configs] 保存特殊 VIP 失败:', error.message);
+      return res.status(500).json({ success: false, error: `保存特殊 VIP 失败: ${error.message}` });
+    }
+
+    const { data: saved, error: queryError } = await supabase
+      .from('special_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+
+    if (queryError) {
+      return res.json({ success: true, data: [config] });
+    }
+
+    res.json({ success: true, data: (saved || []).map(specialVIPConfigFromDb) });
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 保存特殊 VIP 异常:', msg);
+    res.status(500).json({ success: false, error: `保存异常: ${msg}` });
+  }
+});
+
+// 删除 CEO 专用特殊 VIP 配置（仅 CEO）
+vipConfigsRouter.delete('/special/:key', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.employee?.role !== 'ceo') {
+      return res.status(403).json({ success: false, error: '仅 CEO 可删除特殊 VIP 配置' });
+    }
+
+    const shopId = req.employee.shopId || 'shop1';
+    const { key } = req.params;
+    const { error } = await supabase
+      .from('special_vip_configs')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('shop_id', shopId)
+      .eq('key', key);
+
+    if (error) {
+      console.error('[vip-configs] 删除特殊 VIP 失败:', error.message);
+      return res.status(500).json({ success: false, error: `删除特殊 VIP 失败: ${error.message}` });
+    }
+
+    res.json({ success: true });
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    console.error('[vip-configs] 删除特殊 VIP 异常:', msg);
+    res.status(500).json({ success: false, error: `删除异常: ${msg}` });
   }
 });
 

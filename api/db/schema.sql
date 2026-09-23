@@ -180,3 +180,22 @@ CREATE TABLE IF NOT EXISTS stored_value_configs (
 
 CREATE INDEX IF NOT EXISTS idx_stored_value_configs_shop_id ON stored_value_configs(shop_id);
 CREATE INDEX IF NOT EXISTS idx_stored_value_configs_level ON stored_value_configs(level);
+
+-- CEO 专用特殊 VIP 配置表（不展示在普通顾客端）
+CREATE TABLE IF NOT EXISTS special_vip_configs (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  discount NUMERIC(3,2) NOT NULL DEFAULT 1,
+  points_rate NUMERIC(4,2) NOT NULL DEFAULT 1,
+  benefits JSONB NOT NULL DEFAULT '[]'::jsonb,
+  color TEXT NOT NULL DEFAULT 'gray',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(shop_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_special_vip_configs_shop_id ON special_vip_configs(shop_id);
+CREATE INDEX IF NOT EXISTS idx_special_vip_configs_key ON special_vip_configs(key);
