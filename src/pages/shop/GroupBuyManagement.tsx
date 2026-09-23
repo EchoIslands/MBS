@@ -317,33 +317,16 @@ const GroupBuyManagement: React.FC = () => {
                     batch.isActive ? 'border-gray-100 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'
                   }`}
                 >
-                  <div className="flex justify-between items-start">
-                    <div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
                       <h3 className="font-bold text-gray-800">{batch.name}</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        有效期：{formatDate(batch.validFrom)} 至 {formatDate(batch.validTo)}
-                      </p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {batch.serviceIds?.map((sid) => {
-                          const service = services.find((s) => s.id === sid);
-                          return (
-                            <span key={sid} className="px-2 py-1 bg-blue-50 text-blue-600 text-xs rounded-lg">
-                              {service?.name || sid}
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <p className="text-sm text-orange-600 mt-2">
-                        价格类型：
-                        {batch.priceType === 'fixed'
-                          ? `固定价 ¥${batch.fixedPrice}`
-                          : batch.priceType === 'per_service'
-                          ? '按服务项目自定义价'
-                          : `按${vipLevelOptions.find((o) => o.value === batch.vipLevel)?.label.split('（')[0]}折扣`}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        已核销：{batch.usedQuantity} / {batch.totalQuantity === -1 ? '不限' : batch.totalQuantity}
-                      </p>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${
+                          batch.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {batch.isActive ? '启用中' : '已停用'}
+                      </span>
                     </div>
                     <div className="flex gap-2">
                       <button
