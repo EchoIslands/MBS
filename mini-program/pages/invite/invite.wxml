@@ -1,0 +1,43 @@
+<view class="container invite-page">
+  <view class="card invite-card">
+    <view class="invite-header">
+      <view class="invite-avatar">
+        <text class="invite-avatar-text">{{referrerName[0] || '会'}}</text>
+      </view>
+      <view class="invite-info">
+        <view class="invite-name">{{referrerName}}</view>
+        <view class="invite-desc">邀请你成为 MBS 新会员</view>
+      </view>
+    </view>
+
+    <view class="qr-section">
+      <view wx:if="{{loading}}" class="qr-loading">
+        <view class="loading-spinner"></view>
+        <text>正在生成邀请码...</text>
+      </view>
+
+      <view wx:elif="{{error}}" class="qr-error">
+        <text>{{error}}</text>
+        <view class="btn btn-primary btn-small" bindtap="onRetry">重试</view>
+      </view>
+
+      <block wx:else>
+        <image class="qr-image" src="{{qrCodeDataUrl}}" mode="aspectFit" bindtap="onPreviewQrCode" show-menu-by-longpress />
+        <view class="qr-hint">让好友微信扫一扫，领取新人优惠券</view>
+      </block>
+    </view>
+
+    <view wx:if="{{!loading && !error}}" class="invite-actions">
+      <view class="btn btn-primary" bindtap="onSaveQrCode">保存二维码</view>
+      <button class="btn btn-primary-plain share-btn" open-type="share">分享给好友</button>
+    </view>
+  </view>
+
+  <view class="invite-rules">
+    <view class="rules-title">邀请规则</view>
+    <view class="rules-item">1. 成为会员后即可生成专属邀请二维码</view>
+    <view class="rules-item">2. 好友扫码后自动领取新人优惠券</view>
+    <view class="rules-item">3. 好友首次消费成功后，你可获得消费金额 10% 的返现</view>
+    <view class="rules-item">4. 返现金额进入可提现余额，可在个人中心查看</view>
+  </view>
+</view>

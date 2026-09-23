@@ -260,6 +260,7 @@ Page({
         vipHeaderClass,
         bookingReviewMap,
         bookingReviewedMap,
+        isMember: this.isCustomerMember(customer),
         _profileLoaded: true,
         _needRefresh: false,
       };
@@ -281,6 +282,24 @@ Page({
       }
       this.setData({ error: '个人信息加载失败', loading: false });
     }
+  },
+
+  isCustomerMember(customer) {
+    if (!customer) return false;
+    return !!(
+      customer.isStockholder ||
+      customer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ||
+      customer.storedValueLevel !== StoredValueLevel.NONE
+    );
+  },
+
+  goToInvite() {
+    const { customer } = this.data;
+    if (!customer || !this.isCustomerMember(customer)) {
+      wx.showToast({ title: '成为会员后即可邀请好友', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/invite/invite?customerId=${customer.id}` });
   },
 
   refreshFilteredBookings() {

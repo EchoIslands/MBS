@@ -75,3 +75,67 @@ CREATE INDEX IF NOT EXISTS idx_stockholder_records_shop_id ON stockholder_benefi
 CREATE INDEX IF NOT EXISTS idx_stockholder_records_status ON stockholder_benefit_records(status);
 CREATE INDEX IF NOT EXISTS idx_stockholder_usage_customer ON stockholder_free_service_usage(customer_id);
 CREATE INDEX IF NOT EXISTS idx_stockholder_usage_month ON stockholder_free_service_usage(year_month);
+
+-- 推荐记录表
+CREATE TABLE IF NOT EXISTS referral_records (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  referrer_id TEXT NOT NULL,
+  referrer_name TEXT,
+  referred_id TEXT,
+  referred_name TEXT,
+  referred_phone TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  coupon_id TEXT,
+  bonus_amount NUMERIC(12,2) DEFAULT 0,
+  first_spent_amount NUMERIC(12,2) DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  couponed_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ,
+  source_booking_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_records_shop_id ON referral_records(shop_id);
+CREATE INDEX IF NOT EXISTS idx_referral_records_referrer_id ON referral_records(referrer_id);
+CREATE INDEX IF NOT EXISTS idx_referral_records_referred_id ON referral_records(referred_id);
+CREATE INDEX IF NOT EXISTS idx_referral_records_status ON referral_records(status);
+
+-- 优惠券模板表
+CREATE TABLE IF NOT EXISTS coupons (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'fixed_amount',
+  value NUMERIC(12,2) NOT NULL DEFAULT 0,
+  min_order_amount NUMERIC(12,2) DEFAULT 0,
+  valid_days INTEGER DEFAULT 30,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_coupons_shop_id ON coupons(shop_id);
+CREATE INDEX IF NOT EXISTS idx_coupons_is_active ON coupons(is_active);
+
+-- 用户优惠券表
+CREATE TABLE IF NOT EXISTS customer_coupons (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  coupon_id TEXT,
+  coupon_name TEXT,
+  type TEXT NOT NULL DEFAULT 'fixed_amount',
+  value NUMERIC(12,2) NOT NULL DEFAULT 0,
+  min_order_amount NUMERIC(12,2) DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'unused',
+  source TEXT,
+  source_referral_id TEXT,
+  valid_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  valid_end TIMESTAMPTZ,
+  used_at TIMESTAMPTZ,
+  used_order_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_coupons_customer_id ON customer_coupons(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_coupons_status ON customer_coupons(status);
+CREATE INDEX IF NOT EXISTS idx_customer_coupons_valid_end ON customer_coupons(valid_end);

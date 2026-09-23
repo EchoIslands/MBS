@@ -1,0 +1,63 @@
+<view class="container claim-page">
+  <view wx:if="{{loading}}" class="claim-loading">
+    <view class="loading-spinner"></view>
+    <text>加载中...</text>
+  </view>
+
+  <view wx:elif="{{error}}" class="card claim-error">
+    <text>{{error}}</text>
+    <view class="btn btn-primary btn-small" bindtap="loadInviteInfo">重试</view>
+  </view>
+
+  <block wx:elif="{{claimed}}">
+    <view class="card claim-success">
+      <view class="success-icon">🎉</view>
+      <view class="success-title">领取成功</view>
+      <view class="success-desc">恭喜你获得 {{claimedCoupon.couponName}}</view>
+      <view class="coupon-card-mini">
+        <view class="coupon-value">¥{{claimedCoupon.value}}</view>
+        <view class="coupon-condition">满 {{claimedCoupon.minOrderAmount}} 元可用</view>
+        <view class="coupon-valid">有效期至 {{claimedCoupon.validEnd}}</view>
+      </view>
+      <view class="btn btn-primary" bindtap="onGoHome">去预约体验</view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="card claim-card">
+      <view class="claim-header">
+        <view class="referrer-name">{{referrerName}}</view>
+        <view class="claim-title">送你一份新人礼</view>
+      </view>
+
+      <view wx:if="{{coupon}}" class="coupon-card">
+        <view class="coupon-main">
+          <view class="coupon-value">¥{{coupon.value}}</view>
+          <view class="coupon-name">{{coupon.name}}</view>
+        </view>
+        <view class="coupon-condition">满 {{coupon.minOrderAmount}} 元可用</view>
+        <view class="coupon-valid">领取后 {{coupon.validDays}} 天内有效</view>
+      </view>
+
+      <view wx:if="{{alreadyClaimed}}" class="already-claimed">
+        该优惠券已被领取
+      </view>
+
+      <block wx:else>
+        <view class="form-group">
+          <view class="form-label">手机号</view>
+          <input class="form-input" type="number" maxlength="11" placeholder="请输入手机号领取" value="{{phone}}" bindinput="onPhoneInput" />
+        </view>
+
+        <view class="form-group">
+          <view class="form-label">称呼（选填）</view>
+          <input class="form-input" type="text" maxlength="20" placeholder="怎么称呼你" value="{{name}}" bindinput="onNameInput" />
+        </view>
+
+        <view class="btn btn-primary {{claiming ? 'btn-disabled' : ''}}" bindtap="onClaim">
+          {{claiming ? '领取中...' : '立即领取'}}
+        </view>
+      </block>
+    </view>
+  </block>
+</view>

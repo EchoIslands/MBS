@@ -12,6 +12,7 @@ import {
 } from '../../shared/lib/membership.js';
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
+import QRCode from 'qrcode';
 
 const mainRouter = Router();
 
@@ -563,12 +564,13 @@ async function processReferralPromotion(
     if (firstSpentAmount <= 0) return;
 
     // 1. 查询被推荐人的推荐记录（referral_records 正式表）
+    // 支持 pending（老数据）或 couponed（扫码领券后）状态
     const { data: referralRecords, error: _refError } = await supabase
       .from('referral_records')
       .select('*')
       .eq('shop_id', shopId)
       .eq('referred_id', referredCustomerId)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'couponed'])
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -633,7 +635,8 @@ async function processReferralPromotion(
     if (!referrerId) return;
 
     // 3. 幂等性保护：检查该推荐记录是否已处理过
-    if (record.status !== 'pending') {
+    // 支持 pending（老数据）或 couponed（扫码领券后）状态触发返现，confirmed 表示已完成
+    if (record.status === 'confirmed') {
       console.log(`[推荐转化] 推荐记录 ${record.id} 已处理，跳过`);
       return;
     }
@@ -5378,8 +5381,6 @@ mainRouter.use('/member-benefits', memberBenefitsRouter);
 // ===================== referrals =====================
 const referralsRouter = Router();
 
-referralsRouter.use(authMiddleware);
-
 const referralFromDb = (r: Record<string, unknown>): unknown => ({
   id: r.id,
   referrerId: r.referrer_id,
@@ -5393,8 +5394,55 @@ const referralFromDb = (r: Record<string, unknown>): unknown => ({
   confirmedAt: r.confirmed_at,
 });
 
-// 获取店铺推荐记录
-referralsRouter.get('/', async (req: Request, res: Response) => {
+// 判断顾客是否为会员（不限会员级别，储值/购买/VIP/股东均可）
+function isCustomerMember(c: Record<string, unknown>): boolean {
+  return Boolean(
+    c.is_stockholder ||
+      (c.membership_level && c.membership_level !== 'regular') ||
+      (c.purchase_vip_level && c.purchase_vip_level !== 'regular') ||
+      (c.stored_value_level && c.stored_value_level !== 'none')
+  );
+}
+
+// 确保店铺存在默认邀请优惠券（新人扫码领取）
+async function ensureDefaultReferralCoupon(shopId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const { data: existing } = await supabase
+      .from('coupons')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (existing && existing.length > 0) return existing[0];
+
+    const coupon = {
+      id: `coupon_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      shop_id: shopId,
+      name: '新人体验券',
+      type: 'fixed_amount',
+      value: 20,
+      min_order_amount: 100,
+      valid_days: 30,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('coupons').insert(coupon).select().single();
+    if (error) {
+      console.error('[referrals] 创建默认优惠券失败:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error('[referrals] ensureDefaultReferralCoupon 异常:', (err as Error).message);
+    return null;
+  }
+}
+
+// 获取店铺推荐记录（员工后台）
+referralsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
     const { data, error } = await supabase
@@ -5413,6 +5461,288 @@ referralsRouter.get('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[referrals] 获取推荐记录异常:', error);
     res.json({ success: true, data: [] });
+  }
+});
+
+// 顾客生成邀请二维码（小程序端）
+referralsRouter.post('/invite', async (req: Request, res: Response) => {
+  try {
+    const { shopId = 'shop1', customerId } = req.body || {};
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: '缺少 customerId' });
+    }
+
+    // 验证顾客身份及会员资格
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .select('id, name, phone, membership_level, purchase_vip_level, stored_value_level, is_stockholder')
+      .eq('id', customerId)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (customerError || !customer) {
+      return res.status(404).json({ success: false, error: '顾客不存在' });
+    }
+
+    if (!isCustomerMember(customer)) {
+      return res.status(403).json({ success: false, error: '只有会员才能生成邀请码' });
+    }
+
+    // 确保存在默认新人优惠券
+    const coupon = await ensureDefaultReferralCoupon(shopId);
+    const couponId = coupon ? coupon.id : null;
+
+    // 创建推荐记录
+    const referralId = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const baseUrl = process.env.H5_BASE_URL || `https://www.hsxx8888.cn`;
+    const inviteUrl = `${baseUrl}/invite?ref=${referralId}`;
+
+    const { error: insertError } = await supabase.from('referral_records').insert({
+      id: referralId,
+      shop_id: shopId,
+      referrer_id: customerId,
+      referrer_name: customer.name || '会员',
+      status: 'pending',
+      coupon_id: couponId,
+      created_at: new Date().toISOString(),
+    });
+
+    if (insertError) {
+      console.error('[referrals] 创建推荐记录失败:', insertError.message);
+      return res.status(500).json({ success: false, error: '创建邀请记录失败' });
+    }
+
+    // 生成二维码图片（Data URL）
+    const qrCodeDataUrl = await QRCode.toDataURL(inviteUrl, {
+      width: 280,
+      margin: 2,
+      color: { dark: '#1a1a2e', light: '#ffffff' },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        referralId,
+        inviteUrl,
+        qrCodeDataUrl,
+        referrerName: customer.name || '会员',
+      },
+    });
+  } catch (error) {
+    console.error('[referrals] 生成邀请二维码异常:', error);
+    res.status(500).json({ success: false, error: '生成邀请二维码失败' });
+  }
+});
+
+// 查询邀请码信息（公开，H5/小程序扫码落地页）
+referralsRouter.get('/check-code', async (req: Request, res: Response) => {
+  try {
+    const { ref } = req.query;
+    if (!ref || typeof ref !== 'string') {
+      return res.status(400).json({ success: false, error: '缺少邀请码' });
+    }
+
+    const { data: record, error } = await supabase
+      .from('referral_records')
+      .select('id, referrer_id, referrer_name, coupon_id, status, referred_id, shop_id')
+      .eq('id', ref)
+      .single();
+
+    if (error || !record) {
+      return res.status(404).json({ success: false, error: '邀请码无效或已过期' });
+    }
+
+    if (record.status === 'confirmed') {
+      return res.status(400).json({ success: false, error: '该邀请已完成' });
+    }
+
+    let couponInfo = null;
+    if (record.coupon_id) {
+      const { data: coupon } = await supabase
+        .from('coupons')
+        .select('id, name, type, value, min_order_amount, valid_days')
+        .eq('id', record.coupon_id)
+        .single();
+      couponInfo = coupon;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        referralId: record.id,
+        referrerName: record.referrer_name || '会员',
+        shopId: record.shop_id,
+        coupon: couponInfo
+          ? {
+              id: couponInfo.id,
+              name: couponInfo.name,
+              type: couponInfo.type,
+              value: Number(couponInfo.value) || 0,
+              minOrderAmount: Number(couponInfo.min_order_amount) || 0,
+              validDays: Number(couponInfo.valid_days) || 30,
+            }
+          : null,
+        alreadyClaimed: !!record.referred_id,
+      },
+    });
+  } catch (error) {
+    console.error('[referrals] 查询邀请码异常:', error);
+    res.status(500).json({ success: false, error: '查询邀请码失败' });
+  }
+});
+
+// 扫码领取优惠券并绑定推荐关系（公开）
+referralsRouter.post('/claim', async (req: Request, res: Response) => {
+  try {
+    const { ref, phone, name } = req.body || {};
+    if (!ref || !phone) {
+      return res.status(400).json({ success: false, error: '缺少邀请码或手机号' });
+    }
+
+    const cleanPhone = String(phone).trim();
+    if (!/^1[3-9]\d{9}$/.test(cleanPhone)) {
+      return res.status(400).json({ success: false, error: '手机号格式不正确' });
+    }
+
+    // 查询邀请记录
+    const { data: record, error: recordError } = await supabase
+      .from('referral_records')
+      .select('id, shop_id, referrer_id, coupon_id, status, referred_id')
+      .eq('id', ref)
+      .single();
+
+    if (recordError || !record) {
+      return res.status(404).json({ success: false, error: '邀请码无效' });
+    }
+
+    if (record.status === 'confirmed') {
+      return res.status(400).json({ success: false, error: '该邀请已完成，无法重复领取' });
+    }
+
+    if (record.referred_id) {
+      return res.status(400).json({ success: false, error: '该邀请券已被领取' });
+    }
+
+    const shopId = record.shop_id;
+
+    // 查找或创建顾客
+    let { data: customer } = await supabase
+      .from('customers')
+      .select('id, name, phone')
+      .eq('phone', cleanPhone)
+      .eq('shop_id', shopId)
+      .maybeSingle();
+
+    if (!customer) {
+      const newCustomer = {
+        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        shop_id: shopId,
+        name: name?.trim() || `顾客${cleanPhone.slice(-4)}`,
+        phone: cleanPhone,
+        membership_level: 'regular',
+        purchase_vip_level: 'regular',
+        stored_value_level: 'none',
+        source: 'referral_scan',
+        is_referred: true,
+        created_at: new Date().toISOString(),
+      };
+      const { data: inserted, error: insertCustomerError } = await supabase
+        .from('customers')
+        .insert(newCustomer)
+        .select()
+        .single();
+      if (insertCustomerError || !inserted) {
+        console.error('[referrals] 创建顾客失败:', insertCustomerError?.message);
+        return res.status(500).json({ success: false, error: '创建顾客失败' });
+      }
+      customer = inserted;
+    }
+
+    // 不能自己邀请自己
+    if (customer.id === record.referrer_id) {
+      return res.status(400).json({ success: false, error: '不能领取自己的邀请券' });
+    }
+
+    // 查询优惠券模板
+    let coupon = null;
+    if (record.coupon_id) {
+      const { data: couponData } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('id', record.coupon_id)
+        .single();
+      coupon = couponData;
+    }
+
+    if (!coupon) {
+      // 没有指定优惠券时创建默认券
+      coupon = await ensureDefaultReferralCoupon(shopId);
+    }
+
+    if (!coupon) {
+      return res.status(500).json({ success: false, error: '优惠券配置异常' });
+    }
+
+    const now = new Date();
+    const validDays = Number(coupon.valid_days) || 30;
+    const validEnd = new Date(now.getTime() + validDays * 24 * 60 * 60 * 1000);
+
+    // 创建用户优惠券
+    const customerCouponId = `cc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const { error: couponInsertError } = await supabase.from('customer_coupons').insert({
+      id: customerCouponId,
+      shop_id: shopId,
+      customer_id: customer.id,
+      coupon_id: coupon.id,
+      coupon_name: coupon.name,
+      type: coupon.type,
+      value: Number(coupon.value) || 0,
+      min_order_amount: Number(coupon.min_order_amount) || 0,
+      status: 'unused',
+      source: 'referral_scan',
+      source_referral_id: record.id,
+      valid_start: now.toISOString(),
+      valid_end: validEnd.toISOString(),
+      created_at: now.toISOString(),
+    });
+
+    if (couponInsertError) {
+      console.error('[referrals] 创建用户优惠券失败:', couponInsertError.message);
+      return res.status(500).json({ success: false, error: '领取优惠券失败' });
+    }
+
+    // 更新推荐记录
+    const { error: updateError } = await supabase
+      .from('referral_records')
+      .update({
+        referred_id: customer.id,
+        referred_name: customer.name,
+        referred_phone: cleanPhone,
+        status: 'couponed',
+        couponed_at: now.toISOString(),
+      })
+      .eq('id', ref);
+
+    if (updateError) {
+      console.error('[referrals] 更新推荐记录失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '绑定推荐关系失败' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        customerId: customer.id,
+        couponId: customerCouponId,
+        couponName: coupon.name,
+        type: coupon.type,
+        value: Number(coupon.value) || 0,
+        minOrderAmount: Number(coupon.min_order_amount) || 0,
+        validEnd: validEnd.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('[referrals] 领取优惠券异常:', error);
+    res.status(500).json({ success: false, error: '领取优惠券失败' });
   }
 });
 

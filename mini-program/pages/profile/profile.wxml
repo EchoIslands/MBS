@@ -137,6 +137,18 @@
       </view>
     </view>
 
+    <!-- 邀请好友 -->
+    <view wx:if="{{customer && isMember}}" class="card invite-card" bindtap="goToInvite">
+      <view class="invite-left">
+        <mbs-icon name="share-2" size="36" color="var(--primary)" />
+        <view class="invite-text">
+          <view class="invite-title">邀请好友</view>
+          <view class="invite-hint">好友消费后获得 {{(customer.referralBonusRate || 0.10) * 100}}% 返现</view>
+        </view>
+      </view>
+      <mbs-icon name="chevronRight" size="28" color="var(--text-tertiary)" />
+    </view>
+
     <!-- 6) 我的可用权益 -->
     <view wx:if="{{myBenefits.length > 0}}" class="card">
       <view class="card-title">

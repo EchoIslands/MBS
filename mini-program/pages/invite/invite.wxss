@@ -1,0 +1,141 @@
+.invite-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f0f4ff 0%, #f8f9fb 100%);
+  padding: 32rpx;
+  box-sizing: border-box;
+}
+
+.invite-card {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 48rpx 40rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.06);
+}
+
+.invite-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 48rpx;
+}
+
+.invite-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+}
+
+.invite-avatar-text {
+  color: #fff;
+  font-size: 40rpx;
+  font-weight: 600;
+}
+
+.invite-name {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8rpx;
+}
+
+.invite-desc {
+  font-size: 28rpx;
+  color: #6b7280;
+}
+
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32rpx 0;
+}
+
+.qr-image {
+  width: 480rpx;
+  height: 480rpx;
+  border-radius: 16rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.qr-hint {
+  margin-top: 24rpx;
+  font-size: 26rpx;
+  color: #6b7280;
+}
+
+.qr-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 120rpx 0;
+  color: #6b7280;
+  font-size: 28rpx;
+}
+
+.loading-spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid #e5e7eb;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16rpx;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.qr-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 100rpx 0;
+  color: #ef4444;
+  font-size: 28rpx;
+}
+
+.invite-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  margin-top: 48rpx;
+}
+
+.share-btn {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  line-height: inherit;
+  font-size: inherit;
+}
+
+.share-btn::after {
+  border: none;
+}
+
+.invite-rules {
+  margin-top: 40rpx;
+  padding: 0 16rpx;
+}
+
+.rules-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 16rpx;
+}
+
+.rules-item {
+  font-size: 26rpx;
+  color: #6b7280;
+  line-height: 1.8;
+}

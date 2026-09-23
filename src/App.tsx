@@ -19,6 +19,7 @@ import ProductDetail from "./pages/customer/ProductDetail";
 import Cart from "./pages/customer/Cart";
 import ProductOrders from "./pages/customer/ProductOrders";
 import MyCoupons from "./pages/customer/MyCoupons";
+import InviteLanding from "./pages/InviteLanding";
 
 // 理发店端
 import ShopLogin from "./pages/shop/Login";
@@ -203,6 +204,7 @@ export default function App() {
 
         {/* 店铺专属入口（保留短链，但移除 /shop/:shopId 通配，避免误匹配管理端路径） */}
         <Route path="/s/:shopId" element={<ShopRedirect />} />
+        <Route path="/invite" element={<InviteLanding />} />
       </Routes>
     </Router>
   );

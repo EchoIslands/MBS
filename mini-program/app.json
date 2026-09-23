@@ -13,7 +13,9 @@
     "pages/recharge/recharge",
     "pages/review/review",
     "pages/privacy/privacy",
-    "pages/agreement/agreement"
+    "pages/agreement/agreement",
+    "pages/invite/invite",
+    "pages/invite/claim"
   ],
   "window": {
     "backgroundTextStyle": "light",
