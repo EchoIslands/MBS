@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import QRCode from 'qrcode';
 import {
   Search,
   User,
@@ -102,6 +103,7 @@ const Checkout: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [showWechatModal, setShowWechatModal] = useState(false);
   const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [confirming, setConfirming] = useState(false);
   const [pendingSettlementId, setPendingSettlementId] = useState<string | null>(null);
 
@@ -208,6 +210,17 @@ const Checkout: React.FC = () => {
     loadBenefits();
     return () => { cancelled = true; };
   }, [selectedCustomer]);
+
+  // 微信支付二维码生成
+  useEffect(() => {
+    if (wechatPayment?.codeUrl) {
+      QRCode.toDataURL(wechatPayment.codeUrl, { width: 192, margin: 2, color: { dark: '#1a1a2e', light: '#ffffff' } })
+        .then((url) => setQrCodeDataUrl(url))
+        .catch(() => setQrCodeDataUrl(''));
+    } else {
+      setQrCodeDataUrl('');
+    }
+  }, [wechatPayment]);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return customers.slice(0, 8);
@@ -1152,14 +1165,22 @@ const Checkout: React.FC = () => {
             {wechatPayment.codeUrl && (
               <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-48 h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center mb-2 mx-auto">
-                    <span className="text-xs text-gray-400 text-center px-2">
-                      微信支付二维码
-                      <br />
-                      （商户号配置后自动生成）
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400">{wechatPayment.codeUrl}</p>
+                  {qrCodeDataUrl ? (
+                    <img
+                      src={qrCodeDataUrl}
+                      alt="微信支付二维码"
+                      className="w-48 h-48 mx-auto mb-2 rounded-xl border border-gray-200"
+                    />
+                  ) : (
+                    <div className="w-48 h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center mb-2 mx-auto">
+                      <span className="text-xs text-gray-400 text-center px-2">
+                        微信支付二维码
+                        <br />
+                        （生成中...）
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 break-all">{wechatPayment.codeUrl}</p>
                 </div>
               </div>
             )}
