@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -2018,6 +2018,32 @@ export const vipConfigApi = {
       const token = getAuthToken();
       const result = await http<{ success: boolean; data: PurchaseVIPPlan[] }>(
         `${API_BASE}/vip-configs/purchase`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ shopId, plans }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  getStoredConfigs: async (shopId: string): Promise<StoredValuePlan[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: StoredValuePlan[] }>(
+        `${API_BASE}/vip-configs/stored?shopId=${shopId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) return result.data;
+    }
+    return [];
+  },
+  updateStoredConfigs: async (shopId: string, plans: StoredValuePlan[]): Promise<StoredValuePlan[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: StoredValuePlan[] }>(
+        `${API_BASE}/vip-configs/stored`,
         {
           method: 'PUT',
           body: JSON.stringify({ shopId, plans }),

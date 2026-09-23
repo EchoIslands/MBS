@@ -10,7 +10,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, PurchaseVIPLevel } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, PurchaseVIPLevel, StoredValuePlan, StoredValueLevel } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
 
@@ -5835,6 +5835,92 @@ vipConfigsRouter.put('/purchase', authMiddleware, async (req: Request, res: Resp
     res.json({ success: true, data: (saved || []).map(purchaseVIPConfigFromDb) });
   } catch (err: unknown) {
     console.error('[vip-configs] 保存异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+function storedValueConfigFromDb(s: Record<string, unknown>): StoredValuePlan {
+  return {
+    level: s.level as StoredValueLevel,
+    name: String(s.name || ''),
+    amount: Number(s.amount || 0),
+    discount: Number(s.discount || 1),
+    pointsRate: Number(s.points_rate || 1),
+    benefits: Array.isArray(s.benefits) ? s.benefits.map(String) : [],
+    color: String(s.color || 'gray'),
+  };
+}
+
+// 查询储值型会员配置
+vipConfigsRouter.get('/stored', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = (req.query.shopId as string) || req.employee?.shopId || 'shop1';
+    const { data, error } = await supabase
+      .from('stored_value_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('level', { ascending: true });
+
+    if (error) {
+      console.error('[vip-configs] 查询储值配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询储值配置失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(storedValueConfigFromDb) });
+  } catch (err: unknown) {
+    console.error('[vip-configs] 查询储值配置异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+// 更新储值型会员配置（仅 CEO）
+vipConfigsRouter.put('/stored', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (req.employee?.role !== 'ceo') {
+      return res.status(403).json({ success: false, error: '仅 CEO 可修改会员权益配置' });
+    }
+
+    const { shopId = req.employee.shopId || 'shop1', plans } = req.body || {};
+    if (!Array.isArray(plans) || plans.length === 0) {
+      return res.status(400).json({ success: false, error: '缺少配置数据' });
+    }
+
+    const now = new Date().toISOString();
+    const rows = plans.map((plan: StoredValuePlan) => ({
+      id: `svc_${shopId}_${plan.level}`,
+      shop_id: shopId,
+      level: plan.level,
+      name: plan.name,
+      amount: plan.amount,
+      discount: plan.discount,
+      points_rate: plan.pointsRate,
+      benefits: plan.benefits || [],
+      color: plan.color,
+      is_active: true,
+      updated_at: now,
+    }));
+
+    const { error } = await supabase.from('stored_value_configs').upsert(rows, { onConflict: 'shop_id,level' });
+    if (error) {
+      console.error('[vip-configs] 保存储值配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '保存储值配置失败' });
+    }
+
+    const { data: saved, error: queryError } = await supabase
+      .from('stored_value_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('is_active', true)
+      .order('level', { ascending: true });
+
+    if (queryError) {
+      return res.json({ success: true, data: plans });
+    }
+
+    res.json({ success: true, data: (saved || []).map(storedValueConfigFromDb) });
+  } catch (err: unknown) {
+    console.error('[vip-configs] 保存储值配置异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
