@@ -1362,6 +1362,47 @@ export const settlementApi = {
       payment: null,
     };
   },
+
+  retryPayment: async (settlementId: string): Promise<WechatPaymentResult> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: WechatPaymentResult }>(
+        `${API_BASE}/settlements/${settlementId}/retry-payment`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!result || !result.success) throw new Error('重新生成支付二维码失败');
+      return result.data;
+    }
+    // Mock fallback
+    const settlement = mockSettlements.find((s) => s.id === settlementId);
+    return {
+      paymentId: `pay_${Date.now()}`,
+      status: 'pending',
+      amount: Number(settlement?.total) || 0,
+      codeUrl: `https://mock.wechat.qrcode/pay/mock?amount=${settlement?.total || 0}`,
+      prepayId: `mock_prepay_${Date.now()}`,
+      message: '微信支付配置未完成（mock 模式），请使用余额/现金支付或确认收款后继续',
+    };
+  },
+
+  delete: async (settlementId: string): Promise<{ id: string }> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: { id: string } }>(
+        `${API_BASE}/settlements/${settlementId}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!result || !result.success) throw new Error('删除结算记录失败');
+      return result.data;
+    }
+    // Mock fallback
+    const idx = mockSettlements.findIndex((s) => s.id === settlementId);
+    if (idx !== -1) {
+      mockSettlements.splice(idx, 1);
+      saveSettlementsToCache();
+    }
+    return { id: settlementId };
+  },
 };
 
 // 会员权益相关 API

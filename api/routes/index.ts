@@ -5026,6 +5026,115 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
   }
 });
 
+// 重新生成支付二维码（顾客未扫码/二维码过期时继续使用）
+settlementsRouter.post('/:id/retry-payment', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { id } = req.params;
+
+    const { data: settlement, error: findError } = await supabase
+      .from('settlements')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (findError || !settlement) {
+      return res.status(404).json({ success: false, error: '结算记录不存在' });
+    }
+
+    if (settlement.payment_status !== 'pending') {
+      return res.status(400).json({ success: false, error: '该结算记录不在待支付状态' });
+    }
+
+    const method = settlement.payment_method as string;
+    if (method !== 'wechat' && method !== 'alipay') {
+      return res.status(400).json({ success: false, error: '仅支持重新生成微信/支付宝支付二维码' });
+    }
+
+    const total = Number(settlement.total) || 0;
+    const channel: PaymentChannel = method === 'wechat' ? 'wechat_native' : 'alipay';
+    const paymentResult = await createPayment({
+      shopId,
+      customerId: settlement.customer_id as string,
+      settlementId: id,
+      amount: total,
+      channel,
+      description: `MBS 门店结算 ${id}`,
+    });
+
+    const { error: paymentInsertError } = await supabase.from('payments').insert({
+      id: paymentResult.paymentId,
+      shop_id: shopId,
+      customer_id: settlement.customer_id,
+      booking_id: settlement.booking_id || null,
+      settlement_id: id,
+      channel,
+      amount: total,
+      status: paymentResult.status,
+      prepay_id: paymentResult.prepayId || null,
+      created_at: new Date().toISOString(),
+    });
+
+    if (paymentInsertError) {
+      console.error('[settlements] 创建新 payment 记录失败:', paymentInsertError.message);
+    }
+
+    res.json({ success: true, data: paymentResult });
+  } catch (error) {
+    console.error('[settlements] 重新生成支付二维码异常:', error);
+    res.status(500).json({ success: false, error: '重新生成支付二维码失败' });
+  }
+});
+
+// 删除待支付/失败的结算记录
+settlementsRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { id } = req.params;
+
+    const { data: settlement, error: findError } = await supabase
+      .from('settlements')
+      .select('payment_status')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (findError || !settlement) {
+      return res.status(404).json({ success: false, error: '结算记录不存在' });
+    }
+
+    if (!['pending', 'failed'].includes(settlement.payment_status as string)) {
+      return res.status(400).json({ success: false, error: '仅允许删除待支付或支付失败的结算记录' });
+    }
+
+    // 先删除关联支付记录，避免外键约束导致失败
+    const { error: deletePaymentsError } = await supabase
+      .from('payments')
+      .delete()
+      .eq('settlement_id', id);
+
+    if (deletePaymentsError) {
+      console.error('[settlements] 删除关联支付记录失败:', deletePaymentsError.message);
+    }
+
+    const { error: deleteError } = await supabase
+      .from('settlements')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      console.error('[settlements] 删除结算记录失败:', deleteError.message);
+      return res.status(500).json({ success: false, error: '删除结算记录失败' });
+    }
+
+    res.json({ success: true, data: { id } });
+  } catch (error) {
+    console.error('[settlements] 删除结算记录异常:', error);
+    res.status(500).json({ success: false, error: '删除结算记录失败' });
+  }
+});
+
 // 查询结算支付状态
 settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request, res: Response) => {
   try {
