@@ -19,6 +19,7 @@ function toBatchCamelCase(batch: Record<string, unknown>): Record<string, unknow
     validTo: batch.valid_to,
     totalQuantity: batch.total_quantity,
     usedQuantity: batch.used_quantity,
+    platform: (batch.platform as string) || 'other',
     isActive: batch.is_active,
     createdAt: batch.created_at,
     updatedAt: batch.updated_at,
@@ -33,6 +34,7 @@ function toVoucherCamelCase(voucher: Record<string, unknown>): Record<string, un
     shopId: voucher.shop_id,
     code: voucher.code,
     status: voucher.status,
+    platform: (voucher.platform as string) || 'other',
     usedAt: voucher.used_at,
     usedByCustomerId: voucher.used_by_customer_id,
     usedOrderId: voucher.used_order_id,
@@ -103,6 +105,54 @@ const generateId = () => {
   return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
 };
 
+// 从扫码内容中提取真实券码
+// 支持：纯文本、URL（query/path）、JSON
+function extractVoucherCode(rawCode: string): string {
+  if (!rawCode) return '';
+  const trimmed = rawCode.trim();
+
+  // 尝试解析 JSON
+  try {
+    const parsed = JSON.parse(trimmed);
+    const candidate =
+      parsed.code ??
+      parsed.voucherCode ??
+      parsed.couponCode ??
+      parsed.voucher?.code ??
+      parsed.coupon?.code ??
+      parsed.data?.code ??
+      parsed.data?.voucherCode ??
+      parsed.sn ??
+      parsed.no;
+    if (candidate) return String(candidate).trim();
+  } catch {
+    // 不是 JSON，继续处理
+  }
+
+  // URL 场景：尝试从 query 或 path 提取
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const possibleKeys = ['code', 'voucher', 'voucherCode', 'coupon', 'couponCode', 'sn', 'no'];
+      for (const key of possibleKeys) {
+        const value = url.searchParams.get(key);
+        if (value) return value.trim();
+      }
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      const lastPart = pathParts[pathParts.length - 1];
+      if (lastPart && lastPart.length >= 6) return lastPart.trim();
+    } catch {
+      // URL 解析失败，继续 fallback
+    }
+  }
+
+  // 兜底：从文本中匹配一串看起来像券码的字符
+  const match = trimmed.match(/[A-Z0-9]{6,}/i);
+  if (match) return match[0];
+
+  return trimmed;
+}
+
 // GET /group-buy/batches?shopId=xxx
 router.get('/batches', async (req: Request, res: Response) => {
   try {
@@ -131,11 +181,13 @@ router.get('/batches', async (req: Request, res: Response) => {
 // POST /group-buy/batches
 router.post('/batches', async (req: Request, res: Response) => {
   try {
-    const { shopId, name, serviceIds, servicePrices, priceType, fixedPrice, vipLevel, validFrom, validTo, totalQuantity, isActive } = req.body || {};
+    const { shopId, name, serviceIds, servicePrices, priceType, fixedPrice, vipLevel, platform, validFrom, validTo, totalQuantity, isActive } = req.body || {};
     if (!shopId || !name || !validFrom || !validTo) {
       res.status(400).json(fail('缺少必要字段'));
       return;
     }
+    const validPlatforms = ['meituan', 'douyin', 'dianping', 'other'];
+    const batchPlatform = validPlatforms.includes(platform) ? platform : 'other';
     const now = new Date().toISOString();
     const insertData = {
       id: generateId(),
@@ -146,6 +198,7 @@ router.post('/batches', async (req: Request, res: Response) => {
       price_type: priceType || 'fixed',
       fixed_price: fixedPrice,
       vip_level: vipLevel,
+      platform: batchPlatform,
       valid_from: validFrom,
       valid_to: validTo,
       total_quantity: totalQuantity || 0,
@@ -171,14 +224,16 @@ router.post('/batches', async (req: Request, res: Response) => {
 router.put('/batches/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, serviceIds, servicePrices, priceType, fixedPrice, vipLevel, validFrom, validTo, totalQuantity, isActive } = req.body || {};
+    const { name, serviceIds, servicePrices, priceType, fixedPrice, vipLevel, platform, validFrom, validTo, totalQuantity, isActive } = req.body || {};
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const validPlatforms = ['meituan', 'douyin', 'dianping', 'other'];
     if (name !== undefined) updateData.name = name;
     if (serviceIds !== undefined) updateData.service_ids = Array.isArray(serviceIds) ? serviceIds : [];
     if (servicePrices !== undefined) updateData.service_prices = servicePrices;
     if (priceType !== undefined) updateData.price_type = priceType;
     if (fixedPrice !== undefined) updateData.fixed_price = fixedPrice;
     if (vipLevel !== undefined) updateData.vip_level = vipLevel;
+    if (platform !== undefined && validPlatforms.includes(platform)) updateData.platform = platform;
     if (validFrom !== undefined) updateData.valid_from = validFrom;
     if (validTo !== undefined) updateData.valid_to = validTo;
     if (totalQuantity !== undefined) updateData.total_quantity = totalQuantity;
@@ -237,12 +292,14 @@ router.post('/batches/:id/import-vouchers', async (req: Request, res: Response) 
       return;
     }
     const now = new Date().toISOString();
+    const batchPlatform = (batch.platform as string) || 'other';
     const rows = codes.map((code) => ({
       id: generateId(),
       batch_id: id,
       shop_id: shopId,
-      code: String(code).trim(),
+      code: extractVoucherCode(String(code)),
       status: 'unused',
+      platform: batchPlatform,
       created_at: now,
     }));
     const { data: vouchers, error: insertError } = await supabase.from('group_buy_vouchers').insert(rows).select();
@@ -299,12 +356,14 @@ router.post('/batches/:id/generate-vouchers', async (req: Request, res: Response
     }
 
     const now = new Date().toISOString();
+    const batchPlatform = (batch.platform as string) || 'other';
     const rows = codes.map((code) => ({
       id: generateId(),
       batch_id: id,
       shop_id: shopId,
       code,
       status: 'unused',
+      platform: batchPlatform,
       created_at: now,
     }));
     const { data: vouchers, error: insertError } = await supabase.from('group_buy_vouchers').insert(rows).select();
@@ -375,11 +434,16 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
       res.status(400).json(fail('缺少 code 或 shopId'));
       return;
     }
+    const extractedCode = extractVoucherCode(String(code));
+    if (!extractedCode) {
+      res.status(400).json(fail('无法从扫码内容中提取券码'));
+      return;
+    }
     const { data: voucher, error } = await supabase
       .from('group_buy_vouchers')
       .select('*, group_buy_batches(*)')
       .eq('shop_id', shopId)
-      .eq('code', String(code).trim())
+      .eq('code', extractedCode)
       .single();
     if (error || !voucher) {
       res.status(404).json(fail('券码不存在'));
@@ -419,8 +483,8 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
     const { price, description } = calcGroupBuyPrice(batch, serviceId, servicePrice);
 
     res.json(success({
-      voucher,
-      batch,
+      voucher: toVoucherCamelCase(voucher as Record<string, unknown>),
+      batch: toBatchCamelCase(batch),
       priceInfo: { price, description },
       needBind: false,
     }));
@@ -438,11 +502,16 @@ router.post('/vouchers/redeem', async (req: Request, res: Response) => {
       res.status(400).json(fail('缺少 code 或 shopId'));
       return;
     }
+    const extractedCode = extractVoucherCode(String(code));
+    if (!extractedCode) {
+      res.status(400).json(fail('无法从扫码内容中提取券码'));
+      return;
+    }
     const { data: voucher, error } = await supabase
       .from('group_buy_vouchers')
       .select('*, group_buy_batches(*)')
       .eq('shop_id', shopId)
-      .eq('code', String(code).trim())
+      .eq('code', extractedCode)
       .single();
     if (error || !voucher) {
       res.status(404).json(fail('券码不存在'));
@@ -483,8 +552,8 @@ router.post('/vouchers/redeem', async (req: Request, res: Response) => {
       return;
     }
     res.json(success({
-      voucher: result,
-      batch,
+      voucher: toVoucherCamelCase(result as Record<string, unknown>),
+      batch: toBatchCamelCase(batch),
       priceInfo: { price, description },
     }));
   } catch (err: unknown) {

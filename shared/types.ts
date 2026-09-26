@@ -85,6 +85,9 @@ export interface CustomerCoupon {
 // 外部团购券价格类型
 export type GroupBuyPriceType = 'fixed' | 'per_service' | 'vip_level';
 
+// 外部团购券来源平台
+export type GroupBuyPlatform = 'meituan' | 'douyin' | 'dianping' | 'other';
+
 // 外部团购活动批次（美团等平台）
 export interface GroupBuyBatch {
   id: string;
@@ -95,6 +98,7 @@ export interface GroupBuyBatch {
   priceType: GroupBuyPriceType;
   fixedPrice?: number;
   vipLevel?: string;
+  platform: GroupBuyPlatform;
   validFrom: Date;
   validTo: Date;
   totalQuantity: number;
@@ -111,6 +115,7 @@ export interface GroupBuyVoucher {
   shopId: string;
   code: string;
   status: 'unused' | 'used';
+  platform: GroupBuyPlatform;
   usedAt?: Date;
   usedByCustomerId?: string;
   usedOrderId?: string;
@@ -412,6 +417,7 @@ export interface SettlementDiscountDetail {
   purchaseVIPDiscountAmount: number; // 购买 VIP 减免金额
   storedValueDiscountAmount: number; // 储值减免金额
   benefitDiscountAmount: number;     // 权益抵扣金额（如免费剪发）
+  couponDiscountAmount: number;      // 优惠券抵扣金额
   discount: number;              // 总折扣金额
 }
 
@@ -426,6 +432,9 @@ export interface Settlement {
   subtotal: number;              // 原价小计
   discountDetail: SettlementDiscountDetail;
   discount: number;              // 总折扣金额
+  couponDiscount: number;        // 优惠券抵扣金额
+  couponId?: string;             // 使用的优惠券 ID
+  appliedCoupon?: Coupon;        // 使用的优惠券信息
   tax: number;                   // 税费
   total: number;                 // 实付总计
   paymentMethod: 'cash' | 'wechat' | 'alipay' | 'card' | 'balance';
@@ -495,19 +504,6 @@ export interface StoredValuePlan {
   pointsRate: number;            // 积分倍率
   benefits: string[];            // 权益说明
   color: string;                 // UI 主题色
-}
-
-// CEO 专用特殊 VIP 配置（不展示在普通顾客端）
-export interface SpecialVIPConfig {
-  id?: string;
-  shopId?: string;
-  key: string;                   // 唯一标识，如 black-card
-  name: string;                  // 显示名称，如"黑卡至尊"
-  discount: number;              // 消费折扣
-  pointsRate: number;            // 积分倍率
-  benefits: string[];            // 权益说明
-  color: string;                 // UI 主题色
-  isActive?: boolean;
 }
 
 // 会员权益记录（可核销）

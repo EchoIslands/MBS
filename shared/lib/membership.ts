@@ -151,6 +151,7 @@ export function calcSettlementDiscountDetail(
     purchaseVIPDiscountAmount,
     storedValueDiscountAmount,
     benefitDiscountAmount,
+    couponDiscountAmount: 0,
     discount: Math.round((purchaseVIPDiscountAmount + storedValueDiscountAmount + benefitDiscountAmount) * 100) / 100,
     subtotal: Math.round(subtotal * 100) / 100,
     total,

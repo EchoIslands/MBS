@@ -606,6 +606,7 @@ const SettlementManagement: React.FC = () => {
                         purchaseVIPDiscountAmount: 0,
                         storedValueDiscountAmount: 0,
                         benefitDiscountAmount: 0,
+                        couponDiscountAmount: 0,
                         discount: 0,
                       },
                       discount: 0,
