@@ -219,11 +219,6 @@ const ShopLogin: React.FC = () => {
           <button
             type="button"
             onClick={handleLogin}
-            onMouseDown={(e) => {
-              // 兜底：防止某些浏览器/自动化场景下首次点击未触发 onClick
-              e.preventDefault();
-              handleLogin();
-            }}
             disabled={loading}
             className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-3 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
