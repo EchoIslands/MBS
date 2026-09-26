@@ -3381,16 +3381,33 @@ couponsRouter.get('/customer/:customerId', async (req: Request, res: Response) =
   try {
     const { customerId } = req.params;
     const { shopId, status } = req.query;
-    let query = supabase.from('customer_coupons').select('*, coupons(*)').eq('customer_id', customerId);
+    let query = supabase.from('customer_coupons').select('*').eq('customer_id', customerId);
     if (shopId) query = query.eq('shop_id', shopId);
     if (status) query = query.eq('status', status);
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data: customerCoupons, error } = await query.order('created_at', { ascending: false });
     if (error) {
+      console.error('[coupons] 查询顾客优惠券失败:', error.message);
       return res.status(500).json({ success: false, error: '查询优惠券失败' });
     }
-    res.json({ success: true, data: (data || []).map((cc: DbRecord) => ({
+
+    // 手动查询关联的优惠券信息（兼容无 foreign key 关系的数据库）
+    const couponIds = [...new Set((customerCoupons || []).map((cc: DbRecord) => cc.coupon_id).filter(Boolean))];
+    const couponsMap = new Map<string, DbRecord>();
+    if (couponIds.length > 0) {
+      const { data: coupons, error: couponsError } = await supabase
+        .from('coupons')
+        .select('*')
+        .in('id', couponIds);
+      if (couponsError) {
+        console.error('[coupons] 查询关联优惠券失败:', couponsError.message);
+      } else {
+        (coupons || []).forEach((c: DbRecord) => couponsMap.set(c.id, c));
+      }
+    }
+
+    res.json({ success: true, data: (customerCoupons || []).map((cc: DbRecord) => ({
       ...customerCouponFromDb(cc),
-      coupon: cc.coupons ? couponFromDb(cc.coupons as Record<string, unknown>) : undefined,
+      coupon: cc.coupon_id && couponsMap.has(cc.coupon_id) ? couponFromDb(couponsMap.get(cc.coupon_id)) : undefined,
     })) });
   } catch (error) {
     console.error('[coupons] 查询顾客优惠券异常:', error);
