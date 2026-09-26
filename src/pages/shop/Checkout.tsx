@@ -43,6 +43,7 @@ import {
   isDiscountable,
 } from '../../lib/membership';
 import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, groupBuyApi, WechatPaymentResult } from '../../api';
+import QRCode from 'qrcode';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 import GroupBuyScanner from '../../components/shop/GroupBuyScanner';
@@ -104,6 +105,7 @@ const Checkout: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [showWechatModal, setShowWechatModal] = useState(false);
   const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
+  const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string>('');
   const [confirming, setConfirming] = useState(false);
   const [pendingSettlementId, setPendingSettlementId] = useState<string | null>(null);
 
@@ -211,6 +213,23 @@ const Checkout: React.FC = () => {
     loadBenefits();
     return () => { cancelled = true; };
   }, [selectedCustomer]);
+
+  // 微信支付二维码生成
+  useEffect(() => {
+    if (!wechatPayment?.codeUrl) {
+      setWechatQrCodeUrl('');
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(wechatPayment.codeUrl, { width: 240, margin: 2 })
+      .then((url) => {
+        if (!cancelled) setWechatQrCodeUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setWechatQrCodeUrl('');
+      });
+    return () => { cancelled = true; };
+  }, [wechatPayment?.codeUrl]);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return customers.slice(0, 8);
@@ -1166,14 +1185,18 @@ const Checkout: React.FC = () => {
             {wechatPayment.codeUrl && (
               <div className="bg-gray-50 rounded-xl p-4 mb-4 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-48 h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center mb-2 mx-auto">
-                    <span className="text-xs text-gray-400 text-center px-2">
-                      微信支付二维码
-                      <br />
-                      （商户号配置后自动生成）
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400">{wechatPayment.codeUrl}</p>
+                  {wechatQrCodeUrl ? (
+                    <img
+                      src={wechatQrCodeUrl}
+                      alt="微信支付二维码"
+                      className="w-48 h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl mx-auto mb-2 object-contain"
+                    />
+                  ) : (
+                    <div className="w-48 h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center mb-2 mx-auto">
+                      <span className="text-xs text-gray-400 text-center px-2">二维码生成中...</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 break-all">{wechatPayment.codeUrl}</p>
                 </div>
               </div>
             )}
@@ -1276,6 +1299,9 @@ const Checkout: React.FC = () => {
                       <div className="font-medium text-green-800 mb-1">券码有效</div>
                       <div className="text-green-700">
                         批次：{groupBuyVerifyResult.batch?.name}
+                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">
+                          {{ meituan: '美团', douyin: '抖音', dianping: '大众点评', other: '其他' }[groupBuyVerifyResult.batch?.platform || 'other'] || '其他'}
+                        </span>
                       </div>
                       <div className="text-green-700">
                         {groupBuyVerifyResult.priceInfo?.description}
