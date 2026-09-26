@@ -512,6 +512,7 @@ export interface SpecialVIPConfig {
   name: string;                  // 配置名称
   description?: string;          // 描述
   discount?: number;             // 消费折扣
+  pointsRate?: number;           // 积分倍率
   benefits?: string[];           // 权益说明
   color?: string;                // UI 主题色
   createdAt?: Date;
