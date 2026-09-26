@@ -14,6 +14,9 @@ import {
   Clock,
   User,
   Package,
+  Trash2,
+  RefreshCw,
+  CheckCircle,
 } from 'lucide-react';
 import { Settlement, Customer } from '../../../shared/types';
 import { settlementApi, customerApi, WechatPaymentResult } from '../../api';
@@ -76,6 +79,56 @@ const SettlementManagement: React.FC = () => {
     loadData();
     return () => { cancelled = true; };
   }, [currentShop?.id]);
+
+  const loadSettlements = async () => {
+    try {
+      const list = await settlementApi.getByShop(currentShop?.id || 'shop1');
+      setSettlements((list || []).map((s: unknown) => {
+        const item = s as Partial<Settlement> & { created_at?: string | Date };
+        return {
+          ...item,
+          createdAt: item.createdAt || item.created_at,
+        } as Settlement;
+      }));
+    } catch (err: unknown) {
+      setError((err as Error).message || '加载数据失败');
+    }
+  };
+
+  const handleConfirmPayment = async (settlementId: string) => {
+    try {
+      await settlementApi.confirmPayment(settlementId);
+      await loadSettlements();
+    } catch (err: unknown) {
+      alert((err as Error).message || '确认收款失败');
+    }
+  };
+
+  const handleRetryPayment = async (settlement: Settlement) => {
+    try {
+      const payment = await settlementApi.retryPayment(settlement.id);
+      if (payment?.codeUrl) {
+        const qr = await QRCode.toDataURL(payment.codeUrl);
+        setQrCodeUrl(qr);
+        setWechatPayment(payment);
+      } else {
+        alert('未能获取支付二维码');
+      }
+    } catch (err: unknown) {
+      alert((err as Error).message || '重新生成支付二维码失败');
+    }
+  };
+
+  const handleDelete = async (settlementId: string) => {
+    if (!window.confirm('确定删除这条结算记录吗？删除后不可恢复。')) return;
+    try {
+      await settlementApi.delete(settlementId);
+      if (viewingSettlement?.id === settlementId) setViewingSettlement(null);
+      await loadSettlements();
+    } catch (err: unknown) {
+      alert((err as Error).message || '删除结算记录失败');
+    }
+  };
 
   const paymentMethods = [
     { value: 'all', label: '全部' },
@@ -346,13 +399,42 @@ const SettlementManagement: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <button
-                          onClick={() => setViewingSettlement(settlement)}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="查看详情"
-                        >
-                          <Eye size={18} className="text-gray-600" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => setViewingSettlement(settlement)}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            title="查看详情"
+                          >
+                            <Eye size={18} className="text-gray-600" />
+                          </button>
+                          {(settlement.paymentStatus === 'pending' || settlement.paymentStatus === 'failed') && (
+                            <button
+                              onClick={() => handleDelete(settlement.id)}
+                              className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                              title="删除"
+                            >
+                              <Trash2 size={18} className="text-red-500" />
+                            </button>
+                          )}
+                          {settlement.paymentStatus === 'pending' && (
+                            <button
+                              onClick={() => handleConfirmPayment(settlement.id)}
+                              className="p-2 hover:bg-green-50 rounded-lg transition-colors"
+                              title="确认收款"
+                            >
+                              <CheckCircle size={18} className="text-green-600" />
+                            </button>
+                          )}
+                          {settlement.paymentStatus === 'pending' && ['wechat', 'alipay'].includes(settlement.paymentMethod) && (
+                            <button
+                              onClick={() => handleRetryPayment(settlement)}
+                              className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="重新生成支付二维码"
+                            >
+                              <RefreshCw size={18} className="text-blue-600" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -461,6 +543,44 @@ const SettlementManagement: React.FC = () => {
                   <span className="text-gray-500">操作员</span>
                   <span className="font-medium">{viewingSettlement.processedBy}</span>
                 </div>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setViewingSettlement(null)}
+                className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+              >
+                关闭
+              </button>
+              {(viewingSettlement.paymentStatus === 'pending' || viewingSettlement.paymentStatus === 'failed') && (
+                <button
+                  onClick={() => handleDelete(viewingSettlement.id)}
+                  className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors"
+                >
+                  删除
+                </button>
+              )}
+              {viewingSettlement.paymentStatus === 'pending' && (
+                <button
+                  onClick={() => {
+                    handleConfirmPayment(viewingSettlement.id);
+                    setViewingSettlement(null);
+                  }}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors"
+                >
+                  确认收款
+                </button>
+              )}
+              {viewingSettlement.paymentStatus === 'pending' && ['wechat', 'alipay'].includes(viewingSettlement.paymentMethod) && (
+                <button
+                  onClick={() => {
+                    handleRetryPayment(viewingSettlement);
+                    setViewingSettlement(null);
+                  }}
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors"
+                >
+                  继续支付
+                </button>
               )}
             </div>
           </div>
