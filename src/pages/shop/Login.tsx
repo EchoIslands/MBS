@@ -5,6 +5,7 @@ import { loginAsEmployee, useAppStore } from '../../store';
 import { UserRole, Employee, Shop } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
 import { authApi, shopApi } from '../../api';
+import { isRealApi } from '../../../shared/api-base';
 
 const DEFAULT_SHOP_ID = 'shop1';
 
@@ -70,15 +71,20 @@ const ShopLogin: React.FC = () => {
         return;
       }
     } catch (apiError: unknown) {
-      console.log('[Login] API 登录失败，尝试 mock 登录:', apiError instanceof Error ? apiError.message : apiError);
+      console.log('[Login] API 登录失败:', apiError instanceof Error ? apiError.message : apiError);
 
-      // API 失败时降级到 mock 登录
+      // 真实 API 模式启用时，直接显示后端返回的错误，不再降级到 mock 登录
+      if (isRealApi()) {
+        setError(apiError instanceof Error ? apiError.message : '手机号或密码错误');
+        return;
+      }
+
+      // 本地 mock 模式或后端不可达时，降级到 mock 登录
       const fallbackShop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
       const fallbackEmployee = fallbackShop?.employees.find((emp) => emp.phone === phone);
 
       if (!fallbackEmployee) {
         setError(apiError instanceof Error ? apiError.message : '手机号或密码错误');
-        setLoading(false);
         return;
       }
 

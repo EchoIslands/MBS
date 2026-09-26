@@ -26,6 +26,20 @@ const priceTypeOptions = [
   { value: 'vip_level', label: '按会员等级折扣价' },
 ];
 
+const platformOptions = [
+  { value: 'meituan', label: '美团' },
+  { value: 'douyin', label: '抖音' },
+  { value: 'dianping', label: '大众点评' },
+  { value: 'other', label: '其他' },
+];
+
+const platformLabels: Record<string, string> = {
+  meituan: '美团',
+  douyin: '抖音',
+  dianping: '大众点评',
+  other: '其他',
+};
+
 const vipLevelOptions = [
   { value: 'regular', label: '普通用户（无折扣）' },
   ...purchaseVIPPlans.filter((p) => p.level !== 'regular').map((p) => ({ value: p.level, label: `${p.name}（${Math.round(p.discount * 100)}折）` })),
@@ -86,6 +100,7 @@ const GroupBuyManagement: React.FC = () => {
     priceType: 'fixed',
     fixedPrice: 0,
     vipLevel: 'bronze',
+    platform: 'other',
     validFrom: new Date(),
     validTo: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     totalQuantity: -1,
@@ -101,6 +116,7 @@ const GroupBuyManagement: React.FC = () => {
       priceType: 'fixed',
       fixedPrice: 0,
       vipLevel: 'bronze',
+      platform: 'other',
       validFrom: new Date(),
       validTo: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       totalQuantity: -1,
@@ -118,6 +134,7 @@ const GroupBuyManagement: React.FC = () => {
       priceType: batch.priceType,
       fixedPrice: batch.fixedPrice,
       vipLevel: batch.vipLevel,
+      platform: batch.platform || 'other',
       validFrom: batch.validFrom ? new Date(batch.validFrom) : new Date(),
       validTo: batch.validTo ? new Date(batch.validTo) : new Date(),
       totalQuantity: batch.totalQuantity,
@@ -328,6 +345,9 @@ const GroupBuyManagement: React.FC = () => {
                         >
                           {batch.isActive ? '启用中' : '已停用'}
                         </span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-orange-50 text-orange-600">
+                          {platformLabels[batch.platform || 'other'] || '其他'}
+                        </span>
                       </div>
                       <p className="text-sm text-gray-500 mt-1">
                         有效期：{formatDate(batch.validFrom)} 至 {formatDate(batch.validTo)}
@@ -404,6 +424,21 @@ const GroupBuyManagement: React.FC = () => {
                   placeholder="如：美团金秋剪发团购"
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">来源平台</label>
+                <select
+                  value={formData.platform || 'other'}
+                  onChange={(e) => setFormData({ ...formData, platform: e.target.value as GroupBuyBatch['platform'] })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {platformOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

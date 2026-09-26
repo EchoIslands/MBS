@@ -441,7 +441,7 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
     }
     const { data: voucher, error } = await supabase
       .from('group_buy_vouchers')
-      .select('*, group_buy_batches(*)')
+      .select('*')
       .eq('shop_id', shopId)
       .eq('code', extractedCode)
       .single();
@@ -449,8 +449,12 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
       res.status(404).json(fail('券码不存在'));
       return;
     }
-    const batch = (voucher as Record<string, unknown>).group_buy_batches as Record<string, unknown>;
-    if (!batch) {
+    const { data: batch, error: batchError } = await supabase
+      .from('group_buy_batches')
+      .select('*')
+      .eq('id', voucher.batch_id)
+      .single();
+    if (batchError || !batch) {
       res.status(404).json(fail('券码未绑定批次'));
       return;
     }
@@ -509,7 +513,7 @@ router.post('/vouchers/redeem', async (req: Request, res: Response) => {
     }
     const { data: voucher, error } = await supabase
       .from('group_buy_vouchers')
-      .select('*, group_buy_batches(*)')
+      .select('*')
       .eq('shop_id', shopId)
       .eq('code', extractedCode)
       .single();
@@ -521,8 +525,12 @@ router.post('/vouchers/redeem', async (req: Request, res: Response) => {
       res.status(400).json(fail('券码已使用或已失效'));
       return;
     }
-    const batch = (voucher as Record<string, unknown>).group_buy_batches as Record<string, unknown>;
-    if (!batch) {
+    const { data: batch, error: batchError } = await supabase
+      .from('group_buy_batches')
+      .select('*')
+      .eq('id', voucher.batch_id)
+      .single();
+    if (batchError || !batch) {
       res.status(404).json(fail('券码未绑定批次'));
       return;
     }
