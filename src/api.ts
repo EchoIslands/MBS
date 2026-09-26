@@ -2084,7 +2084,7 @@ export const vipConfigApi = {
     if (USE_REAL_API) {
       const token = getAuthToken();
       const result = await http<{ success: boolean }>(
-        `${API_BASE}/vip-configs/special/${key}`,
+        `${API_BASE}/vip-configs/special/${key}?shopId=${encodeURIComponent(shopId)}`,
         {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },

@@ -10,7 +10,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
 
@@ -5433,6 +5433,7 @@ async function ensureDefaultReferralCoupon(shopId: string): Promise<Record<strin
 
     if (existing && existing.length > 0) return existing[0];
 
+    const now = new Date();
     const coupon = {
       id: `coupon_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       shop_id: shopId,
@@ -5440,9 +5441,17 @@ async function ensureDefaultReferralCoupon(shopId: string): Promise<Record<strin
       type: 'fixed_amount',
       value: 20,
       min_order_amount: 100,
-      valid_days: 30,
+      max_discount_amount: 20,
+      applicable_scope: 'all',
+      applicable_product_ids: [],
+      total_quantity: -1,
+      remaining_quantity: -1,
+      per_customer_limit: 1,
+      start_at: now.toISOString(),
+      end_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       is_active: true,
-      created_at: new Date().toISOString(),
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
     };
 
     const { data, error } = await supabase.from('coupons').insert(coupon).select().single();
@@ -5576,11 +5585,18 @@ referralsRouter.get('/check-code', async (req: Request, res: Response) => {
     if (record.coupon_id) {
       const { data: coupon } = await supabase
         .from('coupons')
-        .select('id, name, type, value, min_order_amount, valid_days')
+        .select('id, name, type, value, min_order_amount, start_at, end_at')
         .eq('id', record.coupon_id)
         .single();
       couponInfo = coupon;
     }
+
+    const now = new Date();
+    const startAt = couponInfo?.start_at ? new Date(couponInfo.start_at as string) : now;
+    const endAt = couponInfo?.end_at
+      ? new Date(couponInfo.end_at as string)
+      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const validDays = Math.max(1, Math.ceil((endAt.getTime() - startAt.getTime()) / (24 * 60 * 60 * 1000)));
 
     res.json({
       success: true,
@@ -5595,7 +5611,7 @@ referralsRouter.get('/check-code', async (req: Request, res: Response) => {
               type: couponInfo.type,
               value: Number(couponInfo.value) || 0,
               minOrderAmount: Number(couponInfo.min_order_amount) || 0,
-              validDays: Number(couponInfo.valid_days) || 30,
+              validDays,
             }
           : null,
         alreadyClaimed: !!record.referred_id,
@@ -5700,26 +5716,22 @@ referralsRouter.post('/claim', async (req: Request, res: Response) => {
     }
 
     const now = new Date();
-    const validDays = Number(coupon.valid_days) || 30;
-    const validEnd = new Date(now.getTime() + validDays * 24 * 60 * 60 * 1000);
+    const validEnd = coupon.end_at
+      ? new Date(coupon.end_at as string)
+      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    // 创建用户优惠券
+    // 创建用户优惠券（字段与 migrations/create_product_marketing.sql 中的 customer_coupons 表保持一致）
     const customerCouponId = `cc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const { error: couponInsertError } = await supabase.from('customer_coupons').insert({
       id: customerCouponId,
+      coupon_id: coupon.id,
       shop_id: shopId,
       customer_id: customer.id,
-      coupon_id: coupon.id,
-      coupon_name: coupon.name,
-      type: coupon.type,
-      value: Number(coupon.value) || 0,
-      min_order_amount: Number(coupon.min_order_amount) || 0,
+      customer_name: customer.name,
+      customer_phone: cleanPhone,
       status: 'unused',
-      source: 'referral_scan',
-      source_referral_id: record.id,
-      valid_start: now.toISOString(),
-      valid_end: validEnd.toISOString(),
       created_at: now.toISOString(),
+      updated_at: now.toISOString(),
     });
 
     if (couponInsertError) {
@@ -5763,6 +5775,238 @@ referralsRouter.post('/claim', async (req: Request, res: Response) => {
 });
 
 mainRouter.use('/referrals', referralsRouter);
+
+// ===================== VIP 权益自定义配置 =====================
+const vipConfigsRouter = Router();
+
+// 转换数据库记录为前端 PurchaseVIPPlan
+const purchasePlanFromDb = (r: DbRecord): PurchaseVIPPlan => {
+  const value = (r.config_value as Record<string, unknown>) || {};
+  return {
+    level: value.level as PurchaseVIPLevel,
+    name: String(value.name || ''),
+    price: Number(value.price) || 0,
+    period: String(value.period || '1年'),
+    discount: Number(value.discount) ?? 1,
+    pointsRate: Number(value.pointsRate) ?? 1,
+    benefits: Array.isArray(value.benefits) ? (value.benefits as string[]) : [],
+    color: String(value.color || 'gray'),
+  };
+};
+
+// 转换数据库记录为前端 StoredValuePlan
+const storedPlanFromDb = (r: DbRecord): StoredValuePlan => {
+  const value = (r.config_value as Record<string, unknown>) || {};
+  return {
+    level: value.level as StoredValueLevel,
+    name: String(value.name || ''),
+    amount: Number(value.amount) || 0,
+    discount: Number(value.discount) ?? 1,
+    pointsRate: Number(value.pointsRate) ?? 1,
+    benefits: Array.isArray(value.benefits) ? (value.benefits as string[]) : [],
+    color: String(value.color || 'gray'),
+  };
+};
+
+// 转换数据库记录为前端 SpecialVIPConfig
+const specialConfigFromDb = (r: DbRecord): SpecialVIPConfig => {
+  const value = (r.config_value as Record<string, unknown>) || {};
+  return {
+    key: String(r.config_key || value.key || ''),
+    name: String(value.name || ''),
+    description: value.description !== undefined ? String(value.description) : undefined,
+    discount: value.discount !== undefined ? Number(value.discount) : undefined,
+    pointsRate: value.pointsRate !== undefined ? Number(value.pointsRate) : undefined,
+    benefits: Array.isArray(value.benefits) ? (value.benefits as string[]) : undefined,
+    color: value.color !== undefined ? String(value.color) : undefined,
+    createdAt: r.created_at ? new Date(r.created_at as string) : undefined,
+    updatedAt: r.updated_at ? new Date(r.updated_at as string) : undefined,
+  };
+};
+
+vipConfigsRouter.use(authMiddleware);
+
+// GET /vip-configs/purchase?shopId=xxx
+vipConfigsRouter.get('/purchase', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.query.shopId as string;
+    if (!shopId) return res.status(400).json({ success: false, error: '缺少 shopId' });
+    const { data, error } = await supabase
+      .from('shop_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('config_type', 'purchase');
+    if (error) {
+      console.error('[vip-configs] 查询购买型 VIP 配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询配置失败' });
+    }
+    res.json({ success: true, data: (data || []).map(purchasePlanFromDb) });
+  } catch (err) {
+    console.error('[vip-configs] 查询购买型 VIP 配置异常:', err);
+    res.status(500).json({ success: false, error: '查询配置失败' });
+  }
+});
+
+// PUT /vip-configs/purchase
+vipConfigsRouter.put('/purchase', async (req: Request, res: Response) => {
+  try {
+    const { shopId, plans } = req.body || {};
+    if (!shopId || !Array.isArray(plans)) {
+      return res.status(400).json({ success: false, error: '缺少 shopId 或 plans' });
+    }
+    const now = new Date().toISOString();
+    const rows = plans.map((p: PurchaseVIPPlan) => ({
+      id: `${shopId}_purchase_${p.level}`,
+      shop_id: shopId,
+      config_type: 'purchase',
+      config_key: p.level,
+      config_value: { ...p },
+      created_at: now,
+      updated_at: now,
+    }));
+    const { error } = await supabase.from('shop_vip_configs').upsert(rows, { onConflict: 'shop_id,config_type,config_key' });
+    if (error) {
+      console.error('[vip-configs] 保存购买型 VIP 配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '保存配置失败' });
+    }
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    console.error('[vip-configs] 保存购买型 VIP 配置异常:', err);
+    res.status(500).json({ success: false, error: '保存配置失败' });
+  }
+});
+
+// GET /vip-configs/stored?shopId=xxx
+vipConfigsRouter.get('/stored', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.query.shopId as string;
+    if (!shopId) return res.status(400).json({ success: false, error: '缺少 shopId' });
+    const { data, error } = await supabase
+      .from('shop_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('config_type', 'stored');
+    if (error) {
+      console.error('[vip-configs] 查询储值会员配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询配置失败' });
+    }
+    res.json({ success: true, data: (data || []).map(storedPlanFromDb) });
+  } catch (err) {
+    console.error('[vip-configs] 查询储值会员配置异常:', err);
+    res.status(500).json({ success: false, error: '查询配置失败' });
+  }
+});
+
+// PUT /vip-configs/stored
+vipConfigsRouter.put('/stored', async (req: Request, res: Response) => {
+  try {
+    const { shopId, plans } = req.body || {};
+    if (!shopId || !Array.isArray(plans)) {
+      return res.status(400).json({ success: false, error: '缺少 shopId 或 plans' });
+    }
+    const now = new Date().toISOString();
+    const rows = plans.map((p: StoredValuePlan) => ({
+      id: `${shopId}_stored_${p.level}`,
+      shop_id: shopId,
+      config_type: 'stored',
+      config_key: p.level,
+      config_value: { ...p },
+      created_at: now,
+      updated_at: now,
+    }));
+    const { error } = await supabase.from('shop_vip_configs').upsert(rows, { onConflict: 'shop_id,config_type,config_key' });
+    if (error) {
+      console.error('[vip-configs] 保存储值会员配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '保存配置失败' });
+    }
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    console.error('[vip-configs] 保存储值会员配置异常:', err);
+    res.status(500).json({ success: false, error: '保存配置失败' });
+  }
+});
+
+// GET /vip-configs/special?shopId=xxx
+vipConfigsRouter.get('/special', async (req: Request, res: Response) => {
+  try {
+    const shopId = req.query.shopId as string;
+    if (!shopId) return res.status(400).json({ success: false, error: '缺少 shopId' });
+    const { data, error } = await supabase
+      .from('shop_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('config_type', 'special')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[vip-configs] 查询特殊 VIP 配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询配置失败' });
+    }
+    res.json({ success: true, data: (data || []).map(specialConfigFromDb) });
+  } catch (err) {
+    console.error('[vip-configs] 查询特殊 VIP 配置异常:', err);
+    res.status(500).json({ success: false, error: '查询配置失败' });
+  }
+});
+
+// PUT /vip-configs/special
+vipConfigsRouter.put('/special', async (req: Request, res: Response) => {
+  try {
+    const { shopId, config } = req.body || {};
+    if (!shopId || !config || !config.key) {
+      return res.status(400).json({ success: false, error: '缺少 shopId 或 config.key' });
+    }
+    const now = new Date().toISOString();
+    const id = `${shopId}_special_${config.key}`;
+    const { error } = await supabase.from('shop_vip_configs').upsert({
+      id,
+      shop_id: shopId,
+      config_type: 'special',
+      config_key: config.key,
+      config_value: { ...config },
+      created_at: now,
+      updated_at: now,
+    }, { onConflict: 'shop_id,config_type,config_key' });
+    if (error) {
+      console.error('[vip-configs] 保存特殊 VIP 配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '保存配置失败' });
+    }
+    const { data } = await supabase
+      .from('shop_vip_configs')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('config_type', 'special')
+      .order('created_at', { ascending: false });
+    res.json({ success: true, data: (data || []).map(specialConfigFromDb) });
+  } catch (err) {
+    console.error('[vip-configs] 保存特殊 VIP 配置异常:', err);
+    res.status(500).json({ success: false, error: '保存配置失败' });
+  }
+});
+
+// DELETE /vip-configs/special/:key
+vipConfigsRouter.delete('/special/:key', async (req: Request, res: Response) => {
+  try {
+    const { key } = req.params;
+    const shopId = req.query.shopId as string;
+    if (!shopId) return res.status(400).json({ success: false, error: '缺少 shopId' });
+    const { error } = await supabase
+      .from('shop_vip_configs')
+      .delete()
+      .eq('shop_id', shopId)
+      .eq('config_type', 'special')
+      .eq('config_key', key);
+    if (error) {
+      console.error('[vip-configs] 删除特殊 VIP 配置失败:', error.message);
+      return res.status(500).json({ success: false, error: '删除配置失败' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[vip-configs] 删除特殊 VIP 配置异常:', err);
+    res.status(500).json({ success: false, error: '删除配置失败' });
+  }
+});
+
+mainRouter.use('/vip-configs', vipConfigsRouter);
 
 // ===================== satisfaction surveys =====================
 const surveysRouter = Router();
