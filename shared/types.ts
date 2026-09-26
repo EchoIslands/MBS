@@ -506,6 +506,18 @@ export interface StoredValuePlan {
   color: string;                 // UI 主题色
 }
 
+// 特殊/自定义 VIP 权益配置（用于店铺端灵活配置股东卡、次卡等）
+export interface SpecialVIPConfig {
+  key: string;                   // 唯一标识
+  name: string;                  // 配置名称
+  description?: string;          // 描述
+  discount?: number;             // 消费折扣
+  benefits?: string[];           // 权益说明
+  color?: string;                // UI 主题色
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 // 会员权益记录（可核销）
 export interface MemberBenefitRecord {
   id: string;
