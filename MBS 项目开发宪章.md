@@ -1,6 +1,6 @@
 # MBS 项目开发宪章
 
-> 版本：v4.0 | 生效日期：2026-09-17
+> 版本：v4.1 | 生效日期：2026-09-26
 > 
 > 本文档是 MBS 项目的最高开发规范，也是人类与 AI Agent 的协作协议。所有改动代码、配置、数据库 Schema、部署设置前，均视为已阅读并同意遵守本宪章。
 
@@ -282,6 +282,11 @@ npm run server:api
 | 71 | Vercel Serverless 微信支付下单超时 | ⭐ | 支付 |
 | 73 | Vercel ESM 不支持目录导入 | ⭐ | 部署 |
 | 74 | `api/app.ts` 引用了不存在的路由文件 | ⭐ | 部署 |
+| 75 | Supabase foreign table 查询依赖外键关系，线上无 FK 时报错 | ⭐ | 数据库 |
+| 76 | 真实 API 模式 catch 降级到 mock，导致"成功但报错" | ⭐ | API |
+| 77 | React 按钮同时绑定 onClick + onMouseDown 重复触发 | ⭐ | 前端 |
+| 78 | 微信支付弹窗只展示占位文字，未生成真实二维码 | ⭐ | 支付 |
+| 79 | 前端调用未实现的后端接口导致运行时 404 | ⭐ | 业务 |
 
 ### 4.2 关键坑点详解
 
@@ -335,6 +340,10 @@ npm run server:api
 - 现象：清空缓存后访问 `/shop/xxx`，页面空白。
 - 解决：路由守卫在 render 前判断登录态，未登录时跳转登录页或显示登录弹窗。
 
+**坑 77：React 按钮同时绑定 onClick + onMouseDown 重复触发**
+- 现象：登录按钮同时写了 `onClick={handleLogin}` 和 `onMouseDown={handleLogin}`，用户点击时 `handleLogin` 被连续调用两次；第一次成功登录并跳转，第二次因状态变化/网络等原因报错，错误提示覆盖到已跳转的页面上。
+- 解决：表单提交和按钮点击只保留一种触发方式（通常用 `onClick` 或表单 `onSubmit`），不要为"兜底"再绑 `onMouseDown`、`onKeyDown` 等重复事件。
+
 #### 4.2.6 API 设计
 
 **坑 18：后端 API 返回格式不统一**
@@ -344,6 +353,14 @@ npm run server:api
 **坑 20：敏感信息存在前端**
 - 现象：API Key、私钥、数据库连接串写在前端代码或 .env 中被打包。
 - 解决：敏感信息只放在服务端环境变量；前端通过后端接口间接调用第三方服务。
+
+**坑 76：真实 API 模式 catch 降级到 mock，导致"成功但报错"**
+- 现象：生产环境 `VITE_USE_REAL_API=true` 时，后端登录接口返回 `{"success":false,"error":"手机号或密码错误"}`，前端 catch 后降级到 mock 登录成功，用户看到页面已跳转但弹窗仍显示报错。
+- 解决：真实 API 模式下失败必须直接抛出后端错误并显示给用户，禁止静默降级到 mock；mock 只应在明确禁用真实 API 时生效。
+
+**坑 79：前端调用未实现的后端接口导致运行时 404**
+- 现象：前端 `src/api.ts` 已写好 `/vip-configs/*` 调用，但后端 `api/routes/index.ts` 未挂载对应路由，页面点击保存后返回 404，功能不可用。
+- 解决：新增前端 API 封装前，先确认后端路由已实现；前后端接口变更必须同步提交；本地 `npm run server:api` 启动后用 curl/浏览器实测接口是否可达。
 
 #### 4.2.7 部署与运维
 
@@ -381,6 +398,10 @@ npm run server:api
 - 根因：`api/app.ts` 里 `import uploadRouter from '../server/routes/upload.js'`，但项目里没有 `server/routes/upload.ts` 或 `upload.js`；可能是文件被误删、重命名，或 PR 合并时遗漏。
 - 解决：补充缺失的路由文件；本地用 `npm run build` 验证通过后再 push；删除引用前先确认该路由是否还有用途。
 
+**坑 78：微信支付弹窗只展示占位文字，未生成真实二维码**
+- 现象：开单结算选择微信支付后，弹窗只显示"二维码占位"文字，顾客无法扫码付款；或后端已返回 `code_url`，但前端未将其转换为二维码图片。
+- 解决：引入 `qrcode` 库，使用 `QRCode.toDataURL(codeUrl)` 将微信 `code_url` 渲染为真实二维码图片；在 `useEffect` 中监听 `codeUrl` 变化并处理取消竞争。
+
 #### 4.2.8 网络与环境
 
 **坑 25：国内网络无法访问境外 API**
@@ -407,6 +428,10 @@ npm run server:api
 - 现象：本地表结构和线上不一致，代码在线上报错。
 - 解决：每次改表在 `migrations/` 新增迁移文件，并在 Supabase SQL Editor 执行。
 
+**坑 75：Supabase foreign table 查询依赖外键关系，线上无 FK 时报错**
+- 现象：本地开发用 Supabase 自动 foreign table 查询（如 `select('*, coupons(*)')`）正常，但线上生产数据库未建立外键关系时，同样查询返回 `could not find the 'coupons' column` 或 `foreign key relationship not found`，导致接口 500。
+- 解决：生产环境避免依赖 foreign table 自动关联；改为先查主表，再用 `in` 手动查询关联表，最后在前端/后端组装数据。新增表时如需要 foreign table 查询，必须同时确认线上已建立 FK 关系。
+
 #### 4.2.11 近期专项记录（索引）
 
 | 专项 | 内容 | 关键坑号 |
@@ -421,6 +446,7 @@ npm run server:api
 | Vercel Git 绑定损坏 | 项目重建 | 62 |
 | 结算、图表与小程序组件 | settlements 字段、Recharts、mbs-icon | 63-67 |
 | 微信支付真实 Native 支付 | 商户订单号、公钥验签、超时 | 68-72 |
+| 2026-09-26 自查修复专项 | foreign table、登录重复触发、mock 降级、二维码占位、未实现接口 | 75-79 |
 
 ---
 
@@ -692,6 +718,7 @@ Cmd+Shift+R         # Mac：强制刷新
 | v2.0 | 2026-06-26 | 重构为五层金字塔结构 |
 | v3.0 | 2026-09-01 | 微信支付真实 Native 支付接入完成 |
 | v4.0 | 2026-09-17 | 精简结构，新增 AI 协作规范（R-01 ~ R-10），强化状态确认和操作流程四要素，删除重复内容 |
+| v4.1 | 2026-09-26 | 新增坑 75-79（foreign table 查询、mock 降级、按钮重复触发、二维码占位、未实现接口）；补充 2026-09-26 自查修复专项索引 |
 
 ---
 
