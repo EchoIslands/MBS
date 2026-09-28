@@ -2,8 +2,7 @@
 -- 001_baseline_schema.sql
 -- 说明：本项目数据库的初始 baseline，包含所有核心基础表。
 --       后续增量迁移（002-015）都依赖本文件创建的基础表。
---       本文件根据仓库现有 schema.sql / api/db/schema.sql 及代码推断生成，
---       待线上真实字段结构确认后可能需要微调。
+--       本文件根据线上 Supabase 真实表结构整理生成。
 -- ============================================================
 
 -- ========== 1. 店铺表 ==========
@@ -27,7 +26,8 @@ CREATE TABLE IF NOT EXISTS shops (
   stockholder_config JSONB DEFAULT '{}'::JSONB,
   rating NUMERIC DEFAULT 5,
   review_count INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ========== 2. 员工表（发型师 / 店长 / CEO / 客服） ==========
@@ -43,8 +43,7 @@ CREATE TABLE IF NOT EXISTS employees (
   role TEXT NOT NULL DEFAULT 'stylist',
   password_hash TEXT DEFAULT '123456',
   is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ========== 3. 客户表（核心） ==========
@@ -93,7 +92,7 @@ CREATE TABLE IF NOT EXISTS customers (
   last_service_items TEXT[] DEFAULT '{}',
   is_member BOOLEAN DEFAULT FALSE,
   has_recharged BOOLEAN DEFAULT FALSE,
-  recharge_level TEXT,
+  recharge_level TEXT DEFAULT '',
   openid_oa TEXT,
   openid_mini TEXT,
   unionid TEXT,
@@ -142,18 +141,39 @@ CREATE TABLE IF NOT EXISTS bookings (
   queue_number INTEGER,
   status TEXT DEFAULT 'pending',
   notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ========== 6. 排队队列 ==========
+CREATE TABLE IF NOT EXISTS queues (
+  shop_id TEXT PRIMARY KEY REFERENCES shops(id) ON DELETE CASCADE,
+  current_number INTEGER DEFAULT 0,
+  estimated_wait_time INTEGER DEFAULT 15,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ========== 7. 服务表 ==========
+CREATE TABLE IF NOT EXISTS services (
+  id BIGSERIAL PRIMARY KEY,
+  shop_id BIGINT NOT NULL,
+  name VARCHAR NOT NULL,
+  price INTEGER NOT NULL,
+  duration INTEGER NOT NULL,
+  description TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ========== 6. 结算记录 ==========
+-- ========== 8. 结算记录 ==========
 CREATE TABLE IF NOT EXISTS settlements (
   id TEXT PRIMARY KEY,
   shop_id TEXT REFERENCES shops(id) ON DELETE CASCADE,
-  customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE,
+  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
   customer_name TEXT,
   booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
-  items JSONB DEFAULT '[]'::JSONB,
+  items JSONB NOT NULL DEFAULT '[]'::JSONB,
   subtotal NUMERIC DEFAULT 0,
   discount_detail JSONB DEFAULT '{}'::JSONB,
   discount NUMERIC DEFAULT 0,
@@ -163,10 +183,25 @@ CREATE TABLE IF NOT EXISTS settlements (
   payment_status TEXT DEFAULT 'completed',
   used_benefit_ids TEXT[] DEFAULT '{}',
   processed_by TEXT,
+  processed_by_name TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ========== 7. 支付记录（H5/小程序共用） ==========
+-- ========== 9. 结算明细表 ==========
+CREATE TABLE IF NOT EXISTS settlement_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  settlement_id TEXT REFERENCES settlements(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  item_id TEXT,
+  name TEXT,
+  original_price NUMERIC DEFAULT 0,
+  quantity INTEGER DEFAULT 1,
+  discounted_price NUMERIC DEFAULT 0,
+  total NUMERIC DEFAULT 0,
+  category TEXT
+);
+
+-- ========== 10. 支付记录（H5/小程序共用） ==========
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
   shop_id TEXT REFERENCES shops(id) ON DELETE CASCADE,
@@ -175,14 +210,14 @@ CREATE TABLE IF NOT EXISTS payments (
   settlement_id TEXT REFERENCES settlements(id) ON DELETE SET NULL,
   channel TEXT NOT NULL,
   amount NUMERIC NOT NULL DEFAULT 0,
-  status TEXT DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending',
   transaction_id TEXT,
   prepay_id TEXT,
   paid_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ========== 8. 到店记录 ==========
+-- ========== 11. 到店记录 ==========
 CREATE TABLE IF NOT EXISTS customer_visit_records (
   id TEXT PRIMARY KEY,
   customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE,
@@ -201,23 +236,23 @@ CREATE TABLE IF NOT EXISTS customer_visit_records (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ========== 9. 评价表 ==========
+-- ========== 12. 评价表 ==========
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,
   shop_id TEXT REFERENCES shops(id) ON DELETE CASCADE,
   customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
   customer_name TEXT,
   booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
-  type TEXT DEFAULT 'shop',
+  type TEXT NOT NULL DEFAULT 'shop',
   stylist_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
   stylist_name TEXT,
   service_name TEXT,
-  rating NUMERIC(2,1) CHECK (rating BETWEEN 0.5 AND 5),
-  service_score NUMERIC(2,1),
-  price_score NUMERIC(2,1),
-  skill_score NUMERIC(2,1),
-  stylist_score NUMERIC(2,1),
-  overall_score NUMERIC(2,1),
+  rating NUMERIC,
+  service_score NUMERIC,
+  price_score NUMERIC,
+  skill_score NUMERIC,
+  stylist_score NUMERIC,
+  overall_score NUMERIC,
   comment TEXT,
   service_comment TEXT,
   stylist_comment TEXT,
@@ -230,17 +265,40 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ========== 10. 排队队列 ==========
-CREATE TABLE IF NOT EXISTS queues (
-  shop_id TEXT PRIMARY KEY REFERENCES shops(id) ON DELETE CASCADE,
-  current_number INTEGER DEFAULT 0,
-  estimated_wait_time INTEGER DEFAULT 15,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+-- ========== 13. 退款申请表 ==========
+CREATE TABLE IF NOT EXISTS refund_requests (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT REFERENCES shops(id) ON DELETE CASCADE,
+  booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
+  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name TEXT,
+  amount NUMERIC DEFAULT 0,
+  reason TEXT,
+  status TEXT DEFAULT 'pending',
+  refund_method TEXT,
+  processed_by TEXT,
+  processed_by_name TEXT,
+  processed_at TIMESTAMPTZ,
+  reject_reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ========== 11. 埋点事件表 ==========
+-- ========== 14. 满意度调查表 ==========
+CREATE TABLE IF NOT EXISTS satisfaction_surveys (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT REFERENCES shops(id) ON DELETE CASCADE,
+  booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
+  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name TEXT,
+  rating INTEGER,
+  recommended BOOLEAN DEFAULT FALSE,
+  comment TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ========== 15. 埋点事件表 ==========
 CREATE TABLE IF NOT EXISTS customer_events (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL,
   platform TEXT,
   page_path TEXT,
@@ -248,12 +306,12 @@ CREATE TABLE IF NOT EXISTS customer_events (
   shop_id TEXT,
   session_id TEXT,
   app_version TEXT,
-  timestamp TIMESTAMPTZ DEFAULT NOW(),
+  timestamp TIMESTAMPTZ,
   properties JSONB DEFAULT '{}'::JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ========== 12. 会员权益记录表（可核销） ==========
+-- ========== 16. 会员权益记录表（可核销） ==========
 CREATE TABLE IF NOT EXISTS member_benefits (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,
@@ -270,21 +328,40 @@ CREATE TABLE IF NOT EXISTS member_benefits (
   expires_at TIMESTAMPTZ
 );
 
--- ========== 13. 股东权益变动记录表 ==========
-CREATE TABLE IF NOT EXISTS stockholder_benefit_records (
+-- ========== 17. 会员权益核销记录表 ==========
+CREATE TABLE IF NOT EXISTS member_benefit_records (
   id TEXT PRIMARY KEY,
-  shop_id TEXT NOT NULL,
-  customer_id TEXT NOT NULL,
+  customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE,
   type TEXT NOT NULL,
-  amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-  source_booking_id TEXT,
-  status TEXT NOT NULL DEFAULT 'pending',
-  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'available',
+  granted_at TIMESTAMPTZ DEFAULT NOW(),
+  granted_by TEXT,
+  granted_by_name TEXT,
+  used_at TIMESTAMPTZ,
+  used_by TEXT,
+  used_by_name TEXT,
+  used_order_id TEXT,
   expires_at TIMESTAMPTZ,
-  notified_at TIMESTAMPTZ
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  shop_id TEXT REFERENCES shops(id) ON DELETE CASCADE
 );
 
--- ========== 14. 股东每月免费服务使用记录表 ==========
+-- ========== 18. 股东权益变动记录表 ==========
+CREATE TABLE IF NOT EXISTS stockholder_benefit_records (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'cashback',
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  source_booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'granted',
+  granted_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ========== 19. 股东每月免费服务使用记录表 ==========
 CREATE TABLE IF NOT EXISTS stockholder_free_service_usage (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,
@@ -296,7 +373,7 @@ CREATE TABLE IF NOT EXISTS stockholder_free_service_usage (
   UNIQUE(shop_id, customer_id, year_month)
 );
 
--- ========== 15. 推荐记录表 ==========
+-- ========== 20. 推荐记录表 ==========
 CREATE TABLE IF NOT EXISTS referral_records (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,
@@ -315,7 +392,7 @@ CREATE TABLE IF NOT EXISTS referral_records (
   source_booking_id TEXT
 );
 
--- ========== 16. 购买型 VIP 权益自定义配置表 ==========
+-- ========== 21. 购买型 VIP 权益自定义配置表 ==========
 CREATE TABLE IF NOT EXISTS purchase_vip_configs (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,
@@ -333,7 +410,7 @@ CREATE TABLE IF NOT EXISTS purchase_vip_configs (
   UNIQUE(shop_id, level)
 );
 
--- ========== 17. 储值型会员权益自定义配置表 ==========
+-- ========== 22. 储值型会员权益自定义配置表 ==========
 CREATE TABLE IF NOT EXISTS stored_value_configs (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,
@@ -350,7 +427,24 @@ CREATE TABLE IF NOT EXISTS stored_value_configs (
   UNIQUE(shop_id, level)
 );
 
--- ========== 18. CEO 专用特殊 VIP 配置表 ==========
+-- ========== 23. 储值交易记录表 ==========
+CREATE TABLE IF NOT EXISTS stored_value_transactions (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  balance_after NUMERIC NOT NULL,
+  principal_portion NUMERIC DEFAULT 0,
+  referral_portion NUMERIC DEFAULT 0,
+  order_id TEXT,
+  related_benefit_id TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by TEXT,
+  created_by_name TEXT
+);
+
+-- ========== 24. CEO 专用特殊 VIP 配置表 ==========
 CREATE TABLE IF NOT EXISTS special_vip_configs (
   id TEXT PRIMARY KEY,
   shop_id TEXT NOT NULL,
@@ -364,6 +458,40 @@ CREATE TABLE IF NOT EXISTS special_vip_configs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(shop_id, key)
+);
+
+-- ========== 25. 优惠券模板表 ==========
+CREATE TABLE IF NOT EXISTS coupons (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'fixed_amount',
+  value NUMERIC NOT NULL DEFAULT 0,
+  min_order_amount NUMERIC DEFAULT 0,
+  valid_days INTEGER DEFAULT 30,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  end_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ========== 26. 用户优惠券领取记录表 ==========
+CREATE TABLE IF NOT EXISTS customer_coupons (
+  id TEXT PRIMARY KEY,
+  shop_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  coupon_id TEXT,
+  coupon_name TEXT,
+  type TEXT NOT NULL DEFAULT 'fixed_amount',
+  value NUMERIC NOT NULL DEFAULT 0,
+  min_order_amount NUMERIC DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'unused',
+  source TEXT,
+  source_referral_id TEXT,
+  valid_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  valid_end TIMESTAMPTZ,
+  used_at TIMESTAMPTZ,
+  used_order_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ========== 基础索引 ==========
@@ -382,6 +510,8 @@ CREATE INDEX IF NOT EXISTS idx_customer_events_event_type ON customer_events(eve
 CREATE INDEX IF NOT EXISTS idx_customer_events_created_at ON customer_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_member_benefits_customer_id ON member_benefits(customer_id);
 CREATE INDEX IF NOT EXISTS idx_member_benefits_status ON member_benefits(status);
+CREATE INDEX IF NOT EXISTS idx_member_benefit_records_customer_id ON member_benefit_records(customer_id);
+CREATE INDEX IF NOT EXISTS idx_member_benefit_records_shop_id ON member_benefit_records(shop_id);
 CREATE INDEX IF NOT EXISTS idx_stockholder_records_customer_id ON stockholder_benefit_records(customer_id);
 CREATE INDEX IF NOT EXISTS idx_stockholder_records_shop_id ON stockholder_benefit_records(shop_id);
 CREATE INDEX IF NOT EXISTS idx_stockholder_records_status ON stockholder_benefit_records(status);
@@ -396,6 +526,13 @@ CREATE INDEX IF NOT EXISTS idx_purchase_vip_configs_level ON purchase_vip_config
 CREATE INDEX IF NOT EXISTS idx_stored_value_configs_shop_id ON stored_value_configs(shop_id);
 CREATE INDEX IF NOT EXISTS idx_stored_value_configs_level ON stored_value_configs(level);
 CREATE INDEX IF NOT EXISTS idx_special_vip_configs_shop_id ON special_vip_configs(shop_id);
+CREATE INDEX IF NOT EXISTS idx_coupons_shop_id ON coupons(shop_id);
+CREATE INDEX IF NOT EXISTS idx_customer_coupons_customer_id ON customer_coupons(customer_id);
+CREATE INDEX IF NOT EXISTS idx_settlement_items_settlement_id ON settlement_items(settlement_id);
+CREATE INDEX IF NOT EXISTS idx_refund_requests_shop_id ON refund_requests(shop_id);
+CREATE INDEX IF NOT EXISTS idx_refund_requests_customer_id ON refund_requests(customer_id);
+CREATE INDEX IF NOT EXISTS idx_satisfaction_surveys_booking_id ON satisfaction_surveys(booking_id);
+CREATE INDEX IF NOT EXISTS idx_stored_value_transactions_customer_id ON stored_value_transactions(customer_id);
 
 -- ========== 行级安全（RLS）策略 ==========
 ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
@@ -406,11 +543,20 @@ ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_visit_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE queues ENABLE ROW LEVEL SECURITY;
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settlements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settlement_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_benefits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE member_benefit_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stockholder_benefit_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stockholder_free_service_usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE referral_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_vip_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stored_value_configs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stored_value_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE special_vip_configs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE refund_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE satisfaction_surveys ENABLE ROW LEVEL SECURITY;
