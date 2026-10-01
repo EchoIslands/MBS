@@ -89,6 +89,23 @@ const CouponManagement: React.FC = () => {
     setShowModal(true);
   };
 
+  const handleEdit = (coupon: Coupon) => {
+    setFormData({
+      id: coupon.id,
+      name: coupon.name,
+      type: coupon.type,
+      value: coupon.value,
+      minOrderAmount: coupon.minOrderAmount ?? 0,
+      applicableScope: coupon.applicableScope,
+      totalQuantity: coupon.totalQuantity ?? -1,
+      perCustomerLimit: coupon.perCustomerLimit ?? 1,
+      startAt: coupon.startAt ? new Date(coupon.startAt) : new Date(),
+      endAt: coupon.endAt ? new Date(coupon.endAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      isActive: coupon.isActive,
+    });
+    setShowModal(true);
+  };
+
   const handleSave = async () => {
     if (!formData.name || formData.value === undefined) {
       alert('请填写优惠券名称和优惠值');
@@ -109,7 +126,7 @@ const CouponManagement: React.FC = () => {
 
     setSaving(true);
     try {
-      const created = await couponApi.create(shopId, {
+      const payload = {
         name: formData.name,
         type: formData.type,
         value: Number(formData.value),
@@ -120,16 +137,28 @@ const CouponManagement: React.FC = () => {
         startAt: formData.startAt,
         endAt: formData.endAt,
         isActive: formData.isActive,
-      });
-      if (created) {
-        setCoupons([created, ...coupons]);
-        setShowModal(false);
+      };
+
+      if (formData.id) {
+        const updated = await couponApi.update(formData.id, payload);
+        if (updated) {
+          setCoupons(coupons.map((c) => (c.id === updated.id ? updated : c)));
+          setShowModal(false);
+        } else {
+          alert('更新失败');
+        }
       } else {
-        alert('创建失败');
+        const created = await couponApi.create(shopId, payload);
+        if (created) {
+          setCoupons([created, ...coupons]);
+          setShowModal(false);
+        } else {
+          alert('创建失败');
+        }
       }
     } catch (err: unknown) {
-      console.error('[CouponManagement] 创建优惠券失败:', err);
-      alert('创建失败：' + (err as Error).message);
+      console.error('[CouponManagement] 保存优惠券失败:', err);
+      alert('保存失败：' + (err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -289,6 +318,12 @@ const CouponManagement: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={() => handleEdit(coupon)}
+                        className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors"
+                      >
+                        编辑
+                      </button>
+                      <button
                         onClick={() => toggleActive(coupon.id)}
                         className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                           coupon.isActive
@@ -326,7 +361,7 @@ const CouponManagement: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-800">新建优惠券</h2>
+              <h2 className="text-xl font-bold text-gray-800">{formData.id ? '编辑优惠券' : '新建优惠券'}</h2>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-full">
                 <X size={20} />
               </button>
@@ -491,7 +526,7 @@ const CouponManagement: React.FC = () => {
                 className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                {saving ? '保存中...' : '保存'}
+                {saving ? '保存中...' : formData.id ? '更新' : '保存'}
               </button>
             </div>
           </div>
