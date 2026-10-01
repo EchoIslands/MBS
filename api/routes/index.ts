@@ -3234,7 +3234,7 @@ couponsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
       remaining_quantity: rest.remainingQuantity ?? rest.totalQuantity ?? -1,
       per_customer_limit: rest.perCustomerLimit ?? 1,
       start_at: rest.startAt || now,
-      end_at: rest.endAt || now,
+      end_at: rest.endAt || null,
       is_active: rest.isActive !== false,
       created_at: now,
       updated_at: now,
@@ -3288,7 +3288,7 @@ couponsRouter.post('/:id/claim', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '优惠券已停用' });
     }
     const now = new Date().toISOString();
-    if (now < coupon.start_at || now > coupon.end_at) {
+    if (now < coupon.start_at || (coupon.end_at && now > coupon.end_at)) {
       return res.status(400).json({ success: false, error: '优惠券不在有效期内' });
     }
     if (Number(coupon.remaining_quantity) >= 0 && Number(coupon.remaining_quantity) <= 0) {
@@ -3358,7 +3358,7 @@ couponsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =>
     if (body.remainingQuantity !== undefined) payload.remaining_quantity = body.remainingQuantity ?? body.totalQuantity ?? -1;
     if (body.perCustomerLimit !== undefined) payload.per_customer_limit = body.perCustomerLimit ?? 1;
     if (body.startAt !== undefined) payload.start_at = body.startAt;
-    if (body.endAt !== undefined) payload.end_at = body.endAt;
+    if (body.endAt !== undefined) payload.end_at = body.endAt || null;
     if (body.isActive !== undefined) payload.is_active = body.isActive !== false;
 
     const { data, error } = await supabase.from('coupons').update(payload).eq('id', id).select().single();
@@ -3661,7 +3661,7 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       }
 
       const now = new Date().toISOString();
-      if (now < String(coupon.startAt) || now > String(coupon.endAt)) {
+      if (now < String(coupon.startAt) || (coupon.endAt && now > String(coupon.endAt))) {
         return res.status(400).json({ success: false, error: '优惠券不在有效期内' });
       }
       if (!coupon.isActive) {
@@ -5700,12 +5700,8 @@ referralsRouter.get('/check-code', async (req: Request, res: Response) => {
       couponInfo = coupon;
     }
 
-    const now = new Date();
-    const startAt = couponInfo?.start_at ? new Date(couponInfo.start_at as string) : now;
-    const endAt = couponInfo?.end_at
-      ? new Date(couponInfo.end_at as string)
-      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const validDays = Math.max(1, Math.ceil((endAt.getTime() - startAt.getTime()) / (24 * 60 * 60 * 1000)));
+    // 邀请新人券统一显示领取后 30 天内有效
+    const validDays = 30;
 
     res.json({
       success: true,
@@ -5825,11 +5821,23 @@ referralsRouter.post('/claim', async (req: Request, res: Response) => {
     }
 
     const now = new Date();
-    const validEnd = coupon.end_at
-      ? new Date(coupon.end_at as string)
-      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const validStart = now;
+    const validEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    // 创建用户优惠券（字段与 migrations/create_product_marketing.sql 中的 customer_coupons 表保持一致）
+    // 如果优惠券模板有效期不足 30 天，延长至领取后 30 天
+    const couponEnd = coupon.end_at ? new Date(coupon.end_at as string) : new Date(0);
+    if (couponEnd.getTime() < validEnd.getTime()) {
+      await supabase
+        .from('coupons')
+        .update({
+          start_at: validStart.toISOString(),
+          end_at: validEnd.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .eq('id', coupon.id);
+    }
+
+    // 创建用户优惠券（有效期固定为领取后 30 天）
     const customerCouponId = `cc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const { error: couponInsertError } = await supabase.from('customer_coupons').insert({
       id: customerCouponId,
@@ -5839,6 +5847,8 @@ referralsRouter.post('/claim', async (req: Request, res: Response) => {
       customer_name: customer.name,
       customer_phone: cleanPhone,
       status: 'unused',
+      valid_start: validStart.toISOString(),
+      valid_end: validEnd.toISOString(),
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
     });

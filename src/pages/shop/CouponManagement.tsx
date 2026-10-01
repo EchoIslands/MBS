@@ -115,11 +115,11 @@ const CouponManagement: React.FC = () => {
       alert('未选择店铺');
       return;
     }
-    if (!formData.startAt || !formData.endAt) {
-      alert('请选择有效期');
+    if (!formData.startAt) {
+      alert('请选择开始时间');
       return;
     }
-    if (new Date(formData.endAt) <= new Date(formData.startAt)) {
+    if (formData.endAt && new Date(formData.endAt) <= new Date(formData.startAt)) {
       alert('结束时间必须晚于开始时间');
       return;
     }
@@ -188,6 +188,7 @@ const CouponManagement: React.FC = () => {
   };
 
   const isExpired = (coupon: Coupon) => {
+    if (!coupon.endAt) return false;
     return new Date(coupon.endAt) < new Date();
   };
 
@@ -300,7 +301,7 @@ const CouponManagement: React.FC = () => {
                         <div className="flex items-center gap-1">
                           <Calendar size={14} />
                           <span>
-                            {formatDate(coupon.startAt)} ~ {formatDate(coupon.endAt)}
+                            {formatDate(coupon.startAt)} ~ {coupon.endAt ? formatDate(coupon.endAt) : '不限时间'}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -488,15 +489,35 @@ const CouponManagement: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">结束时间</label>
                   <input
                     type="date"
+                    disabled={!formData.endAt}
                     value={formData.endAt ? formatDate(formData.endAt) : ''}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        endAt: e.target.value ? new Date(e.target.value) : undefined,
+                        endAt: e.target.value ? new Date(e.target.value) : null,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none ${
+                      !formData.endAt ? 'bg-gray-100 text-gray-400' : ''
+                    }`}
                   />
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id="couponNoEnd"
+                      checked={!formData.endAt}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          endAt: e.target.checked ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                        })
+                      }
+                      className="w-4 h-4 text-orange-500 rounded"
+                    />
+                    <label htmlFor="couponNoEnd" className="text-sm text-gray-700 cursor-pointer">
+                      不限时间
+                    </label>
+                  </div>
                 </div>
               </div>
 
