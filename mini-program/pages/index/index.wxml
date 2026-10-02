@@ -192,18 +192,24 @@
         <view
           wx:for="{{stylists}}"
           wx:key="id"
-          class="stylist-item"
+          class="stylist-card"
         >
           <view class="stylist-avatar">
             <mbs-icon name="user" size="36" color="var(--text-tertiary)" />
           </view>
           <view class="stylist-info">
-            <view class="stylist-name">{{item.name}}</view>
-            <view class="stylist-title">{{item.title}}</view>
-          </view>
-          <view class="stylist-rating" wx:if="{{item.rating}}">
-            <mbs-icon name="star" size="20" color="var(--warning)" />
-            <text>{{item.rating}}</text>
+            <view class="stylist-name-row">
+              <view class="stylist-name">{{item.name}}</view>
+              <view class="stylist-rating" wx:if="{{item.rating}}">
+                <mbs-icon name="star" size="20" color="var(--warning)" />
+                <text>{{item.rating}}</text>
+              </view>
+            </view>
+            <view class="stylist-title">{{item.title || '资深发型师'}}</view>
+            <view class="stylist-specialty" wx:if="{{item.specialty}}">
+              <mbs-icon name="sparkles" size="18" color="var(--primary)" />
+              <text>{{item.specialty}}</text>
+            </view>
           </view>
         </view>
       </view>

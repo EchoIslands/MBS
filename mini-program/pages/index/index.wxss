@@ -107,8 +107,8 @@
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  width: 200rpx;
-  padding: 28rpx 20rpx;
+  width: 280rpx;
+  padding: 28rpx 22rpx;
   background: var(--gray-50);
   border-radius: 24rpx;
   border: 1rpx solid var(--gray-100);
@@ -127,6 +127,21 @@
   flex-shrink: 0;
 }
 
+.stylist-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.stylist-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  width: 100%;
+}
+
 .stylist-name {
   font-size: 28rpx;
   font-weight: 600;
@@ -134,7 +149,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
+  max-width: 70%;
 }
 
 .stylist-title {
@@ -144,6 +159,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+  margin-top: 4rpx;
+}
+
+.stylist-specialty {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 14rpx 16rpx;
+  margin-top: 12rpx;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.stylist-specialty mbs-icon {
+  margin-right: 6rpx;
+  vertical-align: -2rpx;
 }
 
 .stylist-rating {
@@ -153,6 +192,7 @@
   font-size: 24rpx;
   font-weight: 600;
   color: var(--text-primary);
+  flex-shrink: 0;
 }
 
 /* ===== 商品商城 —— 2列网格 ===== */
