@@ -11,18 +11,29 @@ import {
   Scissors,
   MessageSquare,
   UserCircle,
+  Edit2,
 } from 'lucide-react';
-import { Booking, Customer, UserRole, Settlement } from '../../../shared/types';
+import { Booking, Customer, UserRole, Settlement, Employee } from '../../../shared/types';
 import { useAppStore } from '../../store';
-import { customerApi, bookingApi, settlementApi } from '../../api';
+import { customerApi, bookingApi, settlementApi, employeeApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 const Dashboard: React.FC = () => {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
   const [todaySettlements, setTodaySettlements] = useState<Settlement[]>([]);
   const [recentCustomers, setRecentCustomers] = useState<Customer[]>([]);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    phone: '',
+    title: '',
+    specialty: '',
+    avatar: '',
+    password: '',
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
   const navigate = useNavigate();
-  const { currentShop, currentEmployee, userRole } = useAppStore();
+  const { currentShop, currentEmployee, userRole, updateCurrentEmployee } = useAppStore();
 
   useEffect(() => {
     if (!currentShop) return;
@@ -85,6 +96,56 @@ const Dashboard: React.FC = () => {
   };
 
   const welcomeRole = roleLabel[userRole || ''] || '管理员';
+
+  const openEditDialog = () => {
+    if (!currentEmployee) return;
+    setEditForm({
+      name: currentEmployee.name || '',
+      phone: currentEmployee.phone || '',
+      title: currentEmployee.title || '',
+      specialty: currentEmployee.specialty || '',
+      avatar: currentEmployee.avatar || '',
+      password: '',
+    });
+    setShowEditDialog(true);
+  };
+
+  const closeEditDialog = () => {
+    setShowEditDialog(false);
+    setEditForm({ name: '', phone: '', title: '', specialty: '', avatar: '', password: '' });
+  };
+
+  const saveProfile = async () => {
+    if (!currentEmployee) return;
+    const payload: Partial<Employee> & { password?: string } = {};
+    if (editForm.name !== currentEmployee.name) payload.name = editForm.name;
+    if (editForm.phone !== currentEmployee.phone) payload.phone = editForm.phone;
+    if (editForm.title !== (currentEmployee.title || '')) payload.title = editForm.title;
+    if (editForm.specialty !== (currentEmployee.specialty || '')) payload.specialty = editForm.specialty;
+    if (editForm.avatar !== (currentEmployee.avatar || '')) payload.avatar = editForm.avatar;
+    if (editForm.password.trim()) payload.password = editForm.password.trim();
+
+    if (Object.keys(payload).length === 0) {
+      closeEditDialog();
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      const updated = await employeeApi.updateMe(payload);
+      if (updated) {
+        updateCurrentEmployee(updated);
+        closeEditDialog();
+      } else {
+        alert('保存失败');
+      }
+    } catch (err) {
+      console.error('[Dashboard] 更新个人资料失败:', err);
+      alert(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   // 统计卡片
   const completedCount = todayBookings.filter((b) => b.status === 'completed').length;
@@ -160,9 +221,18 @@ const Dashboard: React.FC = () => {
               {currentShop?.name || '皓诗形象设计'} · {new Date().toLocaleDateString('zh-CN')}
             </p>
           </div>
-          <div className="hidden md:block text-right text-sm">
-            <div className="opacity-80">今日预约</div>
-            <div className="text-3xl font-bold">{todayBookings.length}</div>
+          <div className="flex items-start gap-3">
+            <button
+              onClick={openEditDialog}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur rounded-lg text-sm font-medium transition-colors"
+            >
+              <Edit2 size={14} />
+              编辑资料
+            </button>
+            <div className="hidden md:block text-right text-sm">
+              <div className="opacity-80">今日预约</div>
+              <div className="text-3xl font-bold">{todayBookings.length}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -308,6 +378,97 @@ const Dashboard: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 编辑个人资料弹窗 */}
+      {showEditDialog && currentEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800">编辑我的资料</h3>
+              <button
+                onClick={closeEditDialog}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">手机号</label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">职位（如：首席发型师）</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">专长/简介（顾客端可见）</label>
+                <textarea
+                  rows={3}
+                  value={editForm.specialty}
+                  onChange={(e) => setEditForm({ ...editForm, specialty: e.target.value })}
+                  placeholder="例如：擅长韩式纹理烫、男士油头、白发遮盖..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">头像 URL</label>
+                <input
+                  type="text"
+                  value={editForm.avatar}
+                  onChange={(e) => setEditForm({ ...editForm, avatar: e.target.value })}
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">重置密码（留空则不修改）</label>
+                <input
+                  type="password"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  placeholder="不修改请留空"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={closeEditDialog}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={saveProfile}
+                disabled={savingProfile}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-70 text-white rounded-lg font-medium transition-colors"
+              >
+                {savingProfile ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </ShopLayout>
   );
 };

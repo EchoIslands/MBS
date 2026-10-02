@@ -55,7 +55,7 @@ const normalizeOpeningHours = (hours?: OpeningHours | null): OpeningHours => {
 
 const ShopManage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentShop, updateShop, userRole } = useAppStore();
+  const { currentShop, updateShop, userRole, currentEmployee, updateCurrentEmployee } = useAppStore();
   const [shopName, setShopName] = useState(currentShop?.name || '');
   const [shopDesc, setShopDesc] = useState(currentShop?.description || '');
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
@@ -90,6 +90,16 @@ const ShopManage: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    phone: '',
+    title: '',
+    specialty: '',
+    avatar: '',
+    password: '',
+  });
+  const [savingEmployee, setSavingEmployee] = useState(false);
 
   // currentShop 变化时同步表单状态（避免路由守卫仅恢复 employee 时 currentShop 为空导致崩溃）
   React.useEffect(() => {
@@ -186,6 +196,71 @@ const ShopManage: React.FC = () => {
       return emp.role === UserRole.STYLIST;
     }
     return false;
+  };
+
+  // 判断当前用户能否编辑某个员工资料
+  const canEditEmployee = (emp: Employee) => {
+    // 自己可以编辑自己
+    if (currentEmployee?.id === emp.id) return true;
+    // CEO/店长按现有权限管理
+    return canManageEmployee(emp);
+  };
+
+  const openEditEmployee = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEditForm({
+      name: emp.name || '',
+      phone: emp.phone || '',
+      title: emp.title || '',
+      specialty: emp.specialty || '',
+      avatar: emp.avatar || '',
+      password: '',
+    });
+  };
+
+  const closeEditEmployee = () => {
+    setEditingEmployee(null);
+    setEditForm({ name: '', phone: '', title: '', specialty: '', avatar: '', password: '' });
+  };
+
+  const saveEmployeeEdit = async () => {
+    if (!editingEmployee) return;
+    const payload: Partial<Employee> & { password?: string } = {};
+    if (editForm.name !== editingEmployee.name) payload.name = editForm.name;
+    if (editForm.phone !== editingEmployee.phone) payload.phone = editForm.phone;
+    if (editForm.title !== (editingEmployee.title || '')) payload.title = editForm.title;
+    if (editForm.specialty !== (editingEmployee.specialty || '')) payload.specialty = editForm.specialty;
+    if (editForm.avatar !== (editingEmployee.avatar || '')) payload.avatar = editForm.avatar;
+    if (editForm.password.trim()) payload.password = editForm.password.trim();
+
+    if (Object.keys(payload).length === 0) {
+      closeEditEmployee();
+      return;
+    }
+
+    setSavingEmployee(true);
+    try {
+      let updated: Employee | null = null;
+      if (currentEmployee?.id === editingEmployee.id) {
+        updated = await employeeApi.updateMe(payload);
+      } else {
+        updated = await employeeApi.update(editingEmployee.id, payload);
+      }
+      if (updated) {
+        setEmployees(employees.map((e) => (e.id === updated!.id ? updated! : e)));
+        if (currentEmployee?.id === updated.id) {
+          updateCurrentEmployee(updated);
+        }
+        closeEditEmployee();
+      } else {
+        alert('保存失败');
+      }
+    } catch (err) {
+      console.error('[ShopManage] 更新员工失败:', err);
+      alert(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSavingEmployee(false);
+    }
   };
 
   const availableRoles: UserRole[] = Object.values(UserRole).filter((r) => canAddRole(r));
@@ -688,25 +763,36 @@ const ShopManage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  {canManageEmployee(employee) && (
+                  {canEditEmployee(employee) && (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => toggleEmployeeStatus(employee.id)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          employee.isActive
-                            ? 'text-gray-500 hover:bg-gray-100'
-                            : 'text-green-500 hover:bg-green-50'
-                        }`}
-                        title={employee.isActive ? '禁用' : '启用'}
+                        onClick={() => openEditEmployee(employee)}
+                        className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
+                        title="编辑资料"
                       >
-                        {employee.isActive ? <EyeOff size={18} /> : <Eye size={18} />}
+                        <Edit2 size={18} />
                       </button>
-                      <button
-                        onClick={() => removeEmployee(employee.id)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {canManageEmployee(employee) && (
+                        <>
+                          <button
+                            onClick={() => toggleEmployeeStatus(employee.id)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              employee.isActive
+                                ? 'text-gray-500 hover:bg-gray-100'
+                                : 'text-green-500 hover:bg-green-50'
+                            }`}
+                            title={employee.isActive ? '禁用' : '启用'}
+                          >
+                            {employee.isActive ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                          <button
+                            onClick={() => removeEmployee(employee.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -718,6 +804,99 @@ const ShopManage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* 编辑员工资料弹窗 */}
+          {editingEmployee && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {currentEmployee?.id === editingEmployee.id ? '编辑我的资料' : `编辑 ${editingEmployee.name} 的资料`}
+                  </h3>
+                  <button
+                    onClick={closeEditEmployee}
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">手机号</label>
+                    <input
+                      type="text"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">职位（如：首席发型师）</label>
+                    <input
+                      type="text"
+                      value={editForm.title}
+                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">专长/简介（顾客端可见）</label>
+                    <textarea
+                      rows={3}
+                      value={editForm.specialty}
+                      onChange={(e) => setEditForm({ ...editForm, specialty: e.target.value })}
+                      placeholder="例如：擅长韩式纹理烫、男士油头、白发遮盖..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">头像 URL</label>
+                    <input
+                      type="text"
+                      value={editForm.avatar}
+                      onChange={(e) => setEditForm({ ...editForm, avatar: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">重置密码（留空则不修改）</label>
+                    <input
+                      type="password"
+                      value={editForm.password}
+                      onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                      placeholder="不修改请留空"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+                  <button
+                    onClick={closeEditEmployee}
+                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={saveEmployeeEdit}
+                    disabled={savingEmployee}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-70 text-white rounded-lg font-medium transition-colors"
+                  >
+                    {savingEmployee ? '保存中...' : '保存'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 预约设置 */}
