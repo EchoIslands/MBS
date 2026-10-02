@@ -1,19 +1,84 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="index-page">
-  <!-- 顶部导航栏 —— 与 H5 对齐：左侧店铺名，右侧按钮组 -->
+  <!-- 顶部导航栏 —— 与 H5 对齐：左侧店铺名，右侧个人中心 -->
   <view class="index-nav-bar">
     <view class="index-nav-title">{{shop.name || '皓诗形象设计'}}</view>
     <view class="index-nav-actions">
       <view class="index-nav-btn index-nav-btn-primary" bindtap="goToProfile">
         <text>个人中心</text>
       </view>
-      <view class="index-nav-btn index-nav-btn-outline" bindtap="handleLogout">
-        <text>退出登录</text>
-      </view>
     </view>
   </view>
 
   <view class="container">
+    <!-- 会员信息头 -->
+    <view wx:if="{{customer}}" class="{{memberHeaderClass}}">
+      <view class="member-decor member-decor-1"></view>
+      <view class="member-decor member-decor-2"></view>
+      <view class="member-decor member-decor-3"></view>
+
+      <view class="member-header-inner">
+        <view class="member-info-row">
+          <view class="member-info-left">
+            <view class="member-avatar">
+              <mbs-icon name="user" size="44" color="rgba(255,255,255,0.9)" />
+            </view>
+            <view class="member-identity">
+              <view class="member-name">{{customer.name || '顾客'}}</view>
+              <view class="member-phone">{{customer.phone || ''}}</view>
+            </view>
+          </view>
+          <view class="member-info-right">
+            <view class="member-badge">
+              <mbs-icon name="crown" size="22" color="rgba(255,255,255,0.95)" />
+              <text>{{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
+            </view>
+            <view wx:if="{{storedLevel !== StoredValueLevel.NONE}}" class="member-badge member-badge-sub">
+              <mbs-icon name="wallet" size="18" color="rgba(255,255,255,0.95)" />
+              <text>{{fmt.getStoredValueLabel(storedLevel)}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="member-discount-card">
+          <view class="member-discount-label">
+            <mbs-icon name="sparkles" size="24" color="rgba(255,255,255,0.9)" />
+            您当前的消费折扣
+          </view>
+          <view class="member-discount-value">{{fmt.formatDiscount(effectiveDiscount)}} 折</view>
+          <view class="member-discount-hint">
+            <text wx:if="{{purchaseLevel !== PurchaseVIPLevel.REGULAR && storedLevel !== StoredValueLevel.NONE}}">{{fmt.getPurchaseVIPLabel(purchaseLevel)}} × {{fmt.getStoredValueLabel(storedLevel)}} 折上折</text>
+            <text wx:elif="{{purchaseLevel !== PurchaseVIPLevel.REGULAR}}">已开通 {{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
+            <text wx:elif="{{storedLevel !== StoredValueLevel.NONE}}">已开通 {{fmt.getStoredValueLabel(storedLevel)}}</text>
+            <text wx:else>开通会员享受专属折扣</text>
+          </view>
+        </view>
+
+        <view class="member-stats-grid">
+          <view class="member-stat-item">
+            <view class="member-stat-label">储值余额</view>
+            <view class="member-stat-value">¥{{customer.storedValueBalance || 0}}</view>
+          </view>
+          <view class="member-stat-item">
+            <view class="member-stat-label">可提现返现</view>
+            <view class="member-stat-value">¥{{customer.withdrawableReferralAmount || 0}}</view>
+          </view>
+          <view class="member-stat-item">
+            <view class="member-stat-label">积分</view>
+            <view class="member-stat-value">{{customer.points || 0}}</view>
+          </view>
+          <view class="member-stat-item">
+            <view class="member-stat-label">累计消费</view>
+            <view class="member-stat-value">¥{{customer.totalSpent || 0}}</view>
+          </view>
+        </view>
+
+        <view class="member-invite-btn" bindtap="goToInvite">
+          <mbs-icon name="share-2" size="28" color="#ffffff" />
+          <text>邀请新人</text>
+        </view>
+      </view>
+    </view>
     <!-- 加载 / 错误 -->
     <view wx:if="{{loading}}" class="empty-state">
       <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
@@ -194,12 +259,6 @@
       </view>
     </view>
   </view>
-
-  <login-modal
-    visible="{{showLogin}}"
-    bind:success="onLoginSuccess"
-    bind:close="onLoginClose"
-  />
 
   <privacy-modal
     bind:accept="onPrivacyAccept"

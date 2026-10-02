@@ -118,7 +118,6 @@
         </view>
         <view class="placeholder-title">登录后查看个人资料</view>
         <view class="placeholder-hint">可查看积分、余额、历史预约等信息</view>
-        <view class="btn btn-primary" bindtap="openLogin">手机号登录</view>
       </view>
     </view>
   </view>
@@ -501,9 +500,4 @@
     </view>
   </view>
 
-  <login-modal
-    visible="{{showLogin}}"
-    bind:success="onLoginSuccess"
-    bind:close="onLoginClose"
-  />
 </view>

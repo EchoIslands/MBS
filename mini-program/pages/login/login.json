@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "顾客登录",
+  "navigationBarTextStyle": "black",
+  "navigationBarBackgroundColor": "#ffffff",
+  "usingComponents": {
+    "mbs-icon": "/components/icon/icon"
+  }
+}

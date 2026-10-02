@@ -1,6 +1,16 @@
 import { getShop, getShopReviews } from '../../api/shop';
+import { getCustomerPublic } from '../../api/customer';
 import { getCustomerId, setRouteParams, clearCustomerId } from '../../utils/storage';
 import { trackPageView, trackServiceDetailView } from '../../utils/tracking';
+import {
+  PurchaseVIPLevel,
+  StoredValueLevel,
+  purchaseVIPPlans,
+  storedValuePlans,
+  getPurchaseVIPLabel,
+  getStoredValueLabel,
+  getCustomerEffectiveDiscount,
+} from '../../utils/membership';
 
 function toTwoDigits(n) {
   return String(n).padStart(2, '0');
@@ -43,15 +53,32 @@ Page({
     ratingStars: [],
     loading: true,
     error: '',
-    showLogin: false,
-    pendingServiceId: '',
+    // 顾客会员信息
+    customer: null,
+    purchaseLevel: PurchaseVIPLevel.REGULAR,
+    storedLevel: StoredValueLevel.NONE,
+    effectiveDiscount: 1,
+    purchasePlan: null,
+    storedPlan: null,
+    isMember: false,
+    memberHeaderClass: 'member-header gradient-member-regular',
+    StoredValueLevel,
   },
 
   async onLoad() {
+    if (!getCustomerId()) {
+      wx.reLaunch({ url: '/pages/login/login' });
+      return;
+    }
     await this.loadShop();
+    this.loadCustomer();
   },
 
   onShow() {
+    if (!getCustomerId()) {
+      wx.reLaunch({ url: '/pages/login/login' });
+      return;
+    }
     trackPageView('pages/index/index', { shop_id: 'shop1' });
   },
 
@@ -172,10 +199,78 @@ Page({
       success: (res) => {
         if (res.confirm) {
           clearCustomerId();
-          wx.showToast({ title: '已退出登录', icon: 'success' });
+          wx.reLaunch({ url: '/pages/login/login' });
         }
       },
     });
+  },
+
+  slimCustomer(raw) {
+    if (!raw) return null;
+    return {
+      id: raw.id,
+      name: raw.name || '顾客',
+      phone: raw.phone || '',
+      purchaseVIPLevel: raw.purchaseVIPLevel ?? raw.purchase_vip_level ?? PurchaseVIPLevel.REGULAR,
+      storedValueLevel: raw.storedValueLevel ?? raw.stored_value_level ?? StoredValueLevel.NONE,
+      storedValueBalance: raw.storedValueBalance ?? raw.stored_value_balance ?? raw.balance ?? 0,
+      withdrawableReferralAmount: raw.withdrawableReferralAmount ?? raw.withdrawable_referral_amount ?? 0,
+      points: raw.points ?? 0,
+      totalSpent: raw.totalSpent ?? raw.total_spent ?? 0,
+      isStockholder: !!raw.isStockholder || !!raw.is_stockholder,
+      purchaseVIPExpiresAt: raw.purchaseVIPExpiresAt || raw.purchase_vip_expires_at,
+      storedValueExpiresAt: raw.storedValueExpiresAt || raw.stored_value_expires_at,
+    };
+  },
+
+  computeMemberHeaderClass(purchaseLevel) {
+    const map = {
+      [PurchaseVIPLevel.REGULAR]: 'gradient-member-regular',
+      [PurchaseVIPLevel.BRONZE]: 'gradient-member-bronze',
+      [PurchaseVIPLevel.SILVER]: 'gradient-member-silver',
+      [PurchaseVIPLevel.GOLD]: 'gradient-member-gold',
+      [PurchaseVIPLevel.DIAMOND]: 'gradient-member-diamond',
+    };
+    return `member-header ${map[purchaseLevel] || 'gradient-member-regular'}`;
+  },
+
+  async loadCustomer() {
+    const customerId = getCustomerId();
+    if (!customerId) return;
+    try {
+      const raw = await getCustomerPublic(customerId);
+      const customer = this.slimCustomer(raw);
+      const purchaseLevel = customer.purchaseVIPLevel;
+      const storedLevel = customer.storedValueLevel;
+      const effectiveDiscount = getCustomerEffectiveDiscount(customer);
+      const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel) || null;
+      const storedPlan = storedValuePlans.find((p) => p.level === storedLevel) || null;
+      const isMember = purchaseLevel !== PurchaseVIPLevel.REGULAR
+                    || storedLevel !== StoredValueLevel.NONE
+                    || customer.isStockholder;
+
+      this.setData({
+        customer,
+        purchaseLevel,
+        storedLevel,
+        effectiveDiscount,
+        purchasePlan,
+        storedPlan,
+        isMember,
+        memberHeaderClass: this.computeMemberHeaderClass(purchaseLevel),
+      });
+    } catch (err) {
+      console.error('[index] 加载顾客信息失败:', err);
+    }
+  },
+
+  goToInvite() {
+    const { customer, isMember } = this.data;
+    if (!customer || !isMember) {
+      wx.showToast({ title: '成为会员后即可邀请好友', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/invite/invite?customerId=${customer.id}` });
   },
 
   formatDate,
@@ -188,10 +283,6 @@ Page({
   },
 
   goToBooking() {
-    if (!getCustomerId()) {
-      this.setData({ showLogin: true });
-      return;
-    }
     wx.navigateTo({ url: '/pages/booking/booking' });
   },
 
@@ -199,10 +290,6 @@ Page({
     const serviceId = e.currentTarget.dataset.id;
     const service = (this.data.shop?.services || []).find((s) => s.id === serviceId);
     trackServiceDetailView(serviceId, service?.name || '', { shop_id: 'shop1' });
-    if (!getCustomerId()) {
-      this.setData({ showLogin: true, pendingServiceId: serviceId });
-      return;
-    }
     this.goToBookingWithService(serviceId);
   },
 
@@ -211,21 +298,6 @@ Page({
     wx.navigateTo({
       url: '/pages/booking/booking',
     });
-  },
-
-  onLoginClose() {
-    this.setData({ showLogin: false, pendingServiceId: '' });
-  },
-
-  onLoginSuccess() {
-    const { pendingServiceId } = this.data;
-    this.setData({ showLogin: false });
-    if (pendingServiceId) {
-      this.goToBookingWithService(pendingServiceId);
-      this.setData({ pendingServiceId: '' });
-    } else {
-      wx.navigateTo({ url: '/pages/booking/booking' });
-    }
   },
 
   onPrivacyAccept() {

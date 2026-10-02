@@ -109,8 +109,6 @@ Page({
     hasFilteredBookings: false,
     loading: true,
     error: '',
-    showLogin: false,
-    loginPrompted: false,
     activeTab: 'current',
     purchaseVIPPlans,
     storedValuePlans,
@@ -151,58 +149,27 @@ Page({
   },
 
   async onLoad() {
-    await this.loadProfile({ autoShowLogin: true });
+    await this.loadProfile();
   },
 
   async onShow() {
     // 首次加载由 onLoad 完成；只有显式需要刷新时才重新加载
     if (!this.data._profileLoaded || this.data._needRefresh) {
       this.setData({ _needRefresh: false });
-      await this.loadProfile({ autoShowLogin: true });
+      await this.loadProfile();
     }
   },
 
-  openLogin() {
-    this.setData({ showLogin: true });
-  },
-
-  onLoginClose() {
-    this.setData({ showLogin: false });
-  },
-
-  async onLoginSuccess(e) {
-    const loggedInCustomer = e.detail && e.detail.customer;
-    this.setData({ showLogin: false });
-    wx.showToast({ title: '登录成功', icon: 'success' });
-    try {
-      this.setData({ _needRefresh: false });
-      await this.loadProfile({ autoShowLogin: false, prefetchedCustomer: loggedInCustomer });
-    } catch (err) {
-      console.error('[profile] 登录成功后加载资料失败:', err);
-      wx.showToast({ title: '登录成功但加载资料失败，请下拉刷新', icon: 'none' });
-    }
-  },
-
-  async loadProfile({ autoShowLogin = false, prefetchedCustomer = null } = {}) {
+  async loadProfile() {
     const customerId = getCustomerId();
     if (!customerId) {
-      const shouldPrompt = autoShowLogin && !this.data.loginPrompted;
-      this.setData({
-        loading: false,
-        error: '',
-        customer: null,
-        bookings: [],
-        myBenefits: [],
-        showLogin: shouldPrompt,
-        loginPrompted: true,
-      });
+      wx.reLaunch({ url: '/pages/login/login' });
       return;
     }
 
-    this.setData({ loading: true, error: '', showLogin: false });
+    this.setData({ loading: true, error: '' });
     try {
-      // 登录接口已返回完整顾客信息，优先直接使用，避免生产环境 /customers/:id/public 偶发 401 阻塞登录流程
-      const rawCustomer = prefetchedCustomer || await getCustomerPublic(customerId);
+      const rawCustomer = await getCustomerPublic(customerId);
       const customer = slimCustomer(rawCustomer);
       const rawBookings = await getCustomerBookings(customerId);
       const allBookings = slimBookings(rawBookings);
@@ -274,10 +241,7 @@ Page({
       console.error('[profile] 加载个人信息失败:', err);
       if (err.statusCode === 401 || /未登录|请先登录|unauthorized/i.test(err.message)) {
         clearCustomerId();
-        this.setData({ customer: null, bookings: [], myBenefits: [], loading: false, error: '' });
-        if (autoShowLogin) {
-          this.setData({ showLogin: true });
-        }
+        wx.reLaunch({ url: '/pages/login/login' });
         return;
       }
       this.setData({ error: '个人信息加载失败', loading: false });
@@ -352,7 +316,7 @@ Page({
       await cancelBooking(viewingBooking.id, customer.id);
       wx.showToast({ title: '已取消预约', icon: 'success' });
       this.setData({ viewingBooking: null, cancelling: false });
-      await this.loadProfile({ autoShowLogin: false });
+      await this.loadProfile();
     } catch (err) {
       console.error('[profile] 取消预约失败:', err);
       wx.showToast({ title: err.message || '取消失败，请重试', icon: 'none' });
@@ -484,13 +448,7 @@ Page({
       success: (res) => {
         if (res.confirm) {
           clearCustomerId();
-          this.setData({
-            customer: null,
-            bookings: [],
-            myBenefits: [],
-            activeTab: 'current',
-            viewingBooking: null,
-          });
+          wx.reLaunch({ url: '/pages/login/login' });
         }
       },
     });

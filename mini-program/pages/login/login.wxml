@@ -1,0 +1,48 @@
+<view class="login-page">
+  <view class="login-card">
+    <view class="login-brand">
+      <view class="login-avatar">
+        <mbs-icon name="user" size="48" color="var(--primary)" />
+      </view>
+      <view class="login-title">顾客登录</view>
+      <view class="login-hint">登录后可预约服务、查看会员权益</view>
+    </view>
+
+    <view class="login-field">
+      <view class="login-input-wrap">
+        <mbs-icon name="user" size="32" color="var(--text-tertiary)" />
+        <input
+          class="login-input"
+          type="text"
+          maxlength="20"
+          placeholder="怎么称呼您（选填）"
+          value="{{name}}"
+          bindinput="onNameInput"
+        />
+      </view>
+    </view>
+
+    <view class="login-field">
+      <view class="login-input-wrap">
+        <mbs-icon name="phone" size="32" color="var(--text-tertiary)" />
+        <input
+          class="login-input"
+          type="number"
+          maxlength="11"
+          placeholder="请输入手机号"
+          value="{{phone}}"
+          bindinput="onPhoneInput"
+        />
+      </view>
+    </view>
+
+    <view class="login-error" wx:if="{{error}}">{{error}}</view>
+
+    <view
+      class="login-submit-btn {{loggingIn ? 'login-submit-btn-disabled' : ''}}"
+      bindtap="onLogin"
+    >
+      <text>{{loggingIn ? '登录中...' : '立即登录'}}</text>
+    </view>
+  </view>
+</view>

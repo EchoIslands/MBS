@@ -411,3 +411,205 @@
 .index-page .product-image {
   height: 260rpx;
 }
+
+/* ===== 会员信息头 ===== */
+.member-header {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  border-radius: 32rpx;
+  margin-bottom: 32rpx;
+  padding: 40rpx 28rpx;
+  box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.1);
+}
+
+.gradient-member-regular {
+  background: linear-gradient(135deg, #9ca3af, #6b7280);
+}
+
+.gradient-member-bronze {
+  background: linear-gradient(135deg, #fb923c, #f97316);
+}
+
+.gradient-member-silver {
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+}
+
+.gradient-member-gold {
+  background: linear-gradient(135deg, #facc15, #ca8a04);
+}
+
+.gradient-member-diamond {
+  background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+}
+
+.member-decor {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.member-decor-1 {
+  width: 280rpx;
+  height: 280rpx;
+  right: -60rpx;
+  top: -60rpx;
+}
+
+.member-decor-2 {
+  width: 220rpx;
+  height: 220rpx;
+  right: -100rpx;
+  top: 60rpx;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.member-decor-3 {
+  width: 140rpx;
+  height: 140rpx;
+  left: 24rpx;
+  bottom: 24rpx;
+  background: rgba(255, 255, 255, 0.1);
+  filter: blur(16rpx);
+}
+
+.member-header-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.member-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+
+.member-info-left {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.member-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.member-identity {
+  display: flex;
+  flex-direction: column;
+}
+
+.member-name {
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.member-phone {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4rpx;
+}
+
+.member-info-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10rpx;
+}
+
+.member-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 9999rpx;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8rpx);
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.member-badge-sub {
+  padding: 8rpx 14rpx;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 22rpx;
+}
+
+.member-discount-card {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 28rpx;
+  padding: 28rpx;
+  margin-bottom: 20rpx;
+}
+
+.member-discount-label {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 10rpx;
+}
+
+.member-discount-value {
+  font-size: 64rpx;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 8rpx;
+}
+
+.member-discount-hint {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.4;
+}
+
+.member-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.member-stat-item {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 24rpx;
+  padding: 22rpx;
+}
+
+.member-stat-label {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 8rpx;
+}
+
+.member-stat-value {
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.member-invite-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  width: 100%;
+  padding: 26rpx 0;
+  background: linear-gradient(135deg, #ff7a18, #ff2e63);
+  border-radius: 28rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 12rpx 32rpx rgba(255, 46, 99, 0.25);
+}
