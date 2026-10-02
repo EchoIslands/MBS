@@ -272,7 +272,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     }
 
     const { id } = req.params;
-    const { name, phone, title, role: newRole, password, specialty, avatar, is_active } = req.body;
+    const { name, phone, title, role: newRole, password, specialty, avatar, is_active, isActive } = req.body;
 
     // 不能修改自己以外的 CEO（CEO 可以，店长不行）
     if (id !== currentId) {
@@ -301,7 +301,8 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     if (password !== undefined) updateData.password_hash = password;
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
-    if (is_active !== undefined) updateData.is_active = is_active;
+    const nextIsActive = is_active !== undefined ? is_active : isActive;
+    if (nextIsActive !== undefined) updateData.is_active = nextIsActive;
 
     const { data, error } = await supabase
       .from('employees')
