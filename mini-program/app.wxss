@@ -254,6 +254,9 @@ page {
 
 /* ===== 顶部导航栏（与 H5 对齐） ===== */
 .index-nav-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
