@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -29,7 +29,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { useAppStore, setEmployeePassword } from '../../store';
-import { employeeApi } from '../../api';
+import { employeeApi, authApi } from '../../api';
 import { getAvatarUrl } from '../../lib/avatar';
 import { UserRole, Employee } from '../../../shared/types';
 
@@ -213,6 +213,34 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
   });
   const updateCurrentEmployee = useAppStore((state) => state.updateCurrentEmployee);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // 兜底：已登录但角色丢失时，尝试从 /api/auth/me 刷新一次，仍失败则退出登录
+  useEffect(() => {
+    if (!currentEmployee || userRole) return;
+    let mounted = true;
+    const recover = async () => {
+      try {
+        const refreshed = await authApi.getCurrentUser();
+        if (!mounted) return;
+        if (refreshed && (refreshed as { role?: string }).role) {
+          updateCurrentEmployee(refreshed as Partial<Employee>);
+        } else {
+          console.warn('[ShopLayout] 无法恢复角色信息，退出登录');
+          logout();
+          navigate('/shop/login');
+        }
+      } catch (err) {
+        console.error('[ShopLayout] 恢复角色信息失败:', err);
+        if (!mounted) return;
+        logout();
+        navigate('/shop/login');
+      }
+    };
+    recover();
+    return () => {
+      mounted = false;
+    };
+  }, [currentEmployee, userRole, logout, navigate, updateCurrentEmployee]);
 
   // 未登录 → 回到登录页
   if (!currentEmployee) {
