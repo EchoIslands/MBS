@@ -639,17 +639,120 @@
   font-weight: 700;
 }
 
-.member-invite-btn {
+.member-stockholder {
+  margin-top: 8rpx;
+  margin-bottom: 24rpx;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8rpx);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  color: #fff;
+}
+
+.member-stockholder-label {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 12rpx;
+}
+
+.member-stockholder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.member-stockholder-value {
+  font-size: 44rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.member-stockholder-hint {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 4rpx;
+}
+
+/* 邀请好友 —— 与个人中心保持一致 */
+.index-invite-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #ff7a18 0%, #ff5e3a 50%, #ff2e63 100%);
+  border-radius: 28rpx;
+  color: #fff;
+  padding: 36rpx 32rpx;
+  box-shadow: 0 12rpx 32rpx rgba(255, 46, 99, 0.25);
+}
+
+.index-invite-card::before {
+  content: '';
+  position: absolute;
+  top: -60rpx;
+  right: -60rpx;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.index-invite-card::after {
+  content: '';
+  position: absolute;
+  bottom: -40rpx;
+  left: -40rpx;
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.index-invite-left {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.index-invite-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.index-invite-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.index-invite-hint {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 500;
+}
+
+.index-share-pulse {
+  position: relative;
+  z-index: 1;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12rpx;
-  width: 100%;
-  padding: 26rpx 0;
-  background: linear-gradient(135deg, #ff7a18, #ff2e63);
-  border-radius: 28rpx;
-  font-size: 30rpx;
-  font-weight: 700;
-  color: #fff;
-  box-shadow: 0 12rpx 32rpx rgba(255, 46, 99, 0.25);
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.85;
+}
 }

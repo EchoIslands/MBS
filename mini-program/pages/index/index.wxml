@@ -73,9 +73,33 @@
           </view>
         </view>
 
-        <view class="member-invite-btn" bindtap="goToInvite">
-          <mbs-icon name="share-2" size="28" color="#ffffff" />
-          <text>邀请新人</text>
+        <!-- 股东推荐收益 -->
+        <view wx:if="{{customer.isStockholder}}" class="member-stockholder">
+          <view class="member-stockholder-label">
+            <mbs-icon name="gift" size="24" color="rgba(255,255,255,0.9)" />
+            股东推荐收益
+          </view>
+          <view class="member-stockholder-row">
+            <view>
+              <view class="member-stockholder-value">¥{{customer.referralEarnings || 0}}</view>
+              <view class="member-stockholder-hint">已推荐客户到店 · 提成比例 {{(customer.referralBonusRate || 0.10) * 100}}%</view>
+            </view>
+            <mbs-icon name="crown" size="64" color="rgba(255,255,255,0.25)" />
+          </view>
+        </view>
+
+        <!-- 邀请好友 -->
+        <view wx:if="{{customer && isMember}}" class="index-invite-card" bindtap="goToInvite">
+          <view class="index-invite-left">
+            <view class="index-share-pulse">
+              <mbs-icon name="share-2" size="40" color="#ffffff" />
+            </view>
+            <view class="index-invite-text">
+              <view class="index-invite-title">邀请好友 · 一起变美</view>
+              <view class="index-invite-hint">好友消费后，你最高可赚 {{(customer.referralBonusRate || 0.10) * 100}}% 现金返现</view>
+            </view>
+          </view>
+          <mbs-icon name="chevronRight" size="32" color="#ffffff" />
         </view>
       </view>
     </view>

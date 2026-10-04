@@ -221,6 +221,8 @@ Page({
       storedValueLevel: raw.storedValueLevel ?? raw.stored_value_level ?? StoredValueLevel.NONE,
       storedValueBalance: raw.storedValueBalance ?? raw.stored_value_balance ?? raw.balance ?? 0,
       withdrawableReferralAmount: raw.withdrawableReferralAmount ?? raw.withdrawable_referral_amount ?? 0,
+      referralEarnings: raw.referralEarnings ?? raw.referral_earnings ?? 0,
+      referralBonusRate: raw.referralBonusRate ?? raw.referral_bonus_rate ?? 0.10,
       points: raw.points ?? 0,
       totalSpent: raw.totalSpent ?? raw.total_spent ?? 0,
       isStockholder: !!raw.isStockholder || !!raw.is_stockholder,
