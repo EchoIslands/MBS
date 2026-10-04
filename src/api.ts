@@ -2639,12 +2639,14 @@ export const packageApi = {
     params?: { customerId?: string; status?: string },
   ): Promise<CustomerPackage[]> => {
     if (USE_REAL_API) {
+      const token = getAuthToken();
       const qs = new URLSearchParams();
       qs.append('shopId', shopId);
       if (params?.customerId) qs.append('customerId', params.customerId);
       if (params?.status) qs.append('status', params.status);
       const result = await http<{ success: boolean; data: CustomerPackage[] }>(
         `${API_BASE}/customer-packages?${qs.toString()}`,
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       if (result?.data) return result.data.map(normalizePackage);
     }
@@ -2653,7 +2655,11 @@ export const packageApi = {
 
   getById: async (id: string): Promise<CustomerPackage | null> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: CustomerPackage }>(`${API_BASE}/customer-packages/${id}`);
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: CustomerPackage }>(
+        `${API_BASE}/customer-packages/${id}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
       if (result?.data) return normalizePackage(result.data);
     }
     return null;
