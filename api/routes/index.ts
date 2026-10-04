@@ -67,7 +67,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     // 3. 签发 JWT（有效期 7 天）
     const payload: AuthEmployee = {
       id: employee.id,
-      shopId: employee.shop_id || '',
+      shopId: employee.shopId || '',
       name: employee.name,
       role: employee.role || 'stylist',
       phone: employee.phone || phone,
@@ -82,7 +82,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || 'stylist',
-      shopId: employee.shop_id || '',
+      shopId: employee.shopId || '',
       specialty: employee.specialty || '',
       rating: Number(employee.rating) || 5.0,
     };
@@ -120,7 +120,7 @@ authRouter.get('/me', authMiddleware, async (req: Request, res: Response) => {
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || 'stylist',
-      shopId: employee.shop_id || '',
+      shopId: employee.shopId || '',
       specialty: employee.specialty || '',
       rating: Number(employee.rating) || 5.0,
     };
@@ -736,6 +736,7 @@ const bookingFromDb = (b: Record<string, unknown>): Record<string, unknown> => (
   scheduledEndTime: b.scheduled_end_time,
   actualStartTime: b.actual_start_time,
   actualEndTime: b.actual_end_time,
+  packageId: b.package_id,
   queueNumber: b.queue_number,
   status: b.status,
   notes: b.notes,
@@ -1020,6 +1021,45 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
         }
       }
 
+
+      // 如果预约关联了次卡，完成服务时自动核销 1 次
+      if (originalBooking.package_id && originalBooking.customer_id && originalBooking.service_id) {
+        try {
+          const { data: pkgList, error: pkgQueryError } = await supabase
+            .from('customer_packages')
+            .select('*')
+            .eq('id', originalBooking.package_id)
+            .eq('shop_id', originalBooking.shop_id)
+            .eq('customer_id', originalBooking.customer_id)
+            .eq('service_id', originalBooking.service_id)
+            .eq('status', 'active')
+            .single();
+
+          if (!pkgQueryError && pkgList) {
+            const now = new Date();
+            const expiresAt = new Date(pkgList.expires_at as string);
+            if (expiresAt.getTime() > now.getTime() && (pkgList.used_times as number) < (pkgList.total_times as number)) {
+              const newUsedTimes = (pkgList.used_times as number) + 1;
+              const newStatus = newUsedTimes >= (pkgList.total_times as number) ? 'used_up' : 'active';
+              await supabase
+                .from('customer_packages')
+                .update({ used_times: newUsedTimes, status: newStatus, updated_at: now.toISOString() })
+                .eq('id', pkgList.id);
+              await supabase.from('package_usage_logs').insert({
+                package_id: pkgList.id,
+                booking_id: originalBooking.id,
+                customer_id: originalBooking.customer_id,
+                shop_id: originalBooking.shop_id,
+                used_at: now.toISOString(),
+                used_by: employee?.id || null,
+                note: '服务完成自动核销',
+              });
+            }
+          }
+        } catch (consumeErr) {
+          console.error('[bookings] 次卡自动核销失败:', consumeErr);
+        }
+      }
       // 自动发放股东权益（三方协同）
       if (originalBooking.customer_id) {
         await grantStockholderBenefits(
@@ -1048,6 +1088,72 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
       success: false,
       error: '更新预约状态失败',
     });
+  }
+});
+
+
+// 更新预约关联的次卡（预约时选择/切换/取消使用哪张次卡）
+bookingsRouter.put('/:id/package', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { packageId } = req.body;
+    const employee = req.employee;
+
+    const { data: booking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      console.error('[bookings] 查询预约失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询预约失败' });
+    }
+    if (!booking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    const isCEO = employee?.role === 'ceo';
+    const isManager = employee?.role === 'shop_manager';
+    const isCustomerService = employee?.role === 'customer_service';
+    const isTargetStylist = employee?.role === 'stylist' && booking.stylist_id === employee.id;
+    if (!isCEO && !isManager && !isCustomerService && !isTargetStylist) {
+      return res.status(403).json({ success: false, error: '无权修改该预约的次卡' });
+    }
+
+    if (packageId) {
+      const { data: pkg, error: pkgError } = await supabase
+        .from('customer_packages')
+        .select('*')
+        .eq('id', packageId)
+        .single();
+      if (pkgError || !pkg) {
+        return res.status(404).json({ success: false, error: '次卡不存在' });
+      }
+      if (pkg.customer_id !== booking.customer_id || pkg.service_id !== booking.service_id || pkg.shop_id !== booking.shop_id) {
+        return res.status(400).json({ success: false, error: '次卡与预约不匹配' });
+      }
+      if (pkg.status !== 'active' || (pkg.used_times as number) >= (pkg.total_times as number)) {
+        return res.status(400).json({ success: false, error: '次卡不可用' });
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ package_id: packageId || null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 更新次卡关联失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新次卡关联失败' });
+    }
+
+    res.json({ success: true, data: bookingFromDb(data) });
+  } catch (err) {
+    console.error('[bookings] 更新次卡关联异常:', err);
+    res.status(500).json({ success: false, error: '更新次卡关联失败' });
   }
 });
 
@@ -1513,6 +1619,336 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
 });
 
 mainRouter.use('/bookings', bookingsRouter);
+
+// ===================== customer packages（次卡套餐）====================
+const customerPackagesRouter = Router();
+
+const packageFromDb = (p: Record<string, unknown>): Record<string, unknown> => ({
+  id: p.id,
+  shopId: p.shop_id,
+  customerId: p.customer_id,
+  name: p.name,
+  serviceId: p.service_id,
+  totalTimes: p.total_times,
+  usedTimes: p.used_times,
+  price: p.price,
+  expiresAt: p.expires_at,
+  allowHolidayUse: p.allow_holiday_use,
+  status: p.status,
+  orderId: p.order_id,
+  source: p.source,
+  createdAt: p.created_at,
+  updatedAt: p.updated_at,
+});
+
+const packageLogFromDb = (l: Record<string, unknown>): Record<string, unknown> => ({
+  id: l.id,
+  packageId: l.package_id,
+  bookingId: l.booking_id,
+  customerId: l.customer_id,
+  shopId: l.shop_id,
+  usedAt: l.used_at,
+  usedBy: l.used_by,
+  note: l.note,
+});
+
+// 查询次卡列表（店铺端查全部，顾客端按 customer_id）
+customerPackagesRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { customerId, shopId, status } = req.query;
+    const employee = req.employee!;
+    const targetShopId = (shopId as string) || employee.shopId;
+
+    let query = supabase.from('customer_packages').select('*').eq('shop_id', targetShopId);
+
+    if (customerId) {
+      query = query.eq('customer_id', customerId as string);
+    }
+    if (status) {
+      query = query.eq('status', status as string);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[customer-packages] 查询失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询次卡失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(packageFromDb) });
+  } catch (err) {
+    console.error('[customer-packages] 查询异常:', err);
+    res.status(500).json({ success: false, error: '查询次卡失败' });
+  }
+});
+
+// 查询单个次卡详情
+customerPackagesRouter.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase.from('customer_packages').select('*').eq('id', id).single();
+
+    if (error) {
+      console.error('[customer-packages] 查询详情失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询次卡详情失败' });
+    }
+    if (!data) {
+      return res.status(404).json({ success: false, error: '次卡不存在' });
+    }
+
+    res.json({ success: true, data: packageFromDb(data) });
+  } catch (err) {
+    console.error('[customer-packages] 查询详情异常:', err);
+    res.status(500).json({ success: false, error: '查询次卡详情失败' });
+  }
+});
+
+// 创建次卡（店铺端手动开卡）
+customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const {
+      customerId,
+      name,
+      serviceId,
+      totalTimes,
+      price,
+      expiresAt,
+      allowHolidayUse,
+    } = req.body;
+    const employee = req.employee!;
+
+    if (!customerId || !serviceId || !totalTimes || !expiresAt) {
+      return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    const packageData: Record<string, unknown> = {
+      shop_id: employee.shopId,
+      customer_id: customerId,
+      name: name || '次卡套餐',
+      service_id: serviceId,
+      total_times: Number(totalTimes),
+      used_times: 0,
+      price: price || 0,
+      expires_at: parseLocalDateTime(expiresAt).toISOString(),
+      allow_holiday_use: allowHolidayUse !== false,
+      status: 'active',
+      source: 'shop',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('customer_packages').insert(packageData).select().single();
+
+    if (error) {
+      console.error('[customer-packages] 创建失败:', error.message);
+      return res.status(500).json({ success: false, error: '创建次卡失败' });
+    }
+
+    res.status(201).json({ success: true, data: packageFromDb(data) });
+  } catch (err) {
+    console.error('[customer-packages] 创建异常:', err);
+    res.status(500).json({ success: false, error: '创建次卡失败' });
+  }
+});
+
+// 更新次卡（手动调整次数/有效期/状态）
+customerPackagesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { totalTimes, usedTimes, expiresAt, allowHolidayUse, status } = req.body;
+    const employee = req.employee!;
+
+    if (employee.role !== 'ceo' && employee.role !== 'shop_manager') {
+      return res.status(403).json({ success: false, error: '无权调整次卡' });
+    }
+
+    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (totalTimes !== undefined) updateData.total_times = Number(totalTimes);
+    if (usedTimes !== undefined) updateData.used_times = Number(usedTimes);
+    if (expiresAt) updateData.expires_at = parseLocalDateTime(expiresAt).toISOString();
+    if (allowHolidayUse !== undefined) updateData.allow_holiday_use = allowHolidayUse;
+    if (status) updateData.status = status;
+
+    const { data, error } = await supabase
+      .from('customer_packages')
+      .update(updateData)
+      .eq('id', id)
+      .eq('shop_id', employee.shopId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[customer-packages] 更新失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新次卡失败' });
+    }
+
+    res.json({ success: true, data: packageFromDb(data) });
+  } catch (err) {
+    console.error('[customer-packages] 更新异常:', err);
+    res.status(500).json({ success: false, error: '更新次卡失败' });
+  }
+});
+
+// 作废次卡
+customerPackagesRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const employee = req.employee!;
+
+    if (employee.role !== 'ceo' && employee.role !== 'shop_manager') {
+      return res.status(403).json({ success: false, error: '无权作废次卡' });
+    }
+
+    const { error } = await supabase
+      .from('customer_packages')
+      .update({ status: 'expired', updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('shop_id', employee.shopId);
+
+    if (error) {
+      console.error('[customer-packages] 作废失败:', error.message);
+      return res.status(500).json({ success: false, error: '作废次卡失败' });
+    }
+
+    res.json({ success: true, message: '次卡已作废' });
+  } catch (err) {
+    console.error('[customer-packages] 作废异常:', err);
+    res.status(500).json({ success: false, error: '作废次卡失败' });
+  }
+});
+
+// 核销 1 次（内部调用，也可供店铺端手动核销）
+customerPackagesRouter.post('/:id/consume', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { bookingId, note } = req.body;
+    const employee = req.employee!;
+
+    const { data: pkg, error: fetchError } = await supabase
+      .from('customer_packages')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', employee.shopId)
+      .single();
+
+    if (fetchError) {
+      console.error('[customer-packages] 查询次卡失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询次卡失败' });
+    }
+    if (!pkg) {
+      return res.status(404).json({ success: false, error: '次卡不存在' });
+    }
+
+    // 自动检查过期
+    const now = new Date();
+    const expiresAt = new Date(pkg.expires_at as string);
+    if (expiresAt.getTime() <= now.getTime()) {
+      await supabase.from('customer_packages').update({ status: 'expired' }).eq('id', id);
+      return res.status(400).json({ success: false, error: '次卡已过期' });
+    }
+    if ((pkg.status as string) !== 'active') {
+      return res.status(400).json({ success: false, error: '次卡不可用' });
+    }
+    if ((pkg.used_times as number) >= (pkg.total_times as number)) {
+      await supabase.from('customer_packages').update({ status: 'used_up' }).eq('id', id);
+      return res.status(400).json({ success: false, error: '次卡次数已用完' });
+    }
+
+    const newUsedTimes = (pkg.used_times as number) + 1;
+    const newStatus = newUsedTimes >= (pkg.total_times as number) ? 'used_up' : 'active';
+
+    const { data: updatedPkg, error: updateError } = await supabase
+      .from('customer_packages')
+      .update({ used_times: newUsedTimes, status: newStatus, updated_at: now.toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('[customer-packages] 核销失败:', updateError.message);
+      return res.status(500).json({ success: false, error: '核销失败' });
+    }
+
+    // 写核销记录
+    const { error: logError } = await supabase.from('package_usage_logs').insert({
+      package_id: id,
+      booking_id: bookingId || null,
+      customer_id: pkg.customer_id,
+      shop_id: pkg.shop_id,
+      used_at: now.toISOString(),
+      used_by: employee.id,
+      note: note || '',
+    });
+
+    if (logError) {
+      console.error('[customer-packages] 写核销记录失败:', logError.message);
+    }
+
+    res.json({ success: true, data: packageFromDb(updatedPkg) });
+  } catch (err) {
+    console.error('[customer-packages] 核销异常:', err);
+    res.status(500).json({ success: false, error: '核销失败' });
+  }
+});
+
+// 查询次卡核销记录
+customerPackagesRouter.get('/:id/logs', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('package_usage_logs')
+      .select('*')
+      .eq('package_id', id)
+      .order('used_at', { ascending: false });
+
+    if (error) {
+      console.error('[customer-packages] 查询核销记录失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询核销记录失败' });
+    }
+
+    res.json({ success: true, data: (data || []).map(packageLogFromDb) });
+  } catch (err) {
+    console.error('[customer-packages] 查询核销记录异常:', err);
+    res.status(500).json({ success: false, error: '查询核销记录失败' });
+  }
+});
+
+// 查询顾客某服务的可用次卡（顾客端/店铺端预约时调用）
+customerPackagesRouter.get('/available/:customerId/:serviceId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { customerId, serviceId } = req.params;
+    const { shopId } = req.query;
+    const employee = req.employee!;
+    const targetShopId = (shopId as string) || employee.shopId;
+
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('customer_packages')
+      .select('*')
+      .eq('shop_id', targetShopId)
+      .eq('customer_id', customerId)
+      .eq('service_id', serviceId)
+      .eq('status', 'active')
+      .gt('expires_at', now)
+      .order('expires_at', { ascending: true });
+
+    if (error) {
+      console.error('[customer-packages] 查询可用次卡失败:', error.message);
+      return res.status(500).json({ success: false, error: '查询可用次卡失败' });
+    }
+
+    // 过滤掉已用完的（防御性）
+    const available = (data || []).filter((p: Record<string, unknown>) => (p.used_times as number) < (p.total_times as number));
+
+    res.json({ success: true, data: available.map(packageFromDb) });
+  } catch (err) {
+    console.error('[customer-packages] 查询可用次卡异常:', err);
+    res.status(500).json({ success: false, error: '查询可用次卡失败' });
+  }
+});
+
+mainRouter.use('/customer-packages', customerPackagesRouter);
 
 // ===================== customers =====================
 const customersRouter = Router();

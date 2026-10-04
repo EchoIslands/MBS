@@ -177,8 +177,8 @@ const Checkout: React.FC = () => {
                 {
                   id: booking.serviceId,
                   type: 'service',
-                  name: booking.serviceName || '预约服务',
-                  originalPrice: booking.price,
+                  name: (booking.serviceName || '预约服务') + (booking.packageId ? '（次卡抵扣）' : ''),
+                  originalPrice: booking.packageId ? 0 : booking.price,
                   quantity: 1,
                   category: 'service',
                   employeeId: booking.stylistId || booking.barberId,

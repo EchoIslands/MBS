@@ -317,6 +317,11 @@
 
     <!-- 10) 快捷功能 3 列网格 -->
     <view class="quick-grid">
+      <view class="quick-item" bindtap="goToPackages">
+        <mbs-icon name="gift" size="40" color="var(--accent)" />
+        <view class="quick-title">我的次卡</view>
+        <view class="quick-hint">查看剩余次数</view>
+      </view>
       <view class="quick-item" bindtap="goToCoupons">
         <mbs-icon name="ticket" size="40" color="var(--accent)" />
         <view class="quick-title">我的优惠券</view>

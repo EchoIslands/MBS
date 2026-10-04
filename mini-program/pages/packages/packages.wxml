@@ -1,0 +1,45 @@
+<view class="packages-page">
+  <view class="packages-header">
+    <text class="packages-title">我的次卡</text>
+    <text class="packages-subtitle">已购套餐与剩余次数</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="packages-empty">
+    <text class="packages-empty-text">加载中...</text>
+  </view>
+
+  <view wx:elif="{{error}}" class="packages-empty">
+    <text class="packages-empty-text">{{error}}</text>
+    <view class="packages-btn" bindtap="onLoad">重新加载</view>
+  </view>
+
+  <view wx:elif="{{packages.length === 0}}" class="packages-empty">
+    <text class="packages-empty-text">暂无次卡</text>
+    <text class="packages-empty-hint">到店购买套餐后即可在这里查看</text>
+    <view class="packages-btn" bindtap="goToBooking">去预约</view>
+  </view>
+
+  <view wx:else class="packages-list">
+    <view wx:for="{{packages}}" wx:key="id" class="packages-card">
+      <view class="packages-card-top">
+        <view class="packages-name">{{item.name}}</view>
+        <view class="packages-status {{item.status === 'active' ? 'status-active' : (item.status === 'used_up' ? 'status-used' : 'status-expired')}}">
+          {{item.statusText}}
+        </view>
+      </view>
+      <view class="packages-info">
+        <view class="packages-info-item">
+          <text class="packages-info-label">剩余次数</text>
+          <text class="packages-info-value">{{item.remaining}} / {{item.totalTimes}}</text>
+        </view>
+        <view class="packages-info-item">
+          <text class="packages-info-label">有效期至</text>
+          <text class="packages-info-value">{{item.expiresAtText}}</text>
+        </view>
+      </view>
+      <view wx:if="{{item.status === 'active' && item.remaining > 0}}" class="packages-hint">
+        预约对应服务时可直接抵扣 1 次
+      </view>
+    </view>
+  </view>
+</view>

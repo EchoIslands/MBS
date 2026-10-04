@@ -4,6 +4,8 @@ export interface Service {
   price: number;
   duration: number;
   description?: string;
+  commissionBase?: 'original' | 'actual' | 'none';
+  commissionRate?: number;
 }
 
 // 商品分类
@@ -583,9 +585,45 @@ export interface Booking {
   scheduledEndTime?: Date;
   actualStartTime?: Date;
   actualEndTime?: Date;
+  packageId?: string;
   customerPhone?: string;
   shopName?: string;
   createdAt?: Date;
+}
+
+export type PackageStatus = 'active' | 'used_up' | 'expired';
+
+export interface CustomerPackage {
+  id: string;
+  shopId: string;
+  customerId: string;
+  name: string;
+  serviceId: string;
+  totalTimes: number;
+  usedTimes: number;
+  price: number;
+  expiresAt: Date;
+  allowHolidayUse: boolean;
+  status: PackageStatus;
+  orderId?: string;
+  source?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  // 展示用扩展字段
+  customerName?: string;
+  serviceName?: string;
+}
+
+export interface PackageUsageLog {
+  id: string;
+  packageId: string;
+  bookingId?: string;
+  customerId: string;
+  shopId: string;
+  usedAt: Date;
+  usedBy?: string;
+  usedByName?: string;
+  note?: string;
 }
 
 export interface Queue {

@@ -4,13 +4,13 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import { traeBadgePlugin } from 'vite-plugin-trae-solo-badge';
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react({
       babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
+        plugins: mode === 'development'
+          ? ['react-dev-locator']
+          : [],
       },
     }),
     traeBadgePlugin({
@@ -46,4 +46,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))

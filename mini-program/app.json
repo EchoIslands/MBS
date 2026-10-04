@@ -11,6 +11,7 @@
     "pages/cart/cart",
     "pages/product-orders/product-orders",
     "pages/my-coupons/my-coupons",
+    "pages/packages/packages",
     "pages/recharge/recharge",
     "pages/review/review",
     "pages/privacy/privacy",

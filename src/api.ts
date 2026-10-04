@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -725,6 +725,28 @@ export const bookingApi = {
     const idx = mockBookings.findIndex((b) => b.id === id);
     if (idx !== -1) {
       mockBookings[idx] = { ...mockBookings[idx], barberId: stylistId, barberName: stylistName };
+      saveBookingsToCache();
+    }
+    const booking = mockBookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Booking not found');
+    return booking;
+  },
+
+  updateBookingPackage: async (id: string, packageId?: string): Promise<Booking> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const url = API_BASE + '/bookings/' + id + '/package';
+      const result = await http<{ success: boolean; data: Booking }>(url, {
+        method: 'PUT',
+        body: JSON.stringify({ packageId }),
+        headers: { Authorization: 'Bearer ' + (token || '') },
+      });
+      if (result?.data && result.data.id) return result.data;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const idx = mockBookings.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      mockBookings[idx] = { ...mockBookings[idx], packageId };
       saveBookingsToCache();
     }
     const booking = mockBookings.find((b) => b.id === id);
@@ -2595,5 +2617,141 @@ export const queueApi = {
       saveQueuesToCache();
     }
     return queue!;
+  },
+};
+
+// 次卡套餐 API
+const normalizePackage = (p: CustomerPackage): CustomerPackage => ({
+  ...p,
+  expiresAt: p.expiresAt ? new Date(p.expiresAt) : new Date(),
+  createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+  updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+});
+
+const normalizePackageLog = (l: PackageUsageLog): PackageUsageLog => ({
+  ...l,
+  usedAt: l.usedAt ? new Date(l.usedAt) : new Date(),
+});
+
+export const packageApi = {
+  getByShop: async (
+    shopId: string,
+    params?: { customerId?: string; status?: string },
+  ): Promise<CustomerPackage[]> => {
+    if (USE_REAL_API) {
+      const qs = new URLSearchParams();
+      qs.append('shopId', shopId);
+      if (params?.customerId) qs.append('customerId', params.customerId);
+      if (params?.status) qs.append('status', params.status);
+      const result = await http<{ success: boolean; data: CustomerPackage[] }>(
+        `${API_BASE}/customer-packages?${qs.toString()}`,
+      );
+      if (result?.data) return result.data.map(normalizePackage);
+    }
+    return [];
+  },
+
+  getById: async (id: string): Promise<CustomerPackage | null> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: CustomerPackage }>(`${API_BASE}/customer-packages/${id}`);
+      if (result?.data) return normalizePackage(result.data);
+    }
+    return null;
+  },
+
+  create: async (data: {
+    customerId: string;
+    name: string;
+    serviceId: string;
+    totalTimes: number;
+    price: number;
+    expiresAt: string | Date;
+    allowHolidayUse?: boolean;
+  }): Promise<CustomerPackage | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: CustomerPackage }>(`${API_BASE}/customer-packages`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return normalizePackage(result.data);
+    }
+    return null;
+  },
+
+  update: async (
+    id: string,
+    data: {
+      totalTimes?: number;
+      usedTimes?: number;
+      expiresAt?: string | Date;
+      allowHolidayUse?: boolean;
+      status?: string;
+    },
+  ): Promise<CustomerPackage | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: CustomerPackage }>(`${API_BASE}/customer-packages/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.data) return normalizePackage(result.data);
+    }
+    return null;
+  },
+
+  void: async (id: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean }>(`${API_BASE}/customer-packages/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return !!result?.success;
+    }
+    return false;
+  },
+
+  consume: async (id: string, bookingId?: string, note?: string): Promise<CustomerPackage | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: CustomerPackage }>(
+        `${API_BASE}/customer-packages/${id}/consume`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ bookingId, note }),
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (result?.data) return normalizePackage(result.data);
+      throw new Error('核销失败');
+    }
+    return null;
+  },
+
+  getLogs: async (id: string): Promise<PackageUsageLog[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: PackageUsageLog[] }>(
+        `${API_BASE}/customer-packages/${id}/logs`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (result?.data) return result.data.map(normalizePackageLog);
+    }
+    return [];
+  },
+
+  getAvailable: async (customerId: string, serviceId: string, shopId: string): Promise<CustomerPackage[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: CustomerPackage[] }>(
+        `${API_BASE}/customer-packages/available/${customerId}/${serviceId}?shopId=${shopId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (result?.data) return result.data.map(normalizePackage);
+    }
+    return [];
   },
 };

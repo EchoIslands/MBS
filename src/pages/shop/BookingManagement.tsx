@@ -17,10 +17,11 @@ import {
   LayoutList,
   Columns,
   Settings2,
+  Gift,
 } from 'lucide-react';
-import { Booking, Employee, UserRole } from '../../../shared/types';
+import { Booking, Employee, UserRole, CustomerPackage } from '../../../shared/types';
 import { useNavigate } from 'react-router-dom';
-import { bookingApi, employeeApi } from '../../api';
+import { bookingApi, employeeApi, packageApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 
@@ -55,6 +56,11 @@ const BookingManagement: React.FC = () => {
   });
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [savingServiceTime, setSavingServiceTime] = useState(false);
+
+  // 次卡选择
+  const [availablePackages, setAvailablePackages] = useState<CustomerPackage[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [loadingPackages, setLoadingPackages] = useState(false);
 
   // 从 API 获取预约列表
   const fetchBookings = useCallback(async () => {
@@ -157,12 +163,35 @@ const BookingManagement: React.FC = () => {
     [isCurrentUserStylist, currentEmployee?.id]
   );
 
-  // 完成服务
+  
+  // 切换本次预约使用的次卡
+  const handlePackageChange = async (packageId: string) => {
+    if (!viewingBooking) return;
+    setSelectedPackageId(packageId);
+    try {
+      await bookingApi.updateBookingPackage(viewingBooking.id, packageId || undefined);
+      setViewingBooking((prev) => (prev ? { ...prev, packageId: packageId || undefined } : null));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '切换次卡失败');
+    }
+  };
+
+// 完成服务
   const handleCompleteBooking = async () => {
     if (!viewingBooking) return;
     if (!window.confirm('确认该预约已完成服务吗？')) return;
 
     setCompleting(true);
+    // 如果用户选择了次卡，先保存到预约
+    if (selectedPackageId && selectedPackageId !== viewingBooking.packageId) {
+      try {
+        await bookingApi.updateBookingPackage(viewingBooking.id, selectedPackageId);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : '关联次卡失败');
+        setCompleting(false);
+        return;
+      }
+    }
     try {
       const updated = await bookingApi.updateBookingStatus(viewingBooking.id, 'completed');
       if (updated) {
@@ -1067,6 +1096,43 @@ const BookingManagement: React.FC = () => {
                     {reassigning ? <Loader2 size={16} className="animate-spin" /> : '确认调配'}
                   </button>
                 </div>
+              </div>
+            )}
+
+            
+            {/* 次卡选择 */}
+            {(viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && canCompleteService(viewingBooking) && (
+              <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-100">
+                <div className="text-sm font-medium text-gray-800 mb-2 flex items-center gap-1.5">
+                  <Gift size={16} className="text-green-600" />
+                  次卡抵扣
+                </div>
+                {loadingPackages ? (
+                  <div className="text-sm text-gray-500 flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" /> 查询可用次卡...
+                  </div>
+                ) : availablePackages.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-green-700">
+                      该顾客有 {availablePackages.length} 张可用次卡，完成服务时将自动核销 1 次。
+                    </div>
+                    <select
+                      value={selectedPackageId}
+                      onChange={(e) => handlePackageChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                    >
+                      <option value="">不使用次卡</option>
+                      {availablePackages.map((pkg) => (
+                        <option key={pkg.id} value={pkg.id}>
+                          {pkg.name}（剩余 {pkg.totalTimes - pkg.usedTimes} 次，有效期至{' '}
+                          {pkg.expiresAt ? new Date(pkg.expiresAt).toLocaleDateString('zh-CN') : '-'}）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">暂无可用次卡</div>
+                )}
               </div>
             )}
 

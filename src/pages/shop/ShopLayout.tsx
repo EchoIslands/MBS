@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -18,6 +18,7 @@ import {
   Building2,
   AlertTriangle,
   Package,
+  Gift,
   Ticket,
   Bell,
   ArrowLeft,
@@ -141,6 +142,12 @@ const menuItems: MenuItem[] = [
     label: '商品订单',
     path: '/shop/product-orders',
     icon: <Package size={18} />,
+    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
+  },
+  {
+    label: '次卡管理',
+    path: '/shop/packages',
+    icon: <Gift size={18} />,
     roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
   },
   {
@@ -616,3 +623,5 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 };
 
 export default ShopLayout;
+
+

@@ -355,7 +355,16 @@ Page({
     wx.showToast({ title: '功能开发中', icon: 'none' });
   },
 
-  goToCoupons() {
+  
+  goToPackages() {
+    const { customer } = this.data;
+    if (!customer) {
+      wx.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/packages/packages?customerId=${customer.id}&shopId=${customer.shopId || 'shop1'}` });
+  },
+goToCoupons() {
     const { customer } = this.data;
     if (!customer) {
       wx.showToast({ title: '请先登录', icon: 'none' });
