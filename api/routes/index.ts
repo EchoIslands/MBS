@@ -1159,6 +1159,19 @@ bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Resp
   }
 });
 
+// 辅助函数：前端 <input type="datetime-local"> 返回的是无时区本地时间字符串，
+// 需要按 Asia/Shanghai（UTC+8）解析，避免 Node.js 默认按 UTC 处理导致显示偏移 8 小时。
+const parseLocalDateTime = (input: string): Date => {
+  if (!input) return new Date(NaN);
+  const normalized = input.trim();
+  // 如果字符串已经带时区，直接交给原生 Date 解析
+  if (/[Zz]|[+-]\d{2}:\d{2}$/.test(normalized)) {
+    return new Date(normalized);
+  }
+  // 否则补 +08:00 按北京时间解析
+  return new Date(`${normalized}+08:00`);
+};
+
 // 修改预约时间（客服/店长/CEO/对应发型师）
 bookingsRouter.put('/:id/schedule', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -1170,14 +1183,14 @@ bookingsRouter.put('/:id/schedule', authMiddleware, async (req: Request, res: Re
       return res.status(400).json({ success: false, error: '缺少预约时间' });
     }
 
-    const startTime = new Date(scheduledTime);
+    const startTime = parseLocalDateTime(scheduledTime);
     if (isNaN(startTime.getTime())) {
       return res.status(400).json({ success: false, error: '预约时间格式无效' });
     }
 
     let endTime: Date | null = null;
     if (customEndTime) {
-      endTime = new Date(customEndTime);
+      endTime = parseLocalDateTime(customEndTime);
       if (isNaN(endTime.getTime())) {
         return res.status(400).json({ success: false, error: '结束时间格式无效' });
       }
@@ -1291,8 +1304,8 @@ bookingsRouter.put('/:id/service-time', authMiddleware, async (req: Request, res
       return res.status(400).json({ success: false, error: '至少提供一个实际服务时间' });
     }
 
-    const startTime = actualStartTime ? new Date(actualStartTime) : null;
-    const endTime = actualEndTime ? new Date(actualEndTime) : null;
+    const startTime = actualStartTime ? parseLocalDateTime(actualStartTime) : null;
+    const endTime = actualEndTime ? parseLocalDateTime(actualEndTime) : null;
 
     if (startTime && isNaN(startTime.getTime())) {
       return res.status(400).json({ success: false, error: '实际开始时间格式无效' });
@@ -1370,7 +1383,7 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
 
     let scheduledTimeDate: Date;
     try {
-      scheduledTimeDate = new Date(scheduledTime);
+      scheduledTimeDate = parseLocalDateTime(scheduledTime);
       if (isNaN(scheduledTimeDate.getTime())) {
         throw new Error('invalid date');
       }
