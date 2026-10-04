@@ -41,6 +41,21 @@ const BookingManagement: React.FC = () => {
   const [reassigning, setReassigning] = useState(false);
   const { currentEmployee, userRole } = useAppStore();
 
+  // 服务时间编辑状态
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [editingServiceTime, setEditingServiceTime] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({
+    scheduledTime: '',
+    scheduledEndTime: '',
+    useCustomEndTime: false,
+  });
+  const [serviceTimeForm, setServiceTimeForm] = useState({
+    actualStartTime: '',
+    actualEndTime: '',
+  });
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [savingServiceTime, setSavingServiceTime] = useState(false);
+
   // 从 API 获取预约列表
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -63,12 +78,32 @@ const BookingManagement: React.FC = () => {
     fetchBookings();
   }, [fetchBookings]);
 
-  // 打开详情弹窗时，默认选中当前发型师
+  // 打开详情弹窗时，默认选中当前发型师并初始化时间表单
   useEffect(() => {
     if (viewingBooking) {
       setSelectedStylistId(viewingBooking.stylistId || viewingBooking.barberId || '');
+      const toDatetimeLocal = (d?: Date | string) => {
+        if (!d) return '';
+        const date = d instanceof Date ? d : new Date(d);
+        if (isNaN(date.getTime())) return '';
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      };
+      setScheduleForm({
+        scheduledTime: toDatetimeLocal(viewingBooking.scheduledTime),
+        scheduledEndTime: toDatetimeLocal(viewingBooking.scheduledEndTime),
+        useCustomEndTime: !!viewingBooking.scheduledEndTime,
+      });
+      setServiceTimeForm({
+        actualStartTime: toDatetimeLocal(viewingBooking.actualStartTime),
+        actualEndTime: toDatetimeLocal(viewingBooking.actualEndTime),
+      });
+      setEditingSchedule(false);
+      setEditingServiceTime(false);
     } else {
       setSelectedStylistId('');
+      setEditingSchedule(false);
+      setEditingServiceTime(false);
     }
   }, [viewingBooking]);
 
@@ -100,6 +135,18 @@ const BookingManagement: React.FC = () => {
     (userRole === UserRole.STYLIST &&
       (booking.stylistId === currentEmployee?.id || booking.barberId === currentEmployee?.id));
   const canCancelBooking = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
+  const canEditSchedule = (booking: Booking) =>
+    userRole === UserRole.CEO ||
+    userRole === UserRole.SHOP_MANAGER ||
+    userRole === UserRole.CUSTOMER_SERVICE ||
+    (userRole === UserRole.STYLIST &&
+      (booking.stylistId === currentEmployee?.id || booking.barberId === currentEmployee?.id));
+  const canEditServiceTime = (booking: Booking) =>
+    userRole === UserRole.CEO ||
+    userRole === UserRole.SHOP_MANAGER ||
+    userRole === UserRole.CUSTOMER_SERVICE ||
+    (userRole === UserRole.STYLIST &&
+      (booking.stylistId === currentEmployee?.id || booking.barberId === currentEmployee?.id));
 
   // 判断预约是否属于当前发型师
   const isAssignedToMe = useCallback(
@@ -221,6 +268,81 @@ const BookingManagement: React.FC = () => {
       setError(err instanceof Error ? err.message : '调配失败');
     } finally {
       setReassigning(false);
+    }
+  };
+
+  // 修改预约时间
+  const handleUpdateSchedule = async (ignoreConflict = false) => {
+    if (!viewingBooking || !scheduleForm.scheduledTime) return;
+    const endTime = scheduleForm.useCustomEndTime ? scheduleForm.scheduledEndTime : undefined;
+    setSavingSchedule(true);
+    try {
+      const updated = await bookingApi.updateBookingSchedule(
+        viewingBooking.id,
+        scheduleForm.scheduledTime,
+        endTime,
+        ignoreConflict
+      );
+      setViewingBooking(updated);
+      setEditingSchedule(false);
+      fetchBookings();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '修改预约时间失败';
+      if (msg.includes('冲突') && !ignoreConflict) {
+        if (window.confirm('该时间段与发型师其他预约冲突，是否强制保存？')) {
+          await handleUpdateSchedule(true);
+        }
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  // 记录/修改实际服务时间
+  const handleUpdateServiceTime = async () => {
+    if (!viewingBooking) return;
+    setSavingServiceTime(true);
+    try {
+      const updated = await bookingApi.updateBookingServiceTime(
+        viewingBooking.id,
+        serviceTimeForm.actualStartTime || null,
+        serviceTimeForm.actualEndTime || null
+      );
+      setViewingBooking(updated);
+      setEditingServiceTime(false);
+      fetchBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新实际服务时间失败');
+    } finally {
+      setSavingServiceTime(false);
+    }
+  };
+
+  // 快捷按钮：开始服务
+  const handleStartService = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确认标记顾客已开始服务吗？')) return;
+    try {
+      const updated = await bookingApi.updateBookingServiceTime(viewingBooking.id, new Date());
+      setViewingBooking(updated);
+      fetchBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '标记开始服务失败');
+    }
+  };
+
+  // 快捷按钮：完成服务
+  const handleFinishService = async () => {
+    if (!viewingBooking) return;
+    if (!window.confirm('确认标记顾客已完成服务吗？')) return;
+    try {
+      const updated = await bookingApi.updateBookingServiceTime(viewingBooking.id, undefined, new Date());
+      setViewingBooking(updated);
+      fetchBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '标记完成服务失败');
     }
   };
 
@@ -790,6 +912,133 @@ const BookingManagement: React.FC = () => {
               </div>
             </div>
 
+            {/* 服务时间管理 */}
+            {(canEditSchedule(viewingBooking) || canEditServiceTime(viewingBooking)) && (
+              <div className="mt-4 p-4 bg-orange-50/50 rounded-xl border border-orange-100">
+                <div className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                  <Clock size={16} className="text-orange-500" />
+                  服务时间管理
+                </div>
+
+                {/* 预约时间 */}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-500 mb-2 flex items-center justify-between">
+                    <span>预约时间</span>
+                    {canEditSchedule(viewingBooking) && viewingBooking.status !== 'cancelled' && viewingBooking.status !== 'completed' && (
+                      <button
+                        onClick={() => setEditingSchedule((v) => !v)}
+                        className="text-orange-500 hover:text-orange-600 text-xs font-medium"
+                      >
+                        {editingSchedule ? '取消' : '修改'}
+                      </button>
+                    )}
+                  </div>
+                  {editingSchedule ? (
+                    <div className="space-y-2">
+                      <input
+                        type="datetime-local"
+                        value={scheduleForm.scheduledTime}
+                        onChange={(e) => setScheduleForm((f) => ({ ...f, scheduledTime: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                      />
+                      <label className="flex items-center gap-2 text-xs text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={scheduleForm.useCustomEndTime}
+                          onChange={(e) => setScheduleForm((f) => ({ ...f, useCustomEndTime: e.target.checked }))}
+                          className="rounded text-orange-500 focus:ring-orange-500"
+                        />
+                        自定义结束时间
+                      </label>
+                      {scheduleForm.useCustomEndTime && (
+                        <input
+                          type="datetime-local"
+                          value={scheduleForm.scheduledEndTime}
+                          onChange={(e) => setScheduleForm((f) => ({ ...f, scheduledEndTime: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                        />
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleUpdateSchedule(false)}
+                          disabled={savingSchedule}
+                          className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white rounded-xl text-sm font-medium transition-colors"
+                        >
+                          {savingSchedule ? <Loader2 size={16} className="animate-spin mx-auto" /> : '保存'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-800">
+                      {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
+                      {viewingBooking.scheduledEndTime && (
+                        <span className="text-gray-500 ml-1">
+                          ~ {new Date(viewingBooking.scheduledEndTime).toLocaleString('zh-CN')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 实际服务时间 */}
+                <div>
+                  <div className="text-xs text-gray-500 mb-2 flex items-center justify-between">
+                    <span>实际服务时间</span>
+                    {canEditServiceTime(viewingBooking) && viewingBooking.status !== 'cancelled' && (
+                      <button
+                        onClick={() => setEditingServiceTime((v) => !v)}
+                        className="text-orange-500 hover:text-orange-600 text-xs font-medium"
+                      >
+                        {editingServiceTime ? '取消' : viewingBooking.actualStartTime ? '修改' : '记录'}
+                      </button>
+                    )}
+                  </div>
+                  {editingServiceTime ? (
+                    <div className="space-y-2">
+                      <input
+                        type="datetime-local"
+                        placeholder="实际开始时间"
+                        value={serviceTimeForm.actualStartTime}
+                        onChange={(e) => setServiceTimeForm((f) => ({ ...f, actualStartTime: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                      />
+                      <input
+                        type="datetime-local"
+                        placeholder="实际结束时间"
+                        value={serviceTimeForm.actualEndTime}
+                        onChange={(e) => setServiceTimeForm((f) => ({ ...f, actualEndTime: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleUpdateServiceTime}
+                          disabled={savingServiceTime}
+                          className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white rounded-xl text-sm font-medium transition-colors"
+                        >
+                          {savingServiceTime ? <Loader2 size={16} className="animate-spin mx-auto" /> : '保存'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-800">
+                      {viewingBooking.actualStartTime ? (
+                        <>
+                          开始：{new Date(viewingBooking.actualStartTime).toLocaleString('zh-CN')}
+                          {viewingBooking.actualEndTime && (
+                            <div className="text-gray-500 mt-0.5">
+                              结束：{new Date(viewingBooking.actualEndTime).toLocaleString('zh-CN')}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-gray-400">尚未记录</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* 调配发型师选择区 */}
             {canReassignBarber && (viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && (
               <div className="mt-4 p-4 bg-gray-50 rounded-xl">
@@ -857,6 +1106,14 @@ const BookingManagement: React.FC = () => {
               )}
               {viewingBooking.status === 'confirmed' && (
                 <>
+                  {canCompleteService(viewingBooking) && !viewingBooking.actualStartTime && (
+                    <button
+                      onClick={handleStartService}
+                      className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      开始服务
+                    </button>
+                  )}
                   {canCompleteService(viewingBooking) && (
                     <button
                       onClick={handleCompleteBooking}
@@ -864,7 +1121,7 @@ const BookingManagement: React.FC = () => {
                       className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {completing ? <Loader2 size={18} className="animate-spin" /> : null}
-                      完成服务
+                      {viewingBooking.actualStartTime ? '完成并结算' : '直接完成'}
                     </button>
                   )}
                   {canCancelBooking && (

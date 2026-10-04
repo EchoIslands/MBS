@@ -580,6 +580,9 @@ export interface Booking {
   serviceName?: string;
   price?: number;
   customerName?: string;
+  scheduledEndTime?: Date;
+  actualStartTime?: Date;
+  actualEndTime?: Date;
   customerPhone?: string;
   shopName?: string;
   createdAt?: Date;

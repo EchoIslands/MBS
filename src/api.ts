@@ -732,6 +732,103 @@ export const bookingApi = {
     return booking;
   },
 
+  updateBookingSchedule: async (
+    id: string,
+    scheduledTime: Date | string,
+    customEndTime?: Date | string | null,
+    ignoreConflict?: boolean
+  ): Promise<Booking> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const payload: Record<string, unknown> = {
+        scheduledTime: scheduledTime instanceof Date ? scheduledTime.toISOString() : scheduledTime,
+        ignoreConflict: !!ignoreConflict,
+      };
+      if (customEndTime) {
+        payload.customEndTime = customEndTime instanceof Date ? customEndTime.toISOString() : customEndTime;
+      }
+      const result = await http<{ success: boolean; data: Booking; error?: string }>(
+        `${API_BASE}/bookings/${id}/schedule`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data && result.data.id) return result.data;
+      if (result && !result.success) {
+        throw new Error(result.error || '修改预约时间失败');
+      }
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const idx = mockBookings.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      mockBookings[idx] = {
+        ...mockBookings[idx],
+        scheduledTime: scheduledTime instanceof Date ? scheduledTime : new Date(scheduledTime),
+        scheduledEndTime: customEndTime
+          ? customEndTime instanceof Date
+            ? customEndTime
+            : new Date(customEndTime)
+          : mockBookings[idx].scheduledEndTime,
+      };
+      saveBookingsToCache();
+    }
+    const booking = mockBookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Booking not found');
+    return booking;
+  },
+
+  updateBookingServiceTime: async (
+    id: string,
+    actualStartTime?: Date | string | null,
+    actualEndTime?: Date | string | null
+  ): Promise<Booking> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const payload: Record<string, unknown> = {};
+      if (actualStartTime) {
+        payload.actualStartTime = actualStartTime instanceof Date ? actualStartTime.toISOString() : actualStartTime;
+      }
+      if (actualEndTime) {
+        payload.actualEndTime = actualEndTime instanceof Date ? actualEndTime.toISOString() : actualEndTime;
+      }
+      const result = await http<{ success: boolean; data: Booking; error?: string }>(
+        `${API_BASE}/bookings/${id}/service-time`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data && result.data.id) return result.data;
+      if (result && !result.success) {
+        throw new Error(result.error || '更新实际服务时间失败');
+      }
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const idx = mockBookings.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      mockBookings[idx] = {
+        ...mockBookings[idx],
+        actualStartTime: actualStartTime
+          ? actualStartTime instanceof Date
+            ? actualStartTime
+            : new Date(actualStartTime)
+          : mockBookings[idx].actualStartTime,
+        actualEndTime: actualEndTime
+          ? actualEndTime instanceof Date
+            ? actualEndTime
+            : new Date(actualEndTime)
+          : mockBookings[idx].actualEndTime,
+      };
+      saveBookingsToCache();
+    }
+    const booking = mockBookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Booking not found');
+    return booking;
+  },
+
   getCustomerBookings: async (customerId: string): Promise<Booking[]> => {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Booking[] }>(`${API_BASE}/bookings/customer/${customerId}`);

@@ -733,6 +733,9 @@ const bookingFromDb = (b: Record<string, unknown>): Record<string, unknown> => (
   serviceName: b.service_name,
   price: b.price,
   scheduledTime: b.scheduled_time,
+  scheduledEndTime: b.scheduled_end_time,
+  actualStartTime: b.actual_start_time,
+  actualEndTime: b.actual_end_time,
   queueNumber: b.queue_number,
   status: b.status,
   notes: b.notes,
@@ -1153,6 +1156,203 @@ bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Resp
   } catch (error) {
     console.error('[bookings] 调配发型师异常:', error);
     res.status(500).json({ success: false, error: '调配发型师失败' });
+  }
+});
+
+// 修改预约时间（客服/店长/CEO/对应发型师）
+bookingsRouter.put('/:id/schedule', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { scheduledTime, customEndTime, ignoreConflict } = req.body;
+    const employee = req.employee!;
+
+    if (!scheduledTime) {
+      return res.status(400).json({ success: false, error: '缺少预约时间' });
+    }
+
+    const startTime = new Date(scheduledTime);
+    if (isNaN(startTime.getTime())) {
+      return res.status(400).json({ success: false, error: '预约时间格式无效' });
+    }
+
+    let endTime: Date | null = null;
+    if (customEndTime) {
+      endTime = new Date(customEndTime);
+      if (isNaN(endTime.getTime())) {
+        return res.status(400).json({ success: false, error: '结束时间格式无效' });
+      }
+      if (endTime.getTime() <= startTime.getTime()) {
+        return res.status(400).json({ success: false, error: '结束时间必须晚于开始时间' });
+      }
+    }
+
+    // 获取原预约
+    const { data: originalBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      console.error('[bookings] 查询预约失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询预约失败' });
+    }
+    if (!originalBooking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    // 权限校验
+    const isCEO = employee.role === 'ceo';
+    const isManager = employee.role === 'shop_manager';
+    const isCustomerService = employee.role === 'customer_service';
+    const isTargetStylist =
+      employee.role === 'stylist' && originalBooking.stylist_id === employee.id;
+
+    if (!isCEO && !isManager && !isCustomerService && !isTargetStylist) {
+      return res.status(403).json({ success: false, error: '无权修改该预约时间' });
+    }
+
+    const targetStylistId = originalBooking.stylist_id;
+
+    // 计算新的预约结束时间：优先使用自定义结束时间，否则按原服务时长推算
+    let finalEndTime: Date | null = endTime;
+    if (!finalEndTime && originalBooking.scheduled_time && originalBooking.scheduled_end_time) {
+      const originalStart = new Date(originalBooking.scheduled_time as string);
+      const originalEnd = new Date(originalBooking.scheduled_end_time as string);
+      if (originalEnd.getTime() > originalStart.getTime()) {
+        const duration = originalEnd.getTime() - originalStart.getTime();
+        finalEndTime = new Date(startTime.getTime() + duration);
+      }
+    }
+    // 仍无结束时间时按默认服务时长 1 小时推算
+    if (!finalEndTime) {
+      finalEndTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+    }
+
+    // 冲突检查：同一发型师在新预约时间段内是否有其他非取消预约
+    if (targetStylistId) {
+      const conflictStart = startTime.toISOString();
+      const conflictEnd = finalEndTime.toISOString();
+
+      const { data: conflicts, error: conflictError } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('stylist_id', targetStylistId)
+        .neq('status', 'cancelled')
+        .neq('id', id)
+        .lt('scheduled_time', conflictEnd)
+        .gt('scheduled_end_time', conflictStart);
+
+      if (conflictError) {
+        console.error('[bookings] 冲突检查失败:', conflictError.message);
+      } else if (conflicts && conflicts.length > 0) {
+        if (!ignoreConflict) {
+          return res.status(409).json({
+            success: false,
+            error: '该时间段与发型师其他预约冲突',
+            data: conflicts.map(bookingFromDb),
+          });
+        }
+      }
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      scheduled_time: startTime.toISOString(),
+      scheduled_end_time: finalEndTime.toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 修改预约时间失败:', error.message);
+      return res.status(500).json({ success: false, error: '修改预约时间失败' });
+    }
+
+    res.json({ success: true, data: bookingFromDb(data) });
+  } catch (error) {
+    console.error('[bookings] 修改预约时间异常:', error);
+    res.status(500).json({ success: false, error: '修改预约时间失败' });
+  }
+});
+
+// 记录/修改实际服务时间（发型师/客服/店长/CEO）
+bookingsRouter.put('/:id/service-time', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { actualStartTime, actualEndTime } = req.body;
+    const employee = req.employee!;
+
+    if (!actualStartTime && !actualEndTime) {
+      return res.status(400).json({ success: false, error: '至少提供一个实际服务时间' });
+    }
+
+    const startTime = actualStartTime ? new Date(actualStartTime) : null;
+    const endTime = actualEndTime ? new Date(actualEndTime) : null;
+
+    if (startTime && isNaN(startTime.getTime())) {
+      return res.status(400).json({ success: false, error: '实际开始时间格式无效' });
+    }
+    if (endTime && isNaN(endTime.getTime())) {
+      return res.status(400).json({ success: false, error: '实际结束时间格式无效' });
+    }
+    if (startTime && endTime && endTime.getTime() <= startTime.getTime()) {
+      return res.status(400).json({ success: false, error: '结束时间必须晚于开始时间' });
+    }
+
+    // 获取原预约
+    const { data: originalBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      console.error('[bookings] 查询预约失败:', fetchError.message);
+      return res.status(500).json({ success: false, error: '查询预约失败' });
+    }
+    if (!originalBooking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    // 权限校验
+    const isCEO = employee.role === 'ceo';
+    const isManager = employee.role === 'shop_manager';
+    const isCustomerService = employee.role === 'customer_service';
+    const isTargetStylist =
+      employee.role === 'stylist' && originalBooking.stylist_id === employee.id;
+
+    if (!isCEO && !isManager && !isCustomerService && !isTargetStylist) {
+      return res.status(403).json({ success: false, error: '无权修改该预约服务时间' });
+    }
+
+    const updatePayload: Record<string, unknown> = {};
+    if (startTime) updatePayload.actual_start_time = startTime.toISOString();
+    if (endTime) updatePayload.actual_end_time = endTime.toISOString();
+
+    // 如果填写了结束时间且原状态不是已完成，可顺便标记完成（可选，由前端通过 status 控制更明确）
+    // 这里不自动改状态，保持单一职责
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[bookings] 更新实际服务时间失败:', error.message);
+      return res.status(500).json({ success: false, error: '更新实际服务时间失败' });
+    }
+
+    res.json({ success: true, data: bookingFromDb(data) });
+  } catch (error) {
+    console.error('[bookings] 更新实际服务时间异常:', error);
+    res.status(500).json({ success: false, error: '更新实际服务时间失败' });
   }
 });
 
