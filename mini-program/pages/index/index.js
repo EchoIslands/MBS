@@ -121,7 +121,13 @@ Page({
       const stylists = (rawShop.employees || [])
         .filter((e) => this.isStylist(e) && e.isActive !== false)
         .slice(0, 8)
-        .map((e) => ({ id: e.id, name: truncate(e.name, 20), title: truncate(e.title, 30), rating: e.rating || 5 }));
+        .map((e) => ({
+          id: e.id,
+          name: truncate(e.name, 20),
+          title: truncate(e.title, 30),
+          specialty: e.specialty || '',
+          rating: e.rating || 5,
+        }));
       const displayTags = services.slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
       const products = (Array.isArray(rawShop.products) ? rawShop.products : [])
         .filter((p) => p && p.isActive !== false)
