@@ -17,6 +17,8 @@ import {
   Clock,
   Package,
   Coffee,
+  History,
+  XCircle,
   Loader2,
 } from 'lucide-react';
 import {
@@ -26,6 +28,9 @@ import {
   BenefitType,
   MemberBenefitRecord,
   ReferralRecord,
+  MembershipEnrollment,
+  MembershipActivityType,
+  UserRole,
 } from '../../../shared/types';
 import {
   purchaseVIPPlans,
@@ -59,8 +64,12 @@ const MembershipManagement: React.FC = () => {
   const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
   const [loadingBenefits, setLoadingBenefits] = useState(false);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
+  const [enrollments, setEnrollments] = useState<MembershipEnrollment[]>([]);
+  const [loadingEnrollments, setLoadingEnrollments] = useState(false);
+  const [revoking, setRevoking] = useState(false);
 
-  const { currentShop } = useAppStore();
+  const { currentShop, userRole } = useAppStore();
+  const canRevokeMembership = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
 
   // 从真实 API 获取客户数据
   useEffect(() => {
@@ -125,13 +134,37 @@ const MembershipManagement: React.FC = () => {
     }
   }, []);
 
+  // 加载入会记录
+  const fetchEnrollments = useCallback(async (customerId: string) => {
+    setLoadingEnrollments(true);
+    try {
+      const data = await membershipApi.getEnrollments(customerId);
+      if (Array.isArray(data)) {
+        setEnrollments(
+          data.map((e) => ({
+            ...e,
+            enrolledAt: e.enrolledAt ? new Date(e.enrolledAt) : new Date(),
+            expiresAt: e.expiresAt ? new Date(e.expiresAt) : new Date(),
+            revokedAt: e.revokedAt ? new Date(e.revokedAt) : undefined,
+          }))
+        );
+      }
+    } catch (err: unknown) {
+      console.error('[MembershipManagement] 获取入会记录失败:', err instanceof Error ? (err as Error).message : '未知错误');
+    } finally {
+      setLoadingEnrollments(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!viewingCustomer?.id) {
       setBenefits([]);
+      setEnrollments([]);
       return;
     }
     fetchBenefits(viewingCustomer.id);
-  }, [viewingCustomer?.id, fetchBenefits]);
+    fetchEnrollments(viewingCustomer.id);
+  }, [viewingCustomer?.id, fetchBenefits, fetchEnrollments]);
 
   const filteredCustomers = customers.filter((customer) => {
     const matchesSearch =
@@ -296,6 +329,45 @@ const MembershipManagement: React.FC = () => {
     } finally {
       setModalMode(null);
       setModalCustomer(null);
+    }
+  };
+
+  const handleRevoke = async (enrollment: MembershipEnrollment) => {
+    if (!viewingCustomer) return;
+    const levelLabel = getPurchaseVIPLabel(enrollment.level);
+    if (
+      !window.confirm(
+        `确定撤销 ${viewingCustomer.name} 的${levelLabel}会员吗？\n撤销后该顾客将降为普通用户，次卡剩余次数与储值余额不受影响。`
+      )
+    ) {
+      return;
+    }
+    setRevoking(true);
+    try {
+      const result = await membershipApi.revoke(viewingCustomer.id, { enrollmentId: enrollment.id });
+      if (result?.customer) {
+        const updated: Customer = {
+          ...viewingCustomer,
+          ...result.customer,
+          purchaseVIPExpiresAt: result.customer.purchaseVIPExpiresAt
+            ? new Date(result.customer.purchaseVIPExpiresAt)
+            : undefined,
+          storedValueExpiresAt: result.customer.storedValueExpiresAt
+            ? new Date(result.customer.storedValueExpiresAt)
+            : undefined,
+        };
+        setCustomers((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        setViewingCustomer(updated);
+        await fetchEnrollments(updated.id);
+      } else {
+        alert('撤销会员失败，请重试');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? (err as Error).message : '未知错误';
+      console.error('[MembershipManagement] 撤销会员失败:', msg);
+      alert('撤销会员失败：' + msg);
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -719,6 +791,74 @@ const MembershipManagement: React.FC = () => {
               </div>
             ) : (
               <div className="text-sm text-gray-500 py-2">暂无可用权益</div>
+            )}
+          </div>
+
+          {/* 入会记录 */}
+          <div className="mb-6">
+            <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+              <History size={16} />
+              入会记录
+              {enrollments.length > 0 && (
+                <span className="text-xs font-normal text-gray-400">共 {enrollments.length} 次</span>
+              )}
+            </h4>
+            {loadingEnrollments ? (
+              <div className="text-center text-gray-500 py-4">
+                <Loader2 size={24} className="mx-auto mb-1 opacity-50 animate-spin" />
+                <p className="text-sm">加载中...</p>
+              </div>
+            ) : enrollments.length > 0 ? (
+              <div className="space-y-2">
+                {enrollments.map((e) => (
+                  <div key={e.id} className="p-3 bg-gray-50 rounded-xl">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-800">
+                          {getPurchaseVIPLabel(e.level)}
+                        </span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full ${
+                            e.status === 'active'
+                              ? 'bg-green-100 text-green-700'
+                              : e.status === 'revoked'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          {e.status === 'active' ? '有效' : e.status === 'revoked' ? '已撤销' : '已过期'}
+                        </span>
+                      </div>
+                      {canRevokeMembership && e.status === 'active' && (
+                        <button
+                          onClick={() => handleRevoke(e)}
+                          disabled={revoking}
+                          className="flex items-center gap-1 text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <XCircle size={14} />
+                          撤销
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500 space-y-0.5">
+                      <div>入会时间：{new Date(e.enrolledAt).toLocaleString()}</div>
+                      <div>到期时间：{new Date(e.expiresAt).toLocaleDateString()}</div>
+                      <div>
+                        来源：{e.source === 'package' ? '活动自动入会' : '店铺端办理'}
+                        {e.activityType === MembershipActivityType.NINETY_NINE_THREE ? '（99元3次）' : ''}
+                      </div>
+                      {e.status === 'revoked' && e.revokedAt && (
+                        <div className="text-red-500">
+                          撤销时间：{new Date(e.revokedAt).toLocaleString()}
+                          {e.revokedByName ? ` · 撤销人：${e.revokedByName}` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 py-2">暂无入会记录</div>
             )}
           </div>
 

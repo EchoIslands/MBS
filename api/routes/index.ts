@@ -10,7 +10,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel, MembershipActivityType } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
 
@@ -1637,6 +1637,7 @@ const packageFromDb = (p: Record<string, unknown>): Record<string, unknown> => (
   status: p.status,
   orderId: p.order_id,
   source: p.source,
+  activityType: p.activity_type,
   createdAt: p.created_at,
   updatedAt: p.updated_at,
 });
@@ -1651,6 +1652,120 @@ const packageLogFromDb = (l: Record<string, unknown>): Record<string, unknown> =
   usedBy: l.used_by,
   note: l.note,
 });
+
+const membershipEnrollmentFromDb = (m: DbRecord): Record<string, unknown> => ({
+  id: m.id,
+  shopId: m.shop_id,
+  customerId: m.customer_id,
+  level: m.level,
+  source: m.source,
+  activityType: m.activity_type,
+  packageId: m.package_id,
+  enrolledAt: m.enrolled_at,
+  expiresAt: m.expires_at,
+  status: m.status,
+  revokedAt: m.revoked_at,
+  revokedBy: m.revoked_by,
+  revokedByName: m.revoked_by_name,
+  note: m.note,
+  createdAt: m.created_at,
+  updatedAt: m.updated_at,
+});
+
+/**
+ * 写入会员入会记录（仅留痕，不修改客户会员状态）
+ */
+async function recordMembershipEnrollment(opts: {
+  shopId: string;
+  customerId: string;
+  level: string;
+  source: string;
+  activityType?: string | null;
+  packageId?: string | null;
+  enrolledAt: string;
+  expiresAt: string;
+  note?: string;
+}): Promise<void> {
+  const ts = new Date().toISOString();
+  const { error } = await supabase.from('membership_enrollments').insert({
+    id: `enr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    shop_id: opts.shopId,
+    customer_id: opts.customerId,
+    level: opts.level,
+    source: opts.source,
+    activity_type: opts.activityType || null,
+    package_id: opts.packageId || null,
+    enrolled_at: opts.enrolledAt,
+    expires_at: opts.expiresAt,
+    status: 'active',
+    note: opts.note || '',
+    created_at: ts,
+    updated_at: ts,
+  });
+  if (error) {
+    console.error('[membership-enrollments] 写入会记录失败:', error.message);
+  }
+}
+
+/**
+ * 会员入会：写记录 + 将客户升级为对应购买型 VIP（1 年有效期，未过期则在原到期时间上顺延）
+ * @returns 新的到期时间；失败返回 null
+ */
+async function enrollCustomerAsVIP(
+  shopId: string,
+  customerId: string,
+  level: string,
+  options: { source: string; activityType?: string | null; packageId?: string | null; note?: string }
+): Promise<string | null> {
+  const now = Date.now();
+  const { data: customer, error: fetchError } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('id', customerId)
+    .eq('shop_id', shopId)
+    .single();
+  if (fetchError || !customer) {
+    console.error('[membership-enrollments] 查询客户失败:', fetchError?.message);
+    return null;
+  }
+
+  const currentExpiry = customer.purchase_vip_expires_at
+    ? new Date(customer.purchase_vip_expires_at).getTime()
+    : 0;
+  const baseTime = currentExpiry > now ? currentExpiry : now;
+  const expiresAt = new Date(baseTime + 365 * 86400000).toISOString();
+  const ts = new Date().toISOString();
+
+  const { error: updateError } = await supabase
+    .from('customers')
+    .update({
+      purchase_vip_level: level,
+      purchase_vip_expires_at: expiresAt,
+      is_member: true,
+      membership_level: customer.is_stockholder ? 'stockholder' : 'premium',
+      updated_at: ts,
+    })
+    .eq('id', customerId)
+    .eq('shop_id', shopId);
+  if (updateError) {
+    console.error('[membership-enrollments] 更新会员等级失败:', updateError.message);
+    return null;
+  }
+
+  await recordMembershipEnrollment({
+    shopId,
+    customerId,
+    level,
+    source: options.source,
+    activityType: options.activityType,
+    packageId: options.packageId,
+    enrolledAt: ts,
+    expiresAt,
+    note: options.note,
+  });
+
+  return expiresAt;
+}
 
 // 查询次卡列表（店铺端查全部，顾客端按 customer_id）
 customerPackagesRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
@@ -1714,6 +1829,7 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
       price,
       expiresAt,
       allowHolidayUse,
+      activityType,
     } = req.body;
     const employee = req.employee!;
 
@@ -1733,6 +1849,7 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
       allow_holiday_use: allowHolidayUse !== false,
       status: 'active',
       source: 'shop',
+      activity_type: activityType || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1742,6 +1859,16 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
     if (error) {
       console.error('[customer-packages] 创建失败:', error.message);
       return res.status(500).json({ success: false, error: '创建次卡失败' });
+    }
+
+    // 活动自动入会：购买「99元3次」即自动转为购买型银卡会员（7.8 折，1 年有效期）
+    if (activityType === MembershipActivityType.NINETY_NINE_THREE) {
+      await enrollCustomerAsVIP(employee.shopId, customerId, 'silver', {
+        source: 'package',
+        activityType,
+        packageId: (data as DbRecord)?.id as string,
+        note: `购买活动「${name || '99元3次'}」自动入会`,
+      });
     }
 
     res.status(201).json({ success: true, data: packageFromDb(data) });
@@ -2486,6 +2613,21 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
       return;
     }
 
+    // 留痕：购买型 VIP 入会 / 续费记录（每次入会时间 + 次数）
+    if (purchaseVIPLevel && typeof purchaseVIPLevel === 'string' && purchaseVIPLevel !== 'regular') {
+      await recordMembershipEnrollment({
+        shopId,
+        customerId: id,
+        level: purchaseVIPLevel,
+        source: 'manual',
+        enrolledAt: now,
+        expiresAt:
+          (updatePayload.purchase_vip_expires_at as string) ||
+          new Date(Date.now() + 365 * 86400000).toISOString(),
+        note: `店铺端办理 ${purchaseVIPLevel} 会员`,
+      });
+    }
+
     // 创建储值流水
     if (storedValueTx) {
       const { error: txError } = await supabase.from('stored_value_transactions').insert(storedValueTx);
@@ -2555,6 +2697,153 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     console.error('[customers] 更新会员状态异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * GET /api/customers/:id/membership-enrollments
+ * 查询顾客的会员入会记录（入会时间 / 次数 / 状态）
+ */
+customersRouter.get('/:id/membership-enrollments', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.employee!.shopId;
+
+    const { data, error } = await supabase
+      .from('membership_enrollments')
+      .select('*')
+      .eq('customer_id', id)
+      .eq('shop_id', shopId)
+      .order('enrolled_at', { ascending: false });
+
+    if (error) {
+      console.error('[customers] 查询入会记录失败:', error.message);
+      res.status(500).json({ success: false, error: '查询入会记录失败' });
+      return;
+    }
+
+    res.json({ success: true, data: (data || []).map((m) => membershipEnrollmentFromDb(m as DbRecord)) });
+  } catch (err: unknown) {
+    console.error('[customers] 查询入会记录异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
+ * POST /api/customers/:id/membership/revoke
+ * 撤销会员（仅 CEO / 客服）：降为普通用户，标记入会记录为已撤销；储值余额、股东身份、次卡剩余次数均不受影响
+ */
+customersRouter.post('/:id/membership/revoke', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const employee = req.employee!;
+    const shopId = employee.shopId;
+
+    if (employee.role !== 'ceo' && employee.role !== 'customer_service') {
+      res.status(403).json({ success: false, error: '仅 CEO 或客服可撤销会员' });
+      return;
+    }
+
+    const { enrollmentId, note } = req.body || {};
+
+    // 找到待撤销的入会记录：指定 ID 或最近一条有效记录
+    let query = supabase
+      .from('membership_enrollments')
+      .select('*')
+      .eq('customer_id', id)
+      .eq('shop_id', shopId)
+      .eq('status', 'active');
+    if (enrollmentId) {
+      query = query.eq('id', enrollmentId);
+    }
+    const { data: records, error: recordError } = await query.order('enrolled_at', {
+      ascending: false,
+    });
+
+    if (recordError) {
+      console.error('[customers] 查询入会记录失败:', recordError.message);
+      res.status(500).json({ success: false, error: '撤销会员失败' });
+      return;
+    }
+    const target = ((records || []) as DbRecord[])[0];
+    if (!target) {
+      res.status(404).json({ success: false, error: '该顾客没有可撤销的入会记录' });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const { error: revokeError } = await supabase
+      .from('membership_enrollments')
+      .update({
+        status: 'revoked',
+        revoked_at: now,
+        revoked_by: employee.id,
+        revoked_by_name: employee.name,
+        note: note || target.note || '',
+        updated_at: now,
+      })
+      .eq('id', target.id)
+      .eq('shop_id', shopId);
+
+    if (revokeError) {
+      console.error('[customers] 撤销入会记录失败:', revokeError.message);
+      res.status(500).json({ success: false, error: '撤销会员失败' });
+      return;
+    }
+
+    // 客户降级为普通用户
+    const { data: customer, error: fetchError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+    if (fetchError || !customer) {
+      res.status(404).json({ success: false, error: '客户不存在' });
+      return;
+    }
+    const hasStoredValue = customer.stored_value_level && customer.stored_value_level !== 'none';
+
+    const { data: updatedCustomer, error: updateError } = await supabase
+      .from('customers')
+      .update({
+        purchase_vip_level: 'regular',
+        purchase_vip_expires_at: null,
+        is_member: !!hasStoredValue,
+        membership_level: customer.is_stockholder
+          ? 'stockholder'
+          : hasStoredValue
+          ? 'premium'
+          : 'regular',
+      })
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .select()
+      .single();
+
+    if (updateError || !updatedCustomer) {
+      console.error('[customers] 撤销会员降级失败:', updateError?.message);
+      res.status(500).json({ success: false, error: '撤销会员失败' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        customer: toCamelCase(updatedCustomer),
+        enrollment: membershipEnrollmentFromDb({
+          ...target,
+          status: 'revoked',
+          revoked_at: now,
+          revoked_by: employee.id,
+          revoked_by_name: employee.name,
+          updated_at: now,
+        }),
+      },
+    });
+  } catch (err: unknown) {
+    console.error('[customers] 撤销会员异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });

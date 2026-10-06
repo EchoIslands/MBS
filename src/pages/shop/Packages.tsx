@@ -13,7 +13,7 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { CustomerPackage, Customer, Service, PackageStatus, UserRole, PackageUsageLog } from '../../../shared/types';
+import { CustomerPackage, Customer, Service, PackageStatus, UserRole, PackageUsageLog, MembershipActivityType } from '../../../shared/types';
 import { packageApi, customerApi, shopApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
@@ -122,6 +122,7 @@ const Packages: React.FC = () => {
     price: 99,
     expiresAt: '',
     allowHolidayUse: true,
+    activityType: '',
   });
 
   const resetForm = () => {
@@ -134,6 +135,7 @@ const Packages: React.FC = () => {
       price: 99,
       expiresAt: '',
       allowHolidayUse: true,
+      activityType: '',
     });
   };
 
@@ -152,6 +154,7 @@ const Packages: React.FC = () => {
       price: pkg.price,
       expiresAt: toDatetimeLocal(pkg.expiresAt),
       allowHolidayUse: pkg.allowHolidayUse,
+      activityType: pkg.activityType || '',
     });
   };
 
@@ -178,6 +181,7 @@ const Packages: React.FC = () => {
         price: Number(form.price),
         expiresAt: form.expiresAt,
         allowHolidayUse: form.allowHolidayUse,
+        activityType: form.activityType || undefined,
       });
       closeModals();
       await load();
@@ -412,6 +416,24 @@ const Packages: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">活动类型</label>
+                    <select
+                      value={form.activityType}
+                      onChange={(e) => setForm({ ...form, activityType: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    >
+                      <option value="">普通开卡</option>
+                      <option value={MembershipActivityType.NINETY_NINE_THREE}>
+                        99元3次（自动入会银卡会员）
+                      </option>
+                    </select>
+                    {form.activityType === MembershipActivityType.NINETY_NINE_THREE && (
+                      <p className="text-xs text-purple-600 mt-1">
+                        购买后顾客自动成为银卡会员（7.8 折，有效期 1 年）
+                      </p>
+                    )}
                   </div>
                 </>
               )}

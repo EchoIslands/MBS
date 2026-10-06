@@ -1,4 +1,4 @@
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, WithdrawalRequest, WithdrawalStatus, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1111,6 +1111,49 @@ export const membershipApi = {
     mockCustomers[idx] = customer;
     saveCustomersToCache();
     return { customer, vipAddAmount, storedAddAmount };
+  },
+
+  // 会员入会记录（入会时间 / 次数 / 状态）
+  getEnrollments: async (customerId: string): Promise<MembershipEnrollment[]> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: MembershipEnrollment[] }>(
+        `${API_BASE}/customers/${customerId}/membership-enrollments`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (result?.data) {
+        return result.data.map((e) => ({
+          ...e,
+          enrolledAt: e.enrolledAt ? new Date(e.enrolledAt) : new Date(),
+          expiresAt: e.expiresAt ? new Date(e.expiresAt) : new Date(),
+          revokedAt: e.revokedAt ? new Date(e.revokedAt) : undefined,
+          createdAt: e.createdAt ? new Date(e.createdAt) : undefined,
+          updatedAt: e.updatedAt ? new Date(e.updatedAt) : undefined,
+        }));
+      }
+    }
+    return [];
+  },
+
+  // 撤销会员（仅 CEO / 客服）
+  revoke: async (
+    customerId: string,
+    payload?: { enrollmentId?: string; note?: string }
+  ): Promise<{ customer: Customer; enrollment?: MembershipEnrollment } | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{
+        success: boolean;
+        data: { customer: Customer; enrollment?: MembershipEnrollment };
+      }>(`${API_BASE}/customers/${customerId}/membership/revoke`, {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (result?.success && result.data) return result.data;
+      throw new Error('撤销会员失败');
+    }
+    return null;
   },
 };
 
@@ -2673,6 +2716,7 @@ export const packageApi = {
     price: number;
     expiresAt: string | Date;
     allowHolidayUse?: boolean;
+    activityType?: string;
   }): Promise<CustomerPackage | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();

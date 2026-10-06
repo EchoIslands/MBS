@@ -607,6 +607,7 @@ export interface CustomerPackage {
   status: PackageStatus;
   orderId?: string;
   source?: string;
+  activityType?: string;   // 活动类型（如 99_3times），用于识别自动入会活动
   createdAt?: Date;
   updatedAt?: Date;
   // 展示用扩展字段
@@ -624,6 +625,36 @@ export interface PackageUsageLog {
   usedBy?: string;
   usedByName?: string;
   note?: string;
+}
+
+// 活动类型：用于识别「购买活动即自动入会」的场景（禁止按名称/价格字符串匹配）
+export const MembershipActivityType = {
+  NINETY_NINE_THREE: '99_3times', // 99 元 3 次：购买后自动转为购买型银卡会员（7.8 折）
+} as const;
+
+export type MembershipActivityType =
+  typeof MembershipActivityType[keyof typeof MembershipActivityType];
+
+// 会员入会记录：每次入会/续费写一条，用于留痕入会时间与统计入会次数
+export interface MembershipEnrollment {
+  id: string;
+  shopId: string;
+  customerId: string;
+  level: PurchaseVIPLevel;
+  source: string;                              // manual（店铺端办理）| package（开卡活动自动入会）
+  activityType?: string;
+  packageId?: string;
+  enrolledAt: Date;
+  expiresAt: Date;
+  status: 'active' | 'revoked' | 'expired';
+  revokedAt?: Date;
+  revokedBy?: string;
+  revokedByName?: string;
+  note?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  // 展示用扩展字段
+  customerName?: string;
 }
 
 export interface Queue {
