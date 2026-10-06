@@ -46,6 +46,7 @@ const Packages: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<CustomerPackage | null>(null);
   const [logsTarget, setLogsTarget] = useState<CustomerPackage | null>(null);
@@ -105,6 +106,14 @@ const Packages: React.FC = () => {
     });
   }, [packages, search, customerMap, serviceMap]);
 
+  const filteredCustomers = useMemo(() => {
+    const term = customerSearch.trim().toLowerCase();
+    if (!term) return customers;
+    return customers.filter(
+      (c) => c.name?.toLowerCase().includes(term) || c.phone?.includes(term)
+    );
+  }, [customers, customerSearch]);
+
   const [form, setForm] = useState({
     customerId: '',
     serviceId: '',
@@ -116,6 +125,7 @@ const Packages: React.FC = () => {
   });
 
   const resetForm = () => {
+    setCustomerSearch('');
     setForm({
       customerId: '',
       serviceId: '',
@@ -360,6 +370,16 @@ const Packages: React.FC = () => {
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">顾客</label>
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                      <input
+                        type="text"
+                        value={customerSearch}
+                        onChange={(e) => setCustomerSearch(e.target.value)}
+                        placeholder="搜索顾客姓名或手机号"
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
                     <select
                       value={form.customerId}
                       onChange={(e) => setForm({ ...form, customerId: e.target.value })}
@@ -367,12 +387,15 @@ const Packages: React.FC = () => {
                       required
                     >
                       <option value="">请选择顾客</option>
-                      {customers.map((c) => (
+                      {filteredCustomers.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name} ({c.phone})
                         </option>
                       ))}
                     </select>
+                    {customerSearch.trim() && filteredCustomers.length === 0 && (
+                      <p className="text-xs text-gray-500 mt-1">未找到匹配的顾客</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">服务项目</label>

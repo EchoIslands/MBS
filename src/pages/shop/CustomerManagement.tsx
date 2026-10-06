@@ -1305,6 +1305,7 @@ const CustomerManagement: React.FC = () => {
                   const name = (document.getElementById('cm-name') as HTMLInputElement)?.value;
                   const phone = (document.getElementById('cm-phone') as HTMLInputElement)?.value;
                   if (!name || !phone) { alert('请填写客户姓名和电话！'); return; }
+                  if (!/^1[3-9]\d{9}$/.test(phone.trim())) { alert('手机号格式不正确，请输入 11 位手机号！'); return; }
                   const isStockholder = (document.getElementById('cm-stockholder') as HTMLSelectElement)?.value === 'true';
                   const data: Partial<Customer> = {
                     name,

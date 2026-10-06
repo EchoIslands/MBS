@@ -1332,6 +1332,10 @@ const CustomerTableManagement: React.FC = () => {
                     alert('请填写客户姓名和电话！');
                     return;
                   }
+                  if (!/^1[3-9]\d{9}$/.test(phoneInput.value.trim())) {
+                    alert('手机号格式不正确，请输入 11 位手机号！');
+                    return;
+                  }
 
                   const purchaseVIPLevel = purchaseVIPInput.value as PurchaseVIPLevel;
                   const storedValueLevel = storedValueInput.value as StoredValueLevel;

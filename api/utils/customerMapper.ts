@@ -93,6 +93,11 @@ export function mapCustomerBodyToDB(
     result[key] = value;
   }
 
+  // 手机号去除首尾空格，避免因空格产生重复记录
+  if (typeof result.phone === 'string') {
+    result.phone = result.phone.trim();
+  }
+
   // 日期字段截取为 YYYY-MM-DD
   for (const field of DATE_FIELDS) {
     if (result[field] && typeof result[field] === 'string') {
@@ -108,6 +113,14 @@ export function mapCustomerBodyToDB(
   }
 
   return result;
+}
+
+/** 中国大陆手机号：1 开头、第二位 3-9、共 11 位数字 */
+export const PHONE_REGEX = /^1[3-9]\d{9}$/;
+
+/** 判断是否为合法的 11 位手机号（自动忽略首尾空格） */
+export function isValidPhone(phone: unknown): phone is string {
+  return typeof phone === 'string' && PHONE_REGEX.test(phone.trim());
 }
 
 /**
@@ -126,6 +139,9 @@ export function validateCustomerData(data: Record<string, unknown>): CustomerVal
   }
   if (!data.phone || typeof data.phone !== 'string' || data.phone.trim() === '') {
     return { valid: false, error: '客户电话不能为空' };
+  }
+  if (!isValidPhone(data.phone)) {
+    return { valid: false, error: '手机号格式不正确，请输入 11 位手机号' };
   }
   return { valid: true };
 }

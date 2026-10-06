@@ -17,11 +17,18 @@ const CustomerLogin: React.FC = () => {
     e.preventDefault();
     setError('');
     setWarning('');
+
+    const trimmedPhone = phone.trim();
+    if (!/^1[3-9]\d{9}$/.test(trimmedPhone)) {
+      setError('请输入正确的 11 位手机号');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const trimmedName = name.trim();
-      const customer = await loginAsCustomer(phone.trim(), trimmedName || undefined);
+      const customer = await loginAsCustomer(trimmedPhone, trimmedName || undefined);
       if (customer) {
         navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
       } else {

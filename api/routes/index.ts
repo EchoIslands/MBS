@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
-import { mapCustomerBodyToDB, validateCustomerData } from '../utils/customerMapper.js';
+import { mapCustomerBodyToDB, validateCustomerData, isValidPhone } from '../utils/customerMapper.js';
 import {
   calcDiscountedItemPrice,
   getEffectivePurchaseVIPLevel,
@@ -1960,15 +1960,20 @@ const customersRouter = Router();
 customersRouter.post('/login', async (req: Request, res: Response) => {
   try {
     const { phone, name } = req.body || {};
-    if (!phone) {
+    const cleanPhone = String(phone || '').trim();
+    if (!cleanPhone) {
       res.status(400).json({ success: false, error: '手机号不能为空' });
+      return;
+    }
+    if (!isValidPhone(cleanPhone)) {
+      res.status(400).json({ success: false, error: '手机号格式不正确，请输入 11 位手机号' });
       return;
     }
 
     const { data, error } = await supabase
       .from('customers')
       .select('*')
-      .eq('phone', phone)
+      .eq('phone', cleanPhone)
       .maybeSingle();
 
     if (error) {
@@ -1979,12 +1984,12 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
 
     if (!data) {
       // 陌生手机号自动注册为当前店铺新客户
-      const displayName = name?.trim() || `顾客${phone.slice(-4)}`;
+      const displayName = name?.trim() || `顾客${cleanPhone.slice(-4)}`;
       const newCustomer = {
         id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         shop_id: 'shop1',
         name: displayName,
-        phone,
+        phone: cleanPhone,
         membership_level: 'regular',
         purchase_vip_level: 'regular',
         stored_value_level: 'none',
@@ -2322,7 +2327,13 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    // 如果前端传了 name/phone，则必须非空
+    // 单独校验手机号格式（只改手机号时也要拦截 10 位等非法号码）
+    if (updateData.phone !== undefined && !isValidPhone(updateData.phone)) {
+      res.status(400).json({ success: false, error: '手机号格式不正确，请输入 11 位手机号' });
+      return;
+    }
+
+    // 如果前端传了 name，则姓名与电话都必须非空
     if (updateData.name !== undefined) {
       const validation = validateCustomerData(updateData);
       if ('error' in validation) {
