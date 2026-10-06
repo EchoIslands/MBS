@@ -67,7 +67,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     // 3. 签发 JWT（有效期 7 天）
     const payload: AuthEmployee = {
       id: employee.id,
-      shopId: employee.shopId || '',
+      shopId: employee.shop_id || '',
       name: employee.name,
       role: employee.role || 'stylist',
       phone: employee.phone || phone,
@@ -82,7 +82,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || 'stylist',
-      shopId: employee.shopId || '',
+      shopId: employee.shop_id || '',
       specialty: employee.specialty || '',
       rating: Number(employee.rating) || 5.0,
     };
@@ -120,7 +120,7 @@ authRouter.get('/me', authMiddleware, async (req: Request, res: Response) => {
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || 'stylist',
-      shopId: employee.shopId || '',
+      shopId: employee.shop_id || '',
       specialty: employee.specialty || '',
       rating: Number(employee.rating) || 5.0,
     };
