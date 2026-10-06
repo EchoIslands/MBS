@@ -2072,14 +2072,15 @@ customersRouter.get('/:id/public', async (req: Request, res: Response) => {
 customersRouter.get('/:id/packages', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const shopId = req.query.shopId as string | undefined;
 
-    let query = supabase.from('customer_packages').select('*').eq('customer_id', id);
-    if (shopId) {
-      query = query.eq('shop_id', shopId);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
+    // 顾客端「我的次卡」按顾客维度返回，不按店铺过滤：
+    // 小程序拿到的 customer.shopId 与开卡时写入的 shop_id 可能不一致，
+    // 过滤店铺会导致顾客看不到自己已开的卡。
+    const { data, error } = await supabase
+      .from('customer_packages')
+      .select('*')
+      .eq('customer_id', id)
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('[customers] 查询顾客次卡失败:', error.message);
