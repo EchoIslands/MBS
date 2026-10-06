@@ -2,6 +2,7 @@ import { getShopProducts, getShopCoupons, getCustomerCoupons, claimCoupon } from
 import { getCustomerPublic } from '../../api/customer';
 import { addToCart, getCartCount } from '../../utils/cart';
 import { getCustomerId } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 import { calcDiscountedItemPrice } from '../../utils/membership';
 
 const categories = [
@@ -107,7 +108,7 @@ Page({
     const { couponId } = e.currentTarget.dataset;
     const customerId = getCustomerId();
     if (!customerId) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+      ensureLogin({ content: '登录后即可领取优惠券' });
       return;
     }
     this.setData({ claimingId: couponId });

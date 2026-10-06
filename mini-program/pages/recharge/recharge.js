@@ -1,5 +1,6 @@
 import { getCustomerPublic, rechargeCustomer } from '../../api/customer';
 import { getCustomerId } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 
 const PLANS = [
   { level: 'store_500', amount: 500, discount: '9' },
@@ -43,7 +44,7 @@ Page({
   onShow() {
     const customerId = getCustomerId();
     if (!customerId) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+      ensureLogin({ content: '登录后即可进行储值充值' });
       return;
     }
     this.setData({ customerId });
@@ -92,7 +93,7 @@ Page({
   async onRecharge() {
     const { customerId, shopId, selectedLevel, selectedAmount, balance, payMethod } = this.data;
     if (!customerId) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+      ensureLogin({ content: '登录后即可进行储值充值' });
       return;
     }
 

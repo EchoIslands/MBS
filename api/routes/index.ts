@@ -2066,6 +2066,35 @@ customersRouter.get('/:id/public', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/customers/:id/packages
+ * 公开获取顾客次卡列表（顾客端小程序使用，无需 JWT）
+ */
+customersRouter.get('/:id/packages', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shopId = req.query.shopId as string | undefined;
+
+    let query = supabase.from('customer_packages').select('*').eq('customer_id', id);
+    if (shopId) {
+      query = query.eq('shop_id', shopId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[customers] 查询顾客次卡失败:', error.message);
+      res.status(500).json({ success: false, error: '查询次卡失败' });
+      return;
+    }
+
+    res.json({ success: true, data: (data || []).map(packageFromDb) });
+  } catch (err: unknown) {
+    console.error('[customers] 查询顾客次卡异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
+/**
  * POST /api/customers/:id/recharge
  * 顾客端自助储值充值（小程序/H5）
  */

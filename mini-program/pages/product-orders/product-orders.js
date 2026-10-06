@@ -1,6 +1,7 @@
 import { getCustomerPublic } from '../../api/customer';
 import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder, getProductOrderTracking, confirmProductOrderReceipt, payProductOrder } from '../../api/product';
 import { getCustomerId } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 
 const statusLabels = {
   pending: '待支付',
@@ -140,7 +141,7 @@ Page({
     const amountText = `¥${(order.payableAmount / 100).toFixed(2)}`;
     const customerId = getCustomerId();
     if (!customerId) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+      ensureLogin({ content: '登录后即可支付订单' });
       return;
     }
 

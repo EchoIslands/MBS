@@ -3,6 +3,7 @@ import { getShop } from '../../api/shop';
 import { cancelBooking } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
 import { getCustomerId, clearCustomerId, setRouteParams } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 import {
   PurchaseVIPLevel,
   StoredValueLevel,
@@ -359,7 +360,7 @@ Page({
   goToPackages() {
     const { customer } = this.data;
     if (!customer) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+      ensureLogin({ content: '登录后即可查看你的次卡' });
       return;
     }
     wx.navigateTo({ url: `/pages/packages/packages?customerId=${customer.id}&shopId=${customer.shopId || 'shop1'}` });
@@ -367,7 +368,7 @@ Page({
 goToCoupons() {
     const { customer } = this.data;
     if (!customer) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+      ensureLogin({ content: '登录后即可查看你的优惠券' });
       return;
     }
     wx.navigateTo({ url: `/pages/my-coupons/my-coupons?shopId=${customer.shopId || 'shop1'}` });

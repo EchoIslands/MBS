@@ -1,5 +1,6 @@
 import { get } from '../../utils/api';
 import { getCustomerId } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 
 function formatDate(isoString) {
   if (!isoString) return '-';
@@ -18,16 +19,26 @@ Page({
     packages: [],
     loading: true,
     error: '',
+    notLoggedIn: false,
   },
 
   async onLoad(options) {
-    const customerId = options.customerId || getCustomerId();
-    const shopId = options.shopId || 'shop1';
+    this.routeCustomerId = (options && options.customerId) || '';
+    this.shopId = (options && options.shopId) || 'shop1';
+    await this.loadPackages();
+  },
+
+  async loadPackages() {
+    const customerId = getCustomerId() || this.routeCustomerId;
+    const shopId = this.shopId || 'shop1';
+
     if (!customerId) {
-      wx.reLaunch({ url: '/pages/login/login' });
+      this.setData({ loading: false, error: '', notLoggedIn: true });
+      ensureLogin({ content: '登录后即可查看你的次卡' });
       return;
     }
-    this.setData({ loading: true, error: '' });
+
+    this.setData({ loading: true, error: '', notLoggedIn: false });
     try {
       const res = await get(`/customers/${customerId}/packages?shopId=${shopId}`);
       if (res && res.success) {
@@ -45,12 +56,25 @@ Page({
       }
     } catch (err) {
       console.error('[packages] 加载次卡失败:', err);
+      if (err.statusCode === 401) {
+        this.setData({ loading: false, notLoggedIn: true, error: '' });
+        ensureLogin({ content: '登录后即可查看你的次卡' });
+        return;
+      }
       this.setData({ error: err.message || '加载失败', loading: false });
     }
   },
 
+  reload() {
+    this.loadPackages();
+  },
+
+  goToLogin() {
+    wx.navigateTo({ url: '/pages/login/login' });
+  },
+
   onPullDownRefresh() {
-    this.onLoad({}).finally(() => wx.stopPullDownRefresh());
+    this.loadPackages().finally(() => wx.stopPullDownRefresh());
   },
 
   goToBooking() {

@@ -8,9 +8,15 @@
     <text class="packages-empty-text">加载中...</text>
   </view>
 
+  <view wx:elif="{{notLoggedIn}}" class="packages-empty">
+    <text class="packages-empty-text">未登录</text>
+    <text class="packages-empty-hint">登录后即可查看你的次卡</text>
+    <view class="packages-btn" bindtap="goToLogin">去登录</view>
+  </view>
+
   <view wx:elif="{{error}}" class="packages-empty">
     <text class="packages-empty-text">{{error}}</text>
-    <view class="packages-btn" bindtap="onLoad">重新加载</view>
+    <view class="packages-btn" bindtap="reload">重新加载</view>
   </view>
 
   <view wx:elif="{{packages.length === 0}}" class="packages-empty">

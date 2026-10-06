@@ -1,5 +1,6 @@
 import { generateInviteCode } from '../../api/referral';
 import { getCustomerId } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 
 Page({
   data: {
@@ -14,7 +15,8 @@ Page({
   async onLoad(options) {
     const customerId = options.customerId || getCustomerId();
     if (!customerId) {
-      this.setData({ loading: false, error: '请先登录' });
+      this.setData({ loading: false, error: '' });
+      ensureLogin({ content: '登录后即可查看邀请码' });
       return;
     }
     this.setData({ customerId });

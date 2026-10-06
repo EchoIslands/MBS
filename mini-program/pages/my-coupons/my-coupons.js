@@ -1,5 +1,6 @@
 import { getCustomerCoupons } from '../../api/product';
 import { getCustomerId } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 import { getCart } from '../../utils/cart';
 
 Page({
@@ -25,8 +26,8 @@ Page({
   onShow() {
     const customerId = getCustomerId();
     if (!customerId) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
       this.setData({ loading: false });
+      ensureLogin({ content: '登录后即可查看你的优惠券' });
       return;
     }
     this.setData({ customerId });

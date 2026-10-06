@@ -2,6 +2,7 @@ import { getBooking } from '../../api/booking';
 import { getCustomerPublic } from '../../api/customer';
 import { getReviewByBookingId, createReview } from '../../api/review';
 import { getCustomerId, takeRouteParams } from '../../utils/storage';
+import { ensureLogin } from '../../utils/auth';
 
 const STATUS_COMPLETED = 'completed';
 
@@ -41,7 +42,8 @@ Page({
   async onShow() {
     const customerId = getCustomerId();
     if (!customerId) {
-      this.setData({ customerId: '', loading: false, error: '请先登录' });
+      this.setData({ customerId: '', loading: false, error: '' });
+      ensureLogin({ content: '登录后即可评价' });
       return;
     }
     this.setData({ customerId });
