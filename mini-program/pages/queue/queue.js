@@ -121,22 +121,12 @@ Page({
 
   async loadShop() {
     try {
-      const { latitude, longitude } = await this.getUserLocation();
-      const shop = await getShop(this.data.shopId, latitude, longitude);
+      // 不使用定位能力：到店距离改由后端/店铺默认值提供，避免申请 wx.getLocation 权限
+      const shop = await getShop(this.data.shopId);
       this.setData({ shop });
     } catch (err) {
       console.warn('[queue] 加载店铺信息失败:', err);
     }
-  },
-
-  getUserLocation() {
-    return new Promise((resolve) => {
-      wx.getLocation({
-        type: 'gcj02',
-        success: (res) => resolve({ latitude: res.latitude, longitude: res.longitude }),
-        fail: () => resolve({ latitude: undefined, longitude: undefined }),
-      });
-    });
   },
 
   async loadQueue() {
