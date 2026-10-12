@@ -633,8 +633,17 @@ const Profile: React.FC = () => {
           )}
         </div>
 
-        {/* 快捷功能 —— 手机端保持三列，点击区域足够 */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
+        {/* 快捷功能 —— 手机端保持四列，点击区域足够 */}
+        <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-3 sm:mb-4">
+          <button
+            onClick={() => navigate('/customer/packages')}
+            className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"
+          >
+            <Ticket size={20} className="sm:hidden text-orange-500 mb-1" />
+            <Ticket size={22} className="hidden sm:inline text-orange-500 mb-2" />
+            <div className="font-medium text-gray-800 text-sm">我的次卡</div>
+            <div className="text-xs text-gray-500 mt-0.5">查看剩余次数</div>
+          </button>
           <button
             onClick={() => navigate('/customer/coupons')}
             className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"

@@ -222,7 +222,7 @@ const Queue: React.FC = () => {
     fetchBooking();
   }, [bookingId]);
 
-  // 获取用户当前位置，用于计算到店距离
+  // 获取用户当前位置，用于计算到店距离（最佳努力，失败时静默回退到店铺默认距离）
   useEffect(() => {
     getCurrentPosition()
       .then((pos) => {
@@ -230,11 +230,9 @@ const Queue: React.FC = () => {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         });
-        setLocationError(null);
       })
       .catch((err: Error) => {
-        console.log('获取位置失败:', err.message);
-        setLocationError(err.message || '无法获取位置');
+        console.log('获取位置失败，使用默认距离:', err.message);
       });
   }, []);
 

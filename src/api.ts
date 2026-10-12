@@ -2805,3 +2805,16 @@ export const packageApi = {
     return [];
   },
 };
+
+// 顾客端公开接口：查询自己的次卡列表，无需 JWT
+export const customerPackageApi = {
+  getByCustomer: async (customerId: string): Promise<CustomerPackage[]> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: CustomerPackage[] }>(
+        `${API_BASE}/customers/${customerId}/packages`,
+      );
+      if (result?.data) return result.data.map(normalizePackage);
+    }
+    return [];
+  },
+};
