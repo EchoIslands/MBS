@@ -3764,6 +3764,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
             ? e.avatar.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
             : e.avatar,
           title: e.title,
+          role: e.role,
           rating: e.rating || 5,
           isActive: e.is_active !== false,
           specialty: e.specialty,
