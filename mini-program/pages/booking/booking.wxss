@@ -675,6 +675,11 @@
   color: #92400e;
 }
 
+.tag-purple {
+  background: var(--purple-50, #f3e8ff);
+  color: var(--purple-700, #6b21a8);
+}
+
 /* ========== 8) 备注 textarea ========== */
 .notes-textarea {
   width: 100%;

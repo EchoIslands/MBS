@@ -61,9 +61,9 @@ const ShopManage: React.FC = () => {
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
   const [shopAddress, setShopAddress] = useState(currentShop?.address || '');
   const [services, setServices] = useState<Service[]>(currentShop?.services || []);
-  const [newService, setNewService] = useState({ name: '', price: '', duration: '', requiresGoldStylist: false });
+  const [newService, setNewService] = useState({ name: '', price: '', duration: '', requiresGoldStylist: false, requiresShopManager: false });
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
-  const [editService, setEditService] = useState({ name: '', price: '', duration: '', requiresGoldStylist: false });
+  const [editService, setEditService] = useState({ name: '', price: '', duration: '', requiresGoldStylist: false, requiresShopManager: false });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [newEmployee, setNewEmployee] = useState({
     name: '',
@@ -149,9 +149,10 @@ const ShopManage: React.FC = () => {
       price: Number(newService.price),
       duration: Number(newService.duration),
       requiresGoldStylist: newService.requiresGoldStylist,
+      requiresShopManager: newService.requiresShopManager,
     };
     setServices([...services, service]);
-    setNewService({ name: '', price: '', duration: '', requiresGoldStylist: false });
+    setNewService({ name: '', price: '', duration: '', requiresGoldStylist: false, requiresShopManager: false });
   };
 
   const removeService = (id: string) => {
@@ -165,12 +166,13 @@ const ShopManage: React.FC = () => {
       price: String(service.price),
       duration: String(service.duration),
       requiresGoldStylist: service.requiresGoldStylist === true,
+      requiresShopManager: service.requiresShopManager === true,
     });
   };
 
   const cancelEditService = () => {
     setEditingServiceId(null);
-    setEditService({ name: '', price: '', duration: '', requiresGoldStylist: false });
+    setEditService({ name: '', price: '', duration: '', requiresGoldStylist: false, requiresShopManager: false });
   };
 
   const saveEditService = () => {
@@ -178,12 +180,12 @@ const ShopManage: React.FC = () => {
     setServices(
       services.map((s) =>
         s.id === editingServiceId
-          ? { ...s, name: editService.name, price: Number(editService.price), duration: Number(editService.duration), requiresGoldStylist: editService.requiresGoldStylist }
+          ? { ...s, name: editService.name, price: Number(editService.price), duration: Number(editService.duration), requiresGoldStylist: editService.requiresGoldStylist, requiresShopManager: editService.requiresShopManager }
           : s
       )
     );
     setEditingServiceId(null);
-    setEditService({ name: '', price: '', duration: '', requiresGoldStylist: false });
+    setEditService({ name: '', price: '', duration: '', requiresGoldStylist: false, requiresShopManager: false });
   };
 
   // 判断当前用户能否添加某角色的员工
@@ -599,6 +601,15 @@ const ShopManage: React.FC = () => {
                 />
                 金牌专属
               </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={newService.requiresShopManager}
+                  onChange={(e) => setNewService({ ...newService, requiresShopManager: e.target.checked })}
+                  className="w-4 h-4 accent-orange-500"
+                />
+                店长专属
+              </label>
               <button
                 onClick={addService}
                 className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -645,6 +656,15 @@ const ShopManage: React.FC = () => {
                       />
                       金牌专属
                     </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={editService.requiresShopManager}
+                        onChange={(e) => setEditService({ ...editService, requiresShopManager: e.target.checked })}
+                        className="w-4 h-4 accent-orange-500"
+                      />
+                      店长专属
+                    </label>
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={saveEditService}
@@ -667,6 +687,9 @@ const ShopManage: React.FC = () => {
                         <div className="font-medium text-gray-800 truncate">{service.name}</div>
                         {service.requiresGoldStylist && (
                           <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full whitespace-nowrap">金牌专属</span>
+                        )}
+                        {service.requiresShopManager && (
+                          <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full whitespace-nowrap">店长专属</span>
                         )}
                       </div>
                       <div className="text-sm text-gray-500">

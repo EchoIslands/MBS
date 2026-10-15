@@ -131,18 +131,26 @@ const BookingPage: React.FC = () => {
 
   const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
   const requireGoldStylist = !!selectedServiceData?.requiresGoldStylist;
+  const requireShopManager = !!selectedServiceData?.requiresShopManager;
 
   const stylists = useMemo(() =>
     shop?.employees.filter((e) => isStylist(e) && e.isActive !== false) || [],
   [shop]);
 
-  // 金牌专属服务时，仅有金牌发型师可选；普通服务则金牌、普通均可
+  // 店长专属服务仅店长可选；金牌专属服务仅金牌发型师可选；普通服务则均可
   const eligibleStylists = useMemo(() =>
-    requireGoldStylist ? stylists.filter((e) => e.isGoldStylist === true) : stylists,
-  [stylists, requireGoldStylist]);
+    stylists.filter((e) =>
+      requireShopManager ? e.role === UserRole.SHOP_MANAGER
+        : requireGoldStylist ? e.isGoldStylist === true
+        : true
+    ),
+  [stylists, requireGoldStylist, requireShopManager]);
 
-  const isStylistEligible = (e: Employee) =>
-    !requireGoldStylist || e.isGoldStylist === true;
+  const isStylistEligible = (e: Employee) => {
+    if (requireShopManager) return e.role === UserRole.SHOP_MANAGER;
+    if (requireGoldStylist) return e.isGoldStylist === true;
+    return true;
+  };
 
   // 技师在特定时段是否已被预约
   const isBarberBusy = useCallback(
@@ -590,6 +598,11 @@ const BookingPage: React.FC = () => {
                           金牌
                         </span>
                       )}
+                      {stylist.role === UserRole.SHOP_MANAGER && (
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">
+                          店长
+                        </span>
+                      )}
                       {!av.isAvailable && (
                         <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">
                           已约
@@ -598,6 +611,11 @@ const BookingPage: React.FC = () => {
                       {requireGoldStylist && !eligible && (
                         <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full font-medium">
                           该服务需金牌发型师
+                        </span>
+                      )}
+                      {requireShopManager && !eligible && (
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full font-medium">
+                          该服务需店长
                         </span>
                       )}
                     </div>

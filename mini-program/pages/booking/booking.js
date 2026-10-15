@@ -325,13 +325,18 @@ Page({
     const { selectedDate, selectedTime, existingBookings, selectedService, shop } = this.data;
     const service = getServiceById(shop?.services || [], selectedService);
     const requireGold = service?.requiresGoldStylist === true;
+    const requireShopManager = service?.requiresShopManager === true;
 
-    const eligibleRaw = requireGold
-      ? rawStylists.filter((s) => s.isGoldStylist === true)
-      : rawStylists;
+    const isEligible = (s) => {
+      if (requireShopManager) return s.role === SHOP_MANAGER_ROLE;
+      if (requireGold) return s.isGoldStylist === true;
+      return true;
+    };
+
+    const eligibleRaw = rawStylists.filter(isEligible);
 
     const stylists = rawStylists.map((s) => {
-      const eligible = !requireGold || s.isGoldStylist === true;
+      const eligible = isEligible(s);
       const isAvailable = !isBarberBusy(s.id, selectedDate, selectedTime, existingBookings);
       const sameDayBookings = existingBookings.filter((bk) => {
         if (bk.barberId !== s.id && bk.stylistId !== s.id) return false;
@@ -347,6 +352,8 @@ Page({
         waitTime,
         eligible,
         requireGold,
+        requireShopManager,
+        isShopManager: s.role === SHOP_MANAGER_ROLE,
         displayRating: (s.skillValue || s.rating || 4.5).toFixed(1),
         tagsDisplay: (s.tags || []).slice(0, 2),
       };
@@ -396,7 +403,7 @@ Page({
       selectedServiceName: service?.name || '',
       selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
     });
-    // 切换服务后按金牌要求重新计算可选发型师
+    // 切换服务后按金牌/店长要求重新计算可选发型师
     this.updateStylists((this.data.shop?.employees || []).filter((emp) => isStylist(emp) && emp.isActive !== false));
   },
 

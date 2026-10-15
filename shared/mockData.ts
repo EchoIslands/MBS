@@ -50,6 +50,7 @@ export const mockShops: Shop[] = [
       { id: 's1', name: '精剪', price: 68, duration: 30, description: '专业发型设计' },
       { id: 's2', name: '烫染套餐', price: 388, duration: 120, description: '染发+烫发', requiresGoldStylist: true },
       { id: 's3', name: '护理', price: 168, duration: 60, description: '深层护理' },
+      { id: 's4', name: '店长定制造型', price: 288, duration: 90, description: '店长专属服务', requiresShopManager: true },
     ],
     employees: [
       {

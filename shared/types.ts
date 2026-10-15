@@ -7,6 +7,7 @@ export interface Service {
   commissionBase?: 'original' | 'actual' | 'none';
   commissionRate?: number;
   requiresGoldStylist?: boolean; // 是否为金牌发型师专属服务
+  requiresShopManager?: boolean; // 是否为店长专属服务
 }
 
 // 商品分类
