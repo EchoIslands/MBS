@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2, Award } from 'lucide-react';
+import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2, Award, Camera } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours, UserRole, StockholderBenefitConfig } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -100,6 +100,7 @@ const ShopManage: React.FC = () => {
     password: '',
   });
   const [savingEmployee, setSavingEmployee] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // currentShop 变化时同步表单状态（避免路由守卫仅恢复 employee 时 currentShop 为空导致崩溃）
   React.useEffect(() => {
@@ -204,6 +205,27 @@ const ShopManage: React.FC = () => {
     if (currentEmployee?.id === emp.id) return true;
     // CEO/店长按现有权限管理
     return canManageEmployee(emp);
+  };
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('请选择图片文件');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('图片大小不能超过 2MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setEditForm((prev) => ({ ...prev, avatar: base64 }));
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const openEditEmployee = (emp: Employee) => {
@@ -859,14 +881,43 @@ const ShopManage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">头像 URL</label>
-                    <input
-                      type="text"
-                      value={editForm.avatar}
-                      onChange={(e) => setEditForm({ ...editForm, avatar: e.target.value })}
-                      placeholder="https://..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">头像</label>
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        className="relative group shrink-0 cursor-pointer"
+                      >
+                        <img
+                          src={editForm.avatar || getAvatarUrl(editForm.name || '员工')}
+                          alt={editForm.name || '员工'}
+                          className="w-16 h-16 rounded-full object-cover border-2 border-orange-200 group-hover:opacity-80 transition-opacity"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = getAvatarUrl(editForm.name || '员工');
+                          }}
+                        />
+                        <div className="absolute -bottom-1 -right-1 bg-orange-500 text-white p-1 rounded-full">
+                          <Camera size={12} />
+                        </div>
+                      </button>
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFileChange}
+                        className="hidden"
+                      />
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-400 mb-1">点击头像上传图片（≤2MB），或填下方图片地址</p>
+                        <input
+                          type="text"
+                          value={editForm.avatar}
+                          onChange={(e) => setEditForm({ ...editForm, avatar: e.target.value })}
+                          placeholder="https://..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">重置密码（留空则不修改）</label>
