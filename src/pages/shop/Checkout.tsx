@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search,
   User,
   Plus,
   Minus,
+  Package,
+  Clock,
   Trash2,
   ShoppingBag,
   Scissors,
@@ -23,6 +25,7 @@ import {
   Product,
   Service,
   Shop,
+  Booking,
   SettlementItem,
   SettlementDiscountDetail,
   ProductCategory,
@@ -31,6 +34,8 @@ import {
   MemberBenefitRecord,
   GroupBuyBatch,
   GroupBuyVoucher,
+  CustomerPackage,
+  Settlement,
 } from '../../../shared/types';
 import {
   getPurchaseVIPLabel,
@@ -42,7 +47,7 @@ import {
   calcSettlementDiscountDetail,
   isDiscountable,
 } from '../../lib/membership';
-import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, groupBuyApi, WechatPaymentResult } from '../../api';
+import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, groupBuyApi, packageApi, WechatPaymentResult } from '../../api';
 import QRCode from 'qrcode';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
@@ -109,6 +114,15 @@ const Checkout: React.FC = () => {
   const [confirming, setConfirming] = useState(false);
   const [pendingSettlementId, setPendingSettlementId] = useState<string | null>(null);
 
+  // 次卡抵扣
+  const [availablePackages, setAvailablePackages] = useState<CustomerPackage[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+
+  // 未完成结算（草稿/待支付）找回
+  const [pendingSettlements, setPendingSettlements] = useState<Settlement[]>([]);
+  const [loadingPendingSettlements, setLoadingPendingSettlements] = useState(false);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+
   // 团购券
   const [showGroupBuyModal, setShowGroupBuyModal] = useState(false);
   const [groupBuyCode, setGroupBuyCode] = useState('');
@@ -127,6 +141,10 @@ const Checkout: React.FC = () => {
 
   const services = shop?.services || [];
   const products = shop?.products || [];
+
+  const cartServiceIds = cart.filter((i) => i.type === 'service').map((i) => i.id);
+  const cartServiceKey = cartServiceIds.join(',');
+  const selectedPackage = (selectedPackageId && availablePackages.find((p) => p.id === selectedPackageId)) || null;
 
   // 加载店铺信息和客户列表
   useEffect(() => {
@@ -157,6 +175,65 @@ const Checkout: React.FC = () => {
     return () => { cancelled = true; };
   }, [currentShop?.id]);
 
+  // 确保预约对应的未完成结算草稿存在（用于中途退出后找回）
+  const ensureDraftForBooking = useCallback(
+    async (booking: Booking, customer?: Customer) => {
+      const shopId = currentShop?.id || 'shop1';
+      const serviceItem: SettlementItem = {
+        type: 'service',
+        id: booking.serviceId,
+        name: booking.serviceName || '预约服务',
+        originalPrice: booking.price,
+        quantity: 1,
+        discountedPrice: booking.price,
+        total: booking.price,
+        category: 'service',
+        employeeId: booking.stylistId || booking.barberId,
+        employeeName: booking.stylistName || booking.barberName,
+      };
+      try {
+        const all = await settlementApi.getByShop(shopId);
+        const existing = all.find(
+          (s) => s.bookingId === initialBookingId && s.paymentStatus === 'pending' && s.paymentMethod === 'cash'
+        );
+        if (existing) {
+          setCurrentDraftId(existing.id);
+          return;
+        }
+        const draft = await settlementApi.create({
+          shopId,
+          customerId: booking.customerId,
+          customerName: customer?.name || '',
+          bookingId: initialBookingId || undefined,
+          items: [serviceItem],
+          subtotal: booking.price,
+          discountDetail: {
+            purchaseVIPDiscount: 1,
+            storedValueDiscount: 1,
+            finalDiscount: 1,
+            purchaseVIPDiscountAmount: 0,
+            storedValueDiscountAmount: 0,
+            benefitDiscountAmount: 0,
+            couponDiscountAmount: 0,
+            discount: 0,
+          } as SettlementDiscountDetail,
+          discount: 0,
+          couponDiscount: 0,
+          tax: 0,
+          total: booking.price,
+          paymentMethod: 'cash',
+          paymentStatus: 'pending',
+          usedBenefitIds: [],
+        });
+        const d = draft as Settlement;
+        if (d?.id) setCurrentDraftId(d.id);
+      } catch (e) {
+        console.warn('[checkout] 创建/查找未完成结算草稿失败:', e);
+      }
+    },
+    [currentShop?.id, initialBookingId]
+  );
+
   // 初始化：根据 URL 参数选择客户或预约
   useEffect(() => {
     if (loadingCustomers || customers.length === 0) return;
@@ -177,14 +254,16 @@ const Checkout: React.FC = () => {
                 {
                   id: booking.serviceId,
                   type: 'service',
-                  name: (booking.serviceName || '预约服务') + (booking.packageId ? '（次卡抵扣）' : ''),
-                  originalPrice: booking.packageId ? 0 : booking.price,
+                  name: booking.serviceName || '预约服务',
+                  originalPrice: booking.price,
                   quantity: 1,
                   category: 'service',
                   employeeId: booking.stylistId || booking.barberId,
                   employeeName: booking.stylistName || booking.barberName,
                 },
               ]);
+              // 确保存在未完成结算草稿，便于中途退出后找回
+              await ensureDraftForBooking(booking, c);
             }
           }
         } catch (e) {
@@ -193,7 +272,7 @@ const Checkout: React.FC = () => {
       }
     };
     initFromParams();
-  }, [initialCustomerId, initialBookingId, customers, loadingCustomers]);
+  }, [initialCustomerId, initialBookingId, customers, loadingCustomers, ensureDraftForBooking]);
 
   // 选中客户后加载可用权益
   useEffect(() => {
@@ -213,6 +292,47 @@ const Checkout: React.FC = () => {
     loadBenefits();
     return () => { cancelled = true; };
   }, [selectedCustomer]);
+
+  // 选中客户 + 购物车服务确定后，加载可用次卡（用于次卡抵扣选择）
+  useEffect(() => {
+    if (!selectedCustomer || cartServiceIds.length === 0) {
+      setAvailablePackages([]);
+      setSelectedPackageId('');
+      return;
+    }
+    let cancelled = false;
+    const shopId = currentShop?.id || 'shop1';
+    Promise.all(cartServiceIds.map((sid) => packageApi.getAvailable(selectedCustomer.id, sid, shopId)))
+      .then((lists) => {
+        if (cancelled) return;
+        const merged = lists.flat();
+        const unique = Array.from(new Map(merged.map((p) => [p.id, p])).values());
+        setAvailablePackages(unique);
+        setSelectedPackageId((prev) => (unique.some((p) => p.id === prev) ? prev : ''));
+      })
+      .catch(() => {
+        if (!cancelled) setAvailablePackages([]);
+      });
+    return () => { cancelled = true; };
+  }, [selectedCustomer?.id, cartServiceKey]);
+
+  // 加载未完成结算（草稿 / 待支付）
+  const loadPendingSettlements = useCallback(async () => {
+    const shopId = currentShop?.id || 'shop1';
+    setLoadingPendingSettlements(true);
+    try {
+      const all = await settlementApi.getByShop(shopId);
+      setPendingSettlements(all.filter((s) => s.paymentStatus === 'pending'));
+    } catch (_e) {
+      setPendingSettlements([]);
+    } finally {
+      setLoadingPendingSettlements(false);
+    }
+  }, [currentShop?.id]);
+
+  useEffect(() => {
+    loadPendingSettlements();
+  }, [loadPendingSettlements]);
 
   // 微信支付二维码生成
   useEffect(() => {
@@ -242,12 +362,16 @@ const Checkout: React.FC = () => {
 
   const cartWithAdjustedPrices = useMemo(() => {
     return cart.map((item) => {
+      let price = item.originalPrice;
       if (item.type === 'service' && item.employeeLevel) {
-        return { ...item, originalPrice: item.originalPrice + designerPriceMap[item.employeeLevel] };
+        price = price + designerPriceMap[item.employeeLevel];
       }
-      return item;
+      if (selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId) {
+        price = 0;
+      }
+      return price === item.originalPrice ? item : { ...item, originalPrice: price };
     });
-  }, [cart]);
+  }, [cart, selectedPackage]);
 
   const discountResult = useMemo(() => {
     const purchaseLevel = selectedCustomer
@@ -485,6 +609,37 @@ const Checkout: React.FC = () => {
     });
   };
 
+  // 核销已选次卡
+  const consumeSelectedPackage = async () => {
+    if (!selectedPackageId) return;
+    try {
+      await packageApi.consume(selectedPackageId, initialBookingId || undefined);
+    } catch (e) {
+      console.warn('[checkout] 次卡核销失败:', e);
+    }
+  };
+
+  // 继续未完成的结算（草稿 / 待支付），恢复其内容供继续编辑
+  const handleContinueSettlement = (s: Settlement) => {
+    setCurrentDraftId(s.id);
+    const c = customers.find((cust) => cust.id === s.customerId);
+    if (c) setSelectedCustomer(c);
+    const restoredCart: CartItem[] = (s.items || []).map((it) => ({
+      id: it.id,
+      type: it.type,
+      name: it.name,
+      originalPrice: it.originalPrice,
+      quantity: it.quantity,
+      category: it.category,
+      employeeId: it.employeeId,
+      employeeName: it.employeeName,
+    }));
+    setCart(restoredCart);
+    if (s.paymentMethod) {
+      setPaymentMethod(s.paymentMethod);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!selectedCustomer) {
       alert('请先选择客户');
@@ -521,10 +676,11 @@ const Checkout: React.FC = () => {
       } else {
         discountedUnit = Math.round(item.originalPrice * getCustomerEffectiveDiscount(selectedCustomer!) * 100) / 100;
       }
+      const isPackageDeducted = !!selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId;
       return {
         type: item.type,
         id: item.id,
-        name: item.name,
+        name: item.name + (isPackageDeducted ? '（次卡抵扣）' : ''),
         originalPrice: item.originalPrice,
         quantity: item.quantity,
         discountedPrice: discountedUnit,
@@ -562,6 +718,17 @@ const Checkout: React.FC = () => {
     try {
       const result = await settlementApi.create(newSettlement);
       console.log('settlementApi.create result:', result);
+
+      // 正式结算已创建，删除对应的未完成结算草稿
+      if (currentDraftId) {
+        try {
+          await settlementApi.delete(currentDraftId);
+        } catch (e) {
+          console.warn('[checkout] 删除结算草稿失败:', e);
+        }
+        setCurrentDraftId(null);
+      }
+      loadPendingSettlements();
 
       // 微信支付/支付宝：进入待支付流程，显示二维码
       if (result && typeof result === 'object' && 'payment' in result && 'settlement' in result) {
@@ -604,6 +771,8 @@ const Checkout: React.FC = () => {
       // 清空已核销权益
       setAvailableBenefits((prev) => prev.filter((b) => !selectedBenefits.includes(b.id)));
       setSelectedBenefits([]);
+      // 核销已选次卡
+      await consumeSelectedPackage();
       setSubmitting(false);
       setSuccess(true);
     } catch (err: unknown) {
@@ -618,6 +787,8 @@ const Checkout: React.FC = () => {
     setConfirming(true);
     try {
       await settlementApi.confirmPayment(pendingSettlementId);
+      // 核销已选次卡
+      await consumeSelectedPackage();
       setShowWechatModal(false);
       setWechatPayment(null);
       setPendingSettlementId(null);
@@ -722,6 +893,41 @@ const Checkout: React.FC = () => {
           {error && !loadingShop && !loadingCustomers && (
             <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-red-600 text-sm">
               {error}
+            </div>
+          )}
+
+          {!loadingShop && !loadingCustomers && pendingSettlements.length > 0 && (
+            <div className="mb-6 bg-white rounded-2xl shadow-sm border border-amber-100 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock size={18} className="text-amber-500" />
+                <h2 className="text-base font-bold text-gray-800">未完成结算</h2>
+                <span className="text-xs text-gray-400">{pendingSettlements.length} 笔</span>
+              </div>
+              <div className="space-y-2">
+                {pendingSettlements.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-xl bg-gray-50/50">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-800 text-sm">
+                        {s.customerName || '未命名客户'}
+                        {s.paymentMethod === 'wechat' || s.paymentMethod === 'alipay' ? (
+                          <span className="ml-2 text-xs text-blue-600">待支付</span>
+                        ) : (
+                          <span className="ml-2 text-xs text-amber-600">未完成</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        ¥{s.total?.toFixed(2)} · {s.createdAt ? new Date(s.createdAt).toLocaleString() : ''}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleContinueSettlement(s)}
+                      className="shrink-0 ml-3 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      继续结算
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -928,13 +1134,21 @@ const Checkout: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-3 mb-6">
-                    {cart.map((item, index) => (
+                    {cart.map((item, index) => {
+                      const isPackageDeducted = !!selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId;
+                      const displayUnitPrice = isPackageDeducted ? 0 : item.originalPrice;
+                      return (
                       <div key={`${item.id}-${index}`} className="border border-gray-200 rounded-xl p-3">
                         <div className="flex items-start justify-between mb-2">
                           <div>
-                            <div className="font-medium text-gray-800 text-sm">{item.name}</div>
+                            <div className="font-medium text-gray-800 text-sm flex items-center gap-1.5">
+                              {item.name}
+                              {isPackageDeducted && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">次卡抵扣</span>
+                              )}
+                            </div>
                             <div className="text-xs text-gray-500">
-                              {item.type === 'service' ? '服务' : '商品'} · 原价 ¥{item.originalPrice}
+                              {item.type === 'service' ? '服务' : '商品'} · 原价 ¥{displayUnitPrice}
                             </div>
                           </div>
                           <button onClick={() => removeItem(index)} className="p-1 hover:bg-red-50 rounded">
@@ -991,11 +1205,12 @@ const Checkout: React.FC = () => {
                             </button>
                           </div>
                           <div className="text-sm font-bold text-gray-800">
-                            ¥{(item.originalPrice * item.quantity).toFixed(2)}
+                            ¥{(displayUnitPrice * item.quantity).toFixed(2)}
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -1006,6 +1221,33 @@ const Checkout: React.FC = () => {
                   >
                     <Ticket size={16} /> 核销外部团购券
                   </button>
+                )}
+
+                {/* 次卡抵扣 */}
+                {selectedCustomer && availablePackages.length > 0 && (
+                  <div className="mb-4 p-3 bg-purple-50 border border-purple-100 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Package size={16} className="text-purple-500" />
+                      <span className="text-sm font-medium text-gray-700">次卡抵扣</span>
+                    </div>
+                    <select
+                      value={selectedPackageId}
+                      onChange={(e) => setSelectedPackageId(e.target.value)}
+                      className="w-full text-sm border border-purple-200 rounded-lg px-3 py-2 outline-none bg-white"
+                    >
+                      <option value="">不使用次卡</option>
+                      {availablePackages.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} · 剩余 {Math.max(0, p.totalTimes - p.usedTimes)} 次
+                        </option>
+                      ))}
+                    </select>
+                    {selectedPackage && (
+                      <p className="text-xs text-purple-600 mt-2">
+                        已选择「{selectedPackage.name}」，对应服务本次记 ¥0
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {/* 折扣明细 */}

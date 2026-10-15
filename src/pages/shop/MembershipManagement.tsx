@@ -31,6 +31,7 @@ import {
   MembershipEnrollment,
   MembershipActivityType,
   UserRole,
+  CustomerPackage,
 } from '../../../shared/types';
 import {
   purchaseVIPPlans,
@@ -43,7 +44,7 @@ import {
   isVIPExpiringSoon,
 } from '../../lib/membership';
 import { useAppStore } from '../../store';
-import { customerApi, memberBenefitApi, referralApi, membershipApi } from '../../api';
+import { customerApi, memberBenefitApi, referralApi, membershipApi, packageApi } from '../../api';
 import ShopLayout from './ShopLayout';
 
 type ModalMode = 'purchase' | 'storedValue' | null;
@@ -67,6 +68,7 @@ const MembershipManagement: React.FC = () => {
   const [enrollments, setEnrollments] = useState<MembershipEnrollment[]>([]);
   const [loadingEnrollments, setLoadingEnrollments] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [packages, setPackages] = useState<CustomerPackage[]>([]);
 
   const { currentShop, userRole } = useAppStore();
   const canRevokeMembership = userRole === UserRole.CEO || userRole === UserRole.CUSTOMER_SERVICE;
@@ -88,6 +90,22 @@ const MembershipManagement: React.FC = () => {
     };
     fetchCustomers();
   }, []);
+
+  // 加载全店次卡（用于会员表格与详情展示）
+  useEffect(() => {
+    const fetchPackages = async () => {
+      try {
+        const shopId = currentShop?.id || 'shop1';
+        const data = await packageApi.getByShop(shopId);
+        if (Array.isArray(data)) {
+          setPackages(data);
+        }
+      } catch (err: unknown) {
+        console.error('[MembershipManagement] 获取次卡列表失败:', err instanceof Error ? err.message : '未知错误');
+      }
+    };
+    fetchPackages();
+  }, [currentShop?.id]);
 
   // 加载推荐记录
   useEffect(() => {
@@ -174,6 +192,11 @@ const MembershipManagement: React.FC = () => {
     const matchesStored = filterStored === 'all' || customer.storedValueLevel === filterStored;
     return matchesSearch && matchesVIP && matchesStored;
   });
+
+  // 按顾客分组次卡，并计算剩余次数
+  const getCustomerPackages = (customerId: string): CustomerPackage[] =>
+    packages.filter((p) => p.customerId === customerId);
+  const getRemainingTimes = (pkg: CustomerPackage): number => Math.max(0, pkg.totalTimes - pkg.usedTimes);
 
   const stats = [
     {
@@ -544,6 +567,8 @@ const MembershipManagement: React.FC = () => {
           filteredCustomers.map((customer) => {
             const effectiveDiscount = getCustomerEffectiveDiscount(customer);
             const expiringSoon = isVIPExpiringSoon(customer);
+            const customerPkgs = getCustomerPackages(customer.id);
+            const remainingSum = customerPkgs.reduce((sum, p) => sum + getRemainingTimes(p), 0);
             return (
               <div
                 key={customer.id}
@@ -594,6 +619,17 @@ const MembershipManagement: React.FC = () => {
                         <span className="text-blue-500">{customer.points} 积分</span>
                         <span className="text-gray-400">当前折扣 {(effectiveDiscount * 10).toFixed(2)} 折</span>
                       </div>
+                      {customerPkgs.length > 0 && (
+                        <div className="mt-2 flex items-center gap-1 text-xs text-gray-500 flex-wrap">
+                          <Package size={14} className="text-amber-500" />
+                          <span className="font-medium text-gray-600">次卡 {customerPkgs.length} 张 · 剩余 {remainingSum} 次</span>
+                          {customerPkgs.map((p) => (
+                            <span key={p.id} className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full">
+                              {p.name}（{getRemainingTimes(p)}/{p.totalTimes}）
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -638,6 +674,7 @@ const MembershipManagement: React.FC = () => {
     if (!viewingCustomer) return null;
     const purchasePlan = purchaseVIPPlans.find((p) => p.level === viewingCustomer.purchaseVIPLevel);
     const storedPlan = storedValuePlans.find((p) => p.level === viewingCustomer.storedValueLevel);
+    const viewPkgs = getCustomerPackages(viewingCustomer.id);
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -791,6 +828,49 @@ const MembershipManagement: React.FC = () => {
               </div>
             ) : (
               <div className="text-sm text-gray-500 py-2">暂无可用权益</div>
+            )}
+          </div>
+
+          {/* 次卡信息 */}
+          <div className="mb-6">
+            <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+              <Package size={16} className="text-amber-500" />
+              次卡信息
+              {viewPkgs.length > 0 && (
+                <span className="text-xs font-normal text-gray-400">共 {viewPkgs.length} 张</span>
+              )}
+            </h4>
+            {viewPkgs.length > 0 ? (
+              <div className="space-y-2">
+                {viewPkgs.map((p) => {
+                  const remaining = getRemainingTimes(p);
+                  const statusText =
+                    p.status === 'active' ? '有效' : p.status === 'used_up' ? '已用完' : '已过期';
+                  const statusClass =
+                    p.status === 'active'
+                      ? 'bg-green-100 text-green-700'
+                      : p.status === 'used_up'
+                      ? 'bg-gray-100 text-gray-500'
+                      : 'bg-red-100 text-red-700';
+                  return (
+                    <div key={p.id} className="p-3 bg-gray-50 rounded-xl">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-800">{p.name}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${statusClass}`}>{statusText}</span>
+                        </div>
+                        <span className="text-sm font-medium text-amber-600">剩余 {remaining}/{p.totalTimes} 次</span>
+                      </div>
+                      <div className="mt-2 text-xs text-gray-500 space-y-0.5">
+                        <div>办卡时间：{p.createdAt ? new Date(p.createdAt).toLocaleString() : '-'}</div>
+                        <div>有效期至：{p.expiresAt ? new Date(p.expiresAt).toLocaleDateString() : '-'}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 py-2">暂无次卡</div>
             )}
           </div>
 

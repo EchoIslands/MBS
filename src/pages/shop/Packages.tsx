@@ -198,7 +198,10 @@ const Packages: React.FC = () => {
     setSubmitting(true);
     try {
       await packageApi.update(editing.id, {
+        serviceId: form.serviceId,
+        name: form.name,
         totalTimes: Number(form.totalTimes),
+        price: Number(form.price),
         expiresAt: form.expiresAt,
         allowHolidayUse: form.allowHolidayUse,
       });
@@ -437,6 +440,24 @@ const Packages: React.FC = () => {
                   </div>
                 </>
               )}
+              {editing && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">服务项目</label>
+                  <select
+                    value={form.serviceId}
+                    onChange={(e) => setForm({ ...form, serviceId: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    required
+                  >
+                    <option value="">请选择服务</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">套餐名称</label>
                 <input
@@ -445,7 +466,6 @@ const Packages: React.FC = () => {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   required
-                  disabled={!!editing}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -470,7 +490,6 @@ const Packages: React.FC = () => {
                     onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2"
                     required
-                    disabled={!!editing}
                   />
                 </div>
               </div>

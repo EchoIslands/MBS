@@ -1708,6 +1708,59 @@ async function recordMembershipEnrollment(opts: {
 }
 
 /**
+ * 查找店铺内「设计师洗剪吹」服务（钻石会员赠送的 58 元剪发服务）。
+ * 优先精确匹配名称，其次匹配「名称含『剪』且价格 = 58」。
+ */
+async function findDiamondHaircutService(shopId: string): Promise<{ id: string; name: string } | null> {
+  try {
+    const { data } = await supabase.from('shops').select('services').eq('id', shopId).single();
+    const services = (data?.services as Array<Record<string, unknown>>) || [];
+    let svc = services.find((s) => String(s.name || '').trim() === '设计师洗剪吹');
+    if (!svc) {
+      svc = services.find((s) => Number(s.price) === 58 && /剪/.test(String(s.name || '')));
+    }
+    if (!svc || !svc.id) return null;
+    return { id: String(svc.id), name: String(svc.name) };
+  } catch (err) {
+    console.error('[membership] 查找58剪发服务失败:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * 为钻石会员赠送 3 次「设计师洗剪吹」次卡
+ */
+async function grantDiamondGiftPackage(shopId: string, customerId: string): Promise<void> {
+  const service = await findDiamondHaircutService(shopId);
+  if (!service) {
+    console.warn('[membership] 店铺未配置 58 元剪发服务，跳过钻石会员次卡赠送');
+    return;
+  }
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 365 * 86400000).toISOString();
+  const { error } = await supabase.from('customer_packages').insert({
+    id: `pkg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    shop_id: shopId,
+    customer_id: customerId,
+    name: `钻石会员赠送·${service.name}3次`,
+    service_id: service.id,
+    total_times: 3,
+    used_times: 0,
+    price: 0,
+    expires_at: expiresAt,
+    allow_holiday_use: true,
+    status: 'active',
+    source: 'vip_benefit',
+    activity_type: null,
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+  });
+  if (error) {
+    console.error('[membership] 赠送钻石会员次卡失败:', error.message);
+  }
+}
+
+/**
  * 会员入会：写记录 + 将客户升级为对应购买型 VIP（1 年有效期，未过期则在原到期时间上顺延）
  * @returns 新的到期时间；失败返回 null
  */
@@ -1763,6 +1816,11 @@ async function enrollCustomerAsVIP(
     expiresAt,
     note: options.note,
   });
+
+  // 首次成为钻石会员：自动赠送 3 次 58 元剪发（设计师洗剪吹）
+  if (level === 'diamond' && customer.purchase_vip_level !== 'diamond') {
+    await grantDiamondGiftPackage(shopId, customerId);
+  }
 
   return expiresAt;
 }
@@ -1882,7 +1940,7 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
 customerPackagesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { totalTimes, usedTimes, expiresAt, allowHolidayUse, status } = req.body;
+    const { totalTimes, usedTimes, expiresAt, allowHolidayUse, status, serviceId, name, price } = req.body;
     const employee = req.employee!;
 
     if (employee.role !== 'ceo' && employee.role !== 'shop_manager') {
@@ -1895,6 +1953,9 @@ customerPackagesRouter.put('/:id', authMiddleware, async (req: Request, res: Res
     if (expiresAt) updateData.expires_at = parseLocalDateTime(expiresAt).toISOString();
     if (allowHolidayUse !== undefined) updateData.allow_holiday_use = allowHolidayUse;
     if (status) updateData.status = status;
+    if (serviceId) updateData.service_id = serviceId;
+    if (name) updateData.name = name;
+    if (price !== undefined) updateData.price = Number(price);
 
     const { data, error } = await supabase
       .from('customer_packages')
@@ -2626,6 +2687,11 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
           new Date(Date.now() + 365 * 86400000).toISOString(),
         note: `店铺端办理 ${purchaseVIPLevel} 会员`,
       });
+
+      // 首次升级为钻石会员：自动赠送 3 次 58 元剪发（设计师洗剪吹）
+      if (purchaseVIPLevel === 'diamond' && customer.purchase_vip_level !== 'diamond') {
+        await grantDiamondGiftPackage(shopId, id);
+      }
     }
 
     // 创建储值流水
@@ -5851,6 +5917,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       total,
       paymentMethod,
       usedBenefitIds,
+      paymentStatus,
     } = req.body || {};
 
     if (!customerId || !items || !Array.isArray(items) || items.length === 0) {
@@ -5859,6 +5926,8 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
 
     const method = paymentMethod || 'cash';
     const isAsyncPayment = method === 'wechat' || method === 'alipay';
+    // 草稿/待结算：仅落库不执行业务闭环，供顾客中途退出后找回继续结算
+    const isDraft = paymentStatus === 'pending';
     const settlementId = id || `settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     logStep('开始创建结算记录');
@@ -5877,7 +5946,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
         tax: tax || 0,
         total: total || 0,
         payment_method: method,
-        payment_status: isAsyncPayment ? 'pending' : 'completed',
+        payment_status: isDraft || isAsyncPayment ? 'pending' : 'completed',
         used_benefit_ids: usedBenefitIds || [],
         processed_by: employee.name,
         created_at: new Date().toISOString(),
@@ -5890,6 +5959,11 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       return res.status(500).json({ success: false, error: '创建结算记录失败: ' + insertError.message });
     }
     logStep('结算记录创建成功');
+
+    // 草稿/待结算：不生成支付、不执行业务闭环，直接返回
+    if (isDraft) {
+      return res.status(201).json({ success: true, data: settlementFromDb(settlement) });
+    }
 
     // 微信支付/支付宝：创建 payment 记录并返回支付参数，不立即执行后续业务
     if (method === 'wechat') {
@@ -6173,6 +6247,30 @@ settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) =
   } catch (error) {
     console.error('[settlements] 获取结算列表异常:', error);
     res.status(500).json({ success: false, error: '获取结算列表失败' });
+  }
+});
+
+// 获取单条结算详情（用于继续未完成的结算）
+settlementsRouter.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const shopId = req.employee!.shopId;
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from('settlements')
+      .select('*')
+      .eq('id', id)
+      .eq('shop_id', shopId)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ success: false, error: '结算记录不存在' });
+    }
+
+    res.json({ success: true, data: settlementFromDb(data) });
+  } catch (error) {
+    console.error('[settlements] 获取结算详情异常:', error);
+    res.status(500).json({ success: false, error: '获取结算详情失败' });
   }
 });
 

@@ -1389,6 +1389,11 @@ export const settlementApi = {
       };
     }
 
+    // 草稿（未完成结算）：仅保存快照，不回写预约/客户业务数据
+    if (data.paymentStatus === 'pending') {
+      return newSettlement;
+    }
+
     // 如果有关联预约，更新预约状态为已完成
     if (data.bookingId) {
       const bookingIdx = mockBookings.findIndex((b) => b.id === data.bookingId);
@@ -1485,6 +1490,18 @@ export const settlementApi = {
       if (result?.data) return result.data;
     }
     return mockSettlements.filter((s) => s.shopId === shopId);
+  },
+
+  getById: async (settlementId: string): Promise<Settlement | null> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: Settlement }>(
+        `${API_BASE}/settlements/${settlementId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (result?.data) return result.data;
+    }
+    return mockSettlements.find((s) => s.id === settlementId) || null;
   },
 
   confirmPayment: async (settlementId: string, transactionId?: string): Promise<Settlement> => {
@@ -2738,6 +2755,9 @@ export const packageApi = {
       expiresAt?: string | Date;
       allowHolidayUse?: boolean;
       status?: string;
+      serviceId?: string;
+      name?: string;
+      price?: number;
     },
   ): Promise<CustomerPackage | null> => {
     if (USE_REAL_API) {
