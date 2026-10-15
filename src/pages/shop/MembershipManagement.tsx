@@ -614,7 +614,7 @@ const MembershipManagement: React.FC = () => {
                         <span className="text-orange-500 font-medium">累计消费 ¥{customer.totalSpent}</span>
                         <span className="text-green-500">储值余额 ¥{customer.storedValueBalance}</span>
                         {customer.withdrawableReferralAmount > 0 && (
-                          <span className="text-purple-500">可提现返现 ¥{customer.withdrawableReferralAmount}</span>
+                          <span className="text-purple-500">可消费余额 ¥{customer.withdrawableReferralAmount}</span>
                         )}
                         <span className="text-blue-500">{customer.points} 积分</span>
                         <span className="text-gray-400">当前折扣 {(effectiveDiscount * 10).toFixed(2)} 折</span>
@@ -720,7 +720,7 @@ const MembershipManagement: React.FC = () => {
             </div>
             {viewingCustomer.withdrawableReferralAmount > 0 && (
               <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                <span className="text-gray-500">可提现返现</span>
+                <span className="text-gray-500">剩余可消费金额</span>
                 <span className="font-medium text-purple-500">¥{viewingCustomer.withdrawableReferralAmount}</span>
               </div>
             )}

@@ -60,7 +60,7 @@
             <view class="member-stat-value">¥{{customer.storedValueBalance || 0}}</view>
           </view>
           <view class="member-stat-item">
-            <view class="member-stat-label">可提现返现</view>
+            <view class="member-stat-label">可消费余额</view>
             <view class="member-stat-value">¥{{customer.withdrawableReferralAmount || 0}}</view>
           </view>
           <view class="member-stat-item">

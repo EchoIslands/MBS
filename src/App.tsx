@@ -32,7 +32,6 @@ import FinancialReport from "./pages/shop/FinancialReport";
 import OwnerDashboard from "./pages/shop/OwnerDashboard";
 import CustomerInsights from "./pages/shop/CustomerInsights";
 import RefundManagement from "./pages/shop/RefundManagement";
-import WithdrawalManagement from "./pages/shop/WithdrawalManagement";
 import ProductManagement from "./pages/shop/ProductManagement";
 import ProductOrderManagement from "./pages/shop/ProductOrderManagement";
 import CouponManagement from "./pages/shop/CouponManagement";
@@ -195,7 +194,6 @@ export default function App() {
           <Route path="/shop/owner" element={<OwnerDashboard />} />
           <Route path="/shop/customer-insights" element={<CustomerInsights />} />
           <Route path="/shop/refunds" element={<RefundManagement />} />
-          <Route path="/shop/withdrawals" element={<WithdrawalManagement />} />
           <Route path="/shop/customers" element={<CustomerManagement />} />
           <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
           <Route path="/shop/bookings" element={<BookingManagement />} />

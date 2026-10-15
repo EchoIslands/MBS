@@ -127,12 +127,6 @@ const menuItems: MenuItem[] = [
     roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
   },
   {
-    label: '提现管理',
-    path: '/shop/withdrawals',
-    icon: <Wallet size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
     label: '商品管理',
     path: '/shop/products',
     icon: <Package size={18} />,

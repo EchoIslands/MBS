@@ -38,6 +38,6 @@
     <view class="rules-item">1. 成为会员后即可生成专属邀请二维码</view>
     <view class="rules-item">2. 好友扫码后自动领取新人优惠券</view>
     <view class="rules-item">3. 好友首次消费成功后，你可获得消费金额 10% 的返现</view>
-    <view class="rules-item">4. 返现金额进入可提现余额，可在个人中心查看</view>
+    <view class="rules-item">4. 返现金额进入可消费余额，仅限店铺内消费</view>
   </view>
 </view>

@@ -479,7 +479,7 @@ async function hasRecentCashback(shopId: string, customerId: string, amount: num
 
 /**
  * 预约完成/结算时自动发放股东权益
- * D专家建议：返现到可提现余额；免费服务按自然月重置
+ * D专家建议：返现到可消费余额；免费服务按自然月重置
  */
 async function grantStockholderBenefits(
   shopId: string,
@@ -532,14 +532,14 @@ async function grantStockholderBenefits(
       if (insertError) {
         console.error('[股东权益] 写入返现记录失败:', insertError.message);
       } else {
-        // 更新客户可提现余额
+        // 更新客户可消费余额
         const oldAmount = customerData.withdrawable_referral_amount || 0;
         const newAmount = Math.round((oldAmount + cashbackAmount) * 100) / 100;
         await supabase.from('customers').update({ withdrawable_referral_amount: newAmount }).eq('id', customerId);
 
         // 站内通知占位（后续可替换为微信模板消息或短信）
         console.log(
-          `[股东权益通知占位] 客户 ${customerId} 获得消费返现 ${cashbackAmount} 元，已计入可提现余额`
+          `[股东权益通知占位] 客户 ${customerId} 获得消费返现 ${cashbackAmount} 元，已计入可消费余额`
         );
       }
 
@@ -5496,7 +5496,7 @@ productOrdersRouter.put('/refunds/:id/status', authMiddleware, async (req: Reque
         }
       }
 
-      // 退还余额（仅增加储值余额，不得影响可提现推荐金额）
+      // 退还余额（仅增加储值余额，不得影响可消费推荐金额）
       const { data: customer } = await supabase
         .from('customers')
         .select('stored_value_balance, balance')
@@ -7410,235 +7410,6 @@ refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
 });
 
 mainRouter.use('/refunds', refundsRouter);
-
-// ===================== withdrawals =====================
-const withdrawalsRouter = Router();
-
-const withdrawalFromDb = (w: Record<string, unknown>): unknown => ({
-  id: w.id,
-  shopId: w.shop_id,
-  customerId: w.customer_id,
-  customerName: w.customer_name || '顾客',
-  customerPhone: w.customer_phone || '',
-  amount: Number(w.amount) || 0,
-  channel: w.channel || 'wechat',
-  status: w.status,
-  rejectReason: w.reject_reason,
-  paidAt: w.paid_at,
-  paidBy: w.paid_by,
-  transactionId: w.transaction_id,
-  createdAt: w.created_at,
-  updatedAt: w.updated_at,
-});
-
-// 获取店铺提现申请列表
-withdrawalsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const shopId = req.employee!.shopId;
-    if (!shopId) {
-      return res.status(400).json({ success: false, error: '缺少店铺ID' });
-    }
-
-    const { data, error } = await supabase
-      .from('withdrawal_requests')
-      .select('*')
-      .eq('shop_id', shopId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('[withdrawals] 查询提现申请失败:', error.message, error.code, error.details);
-      const isTableMissing = error.code === '42P01' || /withdrawal_requests/.test(error.message || '');
-      return res.status(500).json({
-        success: false,
-        error: isTableMissing
-          ? '提现申请表 withdrawal_requests 不存在，请先在 Supabase 执行 schema_complete.sql'
-          : `查询提现申请失败: ${error.message}`,
-      });
-    }
-
-    res.json({ success: true, data: (data || []).map(withdrawalFromDb) });
-  } catch (error) {
-    console.error('[withdrawals] 获取提现申请异常:', error);
-    res.status(500).json({ success: false, error: '获取提现申请失败' });
-  }
-});
-
-// 顾客创建提现申请（无需员工登录，但校验顾客身份）
-withdrawalsRouter.post('/', async (req: Request, res: Response) => {
-  try {
-    const { shopId, customerId, customerName, customerPhone, amount, channel } = req.body || {};
-
-    if (!shopId || !customerId || amount === undefined || amount <= 0) {
-      return res.status(400).json({ success: false, error: '缺少必要字段或金额无效' });
-    }
-
-    // 校验顾客身份和可提现余额
-    const { data: customer, error: custError } = await supabase
-      .from('customers')
-      .select('shop_id, withdrawable_referral_amount, name, phone')
-      .eq('id', customerId)
-      .eq('shop_id', shopId)
-      .single();
-
-    if (custError || !customer) {
-      return res.status(404).json({ success: false, error: '客户不存在' });
-    }
-
-    if (Number(customer.withdrawable_referral_amount || 0) < Number(amount)) {
-      return res.status(400).json({ success: false, error: '可提现余额不足' });
-    }
-
-    const id = `wd_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-    // 如果是消费抵扣，直接扣减余额并标记为已完成
-    if (channel === 'consume') {
-      const { data, error } = await supabase
-        .from('withdrawal_requests')
-        .insert({
-          id,
-          shop_id: shopId,
-          customer_id: customerId,
-          customer_name: customerName || customer.name || '顾客',
-          customer_phone: customerPhone || customer.phone || '',
-          amount: Number(amount),
-          channel: 'consume',
-          status: 'paid',
-          paid_at: new Date().toISOString(),
-          paid_by: 'system',
-          transaction_id: `consume_${Date.now()}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[withdrawals] 创建抵扣记录失败:', error.message);
-        return res.status(500).json({ success: false, error: '创建抵扣记录失败' });
-      }
-
-      // 扣减可提现余额
-      const newWithdrawable = Math.round((Number(customer.withdrawable_referral_amount || 0) - Number(amount)) * 100) / 100;
-      await supabase
-        .from('customers')
-        .update({ withdrawable_referral_amount: newWithdrawable })
-        .eq('id', customerId)
-        .eq('shop_id', shopId);
-
-      return res.status(201).json({ success: true, data: withdrawalFromDb(data) });
-    }
-
-    // 微信提现：创建待审核记录，并冻结可提现余额
-    const { data, error } = await supabase
-      .from('withdrawal_requests')
-      .insert({
-        id,
-        shop_id: shopId,
-        customer_id: customerId,
-        customer_name: customerName || customer.name || '顾客',
-        customer_phone: customerPhone || customer.phone || '',
-        amount: Number(amount),
-        channel: 'wechat',
-        status: 'pending',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[withdrawals] 创建提现申请失败:', error.message);
-      return res.status(500).json({ success: false, error: '创建提现申请失败' });
-    }
-
-    // 冻结可提现余额（与前端展示保持一致）
-    const newWithdrawable = Math.round((Number(customer.withdrawable_referral_amount || 0) - Number(amount)) * 100) / 100;
-    await supabase
-      .from('customers')
-      .update({ withdrawable_referral_amount: newWithdrawable })
-      .eq('id', customerId)
-      .eq('shop_id', shopId);
-
-    res.status(201).json({ success: true, data: withdrawalFromDb(data) });
-  } catch (error) {
-    console.error('[withdrawals] 创建提现申请异常:', error);
-    res.status(500).json({ success: false, error: '创建提现申请失败' });
-  }
-});
-
-// 处理提现申请（审核/拒绝/标记已打款）
-withdrawalsRouter.put('/:id/status', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { status, rejectReason } = req.body || {};
-
-    if (!status || !['approved', 'rejected', 'paid'].includes(status)) {
-      return res.status(400).json({ success: false, error: '无效的状态值' });
-    }
-
-    const { data: existing, error: findError } = await supabase
-      .from('withdrawal_requests')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (findError || !existing) {
-      return res.status(404).json({ success: false, error: '提现申请不存在' });
-    }
-
-    if (existing.status !== 'pending' && existing.status !== 'approved') {
-      return res.status(400).json({ success: false, error: '该提现申请已处理' });
-    }
-
-    const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
-    if (status === 'rejected' && rejectReason) {
-      updatePayload.reject_reason = rejectReason;
-    }
-    if (status === 'paid') {
-      updatePayload.paid_at = new Date().toISOString();
-      updatePayload.paid_by = req.employee!.id;
-    }
-
-    const { data, error } = await supabase
-      .from('withdrawal_requests')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[withdrawals] 更新提现申请失败:', error.message);
-      return res.status(500).json({ success: false, error: '更新提现申请失败' });
-    }
-
-    // 余额处理：微信提现在创建 pending 时已冻结余额
-    // rejected：回退余额；paid：确认完成（不再二次扣减）；approved：无需操作
-    if (existing.channel === 'wechat' && status === 'rejected') {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('withdrawable_referral_amount')
-        .eq('id', existing.customer_id)
-        .eq('shop_id', existing.shop_id)
-        .single();
-
-      if (customer) {
-        const current = Number(customer.withdrawable_referral_amount || 0);
-        await supabase
-          .from('customers')
-          .update({ withdrawable_referral_amount: Math.round((current + Number(existing.amount)) * 100) / 100 })
-          .eq('id', existing.customer_id)
-          .eq('shop_id', existing.shop_id);
-      }
-    }
-
-    res.json({ success: true, data: withdrawalFromDb(data) });
-  } catch (error) {
-    console.error('[withdrawals] 处理提现申请异常:', error);
-    res.status(500).json({ success: false, error: '处理提现申请失败' });
-  }
-});
-
-mainRouter.use('/withdrawals', withdrawalsRouter);
 
 // ===================== owner dashboard =====================
 const ownerRouter = Router();
