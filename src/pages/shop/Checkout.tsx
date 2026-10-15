@@ -7,6 +7,7 @@ import {
   Minus,
   Package,
   Clock,
+  Pencil,
   Trash2,
   ShoppingBag,
   Scissors,
@@ -36,6 +37,7 @@ import {
   GroupBuyVoucher,
   CustomerPackage,
   Settlement,
+  UserRole,
 } from '../../../shared/types';
 import {
   getPurchaseVIPLabel,
@@ -46,6 +48,8 @@ import {
   isVIPExpiringSoon,
   calcSettlementDiscountDetail,
   isDiscountable,
+  getPurchaseVIPDiscount,
+  getStoredValueDiscount,
 } from '../../lib/membership';
 import { shopApi, customerApi, bookingApi, settlementApi, memberBenefitApi, groupBuyApi, packageApi, WechatPaymentResult } from '../../api';
 import QRCode from 'qrcode';
@@ -83,10 +87,13 @@ const designerLabelMap: Record<string, string> = {
   director: '总监设计师',
 };
 
+// 前台/收银手动改价的最低折扣率：钻石 0.58 × 最高储值(随心卡) 0.7
+const MIN_DISCOUNT_RATE = getPurchaseVIPDiscount(PurchaseVIPLevel.DIAMOND) * getStoredValueDiscount(StoredValueLevel.STORE_5000);
+
 const Checkout: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { currentShop, currentEmployee } = useAppStore();
+  const { currentShop, currentEmployee, userRole } = useAppStore();
 
   const initialCustomerId = searchParams.get('customerId');
   const initialBookingId = searchParams.get('bookingId');
@@ -123,6 +130,9 @@ const Checkout: React.FC = () => {
   const [loadingPendingSettlements, setLoadingPendingSettlements] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
 
+  // 前台/收银手动改价（key 为购物车项 index，value 为改后的最终单价）
+  const [priceOverrides, setPriceOverrides] = useState<Record<number, number>>({});
+
   // 团购券
   const [showGroupBuyModal, setShowGroupBuyModal] = useState(false);
   const [groupBuyCode, setGroupBuyCode] = useState('');
@@ -145,6 +155,10 @@ const Checkout: React.FC = () => {
   const cartServiceIds = cart.filter((i) => i.type === 'service').map((i) => i.id);
   const cartServiceKey = cartServiceIds.join(',');
   const selectedPackage = (selectedPackageId && availablePackages.find((p) => p.id === selectedPackageId)) || null;
+
+  // 改价权限：仅收银 + CEO（后续可在 CEO 界面配置角色权限）
+  const canAdjustPrice = userRole === UserRole.CASHIER || userRole === UserRole.CEO;
+  const minAdjustPrice = (originalPrice: number) => Math.round(originalPrice * MIN_DISCOUNT_RATE * 100) / 100;
 
   // 加载店铺信息和客户列表
   useEffect(() => {
@@ -382,19 +396,36 @@ const Checkout: React.FC = () => {
       : StoredValueLevel.NONE;
     const usedBenefits = availableBenefits.filter((b) => selectedBenefits.includes(b.id));
 
-    const groupBuyItems = cartWithAdjustedPrices.filter((i) => i.groupBuyInfo);
-    const normalItems = cartWithAdjustedPrices.filter((i) => !i.groupBuyInfo);
+    const groupBuyItems: CartItem[] = [];
+    const normalItems: Array<{ originalPrice: number; quantity: number; category?: ProductCategory | 'service' }> = [];
+    let overrideSubtotal = 0;
+    let overrideTotal = 0;
+    let overrideDiscount = 0;
 
-    const normalResult = calcSettlementDiscountDetail(
-      normalItems.map((i) => ({
-        originalPrice: i.originalPrice,
-        quantity: i.quantity,
-        category: i.category,
-      })),
-      purchaseLevel,
-      storedLevel,
-      usedBenefits
-    );
+    cart.forEach((item, index) => {
+      // 该 item 自动计算的应收价（设计师加价 + 次卡抵扣）
+      let autoPrice = item.originalPrice;
+      if (item.type === 'service' && item.employeeLevel) {
+        autoPrice += designerPriceMap[item.employeeLevel];
+      }
+      if (selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId) {
+        autoPrice = 0;
+      }
+
+      const override = priceOverrides[index];
+      if (override !== undefined && item.type === 'service') {
+        // 手动改价项：最终价 = 改后价，不再叠会员折扣
+        overrideSubtotal += autoPrice * item.quantity;
+        overrideTotal += override * item.quantity;
+        overrideDiscount += (autoPrice - override) * item.quantity;
+      } else if (item.groupBuyInfo) {
+        groupBuyItems.push({ ...item, originalPrice: autoPrice });
+      } else {
+        normalItems.push({ originalPrice: autoPrice, quantity: item.quantity, category: item.category });
+      }
+    });
+
+    const normalResult = calcSettlementDiscountDetail(normalItems, purchaseLevel, storedLevel, usedBenefits);
 
     const groupBuySubtotal = groupBuyItems.reduce((sum, i) => sum + i.originalPrice * i.quantity, 0);
     const groupBuyTotal = groupBuyItems.reduce(
@@ -403,17 +434,22 @@ const Checkout: React.FC = () => {
     );
     const groupBuyDiscount = Math.round((groupBuySubtotal - groupBuyTotal) * 100) / 100;
 
+    overrideSubtotal = Math.round(overrideSubtotal * 100) / 100;
+    overrideTotal = Math.round(overrideTotal * 100) / 100;
+    overrideDiscount = Math.round(overrideDiscount * 100) / 100;
+
     return {
       ...normalResult,
-      subtotal: Math.round((normalResult.subtotal + groupBuySubtotal) * 100) / 100,
-      total: Math.round((normalResult.total + groupBuyTotal) * 100) / 100,
-      discount: Math.round((normalResult.discount + groupBuyDiscount) * 100) / 100,
+      subtotal: Math.round((normalResult.subtotal + groupBuySubtotal + overrideSubtotal) * 100) / 100,
+      total: Math.round((normalResult.total + groupBuyTotal + overrideTotal) * 100) / 100,
+      discount: Math.round((normalResult.discount + groupBuyDiscount + overrideDiscount) * 100) / 100,
       purchaseVIPDiscountAmount: normalResult.purchaseVIPDiscountAmount,
       storedValueDiscountAmount: normalResult.storedValueDiscountAmount,
       benefitDiscountAmount: normalResult.benefitDiscountAmount,
       groupBuyDiscountAmount: groupBuyDiscount,
+      overrideDiscountAmount: overrideDiscount,
     };
-  }, [cartWithAdjustedPrices, selectedCustomer, selectedBenefits, availableBenefits]);
+  }, [cart, priceOverrides, selectedPackage, selectedCustomer, selectedBenefits, availableBenefits]);
 
   const total = discountResult.total;
   const subtotal = discountResult.subtotal;
@@ -466,6 +502,30 @@ const Checkout: React.FC = () => {
 
   const removeItem = (index: number) => {
     setCart((prev) => prev.filter((_, i) => i !== index));
+    // 同步调整改价 map 的索引
+    setPriceOverrides((prev) => {
+      const next: Record<number, number> = {};
+      Object.keys(prev).forEach((k) => {
+        const i = Number(k);
+        if (i < index) next[i] = prev[i];
+        else if (i > index) next[i - 1] = prev[i];
+      });
+      return next;
+    });
+  };
+
+  // 收银/CEO 手动改价（仅降价，下限 = 原价 × 钻石 0.58 × 最高储值 0.7）
+  const setServicePriceOverride = (index: number, value: number, originalPrice: number) => {
+    const floor = Math.round(originalPrice * MIN_DISCOUNT_RATE * 100) / 100;
+    const clamped = Math.min(originalPrice, Math.max(floor, value));
+    setPriceOverrides((prev) => ({ ...prev, [index]: Math.round(clamped * 100) / 100 }));
+  };
+  const clearServicePriceOverride = (index: number) => {
+    setPriceOverrides((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
   };
 
   const updateServiceLevel = (index: number, level: 'normal' | 'gold' | 'director') => {
@@ -667,20 +727,24 @@ const Checkout: React.FC = () => {
   const doSubmit = async () => {
     setSubmitting(true);
 
-    const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item) => {
+    const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item, index) => {
+      const override = priceOverrides[index];
+      const isOverridden = override !== undefined && item.type === 'service';
       let discountedUnit: number;
-      if (item.groupBuyInfo) {
+      if (isOverridden) {
+        discountedUnit = override;
+      } else if (item.groupBuyInfo) {
         discountedUnit = item.groupBuyInfo.price;
       } else if (item.type === 'product' && !isDiscountable(item.category)) {
         discountedUnit = item.originalPrice;
       } else {
         discountedUnit = Math.round(item.originalPrice * getCustomerEffectiveDiscount(selectedCustomer!) * 100) / 100;
       }
-      const isPackageDeducted = !!selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId;
+      const isPackageDeducted = !isOverridden && !!selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId;
       return {
         type: item.type,
         id: item.id,
-        name: item.name + (isPackageDeducted ? '（次卡抵扣）' : ''),
+        name: item.name + (isPackageDeducted ? '（次卡抵扣）' : '') + (isOverridden ? '（改价）' : ''),
         originalPrice: item.originalPrice,
         quantity: item.quantity,
         discountedPrice: discountedUnit,
@@ -1136,7 +1200,9 @@ const Checkout: React.FC = () => {
                   <div className="space-y-3 mb-6">
                     {cart.map((item, index) => {
                       const isPackageDeducted = !!selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId;
-                      const displayUnitPrice = isPackageDeducted ? 0 : item.originalPrice;
+                      const override = priceOverrides[index];
+                      const isOverridden = override !== undefined && item.type === 'service';
+                      const displayUnitPrice = isOverridden ? override : (isPackageDeducted ? 0 : item.originalPrice);
                       return (
                       <div key={`${item.id}-${index}`} className="border border-gray-200 rounded-xl p-3">
                         <div className="flex items-start justify-between mb-2">
@@ -1146,9 +1212,12 @@ const Checkout: React.FC = () => {
                               {isPackageDeducted && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">次卡抵扣</span>
                               )}
+                              {isOverridden && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">改价</span>
+                              )}
                             </div>
                             <div className="text-xs text-gray-500">
-                              {item.type === 'service' ? '服务' : '商品'} · 原价 ¥{displayUnitPrice}
+                              {item.type === 'service' ? '服务' : '商品'} · 原价 ¥{isOverridden ? item.originalPrice : displayUnitPrice}
                             </div>
                           </div>
                           <button onClick={() => removeItem(index)} className="p-1 hover:bg-red-50 rounded">
@@ -1156,7 +1225,7 @@ const Checkout: React.FC = () => {
                           </button>
                         </div>
 
-                        {item.type === 'service' && (
+                        {item.type === 'service' && !isOverridden && (
                           <select
                             value={item.employeeLevel || 'normal'}
                             onChange={(e) => updateServiceLevel(index, e.target.value as 'normal' | 'gold' | 'director')}
@@ -1166,6 +1235,31 @@ const Checkout: React.FC = () => {
                             <option value="gold">{designerLabelMap.gold} (+¥20)</option>
                             <option value="director">{designerLabelMap.director} (+¥40)</option>
                           </select>
+                        )}
+
+                        {item.type === 'service' && canAdjustPrice && (
+                          <div className="mb-2 p-2 bg-orange-50 border border-orange-100 rounded-lg">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
+                                <Pencil size={12} /> 改价（仅降价）
+                              </span>
+                              {isOverridden && (
+                                <button onClick={() => clearServicePriceOverride(index)} className="text-xs text-orange-600 hover:text-orange-700">
+                                  恢复原价
+                                </button>
+                              )}
+                            </div>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={isOverridden ? override : item.originalPrice}
+                              onChange={(e) => setServicePriceOverride(index, Number(e.target.value), item.originalPrice)}
+                              className="mt-1 w-full text-sm border border-orange-200 rounded-lg px-2 py-1.5 outline-none"
+                            />
+                            <div className="text-xs text-gray-400 mt-1">
+                              可改区间：¥{minAdjustPrice(item.originalPrice).toFixed(2)} ~ ¥{item.originalPrice.toFixed(2)}
+                            </div>
+                          </div>
                         )}
 
                         {item.groupBuyInfo && (
@@ -1285,6 +1379,12 @@ const Checkout: React.FC = () => {
                         <span className="text-orange-500">-¥{discountResult.groupBuyDiscountAmount.toFixed(2)}</span>
                       </div>
                     )}
+                    {discountResult.overrideDiscountAmount > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">改价优惠</span>
+                        <span className="text-orange-500">-¥{discountResult.overrideDiscountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-base font-bold pt-2 border-t border-gray-100">
                       <span className="text-gray-800">实付金额</span>
                       <span className="text-orange-600 text-xl">¥{total.toFixed(2)}</span>
@@ -1360,7 +1460,7 @@ const Checkout: React.FC = () => {
                   {submitting ? (
                     <span className="animate-pulse">结算中...</span>
                   ) : (
-                    <>确认结算 ¥{total.toFixed(2)}</>
+                    <>{paymentMethod === 'wechat' ? '生成支付二维码' : '确认结算'} ¥{total.toFixed(2)}</>
                   )}
                 </button>
               </div>
