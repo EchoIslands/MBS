@@ -129,9 +129,20 @@ const BookingPage: React.FC = () => {
     return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
   };
 
+  const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
+  const requireGoldStylist = !!selectedServiceData?.requiresGoldStylist;
+
   const stylists = useMemo(() =>
     shop?.employees.filter((e) => isStylist(e) && e.isActive !== false) || [],
   [shop]);
+
+  // 金牌专属服务时，仅有金牌发型师可选；普通服务则金牌、普通均可
+  const eligibleStylists = useMemo(() =>
+    requireGoldStylist ? stylists.filter((e) => e.isGoldStylist === true) : stylists,
+  [stylists, requireGoldStylist]);
+
+  const isStylistEligible = (e: Employee) =>
+    !requireGoldStylist || e.isGoldStylist === true;
 
   // 技师在特定时段是否已被预约
   const isBarberBusy = useCallback(
@@ -167,10 +178,10 @@ const BookingPage: React.FC = () => {
 
   // 找最快可服务的技师（基于真实预约数据）
   const fastest = useMemo(() => {
-    if (!stylists || stylists.length === 0 || !selectedDate || !selectedTime) return null;
+    if (!eligibleStylists || eligibleStylists.length === 0 || !selectedDate || !selectedTime) return null;
     let best: Employee | null = null;
     let min = Infinity;
-    for (const barber of stylists) {
+    for (const barber of eligibleStylists) {
       if (isBarberBusy(barber.id, selectedDate, selectedTime)) continue;
 
       const sameDayBookings = existingBookings.filter((bk) => {
@@ -189,7 +200,7 @@ const BookingPage: React.FC = () => {
       }
     }
     return best;
-  }, [stylists, selectedDate, selectedTime, existingBookings, isBarberBusy]);
+  }, [eligibleStylists, selectedDate, selectedTime, existingBookings, isBarberBusy]);
 
   const handleBooking = async () => {
     if (!selectedService || !selectedDate || !selectedTime) {
@@ -202,7 +213,7 @@ const BookingPage: React.FC = () => {
       return;
     }
     const target = selectionMode === 'specific'
-      ? stylists.find((e) => e.id === selectedBarberId)
+      ? eligibleStylists.find((e) => e.id === selectedBarberId)
       : fastest;
     if (!target) {
       alert('当前所选时间没有可用发型师，请更换时间');
@@ -242,8 +253,6 @@ const BookingPage: React.FC = () => {
       setBooking(false);
     }
   };
-
-  const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
 
   // 股东权益摘要
   const stockholderSummary = useMemo(
@@ -527,15 +536,17 @@ const BookingPage: React.FC = () => {
           <div className="space-y-2 sm:space-y-3">
             {stylists.map((stylist) => {
               const av = getBarberAvailability(stylist, selectedDate, selectedTime);
+              const eligible = isStylistEligible(stylist);
+              const disabled = !av.isAvailable || !eligible;
               const isSelected = selectionMode === 'specific' && selectedBarberId === stylist.id;
               return (
                 <label
                   key={stylist.id}
-                  className={`flex items-start p-3 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all ${
+                  className={`flex items-start p-3 sm:p-4 border-2 rounded-2xl transition-all ${
                     isSelected
                       ? 'border-amber-500 bg-orange-50'
-                      : av.isAvailable
-                        ? 'border-gray-200 hover:border-orange-200'
+                      : av.isAvailable && eligible
+                        ? 'border-gray-200 hover:border-orange-200 cursor-pointer'
                         : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
                   }`}
                 >
@@ -543,9 +554,9 @@ const BookingPage: React.FC = () => {
                     type="radio"
                     name="barberSelection"
                     checked={isSelected}
-                    disabled={!av.isAvailable}
+                    disabled={disabled}
                     onChange={() => {
-                      if (av.isAvailable) {
+                      if (av.isAvailable && eligible) {
                         setSelectionMode('specific');
                         setSelectedBarberId(stylist.id);
                       }
@@ -574,9 +585,19 @@ const BookingPage: React.FC = () => {
                           {stylist.title}
                         </span>
                       )}
+                      {stylist.isGoldStylist && (
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                          金牌
+                        </span>
+                      )}
                       {!av.isAvailable && (
                         <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">
                           已约
+                        </span>
+                      )}
+                      {requireGoldStylist && !eligible && (
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full font-medium">
+                          该服务需金牌发型师
                         </span>
                       )}
                     </div>

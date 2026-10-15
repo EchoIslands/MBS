@@ -48,21 +48,21 @@ export const mockShops: Shop[] = [
     ],
     services: [
       { id: 's1', name: '精剪', price: 68, duration: 30, description: '专业发型设计' },
-      { id: 's2', name: '烫染套餐', price: 388, duration: 120, description: '染发+烫发' },
+      { id: 's2', name: '烫染套餐', price: 388, duration: 120, description: '染发+烫发', requiresGoldStylist: true },
       { id: 's3', name: '护理', price: 168, duration: 60, description: '深层护理' },
     ],
     employees: [
       {
         id: 'e1', name: '李明', phone: '13900000011', avatar: '', title: '首席发型师',
         rating: 4.9, skillValue: 4.9, reviewCount: 328, totalServices: 1250,
-        isActive: true, specialty: '精剪、烫染', role: UserRole.STYLIST,
+        isActive: true, specialty: '精剪、烫染', role: UserRole.STYLIST, isGoldStylist: true,
         tags: ['日系短发', '男士油头', '质感烫'],
         weeklyRevenue: 6800,
       },
       {
         id: 'e2', name: '王芳', phone: '13900000012', avatar: '', title: '资深发型师',
         rating: 4.7, skillValue: 4.7, reviewCount: 215, totalServices: 890,
-        isActive: true, specialty: '护理、造型', role: UserRole.STYLIST,
+        isActive: true, specialty: '护理、造型', role: UserRole.STYLIST, isGoldStylist: true,
         tags: ['深层护理', '女士造型', '染发'],
         weeklyRevenue: 5200,
       },

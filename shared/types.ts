@@ -6,6 +6,7 @@ export interface Service {
   description?: string;
   commissionBase?: 'original' | 'actual' | 'none';
   commissionRate?: number;
+  requiresGoldStylist?: boolean; // 是否为金牌发型师专属服务
 }
 
 // 商品分类
@@ -745,6 +746,7 @@ export interface Employee {
   rating: number;
   isActive: boolean;
   specialty?: string;
+  isGoldStylist?: boolean; // 是否为金牌发型师
   // 新增：员工关联的系统用户角色
   userId?: string;
   role?: UserRole;

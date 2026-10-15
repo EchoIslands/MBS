@@ -194,7 +194,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
-    const { name, phone, title, role: newRole, password, specialty, avatar, is_active } = req.body;
+    const { name, phone, title, role: newRole, password, specialty, avatar, is_active, is_gold_stylist, isGoldStylist } = req.body;
 
     if (!name || !phone || !newRole || !password) {
       res.status(400).json({ success: false, error: '姓名、手机号、角色、密码为必填项' });
@@ -244,6 +244,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       avatar: avatar || '',
       rating: 5.0,
       is_active: is_active !== false,
+      is_gold_stylist: (isGoldStylist ?? is_gold_stylist) === true,
       created_at: new Date().toISOString(),
     };
 
@@ -307,7 +308,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     }
 
     const { id } = req.params;
-    const { name, phone, title, role: newRole, password, specialty, avatar, is_active, isActive } = req.body;
+    const { name, phone, title, role: newRole, password, specialty, avatar, is_active, isActive, is_gold_stylist, isGoldStylist } = req.body;
 
     // 不能修改自己以外的 CEO（CEO 可以，店长不行）
     if (id !== currentId) {
@@ -336,6 +337,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     if (password !== undefined) updateData.password_hash = password;
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
+    if (isGoldStylist !== undefined || is_gold_stylist !== undefined) updateData.is_gold_stylist = (isGoldStylist ?? is_gold_stylist) === true;
     const nextIsActive = is_active !== undefined ? is_active : isActive;
     if (nextIsActive !== undefined) updateData.is_active = nextIsActive;
 
@@ -3795,7 +3797,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
     // 同时查询该店铺的员工，补充到返回数据中
     const { data: employees, error: empError } = await supabase
       .from('employees')
-      .select('id, name, phone, avatar, title, rating, specialty, role, is_active')
+      .select('id, name, phone, avatar, title, rating, specialty, role, is_active, is_gold_stylist')
       .eq('shop_id', id)
       .eq('is_active', true);
 
@@ -3833,6 +3835,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
           role: e.role,
           rating: e.rating || 5,
           isActive: e.is_active !== false,
+          isGoldStylist: e.is_gold_stylist === true,
           specialty: e.specialty,
         })),
       },

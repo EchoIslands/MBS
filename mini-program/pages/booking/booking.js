@@ -322,8 +322,16 @@ Page({
   },
 
   updateStylists(rawStylists) {
-    const { selectedDate, selectedTime, existingBookings } = this.data;
+    const { selectedDate, selectedTime, existingBookings, selectedService, shop } = this.data;
+    const service = getServiceById(shop?.services || [], selectedService);
+    const requireGold = service?.requiresGoldStylist === true;
+
+    const eligibleRaw = requireGold
+      ? rawStylists.filter((s) => s.isGoldStylist === true)
+      : rawStylists;
+
     const stylists = rawStylists.map((s) => {
+      const eligible = !requireGold || s.isGoldStylist === true;
       const isAvailable = !isBarberBusy(s.id, selectedDate, selectedTime, existingBookings);
       const sameDayBookings = existingBookings.filter((bk) => {
         if (bk.barberId !== s.id && bk.stylistId !== s.id) return false;
@@ -337,12 +345,14 @@ Page({
         ...s,
         isAvailable,
         waitTime,
+        eligible,
+        requireGold,
         displayRating: (s.skillValue || s.rating || 4.5).toFixed(1),
         tagsDisplay: (s.tags || []).slice(0, 2),
       };
     });
 
-    const fastest = findFastestStylist(rawStylists, selectedDate, selectedTime, existingBookings);
+    const fastest = findFastestStylist(eligibleRaw, selectedDate, selectedTime, existingBookings);
     this.setData({
       stylists,
       fastest,
@@ -386,6 +396,8 @@ Page({
       selectedServiceName: service?.name || '',
       selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
     });
+    // 切换服务后按金牌要求重新计算可选发型师
+    this.updateStylists((this.data.shop?.employees || []).filter((emp) => isStylist(emp) && emp.isActive !== false));
   },
 
   onDateSelect(e) {
@@ -419,7 +431,7 @@ Page({
   onBarberSelect(e) {
     const id = e.currentTarget.dataset.id;
     const barber = getBarberById(this.data.stylists, id);
-    if (!barber || !barber.isAvailable) return;
+    if (!barber || !barber.isAvailable || !barber.eligible) return;
     this.setData({
       selectionMode: 'specific',
       selectedBarberId: barber.id,

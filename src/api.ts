@@ -476,6 +476,16 @@ export const shopApi = {
   },
 };
 
+// 将后端员工记录（snake_case）转换为统一的 Employee 格式（camelCase）
+function normalizeEmployee(b: unknown): Employee {
+  const raw = b as Record<string, unknown>;
+  return {
+    ...(raw as unknown as Employee),
+    isActive: raw.is_active !== false,
+    isGoldStylist: raw.is_gold_stylist === true,
+  };
+}
+
 // 员工相关 API
 export const employeeApi = {
   getAll: async (): Promise<Employee[]> => {
@@ -484,7 +494,7 @@ export const employeeApi = {
       const result = await http<{ success: boolean; data: Employee[] }>(`${API_BASE}/employees`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.data) return result.data;
+      if (result?.data) return result.data.map(normalizeEmployee);
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockShops[0]?.employees || [];
@@ -498,7 +508,7 @@ export const employeeApi = {
         body: JSON.stringify(data),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.data) return result.data;
+      if (result?.data) return normalizeEmployee(result.data);
     }
     await new Promise((r) => setTimeout(r, 200));
     const newEmployee: Employee = {
@@ -528,7 +538,7 @@ export const employeeApi = {
         body: JSON.stringify(data),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.data) return result.data;
+      if (result?.data) return normalizeEmployee(result.data);
     }
     await new Promise((r) => setTimeout(r, 200));
     if (mockShops[0]?.employees) {
@@ -550,7 +560,7 @@ export const employeeApi = {
         body: JSON.stringify(data),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.data) return result.data;
+      if (result?.data) return normalizeEmployee(result.data);
     }
     // Mock fallback：更新 mockShops 中当前登录员工的信息
     await new Promise((r) => setTimeout(r, 200));

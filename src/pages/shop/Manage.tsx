@@ -61,9 +61,9 @@ const ShopManage: React.FC = () => {
   const [shopPhone, setShopPhone] = useState(currentShop?.phone || '');
   const [shopAddress, setShopAddress] = useState(currentShop?.address || '');
   const [services, setServices] = useState<Service[]>(currentShop?.services || []);
-  const [newService, setNewService] = useState({ name: '', price: '', duration: '' });
+  const [newService, setNewService] = useState({ name: '', price: '', duration: '', requiresGoldStylist: false });
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
-  const [editService, setEditService] = useState({ name: '', price: '', duration: '' });
+  const [editService, setEditService] = useState({ name: '', price: '', duration: '', requiresGoldStylist: false });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [newEmployee, setNewEmployee] = useState({
     name: '',
@@ -73,6 +73,7 @@ const ShopManage: React.FC = () => {
     avatar: '',
     role: UserRole.STYLIST,
     password: '',
+    isGoldStylist: false,
   });
   const [openingHours, setOpeningHours] = useState<OpeningHours>(normalizeOpeningHours(currentShop?.openingHours));
   const [bookingConfirmMode, setBookingConfirmMode] = useState<'auto' | 'manual'>(currentShop?.bookingConfirmMode || 'auto');
@@ -98,6 +99,7 @@ const ShopManage: React.FC = () => {
     specialty: '',
     avatar: '',
     password: '',
+    isGoldStylist: false,
   });
   const [savingEmployee, setSavingEmployee] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -146,9 +148,10 @@ const ShopManage: React.FC = () => {
       name: newService.name,
       price: Number(newService.price),
       duration: Number(newService.duration),
+      requiresGoldStylist: newService.requiresGoldStylist,
     };
     setServices([...services, service]);
-    setNewService({ name: '', price: '', duration: '' });
+    setNewService({ name: '', price: '', duration: '', requiresGoldStylist: false });
   };
 
   const removeService = (id: string) => {
@@ -161,12 +164,13 @@ const ShopManage: React.FC = () => {
       name: service.name,
       price: String(service.price),
       duration: String(service.duration),
+      requiresGoldStylist: service.requiresGoldStylist === true,
     });
   };
 
   const cancelEditService = () => {
     setEditingServiceId(null);
-    setEditService({ name: '', price: '', duration: '' });
+    setEditService({ name: '', price: '', duration: '', requiresGoldStylist: false });
   };
 
   const saveEditService = () => {
@@ -174,12 +178,12 @@ const ShopManage: React.FC = () => {
     setServices(
       services.map((s) =>
         s.id === editingServiceId
-          ? { ...s, name: editService.name, price: Number(editService.price), duration: Number(editService.duration) }
+          ? { ...s, name: editService.name, price: Number(editService.price), duration: Number(editService.duration), requiresGoldStylist: editService.requiresGoldStylist }
           : s
       )
     );
     setEditingServiceId(null);
-    setEditService({ name: '', price: '', duration: '' });
+    setEditService({ name: '', price: '', duration: '', requiresGoldStylist: false });
   };
 
   // 判断当前用户能否添加某角色的员工
@@ -237,12 +241,13 @@ const ShopManage: React.FC = () => {
       specialty: emp.specialty || '',
       avatar: emp.avatar || '',
       password: '',
+      isGoldStylist: emp.isGoldStylist === true,
     });
   };
 
   const closeEditEmployee = () => {
     setEditingEmployee(null);
-    setEditForm({ name: '', phone: '', title: '', specialty: '', avatar: '', password: '' });
+    setEditForm({ name: '', phone: '', title: '', specialty: '', avatar: '', password: '', isGoldStylist: false });
   };
 
   const saveEmployeeEdit = async () => {
@@ -254,6 +259,9 @@ const ShopManage: React.FC = () => {
     if (editForm.specialty !== (editingEmployee.specialty || '')) payload.specialty = editForm.specialty;
     if (editForm.avatar !== (editingEmployee.avatar || '')) payload.avatar = editForm.avatar;
     if (editForm.password.trim()) payload.password = editForm.password.trim();
+    if (canManageEmployee(editingEmployee) && editForm.isGoldStylist !== (editingEmployee.isGoldStylist === true)) {
+      payload.isGoldStylist = editForm.isGoldStylist;
+    }
 
     if (Object.keys(payload).length === 0) {
       closeEditEmployee();
@@ -305,6 +313,7 @@ const ShopManage: React.FC = () => {
         avatar: newEmployee.avatar || getAvatarUrl(newEmployee.name),
         role: newEmployee.role,
         password: newEmployee.password,
+        isGoldStylist: newEmployee.role === UserRole.STYLIST ? newEmployee.isGoldStylist : false,
       });
       if (created) {
         setEmployees([...employees, created]);
@@ -316,6 +325,7 @@ const ShopManage: React.FC = () => {
           avatar: '',
           role: UserRole.STYLIST,
           password: '',
+          isGoldStylist: false,
         });
       } else {
         alert('添加员工失败');
@@ -580,6 +590,15 @@ const ShopManage: React.FC = () => {
                 onChange={(e) => setNewService({ ...newService, duration: e.target.value })}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
               />
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={newService.requiresGoldStylist}
+                  onChange={(e) => setNewService({ ...newService, requiresGoldStylist: e.target.checked })}
+                  className="w-4 h-4 accent-orange-500"
+                />
+                金牌专属
+              </label>
               <button
                 onClick={addService}
                 className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -617,6 +636,15 @@ const ShopManage: React.FC = () => {
                       onChange={(e) => setEditService({ ...editService, duration: e.target.value })}
                       className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                     />
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={editService.requiresGoldStylist}
+                        onChange={(e) => setEditService({ ...editService, requiresGoldStylist: e.target.checked })}
+                        className="w-4 h-4 accent-orange-500"
+                      />
+                      金牌专属
+                    </label>
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={saveEditService}
@@ -635,7 +663,12 @@ const ShopManage: React.FC = () => {
                 ) : (
                   <>
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium text-gray-800 truncate">{service.name}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-gray-800 truncate">{service.name}</div>
+                        {service.requiresGoldStylist && (
+                          <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full whitespace-nowrap">金牌专属</span>
+                        )}
+                      </div>
                       <div className="text-sm text-gray-500">
                         时长 {service.duration} 分钟
                       </div>
@@ -727,6 +760,17 @@ const ShopManage: React.FC = () => {
                   onChange={(e) => setNewEmployee({ ...newEmployee, specialty: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                 />
+                {newEmployee.role === UserRole.STYLIST && (
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={newEmployee.isGoldStylist}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, isGoldStylist: e.target.checked })}
+                      className="w-4 h-4 accent-orange-500"
+                    />
+                    金牌发型师
+                  </label>
+                )}
                 <button
                   onClick={addEmployee}
                   className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors md:col-span-2 lg:col-span-2"
@@ -769,6 +813,11 @@ const ShopManage: React.FC = () => {
                         {employee.title && (
                           <div className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
                             {employee.title}
+                          </div>
+                        )}
+                        {employee.isGoldStylist && (
+                          <div className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
+                            金牌
                           </div>
                         )}
                       </div>
@@ -919,6 +968,17 @@ const ShopManage: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                  {canManageEmployee(editingEmployee) && editingEmployee.role === UserRole.STYLIST && (
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isGoldStylist}
+                        onChange={(e) => setEditForm({ ...editForm, isGoldStylist: e.target.checked })}
+                        className="w-4 h-4 accent-orange-500"
+                      />
+                      金牌发型师
+                    </label>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">重置密码（留空则不修改）</label>
                     <input
