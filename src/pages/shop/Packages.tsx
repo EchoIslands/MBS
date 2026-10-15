@@ -426,12 +426,12 @@ const Packages: React.FC = () => {
                     >
                       <option value="">普通开卡</option>
                       <option value={MembershipActivityType.NINETY_NINE_THREE}>
-                        99元3次（自动入会银卡会员）
+                        99元3次（自动入会钻石会员）
                       </option>
                     </select>
                     {form.activityType === MembershipActivityType.NINETY_NINE_THREE && (
                       <p className="text-xs text-purple-600 mt-1">
-                        购买后顾客自动成为银卡会员（7.8 折，有效期 1 年）
+                        购买后顾客自动成为钻石会员（5.8 折，有效期 1 年）
                       </p>
                     )}
                   </div>

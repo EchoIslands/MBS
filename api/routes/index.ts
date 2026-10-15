@@ -1861,9 +1861,9 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
       return res.status(500).json({ success: false, error: '创建次卡失败' });
     }
 
-    // 活动自动入会：购买「99元3次」即自动转为购买型银卡会员（7.8 折，1 年有效期）
+    // 活动自动入会：购买「99元3次」即自动转为购买型钻石会员（5.8 折，1 年有效期）
     if (activityType === MembershipActivityType.NINETY_NINE_THREE) {
-      await enrollCustomerAsVIP(employee.shopId, customerId, 'silver', {
+      await enrollCustomerAsVIP(employee.shopId, customerId, 'diamond', {
         source: 'package',
         activityType,
         packageId: (data as DbRecord)?.id as string,

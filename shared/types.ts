@@ -629,7 +629,7 @@ export interface PackageUsageLog {
 
 // 活动类型：用于识别「购买活动即自动入会」的场景（禁止按名称/价格字符串匹配）
 export const MembershipActivityType = {
-  NINETY_NINE_THREE: '99_3times', // 99 元 3 次：购买后自动转为购买型银卡会员（7.8 折）
+  NINETY_NINE_THREE: '99_3times', // 99 元 3 次：购买后自动转为购买型钻石会员（5.8 折）
 } as const;
 
 export type MembershipActivityType =
