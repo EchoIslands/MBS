@@ -121,4 +121,20 @@ Page({
   goBack() {
     wx.navigateBack();
   },
+
+  onShareAppMessage() {
+    const name = (this.data.product && this.data.product.name) || '好物推荐';
+    return {
+      title: name,
+      path: `/pages/product-detail/product-detail?shopId=${this.data.shopId || 'shop1'}&productId=${this.data.productId || ''}`,
+    };
+  },
+
+  onShareTimeline() {
+    const name = (this.data.product && this.data.product.name) || '好物推荐';
+    return {
+      title: name,
+      query: `shopId=${this.data.shopId || 'shop1'}&productId=${this.data.productId || ''}`,
+    };
+  },
 });

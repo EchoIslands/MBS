@@ -233,4 +233,18 @@ Page({
   preventBubble() {
     // 阻止优惠券弹窗内容区点击事件冒泡关闭弹窗
   },
+
+  onShareAppMessage() {
+    return {
+      title: 'MBS 商城 · 美发好物',
+      path: `/pages/products/products?shopId=${this.data.shopId || 'shop1'}`,
+    };
+  },
+
+  onShareTimeline() {
+    return {
+      title: 'MBS 商城 · 美发好物',
+      query: `shopId=${this.data.shopId || 'shop1'}`,
+    };
+  },
 });

@@ -342,4 +342,19 @@ Page({
       },
     });
   },
+
+  onShareAppMessage() {
+    const shopName = (this.data.shop && this.data.shop.name) || 'MBS 美发';
+    return {
+      title: `${shopName} · 发型师预约`,
+      path: '/pages/index/index',
+    };
+  },
+
+  onShareTimeline() {
+    const shopName = (this.data.shop && this.data.shop.name) || 'MBS 美发';
+    return {
+      title: `${shopName} · 发型师预约`,
+    };
+  },
 });
