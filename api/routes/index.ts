@@ -743,11 +743,35 @@ const bookingFromDb = (b: Record<string, unknown>): Record<string, unknown> => (
   status: b.status,
   notes: b.notes,
   createdAt: b.created_at,
+  delayState: b.delay_state,
+  delayReason: b.delay_reason,
+  delayExpectedEnd: b.delay_expected_end,
+  delayCreatedAt: b.delay_created_at,
 });
+
+// 惰性过期：将超过 4 小时未处理的延时预约标记为 no_response（读取时批量处理，每次最多 100 条，避免频繁写库）
+const expireDelayNoResponse = async (): Promise<void> => {
+  try {
+    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    const { data: expired } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('delay_state', 'needs_action')
+      .lt('delay_created_at', fourHoursAgo)
+      .limit(100);
+    const ids = (expired || []).map((r) => r.id as string);
+    if (ids.length > 0) {
+      await supabase.from('bookings').update({ delay_state: 'no_response' }).in('id', ids);
+    }
+  } catch (err) {
+    console.error('[bookings] 延时惰性过期失败:', (err as Error).message);
+  }
+};
 
 // 获取预约列表
 bookingsRouter.get('/', async (req: Request, res: Response) => {
   try {
+    await expireDelayNoResponse();
     const shopId = String(req.query.shopId || 'shop1');
     const status = req.query.status as string | undefined;
     // 兼容小程序传入 date=YYYY-MM-DD 与 H5 传入 dateStart=YYYY-MM-DD
@@ -819,6 +843,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
 // 获取某个客户的所有预约
 bookingsRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
   try {
+    await expireDelayNoResponse();
     const { customerId } = req.params;
     const page = String(req.query.page || '1');
     const pageSize = String(req.query.pageSize || '50');
@@ -1398,6 +1423,204 @@ bookingsRouter.put('/:id/schedule', authMiddleware, async (req: Request, res: Re
   } catch (error) {
     console.error('[bookings] 修改预约时间异常:', error);
     res.status(500).json({ success: false, error: '修改预约时间失败' });
+  }
+});
+
+// 发型师临时延时：识别同一发型师的后续受影响预约并标记为待顾客处理
+bookingsRouter.post('/:id/delay', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { extraMinutes, reason } = req.body;
+    const employee = req.employee!;
+
+    const extra = Number(extraMinutes);
+    if (!Number.isFinite(extra) || extra <= 0) {
+      return res.status(400).json({ success: false, error: '请填写有效的延时时长（分钟）' });
+    }
+
+    const { data: originalBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !originalBooking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    if (!originalBooking.stylist_id) {
+      return res.status(400).json({ success: false, error: '该预约尚未指定发型师，无法延时' });
+    }
+
+    // 权限与改期一致：ceo/shop_manager/customer_service/该发型师本人
+    const isCEO = employee.role === 'ceo';
+    const isManager = employee.role === 'shop_manager';
+    const isCustomerService = employee.role === 'customer_service';
+    const isTargetStylist = employee.role === 'stylist' && originalBooking.stylist_id === employee.id;
+    if (!isCEO && !isManager && !isCustomerService && !isTargetStylist) {
+      return res.status(403).json({ success: false, error: '无权对该预约进行延时操作' });
+    }
+
+    // 计算延时后预计结束时间：优先使用已有结束时间，否则按 60 分钟默认服务时长推算
+    const baseEnd = originalBooking.scheduled_end_time
+      ? new Date(originalBooking.scheduled_end_time)
+      : originalBooking.scheduled_time
+        ? new Date(new Date(originalBooking.scheduled_time).getTime() + 60 * 60 * 1000)
+        : null;
+    if (!baseEnd || isNaN(baseEnd.getTime())) {
+      return res.status(400).json({ success: false, error: '预约时间信息不完整，无法计算延时' });
+    }
+    const expectedEnd = new Date(baseEnd.getTime() + extra * 60 * 1000);
+    const nowIso = new Date().toISOString();
+
+    // 更新本预约结束时间，保持后续档期一致
+    await supabase.from('bookings').update({ scheduled_end_time: expectedEnd.toISOString() }).eq('id', id);
+
+    const delayReason = reason || `发型师临时延时约 ${extra} 分钟`;
+
+    // 查询受影响后续预约：同发型师、未取消、开始时间落在 [now, expectedEnd)
+    const { data: affected, error: affError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('stylist_id', originalBooking.stylist_id)
+      .in('status', ['pending', 'confirmed'])
+      .neq('id', id)
+      .gte('scheduled_time', nowIso)
+      .lt('scheduled_time', expectedEnd.toISOString());
+
+    if (affError) {
+      console.error('[bookings] 查询受影响预约失败:', affError.message);
+    }
+
+    const affectedList = affected || [];
+    if (affectedList.length > 0) {
+      const ids = affectedList.map((b) => b.id as string);
+      const { error: updError } = await supabase
+        .from('bookings')
+        .update({
+          delay_state: 'needs_action',
+          delay_reason: delayReason,
+          delay_expected_end: expectedEnd.toISOString(),
+          delay_created_at: nowIso,
+        })
+        .in('id', ids);
+      if (updError) {
+        console.error('[bookings] 标记受影响预约失败:', updError.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        expectedEnd: expectedEnd.toISOString(),
+        affected: affectedList.map((b) =>
+          bookingFromDb({
+            ...b,
+            delay_state: 'needs_action',
+            delay_reason: delayReason,
+            delay_expected_end: expectedEnd.toISOString(),
+            delay_created_at: nowIso,
+          })
+        ),
+      },
+    });
+  } catch (error) {
+    console.error('[bookings] 延时操作异常:', error);
+    res.status(500).json({ success: false, error: '延时操作失败' });
+  }
+});
+
+// 顾客处理延时通知：v1 仅支持改时间
+bookingsRouter.put('/:id/delay-respond', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customerId, action, scheduledTime } = req.body;
+
+    if (!customerId || !action) {
+      return res.status(400).json({ success: false, error: '参数不完整' });
+    }
+
+    const { data: booking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !booking) {
+      return res.status(404).json({ success: false, error: '预约不存在' });
+    }
+
+    // 仅顾客本人可操作
+    if (booking.customer_id !== customerId) {
+      return res.status(403).json({ success: false, error: '无权操作该预约' });
+    }
+
+    if (booking.delay_state !== 'needs_action') {
+      return res.status(409).json({ success: false, error: '该预约已不在待处理状态' });
+    }
+
+    if (action !== 'reschedule') {
+      return res.status(400).json({ success: false, error: '暂不支持的响应类型' });
+    }
+
+    if (!scheduledTime) {
+      return res.status(400).json({ success: false, error: '缺少预约时间' });
+    }
+
+    const startTime = parseLocalDateTime(scheduledTime);
+    if (isNaN(startTime.getTime())) {
+      return res.status(400).json({ success: false, error: '预约时间格式无效' });
+    }
+
+    // 复用原有服务时长推算结束时间
+    let finalEndTime: Date | null = null;
+    if (booking.scheduled_time && booking.scheduled_end_time) {
+      const os = new Date(booking.scheduled_time);
+      const oe = new Date(booking.scheduled_end_time);
+      if (oe.getTime() > os.getTime()) {
+        const duration = oe.getTime() - os.getTime();
+        finalEndTime = new Date(startTime.getTime() + duration);
+      }
+    }
+    if (!finalEndTime) {
+      finalEndTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+    }
+
+    // 冲突检查：同一发型师在新时间段内是否有其他非取消预约
+    if (booking.stylist_id) {
+      const { data: conflicts, error: conflictError } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('stylist_id', booking.stylist_id)
+        .neq('status', 'cancelled')
+        .neq('id', id)
+        .lt('scheduled_time', finalEndTime.toISOString())
+        .gt('scheduled_end_time', startTime.toISOString());
+
+      if (!conflictError && conflicts && conflicts.length > 0) {
+        return res.status(409).json({ success: false, error: '该时间段与发型师其他预约冲突，请换一个时间' });
+      }
+    }
+
+    const { data: updated, error: updError } = await supabase
+      .from('bookings')
+      .update({
+        scheduled_time: startTime.toISOString(),
+        scheduled_end_time: finalEndTime.toISOString(),
+        delay_state: 'rescheduled',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updError) {
+      return res.status(500).json({ success: false, error: '修改预约时间失败' });
+    }
+
+    res.json({ success: true, data: bookingFromDb(updated) });
+  } catch (error) {
+    console.error('[bookings] 处理延时通知异常:', error);
+    res.status(500).json({ success: false, error: '处理失败' });
   }
 });
 

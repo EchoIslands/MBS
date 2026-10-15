@@ -1,6 +1,6 @@
 import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
 import { getShop } from '../../api/shop';
-import { cancelBooking } from '../../api/booking';
+import { cancelBooking, respondDelay } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
 import { getCustomerId, clearCustomerId, setRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
@@ -99,6 +99,8 @@ function slimBookings(list) {
     barberName: truncate(b.barberName || b.barber_name || b.stylistName || b.stylist_name, 30) || '待安排',
     queueNumber: b.queueNumber || b.queue_number,
     notes: truncate(b.notes, 200),
+    delayState: b.delayState || b.delay_state,
+    delayReason: truncate(b.delayReason || b.delay_reason, 120),
   }));
 }
 
@@ -136,6 +138,12 @@ Page({
     // 预约详情弹窗
     viewingBooking: null,
     cancelling: false,
+    // 延时改签
+    rescheduleTarget: null,
+    rescheduleDate: '',
+    rescheduleTime: '',
+    rescheduling: false,
+    shopPhone: '',
     // 顾客评价映射：bookingId -> review对象
     bookingReviewMap: {},
     bookingReviewedMap: {},
@@ -221,6 +229,7 @@ Page({
         myBenefits: this.computeMyBenefits(customer),
         stockholderSummary,
         vipHeaderClass,
+        shopPhone: shop?.phone || '',
         bookingReviewMap,
         bookingReviewedMap,
         isMember: this.isCustomerMember(customer),
@@ -293,6 +302,61 @@ Page({
 
   closeBookingModal() {
     this.setData({ viewingBooking: null });
+  },
+
+  openReschedule(e) {
+    const { id } = e.currentTarget.dataset;
+    const booking = this.data.bookings.find((b) => b.id === id);
+    if (!booking) return;
+    const d = new Date(booking.scheduledTime);
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateVal = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const timeVal = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    this.setData({ rescheduleTarget: booking, rescheduleDate: dateVal, rescheduleTime: timeVal, viewingBooking: null });
+  },
+
+  onRescheduleDateChange(e) {
+    this.setData({ rescheduleDate: e.detail.value });
+  },
+
+  onRescheduleTimeChange(e) {
+    this.setData({ rescheduleTime: e.detail.value });
+  },
+
+  closeRescheduleModal() {
+    this.setData({ rescheduleTarget: null });
+  },
+
+  async submitReschedule() {
+    const { rescheduleTarget, rescheduleDate, rescheduleTime, customer } = this.data;
+    if (!rescheduleTarget || !customer || !rescheduleDate || !rescheduleTime) return;
+    this.setData({ rescheduling: true });
+    try {
+      await respondDelay(rescheduleTarget.id, {
+        customerId: customer.id,
+        action: 'reschedule',
+        scheduledTime: `${rescheduleDate}T${rescheduleTime}`,
+      });
+      wx.showToast({ title: '改时间成功', icon: 'success' });
+      this.setData({ rescheduleTarget: null, rescheduling: false });
+      await this.loadProfile();
+    } catch (err) {
+      console.error('[profile] 改时间失败:', err);
+      wx.showToast({ title: err.message || '改时间失败，该时段可能与其他预约冲突', icon: 'none' });
+      this.setData({ rescheduling: false });
+    }
+  },
+
+  callStore() {
+    const { shopPhone } = this.data;
+    if (!shopPhone) {
+      wx.showToast({ title: '暂无门店电话', icon: 'none' });
+      return;
+    }
+    wx.makePhoneCall({
+      phoneNumber: shopPhone,
+      fail: () => wx.showToast({ title: '拨打失败', icon: 'none' }),
+    });
   },
 
   stopPropagation() {},

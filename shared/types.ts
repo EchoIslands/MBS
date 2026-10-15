@@ -591,7 +591,13 @@ export interface Booking {
   customerPhone?: string;
   shopName?: string;
   createdAt?: Date;
+  delayState?: DelayState;      // 预约延时处理状态
+  delayReason?: string;          // 延时通知文案
+  delayExpectedEnd?: Date;       // 延时后预计结束时间
+  delayCreatedAt?: Date;         // 标记待处理的时间（用于超时判定）
 }
+
+export type DelayState = 'needs_action' | 'no_response' | 'rescheduled' | 'reassigned';
 
 export type PackageStatus = 'active' | 'used_up' | 'expired';
 

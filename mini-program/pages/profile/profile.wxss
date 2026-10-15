@@ -670,6 +670,110 @@
   color: var(--text-secondary);
 }
 
+/* 延时警示 */
+.booking-delay-banner {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  background: #fffbeb;
+  border: 1rpx solid #fde68a;
+  border-radius: 16rpx;
+}
+.booking-delay-banner-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 24rpx;
+  color: #dc2626;
+}
+.booking-delay-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 24rpx;
+  color: #92400e;
+}
+.booking-delay-banner-reason {
+  font-size: 22rpx;
+  color: #b45309;
+  margin-top: 4rpx;
+}
+.booking-delay-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+.booking-delay-btn {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 0;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: #92400e;
+  background: #fff;
+  border: 1rpx solid #fcd34d;
+}
+.booking-delay-btn-primary {
+  background: #f59e0b;
+  color: #fff;
+  border-color: #f59e0b;
+}
+
+/* 延时详情弹窗 */
+.modal-delay-banner {
+  margin-bottom: 20rpx;
+  padding: 20rpx;
+  background: #fffbeb;
+  border: 1rpx solid #fde68a;
+  border-radius: 16rpx;
+}
+.modal-delay-banner-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 24rpx;
+  color: #dc2626;
+}
+.modal-delay-banner-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 4rpx;
+}
+.modal-delay-banner-reason {
+  font-size: 22rpx;
+  color: #b45309;
+  margin-bottom: 12rpx;
+}
+.modal-delay-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 12rpx;
+}
+
+/* 改时间弹窗 */
+.reschedule-hint {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-bottom: 20rpx;
+}
+.reschedule-pickers {
+  display: flex;
+  gap: 16rpx;
+}
+.reschedule-picker {
+  flex: 1;
+  padding: 20rpx;
+  border: 1rpx solid var(--gray-200);
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--text-primary);
+}
+
 /* 快捷功能 */
 .quick-grid {
   display: grid;

@@ -18,6 +18,7 @@ import {
   Columns,
   Settings2,
   Gift,
+  Timer,
 } from 'lucide-react';
 import { Booking, Employee, UserRole, CustomerPackage } from '../../../shared/types';
 import { useNavigate } from 'react-router-dom';
@@ -61,6 +62,13 @@ const BookingManagement: React.FC = () => {
   const [availablePackages, setAvailablePackages] = useState<CustomerPackage[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(false);
 
+  // 延时通知
+  const [showDelayForm, setShowDelayForm] = useState(false);
+  const [delayMinutes, setDelayMinutes] = useState('');
+  const [delayReason, setDelayReason] = useState('');
+  const [delaying, setDelaying] = useState(false);
+  const [delayResult, setDelayResult] = useState<{ expectedEnd: string; affected: Booking[] } | null>(null);
+
   // 从 API 获取预约列表
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -85,6 +93,8 @@ const BookingManagement: React.FC = () => {
 
   // 打开详情弹窗时，默认选中当前发型师并初始化时间表单
   useEffect(() => {
+    setShowDelayForm(false);
+    setDelayResult(null);
     if (viewingBooking) {
       setSelectedStylistId(viewingBooking.stylistId || viewingBooking.barberId || '');
       const toDatetimeLocal = (d?: Date | string) => {
@@ -356,6 +366,33 @@ const BookingManagement: React.FC = () => {
     }
   };
 
+  // 延时：识别受影响后续预约并通知
+  const handleDelayBooking = async () => {
+    if (!viewingBooking) return;
+    const minutes = Number(delayMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      setError('请填写有效的延时时长（分钟）');
+      return;
+    }
+    setDelaying(true);
+    try {
+      const result = await bookingApi.delayBooking(
+        viewingBooking.id,
+        minutes,
+        delayReason.trim() || undefined
+      );
+      setDelayResult(result);
+      setShowDelayForm(false);
+      setDelayMinutes('');
+      setDelayReason('');
+      fetchBookings();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '延时操作失败');
+    } finally {
+      setDelaying(false);
+    }
+  };
+
   // 快捷按钮：开始服务
   const handleStartService = async () => {
     if (!viewingBooking) return;
@@ -422,6 +459,14 @@ const BookingManagement: React.FC = () => {
       bgColor: 'bg-gray-100',
       icon: XCircle,
     },
+  };
+
+  // 延时状态配置（针对受影响的后续预约）
+  const delayStateConfig: Record<string, { label: string; color: string; bgColor: string }> = {
+    needs_action: { label: '待顾客处理', color: 'text-amber-700', bgColor: 'bg-amber-100' },
+    no_response: { label: '超时未响应', color: 'text-red-700', bgColor: 'bg-red-100' },
+    rescheduled: { label: '已改时间', color: 'text-green-700', bgColor: 'bg-green-100' },
+    reassigned: { label: '已换发型师', color: 'text-blue-700', bgColor: 'bg-blue-100' },
   };
 
   // 统计（发型师只统计分配给自己的）
@@ -887,6 +932,15 @@ const BookingManagement: React.FC = () => {
                 </span>
               </div>
 
+              {viewingBooking.delayState && (
+                <div className={`px-3 py-2 rounded-lg text-sm ${delayStateConfig[viewingBooking.delayState]?.bgColor || 'bg-gray-100'} ${delayStateConfig[viewingBooking.delayState]?.color || 'text-gray-600'}`}>
+                  <div>延时状态：{delayStateConfig[viewingBooking.delayState]?.label || viewingBooking.delayState}</div>
+                  {viewingBooking.delayReason && (
+                    <div className="text-xs mt-0.5 opacity-80">{viewingBooking.delayReason}</div>
+                  )}
+                </div>
+              )}
+
               {/* 基本信息 */}
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between py-2 border-b border-gray-100 gap-3">
@@ -947,6 +1001,89 @@ const BookingManagement: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* 延时通知 */}
+            {viewingBooking.status === 'confirmed' && canEditSchedule(viewingBooking) && (
+              <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-100">
+                <div className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                  <Timer size={16} className="text-amber-600" />
+                  延时通知
+                </div>
+                {delayResult ? (
+                  <div className="space-y-2">
+                    <div className="text-sm text-amber-700">
+                      已通知 {delayResult.affected.length} 位受影响顾客，预计延时后结束于{' '}
+                      {new Date(delayResult.expectedEnd).toLocaleString('zh-CN')}
+                    </div>
+                    {delayResult.affected.length > 0 ? (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {delayResult.affected.map((b) => (
+                          <div
+                            key={b.id}
+                            className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-amber-100 text-sm"
+                          >
+                            <span className="font-medium text-gray-800">{b.customerName}</span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs ${delayStateConfig[b.delayState || '']?.bgColor || 'bg-gray-100'} ${delayStateConfig[b.delayState || '']?.color || 'text-gray-600'}`}
+                            >
+                              {delayStateConfig[b.delayState || '']?.label || '待顾客处理'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500">该时段无后续受影响预约</div>
+                    )}
+                    <button
+                      onClick={() => setDelayResult(null)}
+                      className="text-xs text-amber-600 hover:text-amber-700"
+                    >
+                      再次延时
+                    </button>
+                  </div>
+                ) : showDelayForm ? (
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="延时时长（分钟）"
+                      value={delayMinutes}
+                      onChange={(e) => setDelayMinutes(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="延时原因（可选）"
+                      value={delayReason}
+                      onChange={(e) => setDelayReason(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDelayBooking}
+                        disabled={delaying}
+                        className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white rounded-xl text-sm font-medium transition-colors"
+                      >
+                        {delaying ? <Loader2 size={16} className="animate-spin mx-auto" /> : '确认延时并通知'}
+                      </button>
+                      <button
+                        onClick={() => setShowDelayForm(false)}
+                        className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowDelayForm(true)}
+                    className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-medium transition-colors"
+                  >
+                    延时
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* 服务时间管理 */}
             {(canEditSchedule(viewingBooking) || canEditServiceTime(viewingBooking)) && (

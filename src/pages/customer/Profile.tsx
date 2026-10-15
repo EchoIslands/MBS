@@ -51,6 +51,12 @@ const Profile: React.FC = () => {
   const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+
+  // 延时改签
+  const [rescheduleTarget, setRescheduleTarget] = useState<Booking | null>(null);
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [contactShopId, setContactShopId] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const { currentCustomer, setCurrentCustomer, logout } = useAppStore();
@@ -111,6 +117,34 @@ const Profile: React.FC = () => {
       alert('取消预约失败，请重试');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  // 打开改时间弹窗
+  const openReschedule = (booking: Booking) => {
+    const d = new Date(booking.scheduledTime);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setRescheduleTarget(booking);
+    setRescheduleTime(
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    );
+  };
+
+  const submitReschedule = async () => {
+    if (!rescheduleTarget || !currentCustomer || !rescheduleTime) return;
+    setRescheduling(true);
+    try {
+      await bookingApi.respondDelay(rescheduleTarget.id, {
+        customerId: currentCustomer.id,
+        action: 'reschedule',
+        scheduledTime: rescheduleTime,
+      });
+      setRescheduleTarget(null);
+      await loadBookings();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '改时间失败，该时段可能与其他预约冲突');
+    } finally {
+      setRescheduling(false);
     }
   };
 
@@ -552,6 +586,42 @@ const Profile: React.FC = () => {
                         </div>
                         <div className="font-medium text-orange-500">¥{booking.price}</div>
                       </div>
+                      {booking.delayState === 'needs_action' && (
+                        <div className="mt-3 sm:mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                          <div className="flex items-start gap-2 text-sm text-amber-700">
+                            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <div className="font-medium">发型师临时延时，请选择处理方式</div>
+                              {booking.delayReason && <div className="text-xs mt-0.5 opacity-80">{booking.delayReason}</div>}
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openReschedule(booking); }}
+                                  className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-medium"
+                                >
+                                  改时间
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setContactShopId(contactShopId === booking.id ? null : booking.id); }}
+                                  className="flex-1 py-1.5 bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 rounded-lg text-xs font-medium"
+                                >
+                                  联系门店
+                                </button>
+                              </div>
+                              {contactShopId === booking.id && (
+                                <div className="mt-2 text-xs text-amber-700 flex items-center gap-1">
+                                  <Phone size={12} /> 门店电话：{shop.phone || '暂无'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {booking.delayState === 'no_response' && (
+                        <div className="mt-3 sm:mt-4 p-3 bg-red-50 border border-red-100 rounded-lg text-sm text-red-600 flex items-center gap-2">
+                          <AlertCircle size={16} className="flex-shrink-0" />
+                          该预约延时已超时未处理，请联系门店
+                        </div>
+                      )}
                       {booking.status === 'completed' && activeTab === 'history' && (
                         <div className="mt-3 sm:mt-4">
                           {bookingReviewMap.has(booking.id) ? (
@@ -723,6 +793,39 @@ const Profile: React.FC = () => {
               </div>
             </div>
 
+            {/* 延时处理 */}
+            {viewingBooking.delayState === 'needs_action' && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700">
+                <div className="font-medium">发型师临时延时，请选择处理方式</div>
+                {viewingBooking.delayReason && <div className="text-xs mt-0.5 opacity-80">{viewingBooking.delayReason}</div>}
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => { openReschedule(viewingBooking); setViewingBooking(null); }}
+                    className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium"
+                  >
+                    改时间
+                  </button>
+                  <button
+                    onClick={() => setContactShopId(contactShopId === viewingBooking.id ? null : viewingBooking.id)}
+                    className="flex-1 py-2 bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium"
+                  >
+                    联系门店
+                  </button>
+                </div>
+                {contactShopId === viewingBooking.id && (
+                  <div className="mt-2 text-xs flex items-center gap-1">
+                    <Phone size={12} /> 门店电话：{shop.phone || '暂无'}
+                  </div>
+                )}
+              </div>
+            )}
+            {viewingBooking.delayState === 'no_response' && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg text-sm text-red-600 flex items-center gap-2">
+                <AlertCircle size={16} className="flex-shrink-0" />
+                该预约延时已超时未处理，请联系门店
+              </div>
+            )}
+
             {/* 操作按钮 */}
             <div className="flex gap-3 mt-5 sm:mt-6">
               {viewingBooking.status === 'confirmed' && (
@@ -756,6 +859,43 @@ const Profile: React.FC = () => {
                 className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
               >
                 关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 延时改时间弹窗 */}
+      {rescheduleTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base sm:text-lg font-bold text-gray-800">更改预约时间</h3>
+              <button onClick={() => setRescheduleTarget(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">请选择新的预约时间（避开发型师已有预约）</p>
+            <input
+              type="datetime-local"
+              value={rescheduleTime}
+              onChange={(e) => setRescheduleTime(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={submitReschedule}
+                disabled={rescheduling || !rescheduleTime}
+                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {rescheduling ? <Loader2 size={18} className="animate-spin" /> : null}
+                确认改时间
+              </button>
+              <button
+                onClick={() => setRescheduleTarget(null)}
+                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium"
+              >
+                取消
               </button>
             </div>
           </div>

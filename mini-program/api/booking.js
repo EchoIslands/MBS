@@ -27,6 +27,16 @@ export async function cancelBooking(id, customerId) {
 }
 
 /**
+ * 顾客处理延时通知（v1 仅支持改时间）
+ * @param {string} id 预约ID
+ * @param {object} payload { customerId, action: 'reschedule', scheduledTime }
+ */
+export async function respondDelay(id, payload) {
+  const result = await put(`/bookings/${id}/delay-respond`, payload);
+  return result?.data || null;
+}
+
+/**
  * 获取店铺的预约列表（用于判断发型师档期）
  */
 export async function getBookingsByShop(shopId, date) {

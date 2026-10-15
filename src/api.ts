@@ -617,6 +617,14 @@ function normalizeBooking(b: unknown): Booking {
     shopName: (raw.shopName || raw.shop_name || '店铺') as string,
     notes: (raw.notes as string | undefined),
     createdAt: raw.createdAt ? (raw.createdAt instanceof Date ? raw.createdAt : new Date(raw.createdAt as string | number)) : new Date(),
+    delayState: (raw.delayState || raw.delay_state) as Booking['delayState'] | undefined,
+    delayReason: (raw.delayReason || raw.delay_reason) as string | undefined,
+    delayExpectedEnd: raw.delayExpectedEnd
+      ? raw.delayExpectedEnd instanceof Date ? raw.delayExpectedEnd : new Date(raw.delayExpectedEnd as string | number)
+      : undefined,
+    delayCreatedAt: raw.delayCreatedAt
+      ? raw.delayCreatedAt instanceof Date ? raw.delayCreatedAt : new Date(raw.delayCreatedAt as string | number)
+      : undefined,
   };
 }
 
@@ -893,6 +901,63 @@ export const bookingApi = {
       if (status && b.status !== status) return false;
       return true;
     });
+  },
+
+  delayBooking: async (id: string, extraMinutes: number, reason?: string): Promise<{ expectedEnd: string; affected: Booking[] }> => {
+    if (USE_REAL_API) {
+      const token = getAuthToken();
+      const result = await http<{ success: boolean; data: { expectedEnd: string; affected: Booking[] }; error?: string }>(
+        `${API_BASE}/bookings/${id}/delay`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ extraMinutes, ...(reason ? { reason } : {}) }),
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (result?.data) {
+        return {
+          expectedEnd: result.data.expectedEnd,
+          affected: (result.data.affected || []).map(normalizeBooking),
+        };
+      }
+      if (result && !result.success) throw new Error(result.error || '延时操作失败');
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    return { expectedEnd: new Date(Date.now() + extraMinutes * 60 * 1000).toISOString(), affected: [] };
+  },
+
+  respondDelay: async (
+    id: string,
+    payload: { customerId: string; action: 'reschedule'; scheduledTime: Date | string }
+  ): Promise<Booking> => {
+    if (USE_REAL_API) {
+      const result = await http<{ success: boolean; data: Booking; error?: string }>(
+        `${API_BASE}/bookings/${id}/delay-respond`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            customerId: payload.customerId,
+            action: payload.action,
+            scheduledTime: payload.scheduledTime instanceof Date ? payload.scheduledTime.toISOString() : payload.scheduledTime,
+          }),
+        }
+      );
+      if (result?.data && result.data.id) return normalizeBooking(result.data);
+      if (result && !result.success) throw new Error(result.error || '处理失败');
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const idx = mockBookings.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      mockBookings[idx] = {
+        ...mockBookings[idx],
+        scheduledTime: payload.scheduledTime instanceof Date ? payload.scheduledTime : new Date(payload.scheduledTime),
+        delayState: 'rescheduled',
+      };
+      saveBookingsToCache();
+    }
+    const booking = mockBookings.find((b) => b.id === id);
+    if (!booking) throw new Error('Booking not found');
+    return booking;
   },
 };
 

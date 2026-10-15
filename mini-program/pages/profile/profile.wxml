@@ -286,6 +286,23 @@
               <mbs-price current="{{booking.price}}" size="sm" show-tag="{{false}}" />
             </view>
 
+            <!-- 延时警示 -->
+            <view wx:if="{{booking.delayState === 'needs_action'}}" class="booking-delay-banner">
+              <view class="booking-delay-banner-text">
+                <mbs-icon name="alertCircle" size="24" color="#b45309" />
+                <text>发型师临时延时，请选择处理方式</text>
+              </view>
+              <view wx:if="{{booking.delayReason}}" class="booking-delay-banner-reason">{{booking.delayReason}}</view>
+              <view class="booking-delay-actions">
+                <view class="booking-delay-btn booking-delay-btn-primary" catchtap="openReschedule" data-id="{{booking.id}}">改时间</view>
+                <view class="booking-delay-btn" catchtap="callStore">联系门店</view>
+              </view>
+            </view>
+            <view wx:if="{{booking.delayState === 'no_response'}}" class="booking-delay-banner booking-delay-banner-error">
+              <mbs-icon name="alertCircle" size="24" color="#dc2626" />
+              <text>该预约延时已超时未处理，请联系门店</text>
+            </view>
+
             <!-- 三端协同：历史/已完成订单增加评价入口（对齐H5 Profile） -->
             <view wx:if="{{activeTab === 'history' && booking.status === 'completed'}}" class="booking-actions">
               <block wx:if="{{bookingReviewedMap[booking.id]}}">
@@ -384,6 +401,20 @@
           <mbs-status-badge status="{{viewingBooking.status}}" />
         </view>
 
+        <!-- 延时警示（详情） -->
+        <view wx:if="{{viewingBooking.delayState === 'needs_action'}}" class="modal-delay-banner">
+          <view class="modal-delay-banner-text">发型师临时延时，请选择处理方式</view>
+          <view wx:if="{{viewingBooking.delayReason}}" class="modal-delay-banner-reason">{{viewingBooking.delayReason}}</view>
+          <view class="modal-delay-actions">
+            <view class="booking-delay-btn booking-delay-btn-primary" bindtap="openReschedule" data-id="{{viewingBooking.id}}">改时间</view>
+            <view class="booking-delay-btn" bindtap="callStore">联系门店</view>
+          </view>
+        </view>
+        <view wx:if="{{viewingBooking.delayState === 'no_response'}}" class="modal-delay-banner modal-delay-banner-error">
+          <mbs-icon name="alertCircle" size="24" color="#dc2626" />
+          <text>该预约延时已超时未处理，请联系门店</text>
+        </view>
+
         <view class="info-list">
           <view class="info-row">
             <text class="info-label"><mbs-icon name="mapPin" size="24" color="var(--text-tertiary)" /> 店铺</text>
@@ -436,6 +467,33 @@
           {{cancelling ? '取消中...' : '取消预约'}}
         </view>
         <view class="btn btn-secondary" bindtap="closeBookingModal">关闭</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 14) 延时改时间弹窗 -->
+  <view wx:if="{{rescheduleTarget}}" class="modal-mask" catchtap="closeRescheduleModal">
+    <view class="modal-dialog" catchtap="stopPropagation">
+      <view class="modal-header">
+        <view class="modal-title">更改预约时间</view>
+        <view class="modal-close" catchtap="closeRescheduleModal">
+          <mbs-icon name="close" size="32" color="var(--text-tertiary)" />
+        </view>
+      </view>
+      <view class="modal-body">
+        <view class="reschedule-hint">请选择新的预约时间（避开发型师已有预约）</view>
+        <view class="reschedule-pickers">
+          <picker mode="date" value="{{rescheduleDate}}" bindchange="onRescheduleDateChange">
+            <view class="reschedule-picker">{{rescheduleDate || '选择日期'}}</view>
+          </picker>
+          <picker mode="time" value="{{rescheduleTime}}" bindchange="onRescheduleTimeChange">
+            <view class="reschedule-picker">{{rescheduleTime || '选择时间'}}</view>
+          </picker>
+        </view>
+      </view>
+      <view class="modal-footer">
+        <view class="btn btn-primary {{rescheduling ? 'btn-disabled' : ''}}" bindtap="submitReschedule">{{rescheduling ? '提交中...' : '确认改时间'}}</view>
+        <view class="btn btn-secondary" bindtap="closeRescheduleModal">取消</view>
       </view>
     </view>
   </view>
