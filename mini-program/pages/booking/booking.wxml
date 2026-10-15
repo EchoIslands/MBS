@@ -212,16 +212,16 @@
             <view wx:if="{{selectionMode === 'specific' && selectedBarberId === item.id}}" class="barber-radio-inner"></view>
           </view>
 
-          <view class="barber-avatar barber-avatar-orange">
-            <mbs-icon name="user" size="36" color="var(--text-tertiary)" />
+          <view class="barber-avatar barber-avatar-orange" catchtap="showStylistProfile" data-id="{{item.id}}">
+            <image wx:if="{{item.avatar}}" class="barber-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
+            <mbs-icon wx:else name="user" size="36" color="var(--text-tertiary)" />
           </view>
 
           <view class="barber-info">
             <view class="barber-name-row">
-              <text class="barber-name">{{item.name}}</text>
-              <text wx:if="{{item.isGoldStylist}}" class="tag tag-gold">金牌</text>
+              <text class="barber-name" catchtap="showStylistProfile" data-id="{{item.id}}">{{item.name}}</text>
+              <text wx:if="{{item.isGold}}" class="tag tag-gold">金牌</text>
               <text wx:if="{{item.isShopManager}}" class="tag tag-purple">店长</text>
-              <text wx:if="{{item.title}}" class="tag tag-orange">{{item.title}}</text>
               <text wx:if="{{!item.isAvailable}}" class="tag tag-red">已约</text>
               <text wx:if="{{item.requireGold && !item.eligible}}" class="tag tag-red">该服务需金牌发型师</text>
               <text wx:if="{{item.requireShopManager && !item.eligible}}" class="tag tag-red">该服务需店长</text>
@@ -292,4 +292,29 @@
     bind:success="onLoginSuccess"
     bind:close="onLoginClose"
   />
+
+  <!-- 发型师详细档案弹窗（背景模糊 + 放大照片） -->
+  <view wx:if="{{selectedStylist}}" class="stylist-profile-mask" bindtap="closeStylistProfile">
+    <view class="stylist-profile-card" catchtap="noop">
+      <view class="stylist-profile-avatar">
+        <image wx:if="{{selectedStylist.avatar}}" class="stylist-profile-avatar-img" src="{{selectedStylist.avatar}}" mode="aspectFill" />
+        <mbs-icon wx:else name="user" size="72" color="var(--text-tertiary)" />
+      </view>
+      <view class="stylist-profile-name-row">
+        <text class="stylist-profile-name">{{selectedStylist.name}}</text>
+        <text wx:if="{{selectedStylist.isGold}}" class="stylist-badge stylist-badge-gold">金牌</text>
+        <text wx:if="{{selectedStylist.isShopManager}}" class="stylist-badge stylist-badge-manager">店长</text>
+      </view>
+      <view class="stylist-profile-title" wx:if="{{selectedStylist.title}}">{{selectedStylist.title}}</view>
+      <view class="stylist-profile-rating" wx:if="{{selectedStylist.rating}}">
+        <mbs-icon name="star" size="30" color="var(--warning)" />
+        <text>{{selectedStylist.rating}} 分</text>
+      </view>
+      <view class="stylist-profile-specialty" wx:if="{{selectedStylist.specialty}}">
+        <view class="stylist-profile-section-label">擅长专长</view>
+        <view class="stylist-profile-specialty-text">{{selectedStylist.specialty}}</view>
+      </view>
+      <view class="stylist-profile-close" bindtap="closeStylistProfile">关闭</view>
+    </view>
+  </view>
 </view>

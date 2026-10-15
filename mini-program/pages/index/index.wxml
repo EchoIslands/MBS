@@ -217,19 +217,26 @@
           wx:for="{{stylists}}"
           wx:key="id"
           class="stylist-card"
+          bindtap="showStylistProfile"
+          data-id="{{item.id}}"
         >
           <view class="stylist-avatar">
-            <mbs-icon name="user" size="36" color="var(--text-tertiary)" />
+            <image wx:if="{{item.avatar}}" class="stylist-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
+            <mbs-icon wx:else name="user" size="36" color="var(--text-tertiary)" />
           </view>
           <view class="stylist-info">
             <view class="stylist-name-row">
               <view class="stylist-name">{{item.name}}</view>
-              <view class="stylist-rating" wx:if="{{item.rating}}">
-                <mbs-icon name="star" size="20" color="var(--warning)" />
-                <text>{{item.rating}}</text>
+              <view class="stylist-role-badges">
+                <text wx:if="{{item.isGold}}" class="stylist-badge stylist-badge-gold">金牌</text>
+                <text wx:if="{{item.isManager}}" class="stylist-badge stylist-badge-manager">店长</text>
               </view>
             </view>
             <view class="stylist-title">{{item.title || '资深发型师'}}</view>
+            <view class="stylist-rating-line" wx:if="{{item.rating}}">
+              <mbs-icon name="star" size="20" color="var(--warning)" />
+              <text>{{item.rating}} 分</text>
+            </view>
             <view class="stylist-specialty" wx:if="{{item.specialty}}">
               <mbs-icon name="sparkles" size="18" color="var(--primary)" />
               <text>{{item.specialty}}</text>
@@ -294,4 +301,29 @@
     bind:accept="onPrivacyAccept"
     bind:decline="onPrivacyDecline"
   />
+
+  <!-- 发型师详细档案弹窗（背景模糊 + 放大照片） -->
+  <view wx:if="{{selectedStylist}}" class="stylist-profile-mask" bindtap="closeStylistProfile">
+    <view class="stylist-profile-card" catchtap="noop">
+      <view class="stylist-profile-avatar">
+        <image wx:if="{{selectedStylist.avatar}}" class="stylist-profile-avatar-img" src="{{selectedStylist.avatar}}" mode="aspectFill" />
+        <mbs-icon wx:else name="user" size="72" color="var(--text-tertiary)" />
+      </view>
+      <view class="stylist-profile-name-row">
+        <text class="stylist-profile-name">{{selectedStylist.name}}</text>
+        <text wx:if="{{selectedStylist.isGold}}" class="stylist-badge stylist-badge-gold">金牌</text>
+        <text wx:if="{{selectedStylist.isManager}}" class="stylist-badge stylist-badge-manager">店长</text>
+      </view>
+      <view class="stylist-profile-title" wx:if="{{selectedStylist.title}}">{{selectedStylist.title}}</view>
+      <view class="stylist-profile-rating" wx:if="{{selectedStylist.rating}}">
+        <mbs-icon name="star" size="30" color="var(--warning)" />
+        <text>{{selectedStylist.rating}} 分</text>
+      </view>
+      <view class="stylist-profile-specialty" wx:if="{{selectedStylist.specialty}}">
+        <view class="stylist-profile-section-label">擅长专长</view>
+        <view class="stylist-profile-specialty-text">{{selectedStylist.specialty}}</view>
+      </view>
+      <view class="stylist-profile-close" bindtap="closeStylistProfile">关闭</view>
+    </view>
+  </view>
 </view>

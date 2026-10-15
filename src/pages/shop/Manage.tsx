@@ -36,6 +36,42 @@ const roleLabels: Partial<Record<UserRole, string>> = {
   [UserRole.STYLIST]: '技师/发型师',
 };
 
+// 岗位键：统一「能上钟被预约的技师 + 后台员工」的选择项
+type PositionKey = 'stylist' | 'gold' | 'shop_manager' | 'ceo' | 'customer_service' | 'cashier';
+
+const positionLabels: Record<PositionKey, string> = {
+  stylist: '发型师',
+  gold: '金牌发型师',
+  shop_manager: '店长',
+  ceo: 'CEO/老板',
+  customer_service: '客服',
+  cashier: '收银',
+};
+
+// 岗位键 → 系统角色 role + 是否金牌（底层只复用 role + is_gold_stylist 两个字段）
+const positionMeta: Record<PositionKey, { role: UserRole; gold: boolean }> = {
+  stylist: { role: UserRole.STYLIST, gold: false },
+  gold: { role: UserRole.STYLIST, gold: true },
+  shop_manager: { role: UserRole.SHOP_MANAGER, gold: false },
+  ceo: { role: UserRole.CEO, gold: false },
+  customer_service: { role: UserRole.CUSTOMER_SERVICE, gold: false },
+  cashier: { role: UserRole.CASHIER, gold: false },
+};
+
+const bookablePositions: PositionKey[] = ['stylist', 'gold', 'shop_manager'];
+const backendPositions: PositionKey[] = ['ceo', 'customer_service', 'cashier'];
+
+// 从 role + 是否金牌反推岗位键（店长视为具备金牌资格）
+function roleToPositionKey(role?: UserRole, isGold?: boolean): PositionKey {
+  if (role === UserRole.SHOP_MANAGER) return 'shop_manager';
+  if (role === UserRole.STYLIST && isGold) return 'gold';
+  if (role === UserRole.STYLIST) return 'stylist';
+  if (role === UserRole.CEO) return 'ceo';
+  if (role === UserRole.CUSTOMER_SERVICE) return 'customer_service';
+  if (role === UserRole.CASHIER) return 'cashier';
+  return 'stylist';
+}
+
 // 补全缺失的营业时间字段，避免后端/缓存数据不完整导致崩溃
 const normalizeOpeningHours = (hours?: OpeningHours | null): OpeningHours => {
   const result: OpeningHours = { ...defaultOpeningHours };
@@ -68,12 +104,10 @@ const ShopManage: React.FC = () => {
   const [newEmployee, setNewEmployee] = useState({
     name: '',
     phone: '',
-    title: '',
     specialty: '',
     avatar: '',
-    role: UserRole.STYLIST,
+    position: 'stylist' as PositionKey,
     password: '',
-    isGoldStylist: false,
   });
   const [openingHours, setOpeningHours] = useState<OpeningHours>(normalizeOpeningHours(currentShop?.openingHours));
   const [bookingConfirmMode, setBookingConfirmMode] = useState<'auto' | 'manual'>(currentShop?.bookingConfirmMode || 'auto');
@@ -95,11 +129,10 @@ const ShopManage: React.FC = () => {
   const [editForm, setEditForm] = useState({
     name: '',
     phone: '',
-    title: '',
     specialty: '',
     avatar: '',
     password: '',
-    isGoldStylist: false,
+    position: 'stylist' as PositionKey,
   });
   const [savingEmployee, setSavingEmployee] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -239,17 +272,16 @@ const ShopManage: React.FC = () => {
     setEditForm({
       name: emp.name || '',
       phone: emp.phone || '',
-      title: emp.title || '',
       specialty: emp.specialty || '',
       avatar: emp.avatar || '',
       password: '',
-      isGoldStylist: emp.isGoldStylist === true,
+      position: roleToPositionKey(emp.role, emp.isGoldStylist),
     });
   };
 
   const closeEditEmployee = () => {
     setEditingEmployee(null);
-    setEditForm({ name: '', phone: '', title: '', specialty: '', avatar: '', password: '', isGoldStylist: false });
+    setEditForm({ name: '', phone: '', specialty: '', avatar: '', password: '', position: 'stylist' });
   };
 
   const saveEmployeeEdit = async () => {
@@ -257,12 +289,17 @@ const ShopManage: React.FC = () => {
     const payload: Partial<Employee> & { password?: string } = {};
     if (editForm.name !== editingEmployee.name) payload.name = editForm.name;
     if (editForm.phone !== editingEmployee.phone) payload.phone = editForm.phone;
-    if (editForm.title !== (editingEmployee.title || '')) payload.title = editForm.title;
     if (editForm.specialty !== (editingEmployee.specialty || '')) payload.specialty = editForm.specialty;
     if (editForm.avatar !== (editingEmployee.avatar || '')) payload.avatar = editForm.avatar;
     if (editForm.password.trim()) payload.password = editForm.password.trim();
-    if (canManageEmployee(editingEmployee) && editForm.isGoldStylist !== (editingEmployee.isGoldStylist === true)) {
-      payload.isGoldStylist = editForm.isGoldStylist;
+
+    // 岗位/角色变更（仅具备管理权限，且不能对自己降权）
+    if (canManageEmployee(editingEmployee) && currentEmployee?.id !== editingEmployee.id) {
+      const meta = positionMeta[editForm.position];
+      if (meta.role !== editingEmployee.role) payload.role = meta.role;
+      if (meta.gold !== (editingEmployee.isGoldStylist === true)) payload.isGoldStylist = meta.gold;
+      const nextTitle = positionLabels[editForm.position];
+      if (nextTitle !== (editingEmployee.title || '')) payload.title = nextTitle;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -295,14 +332,22 @@ const ShopManage: React.FC = () => {
     }
   };
 
-  const availableRoles: UserRole[] = Object.values(UserRole).filter((r) => canAddRole(r));
+  // 当前用户可添加/设置的岗位（按 role 权限过滤）
+  const availablePositions: PositionKey[] = (Object.keys(positionMeta) as PositionKey[]).filter((k) =>
+    canAddRole(positionMeta[k].role)
+  );
+
+  // 编辑弹窗中可修改的岗位（不能修改自己的岗位，防止自我降权）
+  const editablePositions: PositionKey[] =
+    currentEmployee?.id === editingEmployee?.id ? [] : availablePositions;
 
   const addEmployee = async () => {
     if (!newEmployee.name || !newEmployee.phone || !newEmployee.password) {
       alert('请填写姓名、手机号和登录密码');
       return;
     }
-    if (!canAddRole(newEmployee.role)) {
+    const meta = positionMeta[newEmployee.position];
+    if (!canAddRole(meta.role)) {
       alert('当前角色无权添加该类型员工');
       return;
     }
@@ -310,24 +355,22 @@ const ShopManage: React.FC = () => {
       const created = await employeeApi.create({
         name: newEmployee.name,
         phone: newEmployee.phone,
-        title: newEmployee.title,
+        title: positionLabels[newEmployee.position],
         specialty: newEmployee.specialty,
         avatar: newEmployee.avatar || getAvatarUrl(newEmployee.name),
-        role: newEmployee.role,
+        role: meta.role,
         password: newEmployee.password,
-        isGoldStylist: newEmployee.role === UserRole.STYLIST ? newEmployee.isGoldStylist : false,
+        isGoldStylist: meta.gold,
       });
       if (created) {
         setEmployees([...employees, created]);
         setNewEmployee({
           name: '',
           phone: '',
-          title: '',
           specialty: '',
           avatar: '',
-          role: UserRole.STYLIST,
+          position: 'stylist',
           password: '',
-          isGoldStylist: false,
         });
       } else {
         alert('添加员工失败');
@@ -759,23 +802,29 @@ const ShopManage: React.FC = () => {
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                 />
                 <select
-                  value={newEmployee.role}
-                  onChange={(e) => setNewEmployee({ ...newEmployee, role: e.target.value as UserRole })}
+                  value={newEmployee.position}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, position: e.target.value as PositionKey })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none bg-white"
                 >
-                  {availableRoles.map((r) => (
-                    <option key={r} value={r}>
-                      {roleLabels[r]}
-                    </option>
-                  ))}
+                  {bookablePositions.filter((k) => availablePositions.includes(k)).length > 0 && (
+                    <optgroup label="可上钟预约">
+                      {bookablePositions.filter((k) => availablePositions.includes(k)).map((k) => (
+                        <option key={k} value={k}>
+                          {positionLabels[k]}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {backendPositions.filter((k) => availablePositions.includes(k)).length > 0 && (
+                    <optgroup label="后台员工">
+                      {backendPositions.filter((k) => availablePositions.includes(k)).map((k) => (
+                        <option key={k} value={k}>
+                          {positionLabels[k]}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
-                <input
-                  type="text"
-                  placeholder="职位（如：首席发型师）"
-                  value={newEmployee.title}
-                  onChange={(e) => setNewEmployee({ ...newEmployee, title: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                />
                 <input
                   type="text"
                   placeholder="专长（如：精剪、烫染）"
@@ -783,17 +832,6 @@ const ShopManage: React.FC = () => {
                   onChange={(e) => setNewEmployee({ ...newEmployee, specialty: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                 />
-                {newEmployee.role === UserRole.STYLIST && (
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={newEmployee.isGoldStylist}
-                      onChange={(e) => setNewEmployee({ ...newEmployee, isGoldStylist: e.target.checked })}
-                      className="w-4 h-4 accent-orange-500"
-                    />
-                    金牌发型师
-                  </label>
-                )}
                 <button
                   onClick={addEmployee}
                   className="flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors md:col-span-2 lg:col-span-2"
@@ -828,19 +866,18 @@ const ShopManage: React.FC = () => {
                     <div>
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-gray-800">{employee.name}</div>
-                        {employee.role && (
+                        {employee.role === UserRole.SHOP_MANAGER && (
+                          <>
+                            <div className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">金牌</div>
+                            <div className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">店长</div>
+                          </>
+                        )}
+                        {employee.role === UserRole.STYLIST && employee.isGoldStylist && (
+                          <div className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">金牌</div>
+                        )}
+                        {employee.role && employee.role !== UserRole.STYLIST && employee.role !== UserRole.SHOP_MANAGER && (
                           <div className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
                             {roleLabels[employee.role] || employee.role}
-                          </div>
-                        )}
-                        {employee.title && (
-                          <div className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
-                            {employee.title}
-                          </div>
-                        )}
-                        {employee.isGoldStylist && (
-                          <div className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
-                            金牌
                           </div>
                         )}
                       </div>
@@ -934,13 +971,37 @@ const ShopManage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">职位（如：首席发型师）</label>
-                    <input
-                      type="text"
-                      value={editForm.title}
-                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">岗位/职位</label>
+                    {editablePositions.length > 0 ? (
+                      <select
+                        value={editForm.position}
+                        onChange={(e) => setEditForm({ ...editForm, position: e.target.value as PositionKey })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none bg-white"
+                      >
+                        {bookablePositions.filter((k) => editablePositions.includes(k)).length > 0 && (
+                          <optgroup label="可上钟预约">
+                            {bookablePositions.filter((k) => editablePositions.includes(k)).map((k) => (
+                              <option key={k} value={k}>
+                                {positionLabels[k]}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {backendPositions.filter((k) => editablePositions.includes(k)).length > 0 && (
+                          <optgroup label="后台员工">
+                            {backendPositions.filter((k) => editablePositions.includes(k)).map((k) => (
+                              <option key={k} value={k}>
+                                {positionLabels[k]}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    ) : (
+                      <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600">
+                        {positionLabels[editForm.position]}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">专长/简介（顾客端可见）</label>
@@ -991,17 +1052,6 @@ const ShopManage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  {canManageEmployee(editingEmployee) && editingEmployee.role === UserRole.STYLIST && (
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={editForm.isGoldStylist}
-                        onChange={(e) => setEditForm({ ...editForm, isGoldStylist: e.target.checked })}
-                        className="w-4 h-4 accent-orange-500"
-                      />
-                      金牌发型师
-                    </label>
-                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">重置密码（留空则不修改）</label>
                     <input

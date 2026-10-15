@@ -46,6 +46,7 @@ Page({
   data: {
     shop: null,
     stylists: [],
+    selectedStylist: null,
     displayTags: [],
     products: [],
     reviews: [],
@@ -127,6 +128,9 @@ Page({
           title: truncate(e.title, 30),
           specialty: e.specialty || '',
           rating: e.rating || 5,
+          avatar: e.avatar || '',
+          isGold: e.isGoldStylist === true || e.role === 'shop_manager',
+          isManager: e.role === 'shop_manager',
         }));
       const displayTags = services.slice(0, 3).map((s) => ({ id: s.id, name: s.name }));
       const products = (Array.isArray(rawShop.products) ? rawShop.products : [])
@@ -193,6 +197,18 @@ Page({
     const rounded = Math.round(rating || 0);
     return [1, 2, 3, 4, 5].map((i) => ({ key: i, filled: i <= rounded }));
   },
+
+  showStylistProfile(e) {
+    const id = e.currentTarget.dataset.id;
+    const stylist = this.data.stylists.find((s) => s.id === id);
+    if (stylist) this.setData({ selectedStylist: stylist });
+  },
+
+  closeStylistProfile() {
+    this.setData({ selectedStylist: null });
+  },
+
+  noop() {},
 
   goToProfile() {
     wx.navigateTo({ url: '/pages/profile/profile' });

@@ -123,6 +123,7 @@ Page({
     selectedServiceName: '',
     selectedServicePrice: 0,
     stylists: [],
+    selectedStylist: null,
     selectedBarberId: '',
     selectedBarberName: '',
     selectionMode: 'fastest',
@@ -329,7 +330,7 @@ Page({
 
     const isEligible = (s) => {
       if (requireShopManager) return s.role === SHOP_MANAGER_ROLE;
-      if (requireGold) return s.isGoldStylist === true;
+      if (requireGold) return s.isGoldStylist === true || s.role === SHOP_MANAGER_ROLE;
       return true;
     };
 
@@ -354,6 +355,7 @@ Page({
         requireGold,
         requireShopManager,
         isShopManager: s.role === SHOP_MANAGER_ROLE,
+        isGold: s.isGoldStylist === true || s.role === SHOP_MANAGER_ROLE,
         displayRating: (s.skillValue || s.rating || 4.5).toFixed(1),
         tagsDisplay: (s.tags || []).slice(0, 2),
       };
@@ -445,6 +447,18 @@ Page({
       selectedBarberName: barber.name,
     });
   },
+
+  showStylistProfile(e) {
+    const id = e.currentTarget.dataset.id;
+    const stylist = this.data.stylists.find((s) => s.id === id);
+    if (stylist) this.setData({ selectedStylist: stylist });
+  },
+
+  closeStylistProfile() {
+    this.setData({ selectedStylist: null });
+  },
+
+  noop() {},
 
   onNotesInput(e) {
     this.setData({ notes: e.detail.value });

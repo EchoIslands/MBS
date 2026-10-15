@@ -201,9 +201,14 @@ const ShopDetail: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-gray-800">{employee.name}</div>
-                        {employee.title && (
-                          <div className="text-xs px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full">
-                            {employee.title}
+                        {(employee.isGoldStylist || employee.role === UserRole.SHOP_MANAGER) && (
+                          <div className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
+                            金牌
+                          </div>
+                        )}
+                        {employee.role === UserRole.SHOP_MANAGER && (
+                          <div className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                            店长
                           </div>
                         )}
                       </div>

@@ -137,18 +137,18 @@ const BookingPage: React.FC = () => {
     shop?.employees.filter((e) => isStylist(e) && e.isActive !== false) || [],
   [shop]);
 
-  // 店长专属服务仅店长可选；金牌专属服务仅金牌发型师可选；普通服务则均可
+  // 店长专属服务仅店长可选；金牌专属服务仅金牌发型师（含店长）可选；普通服务则均可
   const eligibleStylists = useMemo(() =>
     stylists.filter((e) =>
       requireShopManager ? e.role === UserRole.SHOP_MANAGER
-        : requireGoldStylist ? e.isGoldStylist === true
+        : requireGoldStylist ? (e.isGoldStylist === true || e.role === UserRole.SHOP_MANAGER)
         : true
     ),
   [stylists, requireGoldStylist, requireShopManager]);
 
   const isStylistEligible = (e: Employee) => {
     if (requireShopManager) return e.role === UserRole.SHOP_MANAGER;
-    if (requireGoldStylist) return e.isGoldStylist === true;
+    if (requireGoldStylist) return e.isGoldStylist === true || e.role === UserRole.SHOP_MANAGER;
     return true;
   };
 
@@ -588,12 +588,7 @@ const BookingPage: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
                       <span className="font-bold text-gray-800 text-sm sm:text-base">{stylist.name}</span>
-                      {stylist.title && (
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-medium">
-                          {stylist.title}
-                        </span>
-                      )}
-                      {stylist.isGoldStylist && (
+                      {(stylist.isGoldStylist || stylist.role === UserRole.SHOP_MANAGER) && (
                         <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
                           金牌
                         </span>

@@ -104,41 +104,51 @@
 }
 
 .stylist-card {
-  display: inline-flex;
-  flex-direction: column;
+  display: flex;
+  flex-direction: row;
   align-items: center;
-  width: 280rpx;
-  padding: 28rpx 22rpx;
+  width: 100%;
+  padding: 24rpx 20rpx;
   background: var(--gray-50);
   border-radius: 24rpx;
   border: 1rpx solid var(--gray-100);
-  gap: 12rpx;
-  vertical-align: top;
+  gap: 20rpx;
+  box-sizing: border-box;
+}
+
+.stylist-card + .stylist-card {
+  margin-top: 16rpx;
 }
 
 .stylist-avatar {
-  width: 96rpx;
-  height: 96rpx;
-  background: var(--gray-100);
+  width: 104rpx;
+  height: 104rpx;
   border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--gray-100);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+}
+
+.stylist-avatar-img {
+  width: 100%;
+  height: 100%;
 }
 
 .stylist-info {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: 100%;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
 }
 
 .stylist-name-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10rpx;
+  gap: 12rpx;
   width: 100%;
 }
 
@@ -149,35 +159,49 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 70%;
+}
+
+.stylist-role-badges {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  flex-shrink: 0;
+}
+
+.stylist-badge {
+  font-size: 20rpx;
+  line-height: 1;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+  font-weight: 500;
+}
+
+.stylist-badge-gold {
+  background: #fff7e6;
+  color: #b45309;
+}
+
+.stylist-badge-manager {
+  background: #f3e8ff;
+  color: #7e22ce;
 }
 
 .stylist-title {
   font-size: 22rpx;
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-  margin-top: 4rpx;
+  margin-top: 6rpx;
 }
 
 .stylist-specialty {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  text-overflow: ellipsis;
   font-size: 22rpx;
   line-height: 1.5;
   color: var(--text-primary);
-  background: #ffffff;
-  border-radius: 16rpx;
-  padding: 14rpx 16rpx;
-  margin-top: 12rpx;
-  width: 100%;
-  box-sizing: border-box;
-  text-align: left;
+  margin-top: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .stylist-specialty mbs-icon {
@@ -185,14 +209,119 @@
   vertical-align: -2rpx;
 }
 
-.stylist-rating {
+.stylist-rating-line {
   display: flex;
   align-items: center;
   gap: 4rpx;
-  font-size: 24rpx;
+  font-size: 22rpx;
   font-weight: 600;
   color: var(--text-primary);
-  flex-shrink: 0;
+  margin-top: 8rpx;
+}
+
+/* ===== 发型师详细档案弹窗 ===== */
+.stylist-profile-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40rpx;
+}
+
+.stylist-profile-card {
+  background: #ffffff;
+  border-radius: 32rpx;
+  padding: 48rpx 40rpx 36rpx;
+  width: 100%;
+  max-width: 560rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stylist-profile-avatar {
+  width: 320rpx;
+  height: 320rpx;
+  border-radius: 24rpx;
+  overflow: hidden;
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stylist-profile-avatar-img {
+  width: 100%;
+  height: 100%;
+}
+
+.stylist-profile-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  margin-top: 28rpx;
+  flex-wrap: wrap;
+}
+
+.stylist-profile-name {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stylist-profile-title {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  margin-top: 12rpx;
+}
+
+.stylist-profile-rating {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 16rpx;
+}
+
+.stylist-profile-specialty {
+  width: 100%;
+  margin-top: 28rpx;
+  background: var(--gray-50);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+.stylist-profile-section-label {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-bottom: 10rpx;
+}
+
+.stylist-profile-specialty-text {
+  font-size: 28rpx;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.stylist-profile-close {
+  margin-top: 36rpx;
+  width: 100%;
+  text-align: center;
+  padding: 22rpx 0;
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 600;
+  border-radius: 999rpx;
 }
 
 /* ===== 商品商城 —— 2列网格 ===== */

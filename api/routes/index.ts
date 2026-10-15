@@ -4051,9 +4051,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
           id: e.id,
           name: e.name,
           phone: e.phone,
-          avatar: typeof e.avatar === 'string' && e.avatar.startsWith('data:')
-            ? e.avatar.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
-            : e.avatar,
+          avatar: e.avatar,
           title: e.title,
           role: e.role,
           rating: e.rating || 5,
