@@ -262,6 +262,41 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
+// 员工自助修改个人资料（头像、姓名、职位、专长、密码）
+employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id: currentId, shopId } = req.employee!;
+    const { name, phone, title, specialty, avatar, password } = req.body || {};
+
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (title !== undefined) updateData.title = title;
+    if (specialty !== undefined) updateData.specialty = specialty;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (password !== undefined) updateData.password_hash = password;
+
+    const { data, error } = await supabase
+      .from('employees')
+      .update(updateData)
+      .eq('id', currentId)
+      .eq('shop_id', shopId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[employees] 更新个人资料失败:', error.message);
+      res.status(500).json({ success: false, error: '更新个人资料失败' });
+      return;
+    }
+
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    console.error('[employees] 更新个人资料异常:', (err as Error).message);
+    res.status(500).json({ success: false, error: '服务器错误' });
+  }
+});
+
 // 更新员工
 employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -362,41 +397,6 @@ employeesRouter.delete('/:id', authMiddleware, async (req: Request, res: Respons
     res.json({ success: true, message: '删除成功' });
   } catch (err: unknown) {
     console.error('[employees] 删除异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
-  }
-});
-
-// 员工自助修改个人资料（头像、姓名、职位、专长、密码）
-employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const { id: currentId, shopId } = req.employee!;
-    const { name, phone, title, specialty, avatar, password } = req.body || {};
-
-    const updateData: Record<string, unknown> = {};
-    if (name !== undefined) updateData.name = name;
-    if (phone !== undefined) updateData.phone = phone;
-    if (title !== undefined) updateData.title = title;
-    if (specialty !== undefined) updateData.specialty = specialty;
-    if (avatar !== undefined) updateData.avatar = avatar;
-    if (password !== undefined) updateData.password_hash = password;
-
-    const { data, error } = await supabase
-      .from('employees')
-      .update(updateData)
-      .eq('id', currentId)
-      .eq('shop_id', shopId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[employees] 更新个人资料失败:', error.message);
-      res.status(500).json({ success: false, error: '更新个人资料失败' });
-      return;
-    }
-
-    res.json({ success: true, data });
-  } catch (err: unknown) {
-    console.error('[employees] 更新个人资料异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
 });
