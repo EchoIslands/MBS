@@ -7,6 +7,7 @@ import { trackPageView, trackBookingStart, trackBookingComplete } from '../../ut
 
 // 与 H5 的 shared/types.ts 中 UserRole.STYLIST 保持一致
 const STYLIST_ROLE = 'stylist';
+const SHOP_MANAGER_ROLE = 'shop_manager';
 
 // 生成未来7天日期
 function generateDates() {
@@ -49,7 +50,7 @@ function generateTimeSlots(selectedDate) {
 
 // 判断是否为发型师
 function isStylist(e) {
-  if (e.role) return e.role === STYLIST_ROLE;
+  if (e.role) return e.role === STYLIST_ROLE || e.role === SHOP_MANAGER_ROLE;
   const title = e.title || '';
   return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
 }

@@ -83,7 +83,7 @@ Page({
   },
 
   isStylist(e) {
-    if (e.role) return e.role === 'stylist';
+    if (e.role) return e.role === 'stylist' || e.role === 'shop_manager';
     const title = e.title || '';
     return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
   },

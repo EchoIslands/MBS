@@ -124,7 +124,7 @@ const BookingPage: React.FC = () => {
   }, [shop, dates, selectedService, selectedDate]);
 
   const isStylist = (e: Employee) => {
-    if (e.role) return e.role === UserRole.STYLIST;
+    if (e.role) return e.role === UserRole.STYLIST || e.role === UserRole.SHOP_MANAGER;
     const title = e.title || '';
     return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
   };
