@@ -44,6 +44,7 @@ export const CUSTOMER_FIELD_WHITELIST = new Set([
   'withdrawable_amount',
   'has_booking',
   'last_service_items',
+  'last_stylist',
   'is_member',
   'has_recharged',
   'recharge_level',
