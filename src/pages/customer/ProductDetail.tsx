@@ -14,6 +14,7 @@ const ProductDetail: React.FC = () => {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
+  const [activeImage, setActiveImage] = useState(0);
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -68,6 +69,9 @@ const ProductDetail: React.FC = () => {
     );
   }
 
+  const images = product.images && product.images.length > 0 ? product.images : [];
+  const activeIndex = images.length > 0 ? Math.min(activeImage, images.length - 1) : 0;
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
@@ -96,18 +100,44 @@ const ProductDetail: React.FC = () => {
 
       <div className="max-w-4xl mx-auto">
         {/* 商品图片 */}
-        <div className="relative bg-white">
-          <ProductImage
-            src={product.images?.[0]}
-            alt={product.name}
-            className="w-full h-72 sm:h-96 object-cover"
-          />
-          {product.tags && product.tags.length > 0 && (
-            <div className="absolute top-4 left-4 flex gap-2">
-              {product.tags.map((tag, idx) => (
-                <span key={idx} className="px-3 py-1 bg-red-500 text-white text-xs rounded-full">
-                  {tag}
-                </span>
+        <div className="bg-white">
+          <div className="relative">
+            <ProductImage
+              src={images[activeIndex]}
+              alt={product.name}
+              className="w-full h-72 sm:h-96 object-cover"
+            />
+            {images.length > 1 && (
+              <span className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
+                {activeIndex + 1}/{images.length}
+              </span>
+            )}
+            {product.tags && product.tags.length > 0 && (
+              <div className="absolute top-4 left-4 flex gap-2">
+                {product.tags.map((tag, idx) => (
+                  <span key={idx} className="px-3 py-1 bg-red-500 text-white text-xs rounded-full">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          {images.length > 1 && (
+            <div className="flex gap-2 px-4 py-3 overflow-x-auto">
+              {images.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setActiveImage(idx)}
+                  className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-colors ${
+                    idx === activeIndex ? 'border-orange-500' : 'border-transparent'
+                  }`}
+                >
+                  <img
+                    src={img}
+                    alt={`${product.name} 图${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
               ))}
             </div>
           )}

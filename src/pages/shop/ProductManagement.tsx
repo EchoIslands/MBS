@@ -28,13 +28,15 @@ const categoryNames: Record<ProductCategory, string> = {
   [ProductCategory.OTHER]: '其他',
 };
 
+const DEFAULT_PRODUCT_IMAGE = 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop';
+const MAX_PRODUCT_IMAGES = 6;
+
 const ProductManagement: React.FC = () => {
   const { currentShop } = useAppStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [inventoryModal, setInventoryModal] = useState<{ open: boolean; product?: Product; stock: string; reason: string }>({ open: false, stock: '', reason: '' });
@@ -86,7 +88,6 @@ const ProductManagement: React.FC = () => {
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
-    setPreviewUrl(null);
     setFormData({
       ...product,
       isRecommended: product.isRecommended ?? false,
@@ -99,7 +100,6 @@ const ProductManagement: React.FC = () => {
 
   const handleAdd = () => {
     setEditingProduct(null);
-    setPreviewUrl(null);
     setFormData({
       name: '',
       category: ProductCategory.OTHER,
@@ -166,7 +166,6 @@ const ProductManagement: React.FC = () => {
       }
       setShowModal(false);
       setEditingProduct(null);
-      setPreviewUrl(null);
     } catch (err: unknown) {
       console.error('[ProductManagement] 保存商品失败:', err);
       alert('保存失败：' + (err as Error).message);
@@ -176,43 +175,69 @@ const ProductManagement: React.FC = () => {
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (files.some((f) => !f.type.startsWith('image/'))) {
       alert('请选择图片文件');
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
+    if (files.some((f) => f.size > 2 * 1024 * 1024)) {
       alert('图片大小不能超过 2MB');
       return;
     }
 
-    // 用 object URL 做本地预览，避免 base64 渲染报错
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
+    // 已有的真实图片（过滤掉默认占位图）
+    const existing = (formData.images || []).filter((url) => !url.includes('unsplash.com'));
+    const remaining = MAX_PRODUCT_IMAGES - existing.length;
+    if (remaining <= 0) {
+      alert(`最多上传 ${MAX_PRODUCT_IMAGES} 张图片`);
+      return;
+    }
+    const toUpload = files.slice(0, remaining);
 
+    setUploading(true);
     try {
-      setUploading(true);
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => resolve((event.target?.result as string) || '');
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const url = await uploadImage(base64);
-      setFormData((prev) => ({ ...prev, images: [url] }));
+      const urls: string[] = [];
+      for (const file of toUpload) {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => resolve((event.target?.result as string) || '');
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const url = await uploadImage(base64);
+        urls.push(url);
+      }
+      setFormData((prev) => ({ ...prev, images: [...existing, ...urls] }));
+      if (files.length > remaining) {
+        alert(`最多上传 ${MAX_PRODUCT_IMAGES} 张图片，仅添加前 ${remaining} 张`);
+      }
     } catch (err: unknown) {
       console.error('[ProductManagement] 图片上传失败:', err);
       alert('图片上传失败：' + ((err as Error).message || '未知错误'));
     } finally {
       setUploading(false);
-      URL.revokeObjectURL(objectUrl);
-      setPreviewUrl(null);
+      if (imageInputRef.current) imageInputRef.current.value = '';
     }
   };
 
-  const handleRemoveImage = () => {
-    setFormData((prev) => ({ ...prev, images: ['https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'] }));
+  const handleRemoveImage = (index: number) => {
+    setFormData((prev) => {
+      const images = [...(prev.images || [])];
+      images.splice(index, 1);
+      if (!images.length) images.push(DEFAULT_PRODUCT_IMAGE);
+      return { ...prev, images };
+    });
+  };
+
+  const handleSetCover = (index: number) => {
+    if (index === 0) return;
+    setFormData((prev) => {
+      const images = [...(prev.images || [])];
+      const [cover] = images.splice(index, 1);
+      images.unshift(cover);
+      return { ...prev, images };
+    });
   };
 
   const handleDelete = async (productId: string) => {
@@ -547,44 +572,67 @@ const ProductManagement: React.FC = () => {
               {/* 商品图片 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  商品图片
+                  商品图片 <span className="text-xs text-gray-400 font-normal">（第一张为主图，最多 {MAX_PRODUCT_IMAGES} 张）</span>
                 </label>
-                <div className="flex items-center gap-4">
-                  <div className="relative group">
-                    <img
-                      src={previewUrl || formData.images?.[0] || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=400&fit=crop'}
-                      alt="商品预览"
-                      className="w-24 h-24 rounded-xl object-cover border border-gray-200"
-                    />
-                    {formData.images?.[0] && !formData.images[0].includes('unsplash.com') && (
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600"
-                        title="移除图片"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => imageInputRef.current?.click()}
-                    disabled={uploading}
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                    {uploading ? '上传中...' : formData.images?.[0] && !formData.images[0].includes('unsplash.com') ? '更换图片' : '上传图片'}
-                  </button>
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="hidden"
-                  />
+                <div className="grid grid-cols-4 gap-3">
+                  {(formData.images || []).map((img, index) => {
+                    const isPlaceholder = img.includes('unsplash.com');
+                    return (
+                      <div key={index} className="relative group aspect-square">
+                        <img
+                          src={img}
+                          alt={`商品图片 ${index + 1}`}
+                          className="w-full h-full rounded-xl object-cover border border-gray-200"
+                        />
+                        {index === 0 && !isPlaceholder && (
+                          <span className="absolute top-1 left-1 bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded">
+                            主图
+                          </span>
+                        )}
+                        {!isPlaceholder && (
+                          <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                            {index !== 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleSetCover(index)}
+                                className="px-2 py-1 bg-white/90 text-gray-800 text-xs rounded-lg hover:bg-white"
+                              >
+                                设主图
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImage(index)}
+                              className="px-2 py-1 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(formData.images || []).filter((img) => !img.includes('unsplash.com')).length < MAX_PRODUCT_IMAGES && (
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={uploading}
+                      className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-orange-500 hover:text-orange-500 transition-colors disabled:opacity-50"
+                    >
+                      {uploading ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                      <span className="text-xs mt-1">{uploading ? '上传中...' : '添加图片'}</span>
+                    </button>
+                  )}
                 </div>
-                <p className="text-xs text-gray-400 mt-2">支持 jpg、png、gif，大小不超过 2MB</p>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageChange}
+                  className="hidden"
+                />
+                <p className="text-xs text-gray-400 mt-2">支持 jpg、png、gif，单张不超过 2MB，可多选批量上传</p>
               </div>
 
               <div>
