@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search,
@@ -129,6 +129,7 @@ const Checkout: React.FC = () => {
   const [pendingSettlements, setPendingSettlements] = useState<Settlement[]>([]);
   const [loadingPendingSettlements, setLoadingPendingSettlements] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   // 前台/收银手动改价（key 为购物车项 index，value 为改后的最终单价）
   const [priceOverrides, setPriceOverrides] = useState<Record<number, number>>({});
@@ -695,9 +696,15 @@ const Checkout: React.FC = () => {
       employeeName: it.employeeName,
     }));
     setCart(restoredCart);
-    if (s.paymentMethod) {
-      setPaymentMethod(s.paymentMethod);
-    }
+    setPaymentMethod(s.paymentMethod || 'cash');
+    // 重置与草稿无关的临时状态，避免上一单的状态串进来
+    setPriceOverrides({});
+    setSelectedPackageId('');
+    setSelectedBenefits([]);
+    // 滚动到结算表单，让用户能看到已恢复的内容
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
   };
 
   const handleSubmit = async () => {
@@ -996,7 +1003,7 @@ const Checkout: React.FC = () => {
           )}
 
           {!loadingShop && !loadingCustomers && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div ref={formRef} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* 左侧：客户 + 服务/商品 + 权益 */}
             <div className="lg:col-span-2 space-y-6">
               {/* 客户选择 */}
