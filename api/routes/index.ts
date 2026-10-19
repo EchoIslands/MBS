@@ -6149,7 +6149,9 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     }
 
     const method = paymentMethod || 'cash';
-    const isAsyncPayment = method === 'wechat' || method === 'alipay';
+    const amount = Number(total) || 0;
+    // 微信/支付宝为异步支付；金额为 0（纯核销/次卡抵扣）时无需走支付网关，直接完成
+    const isAsyncPayment = (method === 'wechat' || method === 'alipay') && amount > 0;
     // 草稿/待结算：仅落库不执行业务闭环，供顾客中途退出后找回继续结算
     const isDraft = paymentStatus === 'pending';
     const settlementId = id || `settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -6189,13 +6191,13 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       return res.status(201).json({ success: true, data: settlementFromDb(settlement) });
     }
 
-    // 微信支付/支付宝：创建 payment 记录并返回支付参数，不立即执行后续业务
-    if (method === 'wechat') {
+    // 微信支付：金额大于 0 时创建 payment 记录并返回支付参数；金额为 0（纯核销）直接走后续完成
+    if (method === 'wechat' && amount > 0) {
       const paymentResult = await createPayment({
         shopId,
         customerId,
         settlementId,
-        amount: Number(total) || 0,
+        amount,
         channel: 'wechat_native',
         description: `MBS 门店结算 ${settlementId}`,
       });
@@ -6207,7 +6209,7 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
         booking_id: bookingId || null,
         settlement_id: settlementId,
         channel: 'wechat_native',
-        amount: Number(total) || 0,
+        amount,
         status: paymentResult.status,
         prepay_id: paymentResult.prepayId || null,
         created_at: new Date().toISOString(),

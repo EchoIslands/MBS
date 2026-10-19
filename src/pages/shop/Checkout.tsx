@@ -810,8 +810,9 @@ const Checkout: React.FC = () => {
         return;
       }
 
-      // 若异步支付方式未返回 payment，说明支付流程未启动，不应显示结算成功
-      if (paymentMethod === 'wechat' || paymentMethod === 'alipay') {
+      // 若异步支付方式未返回 payment，说明支付流程未启动，不应显示结算成功；
+      // 金额为 0（纯核销）时后端不会生成支付，直接按完成处理，不弹此提示
+      if ((paymentMethod === 'wechat' || paymentMethod === 'alipay') && total > 0) {
         alert('支付流程未正确启动，请检查网络或联系管理员');
         setSubmitting(false);
         return;
