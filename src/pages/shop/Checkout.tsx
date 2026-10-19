@@ -133,6 +133,8 @@ const Checkout: React.FC = () => {
 
   // 前台/收银手动改价（key 为购物车项 index，value 为改后的最终单价）
   const [priceOverrides, setPriceOverrides] = useState<Record<number, number>>({});
+  // 改价输入草稿：仅存未提交的文本框内容，支持退格/连续输入，失焦或回车后再校验下限
+  const [priceDraft, setPriceDraft] = useState<{ index: number; text: string } | null>(null);
 
   // 团购券
   const [showGroupBuyModal, setShowGroupBuyModal] = useState(false);
@@ -516,9 +518,16 @@ const Checkout: React.FC = () => {
   };
 
   // 收银/CEO 手动改价（仅降价，下限 = 原价 × 钻石 0.58 × 最高储值 0.7）
-  const setServicePriceOverride = (index: number, value: number, originalPrice: number) => {
+  // 输入过程中仅存草稿，失焦/回车后再校验下限，避免退格删除时被立即钳制到最低价无法输入
+  const commitServicePriceOverride = (index: number, rawText: string, originalPrice: number) => {
+    setPriceDraft(null);
+    const parsed = Number(rawText);
+    if (rawText.trim() === '' || Number.isNaN(parsed)) {
+      clearServicePriceOverride(index);
+      return;
+    }
     const floor = Math.round(originalPrice * MIN_DISCOUNT_RATE * 100) / 100;
-    const clamped = Math.min(originalPrice, Math.max(floor, value));
+    const clamped = Math.min(originalPrice, Math.max(floor, parsed));
     setPriceOverrides((prev) => ({ ...prev, [index]: Math.round(clamped * 100) / 100 }));
   };
   const clearServicePriceOverride = (index: number) => {
@@ -1260,8 +1269,11 @@ const Checkout: React.FC = () => {
                             <input
                               type="number"
                               step="0.01"
-                              value={isOverridden ? override : item.originalPrice}
-                              onChange={(e) => setServicePriceOverride(index, Number(e.target.value), item.originalPrice)}
+                              inputMode="decimal"
+                              value={priceDraft?.index === index ? priceDraft.text : (isOverridden ? override : item.originalPrice)}
+                              onChange={(e) => setPriceDraft({ index, text: e.target.value })}
+                              onBlur={(e) => commitServicePriceOverride(index, e.currentTarget.value, item.originalPrice)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
                               className="mt-1 w-full text-sm border border-orange-200 rounded-lg px-2 py-1.5 outline-none"
                             />
                             <div className="text-xs text-gray-400 mt-1">
