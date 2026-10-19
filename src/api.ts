@@ -1356,7 +1356,7 @@ export const settlementApi = {
   create: async (data: Partial<Settlement>): Promise<Settlement | { settlement: Settlement; payment: WechatPaymentResult }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Settlement | { settlement: Settlement; payment: WechatPaymentResult } }>(
+      return await httpThrowing<Settlement | { settlement: Settlement; payment: WechatPaymentResult }>(
         `${API_BASE}/settlements`,
         {
           method: 'POST',
@@ -1364,8 +1364,6 @@ export const settlementApi = {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (!result || !result.success) throw new Error('创建结算失败');
-      return result.data;
     }
     // Mock fallback
     const isAsyncPayment = data.paymentMethod === 'wechat' || data.paymentMethod === 'alipay';

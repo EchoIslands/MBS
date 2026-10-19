@@ -6243,7 +6243,8 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {
     console.error('[settlements] 创建结算异常:', error);
-    res.status(500).json({ success: false, error: '创建结算失败' });
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: `创建结算失败: ${message}` });
   }
 });
 
