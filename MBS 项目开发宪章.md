@@ -1,6 +1,6 @@
 # MBS 项目开发宪章
 
-> 版本：v4.8 | 生效日期：2026-10-19
+> 版本：v5.0 | 生效日期：2026-10-20
 > 
 > 本文档是 MBS 项目的最高开发规范，也是人类与 AI Agent 的协作协议。所有改动代码、配置、数据库 Schema、部署设置前，均视为已阅读并同意遵守本宪章。
 
@@ -304,6 +304,7 @@ npm run server:api
 | 80 | 多分支并行导致代码不一致 | ⭐ | Git 工作流 |
 | 81 | SET search_path 在 Supabase SQL Editor 中丢失 | ⭐ | 数据库 |
 | 90 | 备案域名 HTTPS 自动签发（acme.sh + 阿里云 RAM 最小权限） | ⭐ | 部署 |
+| 91 | 国内业务图片存储必须用国内对象存储（OSS），禁用 Supabase Storage | ⭐ | 架构 |
 
 ### 4.2 关键坑点详解
 
@@ -496,6 +497,17 @@ npm run server:api
   - **Vercel 重定向坑**：即使 DNS 改了，Vercel 的 HTTPS 层仍会劫持已绑定的根域名，必须在 Vercel 后台彻底 Remove 该域名（详见坑 87）。
   - **acme.sh 自动续期**：推荐 acme.sh + 阿里云 RAM 账号自动签发与续期证书，一劳永逸，告别 90 天手动换证；RAM 账号遵循最小权限原则（仅给 `AliyunDNSFullAccess`）。
   - **Nginx 中文乱码**：配置静态页时，需在 Nginx 中显式添加 `charset utf-8;`。
+
+**坑 91：国内业务图片存储选型（Supabase Storage → 阿里云 OSS）**
+- 现象：商品图片上传接口返回成功，但返回的 URL 在国内打开报 `ERR_CONNECTION_RESET`，图片无法显示。
+- 根因：Supabase Storage 节点部署在海外，国内访问被墙导致连接被 reset。
+- 解决：
+  1. 后端移除 Supabase Storage 依赖，引入 `ali-oss` SDK；
+  2. 通过环境变量 `OSS_REGION` / `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` / `OSS_BUCKET` 隔离密钥，禁止硬编码 AccessKey；
+  3. 上传接口保持原返回格式 `{ success: true, url }`，实现前端无感切换。
+- 经验教训：
+  - **存储选型**：国内业务严禁用 Supabase Storage 存大图，必须迁移至阿里云 OSS 等国内对象存储；商品大图走 OSS，员工头像体积小可继续用 base64 存 DB（不走 Storage，不受海外网络影响）。
+  - **接口兼容**：迁移只改后端实现，返回字段不变，前端/小程序零改动即可兼容。
 
 #### 4.2.8 网络与环境
 
@@ -789,6 +801,18 @@ vercel --prod                     # 手动触发生产部署（如已安装 CLI�
 vercel logs <deployment-url>      # 查看部署日志
 ```
 
+##### 阿里云 acme.sh 自动签发/续期证书（标准路径）
+1. 阿里云 RAM 控制台新建子账号（如 `hsxx-dns`），仅授予 `AliyunDNSFullAccess` 最小权限并生成 AccessKey；
+2. 服务器安装 acme.sh：`curl https://get.acme.sh | sh`；
+3. 用阿里云 DNS API 签发：`export Ali_Key="..." Ali_Secret="..." && acme.sh --issue --dns dns_ali -d hsxx8888.cn --keylength ec-256`；
+4. 安装证书到 Nginx：`acme.sh --install-cert -d hsxx8888.cn --key-file /etc/nginx/ssl/hsxx8888.cn.key --fullchain-file /etc/nginx/ssl/hsxx8888.cn.cer --reloadcmd "systemctl reload nginx"`；
+5. acme.sh 自动注册续期任务，无需手动 90 天换证。
+
+##### 域名双活架构（根域名保备案 + www 跑业务）
+- 根域名 `@`：A 记录解析到阿里云上海服务器（保备案，Nginx 静态页 + HTTPS）；
+- `www`：CNAME 解析到 Vercel（跑正式业务）；
+- 关键：在 Vercel Domains 中彻底 Remove 根域名绑定，否则 HTTPS 层仍会 308 劫持（详见坑 87）。
+
 #### 后端调试
 ```bash
 # 本地测试 API
@@ -823,6 +847,7 @@ Cmd+Shift+R         # Mac：强制刷新
 | v4.7 | 2026-10-16 | 新增 3.6 版本发布与店铺培训工作流；产出店铺端软件使用说明书、版本更新公告与测试策略（置于 `docs/` 目录） |
 | v4.8 | 2026-10-19 | 更新工作流：取消“下载到本地”和“云端沙箱”表述；明确 TRAE 在本地工作区改代码、用户执行 push。 |
 | v4.9 | 2026-10-19 | 新增坑 90（备案域名 HTTPS 自动签发 acme.sh + 阿里云 RAM 最小权限）；记录阿里云备案风险整改与 HTTPS 配通全流程 |
+| v5.0 | 2026-10-20 | 新增坑 91（国内业务图片存储选型：Supabase Storage → 阿里云 OSS）；补充运维规范（acme.sh 标准路径 + 域名双活架构）；图片存储 OSS 迁移落地 |
 
 ----
 
