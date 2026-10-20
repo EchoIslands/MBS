@@ -85,7 +85,7 @@ create table if not exists customers (
   referral_consumption numeric default 0,         -- 转介绍带来的消费
   shared_fund numeric default 0,                  -- 共享基金
   total_shared_fund numeric default 0,            -- 合计共享基金
-  withdrawable_amount numeric default 0,          -- 可取现金额
+  withdrawable_amount numeric default 0,          -- 可消费金额
   has_booking boolean default false,              -- 是否有预约
   last_service_items text[] default '{}',         -- 上次消费项目
   is_member boolean default false,                -- 是否会员（兼容旧字段）

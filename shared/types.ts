@@ -366,34 +366,9 @@ export enum StoredValueTxType {
   CONSUME = 'consume',             // 消费扣款
   REFUND = 'refund',               // 退款
   REFERRAL_BONUS = 'referral_bonus', // 推荐奖励
-  WITHDRAW = 'withdraw',           // 提现
 }
 
-// 提现申请状态
-export enum WithdrawalStatus {
-  PENDING = 'pending',             // 待审核
-  APPROVED = 'approved',           // 已审核通过（待打款）
-  PAID = 'paid',                   // 已打款
-  REJECTED = 'rejected',           // 已拒绝
-}
 
-// 提现申请
-export interface WithdrawalRequest {
-  id: string;
-  shopId: string;
-  customerId: string;
-  customerName?: string;
-  customerPhone?: string;
-  amount: number;
-  channel: 'wechat' | 'consume';  // wechat: 提现到微信, consume: 抵扣消费
-  status: WithdrawalStatus;
-  rejectReason?: string;
-  paidAt?: Date;
-  paidBy?: string;
-  transactionId?: string;
-  createdAt: Date;
-  updatedAt?: Date;
-}
 
 // 扩展客户信息 - 完整定义见文件末尾（CustomerProfile、Reviews等已加入
 // 占位（稍后删除 - 保留以保证结构）
@@ -1229,7 +1204,7 @@ export interface Customer {
   // ===== 股东/共享基金相关（保留旧机制）=====
   sharedFund?: number;                    // 共享基金
   totalSharedFund?: number;               // 合计共享基金
-  withdrawableAmount?: number;            // 可取现金额
+  withdrawableAmount?: number;            // 可消费金额
 
   points: number;
   isReferred?: boolean;                   // 是否转介绍

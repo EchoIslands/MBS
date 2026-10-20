@@ -177,7 +177,7 @@ const CustomerTableManagement: React.FC = () => {
       '转介绍消费',    // 21 - 这里之前是错误的"消费金额"
       '共享基金',      // 22
       '合计共享基金',  // 23
-      '可取现金额'     // 24
+      '可消费金额'     // 24
     ];
 
     const rows = filteredCustomers.map((c, idx) => [
@@ -205,7 +205,7 @@ const CustomerTableManagement: React.FC = () => {
       c.referralConsumption ? `¥${c.referralConsumption.toLocaleString()}` : '',  // 21. 转介绍消费
       c.sharedFund ? `¥${c.sharedFund.toFixed(2)}` : '',        // 22. 共享基金
       c.totalSharedFund ? `¥${c.totalSharedFund.toFixed(2)}` : '',  // 23. 合计共享基金
-      c.withdrawableAmount ? `¥${c.withdrawableAmount.toFixed(2)}` : '',  // 24. 可取现金额
+      c.withdrawableAmount ? `¥${c.withdrawableAmount.toFixed(2)}` : '',  // 24. 可消费金额
     ]);
 
     const csvContent = '\uFEFF' + [headers, ...rows]
@@ -349,7 +349,7 @@ const CustomerTableManagement: React.FC = () => {
           <div className="text-lg md:text-xl font-bold text-orange-600">¥{stats.totalSharedFund.toFixed(0)}</div>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-3 md:p-4 border border-gray-100 text-center">
-          <div className="text-xs text-gray-500 mb-1">可取现</div>
+          <div className="text-xs text-gray-500 mb-1">可消费</div>
           <div className="text-lg md:text-xl font-bold text-red-600">¥{stats.totalWithdrawable.toFixed(0)}</div>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-3 md:p-4 border border-gray-100 text-center">
@@ -519,7 +519,7 @@ const CustomerTableManagement: React.FC = () => {
                   { label: '转介绍消费', width: 'w-24' },
                   { label: '共享基金', width: 'w-24' },
                   { label: '合计共享基金', width: 'w-28' },
-                  { label: '可取现金额', width: 'w-28' },
+                  { label: '可消费金额', width: 'w-28' },
                   { label: '操作', width: 'w-32' },
                 ].map((col, idx) => (
                   <th key={idx} className={`${col.width} px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap`}>
@@ -902,7 +902,7 @@ const CustomerTableManagement: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-purple-600">可取现金额：</span>
+                    <span className="text-purple-600">可消费金额：</span>
                     <span className="text-red-700 font-bold text-lg">
                       {showDetail.withdrawableAmount ? `¥${showDetail.withdrawableAmount.toFixed(2)}` : '-'}
                     </span>
@@ -1274,13 +1274,13 @@ const CustomerTableManagement: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-600 mb-1">可取现金额 (¥)</label>
+                    <label className="block text-sm text-gray-600 mb-1">可消费金额 (¥)</label>
                     <input
                       type="number"
                       defaultValue={showEdit?.withdrawableAmount || 0}
                       id="edit-withdrawable"
                       step="0.01"
-                      placeholder="请输入可取现金额"
+                      placeholder="请输入可消费金额"
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm"
                     />
                   </div>

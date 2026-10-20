@@ -797,7 +797,7 @@ export interface Customer {
   referralConsumption?: number;  // 转介绍带来的消费金额
   sharedFund?: number;           // 共享基金
   totalSharedFund?: number;      // 合计共享基金
-  withdrawableAmount?: number;   // 可取现金额
+  withdrawableAmount?: number;   // 可消费金额
   withdrawableReferralAmount?: number; // 可消费奖励金余额（股东消费奖励等）
   joinedAt: Date;
   lastVisitAt?: Date;

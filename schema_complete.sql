@@ -98,7 +98,7 @@ create table if not exists customers (
   referral_consumption numeric default 0,        -- 转介绍带来的消费
   shared_fund numeric default 0,                 -- 共享基金
   total_shared_fund numeric default 0,           -- 合计共享基金
-  withdrawable_amount numeric default 0,         -- 可取现金额
+  withdrawable_amount numeric default 0,         -- 可消费金额
   has_booking boolean default false,             -- 是否有预约
   last_service_items text[] default '{}',        -- 上次消费项目
   is_member boolean default false,               -- 是否会员（兼容旧字段）
@@ -253,7 +253,7 @@ alter table member_benefit_records add column if not exists shop_id text referen
 create table if not exists stored_value_transactions (
   id text primary key,
   customer_id text references customers(id) on delete cascade,
-  type text not null, -- recharge / upgrade / consume / refund / referral_bonus / withdraw
+  type text not null, -- recharge / upgrade / consume / refund / referral_bonus
   amount numeric not null,        -- 正数为增加，负数为扣减
   balance_after numeric not null, -- 变动后总余额
   principal_portion numeric default 0, -- 本次变动中来自本金的部分
@@ -314,28 +314,6 @@ create table if not exists referral_records (
   created_at timestamptz default now(),
   confirmed_at timestamptz       -- 确认日期（首次消费后）
 );
-
--- ========== 14. 提现申请表【新增】 ==========
-create table if not exists withdrawal_requests (
-  id text primary key,
-  shop_id text references shops(id) on delete cascade,
-  customer_id text references customers(id) on delete cascade,
-  customer_name text,
-  customer_phone text,
-  amount numeric(12,2) not null default 0,
-  channel text not null default 'wechat', -- wechat: 提现到微信, consume: 抵扣消费
-  status text not null default 'pending', -- pending / approved / paid / rejected
-  reject_reason text,
-  paid_at timestamptz,
-  paid_by text,
-  transaction_id text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create index if not exists idx_withdrawal_requests_customer_id on withdrawal_requests(customer_id);
-create index if not exists idx_withdrawal_requests_shop_id on withdrawal_requests(shop_id);
-create index if not exists idx_withdrawal_requests_status on withdrawal_requests(status);
 
 -- ========== 14.5 股东权益变动记录表【新增】 ==========
 create table if not exists stockholder_benefit_records (

@@ -94,7 +94,7 @@ function processStockholderBenefitsOnCheckout(record: CustomerVisitRecord) {
       notified_at: null,
     });
 
-    // 更新客户可提现余额（优先 withdrawableReferralAmount，兼容旧字段）
+    // 更新客户可消费余额（优先 withdrawableReferralAmount，兼容旧字段）
     const oldWithdrawable =
       customer.withdrawableReferralAmount ??
       customer.withdrawableAmount ??
