@@ -1,9 +1,38 @@
 import { Router, Request, Response } from 'express';
-import { getDb } from '../db.js';
+import 'dotenv/config';
+import OSS from 'ali-oss';
 
 const router = Router();
 
-// 上传图片到 Supabase Storage
+// 阿里云 OSS 客户端（懒加载，避免启动时因缺环境变量而抛错）
+let ossClient: OSS | null = null;
+
+function getOssClient(): OSS {
+  if (ossClient) return ossClient;
+
+  const region = process.env.OSS_REGION;
+  const accessKeyId = process.env.OSS_ACCESS_KEY_ID;
+  const accessKeySecret = process.env.OSS_ACCESS_KEY_SECRET;
+  const bucket = process.env.OSS_BUCKET;
+
+  if (!region || !accessKeyId || !accessKeySecret || !bucket) {
+    throw new Error(
+      'OSS 环境变量未配置完整（OSS_REGION / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET / OSS_BUCKET）'
+    );
+  }
+
+  ossClient = new OSS({
+    region,
+    accessKeyId,
+    accessKeySecret,
+    bucket,
+    secure: true,
+  });
+
+  return ossClient;
+}
+
+// 上传图片到阿里云 OSS
 // POST /api/upload/image
 // body: { image: 'data:image/png;base64,....' }
 router.post('/image', async (req: Request, res: Response) => {
@@ -30,26 +59,15 @@ router.post('/image', async (req: Request, res: Response) => {
       return;
     }
 
-    const db = getDb();
-    if (!db) {
-      res.status(500).json({ success: false, error: '数据库未连接' });
-      return;
-    }
-
+    const client = getOssClient();
     const fileName = `products/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
-    const { data, error } = await db.storage.from('product-images').upload(fileName, buffer, {
-      contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-      upsert: false,
+
+    await client.put(fileName, buffer, {
+      mime: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
     });
 
-    if (error) {
-      console.error('[upload] 上传失败:', error.message);
-      res.status(500).json({ success: false, error: '上传失败: ' + error.message });
-      return;
-    }
-
-    const { data: publicUrlData } = db.storage.from('product-images').getPublicUrl(data.path);
-    res.json({ success: true, url: publicUrlData.publicUrl });
+    const url = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${fileName}`;
+    res.json({ success: true, url });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[upload] 异常:', message);
