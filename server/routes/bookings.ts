@@ -40,7 +40,7 @@ function calcStockholderCashback(totalAmount: number, customer: Customer | undef
 }
 
 /**
- * 检查是否已针对该预约发放过股东返现（幂等性保护）
+ * 检查是否已针对该预约发放过股东奖励金（幂等性保护）
  */
 function hasCashbackGrantedForBooking(bookingId: string): boolean {
   for (const record of stockholderBenefitRecordsDb.values()) {
@@ -65,13 +65,13 @@ function processStockholderBenefitsOnComplete(booking: BookingRecord) {
   const config = getEffectiveStockholderConfig(shop);
   if (!config.enabled) return;
 
-  // 幂等性保护：若该预约已发放过返现，则跳过
+  // 幂等性保护：若该预约已发放过奖励金，则跳过
   if (hasCashbackGrantedForBooking(booking.id)) {
-    console.log(`[股东权益] 预约 ${booking.id} 已发放过返现，跳过`);
+    console.log(`[股东权益] 预约 ${booking.id} 已发放过奖励金，跳过`);
     return;
   }
 
-  // 1. 消费返现 -> 可提现余额（D专家建议：返现到可提现余额）
+  // 1. 消费奖励 -> 可消费余额（D专家建议：奖励金入可消费余额）
   const cashbackAmount = calcStockholderCashback(booking.price, customer, shop);
   if (cashbackAmount > 0) {
     // 写入权益记录表（内存模拟）
@@ -102,7 +102,7 @@ function processStockholderBenefitsOnComplete(booking: BookingRecord) {
 
     // 站内通知占位（后续可替换为微信模板消息或短信）
     console.log(
-      `[股东权益通知占位] 客户 ${customer.name} 获得消费返现 ${cashbackAmount} 元，已计入可提现余额`
+      `[股东权益通知占位] 客户 ${customer.name} 获得消费奖励金 ${cashbackAmount} 元，已计入可消费余额`
     );
   }
 

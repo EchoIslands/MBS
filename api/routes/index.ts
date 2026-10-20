@@ -450,7 +450,7 @@ function calcStockholderCashback(totalAmount: number, isStockholder: boolean, st
 }
 
 /**
- * 检查是否已针对该预约发放过股东返现（幂等性保护）
+ * 检查是否已针对该预约发放过股东奖励金（幂等性保护）
  */
 async function hasCashbackGrantedForBooking(bookingId: string): Promise<boolean> {
   const { data } = await supabase
@@ -463,7 +463,7 @@ async function hasCashbackGrantedForBooking(bookingId: string): Promise<boolean>
 }
 
 /**
- * 检查最近 1 分钟内是否有相同条件的返现记录（无预约关联时的幂等性保护）
+ * 检查最近 1 分钟内是否有相同条件的奖励金记录（无预约关联时的幂等性保护）
  */
 async function hasRecentCashback(shopId: string, customerId: string, amount: number): Promise<boolean> {
   const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
@@ -481,7 +481,7 @@ async function hasRecentCashback(shopId: string, customerId: string, amount: num
 
 /**
  * 预约完成/结算时自动发放股东权益
- * D专家建议：返现到可消费余额；免费服务按自然月重置
+ * D专家建议：奖励金入可消费余额；免费服务按自然月重置
  */
 async function grantStockholderBenefits(
   shopId: string,
@@ -501,20 +501,20 @@ async function grantStockholderBenefits(
     const config = getEffectiveStockholderConfig(shopData?.stockholder_config);
     if (!config.enabled) return;
 
-    // 2. 计算返现金额
+    // 2. 计算奖励金金额
     const cashbackAmount = calcStockholderCashback(totalAmount, true, shopData?.stockholder_config);
     if (cashbackAmount <= 0) return;
 
     // 3. 幂等性保护
     if (sourceBookingId) {
       if (await hasCashbackGrantedForBooking(sourceBookingId)) {
-        console.log(`[股东权益] 预约 ${sourceBookingId} 已发放过返现，跳过`);
+        console.log(`[股东权益] 预约 ${sourceBookingId} 已发放过奖励金，跳过`);
         return;
       }
     } else {
-      // 无预约关联时，检查最近 1 分钟内是否有相同金额返现（防止重复结算）
+      // 无预约关联时，检查最近 1 分钟内是否有相同金额奖励金（防止重复结算）
       if (await hasRecentCashback(shopId, customerId, cashbackAmount)) {
-        console.log(`[股东权益] 最近已发放过相同金额返现，跳过`);
+        console.log(`[股东权益] 最近已发放过相同金额奖励金，跳过`);
         return;
       }
     }
@@ -532,7 +532,7 @@ async function grantStockholderBenefits(
       });
 
       if (insertError) {
-        console.error('[股东权益] 写入返现记录失败:', insertError.message);
+        console.error('[股东权益] 写入奖励金记录失败:', insertError.message);
       } else {
         // 更新客户可消费余额
         const oldAmount = customerData.withdrawable_referral_amount || 0;
@@ -541,7 +541,7 @@ async function grantStockholderBenefits(
 
         // 站内通知占位（后续可替换为微信模板消息或短信）
         console.log(
-          `[股东权益通知占位] 客户 ${customerId} 获得消费返现 ${cashbackAmount} 元，已计入可消费余额`
+          `[股东权益通知占位] 客户 ${customerId} 获得消费奖励金 ${cashbackAmount} 元，已计入可消费余额`
         );
       }
 
@@ -638,7 +638,7 @@ async function processReferralPromotion(
     if (!referrerId) return;
 
     // 3. 幂等性保护：检查该推荐记录是否已处理过
-    // 支持 pending（老数据）或 couponed（扫码领券后）状态触发返现，confirmed 表示已完成
+    // 支持 pending（老数据）或 couponed（扫码领券后）状态触发奖励金，confirmed 表示已完成
     if (record.status === 'confirmed') {
       console.log(`[推荐转化] 推荐记录 ${record.id} 已处理，跳过`);
       return;

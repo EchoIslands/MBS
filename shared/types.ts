@@ -325,7 +325,7 @@ export interface StockholderBenefitConfig {
   enabled: boolean;                // 是否启用股东权益
   serviceDiscountRate: number;     // 服务折扣率，如 0.8 表示 8 折
   productDiscountRate: number;     // 商品折扣率
-  cashbackRate: number;            // 消费返现比例，如 0.05 表示返 5%
+  cashbackRate: number;            // 消费奖励比例，如 0.05 表示奖 5%
   freeServicesPerMonth: number;    // 每月免费服务次数
   priorityBooking: boolean;        // 是否优先预约
   birthdayGift: string;            // 生日礼描述
@@ -340,7 +340,7 @@ export interface StockholderBenefitRecord {
   shopId: string;
   customerId: string;
   type: StockholderBenefitType;
-  amount: number;                  // 折扣/返现金额
+  amount: number;                  // 折扣/奖励金金额
   sourceBookingId?: string;        // 关联预约
   status: 'pending' | 'granted' | 'used' | 'expired';
   grantedAt: Date;
@@ -365,7 +365,7 @@ export enum StoredValueTxType {
   UPGRADE = 'upgrade',             // 储值卡升级补差价
   CONSUME = 'consume',             // 消费扣款
   REFUND = 'refund',               // 退款
-  REFERRAL_BONUS = 'referral_bonus', // 推荐返现
+  REFERRAL_BONUS = 'referral_bonus', // 推荐奖励
   WITHDRAW = 'withdraw',           // 提现
 }
 
@@ -546,9 +546,9 @@ export interface StoredValueTransaction {
   type: StoredValueTxType;
   amount: number;                // 正数为增加，负数为扣减
   balanceAfter: number;          // 变动后总余额
-  referralPortion: number;       // 本次变动中来自返现的部分
+  referralPortion: number;       // 本次变动中来自奖励金的部分
   orderId?: string;              // 关联订单
-  relatedBenefitId?: string;     // 关联权益/返现记录
+  relatedBenefitId?: string;     // 关联权益/奖励金记录
   note?: string;
   createdAt: Date;
   createdBy?: string;            // 操作员工 ID
@@ -1215,9 +1215,9 @@ export interface Customer {
   purchaseVIPLevel: PurchaseVIPLevel;     // 购买型 VIP 等级
   purchaseVIPExpiresAt?: Date;            // VIP 到期时间（1 年有效期）
   storedValueLevel: StoredValueLevel;     // 储值会员等级
-  storedValueBalance: number;             // 储值总余额（本金 + 返现）
+  storedValueBalance: number;             // 储值总余额（本金 + 奖励金）
   storedValueExpiresAt?: Date;            // 储值到期时间（2 年有效期）
-  withdrawableReferralAmount: number;     // 可提现返现余额
+  withdrawableReferralAmount: number;     // 可消费奖励金余额
 
   // ===== 兼容旧字段（后续逐步替换）=====
   membershipLevel?: MembershipLevel;      // 旧会员等级（兼容）

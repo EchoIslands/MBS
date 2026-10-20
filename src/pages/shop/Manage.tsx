@@ -1183,7 +1183,7 @@ const ShopManage: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">消费返现比例</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">消费奖励比例</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -1230,7 +1230,7 @@ const ShopManage: React.FC = () => {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">开启后，股东会员将享受专属折扣、返现及优先预约等权益。</p>
+            <p className="text-sm text-gray-500">开启后，股东会员将享受专属折扣、奖励金及优先预约等权益。</p>
           )}
         </div>
 

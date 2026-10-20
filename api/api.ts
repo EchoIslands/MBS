@@ -1255,7 +1255,7 @@ export const settlementApi = {
         customer.daysSinceLastVisit = 0;
         customer.hasBooking = false;
 
-        // 如果用储值支付，更新客户余额及可提现返现余额
+        // 如果用储值支付，更新客户余额及可消费奖励金余额
         if (data.paymentMethod === 'balance') {
           const principal = customer.storedValueBalance - (customer.withdrawableReferralAmount || 0);
           const usedPrincipal = Math.min(total, principal);

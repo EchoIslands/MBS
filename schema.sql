@@ -71,9 +71,9 @@ create table if not exists customers (
   purchase_vip_level text default 'regular',      -- 购买型 VIP 等级: regular / bronze / silver / gold / diamond
   purchase_vip_expires_at timestamptz,            -- VIP 到期时间（1 年有效期）
   stored_value_level text default 'none',         -- 储值会员等级: none / store_500 / store_1000 / store_2000 / store_5000
-  stored_value_balance numeric default 0,         -- 储值总余额（本金 + 返现）
+  stored_value_balance numeric default 0,         -- 储值总余额（本金 + 奖励金）
   stored_value_expires_at timestamptz,            -- 储值到期时间（2 年有效期）
-  withdrawable_referral_amount numeric default 0, -- 可提现返现余额
+  withdrawable_referral_amount numeric default 0, -- 可消费奖励金余额
   total_saved numeric default 0,                  -- 累计节省金额
   -- ===== 客户管理扩展字段 =====
   wechat text,                                    -- 微信号

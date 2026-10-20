@@ -458,7 +458,7 @@ const Checkout: React.FC = () => {
   const subtotal = discountResult.subtotal;
   const discountAmount = discountResult.discount;
 
-  // 判断储值支付是否会用到返现部分
+  // 判断储值支付是否会用到奖励金部分
   const willUseReferral = useMemo(() => {
     if (paymentMethod !== 'balance' || !selectedCustomer) return false;
     const principal = selectedCustomer.storedValueBalance - selectedCustomer.withdrawableReferralAmount;
@@ -1466,7 +1466,7 @@ const Checkout: React.FC = () => {
                     {willUseReferral && (
                       <div className="mt-2 p-2 bg-yellow-50 text-yellow-700 text-xs rounded-lg flex items-start gap-1.5">
                         <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                        本次将使用部分返现余额，结算前会要求确认。
+                        本次将使用部分奖励金余额，结算前会要求确认。
                       </div>
                     )}
                   </div>
@@ -1490,17 +1490,17 @@ const Checkout: React.FC = () => {
         </div>
       </div>
 
-      {/* 返现确认弹窗 */}
+      {/* 奖励金确认弹窗 */}
       {showConfirmModal && selectedCustomer && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex items-center gap-2 mb-4 text-yellow-600">
               <AlertTriangle size={24} />
-              <h3 className="text-lg font-bold">使用返现余额确认</h3>
+              <h3 className="text-lg font-bold">使用奖励金余额确认</h3>
             </div>
             <p className="text-sm text-gray-600 mb-4">
               本次实付 <span className="font-bold text-gray-800">¥{total.toFixed(2)}</span>，
-              扣除本金后将从返现余额中扣除
+              扣除本金后将从奖励金余额中扣除
               <span className="font-bold text-orange-600">
                 ¥{(total - (selectedCustomer.storedValueBalance - selectedCustomer.withdrawableReferralAmount)).toFixed(2)}
               </span>

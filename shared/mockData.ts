@@ -1033,7 +1033,7 @@ export const mockStoredValueTransactions: StoredValueTransaction[] = [
     amount: 800,
     balanceAfter: 5800,
     referralPortion: 800,
-    note: '推荐好友消费返现',
+    note: '推荐好友消费奖励',
     createdAt: new Date(Date.now() - 180 * 86400000),
   },
 ];

@@ -84,9 +84,9 @@ create table if not exists customers (
   purchase_vip_level text default 'regular',     -- 购买型 VIP 等级: regular / bronze / silver / gold / diamond
   purchase_vip_expires_at timestamptz,           -- VIP 到期时间（1 年有效期）
   stored_value_level text default 'none',        -- 储值会员等级: none / store_500 / store_1000 / store_2000 / store_5000
-  stored_value_balance numeric default 0,        -- 储值总余额（本金 + 返现）
+  stored_value_balance numeric default 0,        -- 储值总余额（本金 + 奖励金）
   stored_value_expires_at timestamptz,           -- 储值到期时间（2 年有效期）
-  withdrawable_referral_amount numeric default 0,-- 可提现返现余额
+  withdrawable_referral_amount numeric default 0,-- 可消费奖励金余额
   total_saved numeric default 0,                 -- 累计节省金额
   -- 客户管理扩展字段
   wechat text,                                   -- 微信号
@@ -257,9 +257,9 @@ create table if not exists stored_value_transactions (
   amount numeric not null,        -- 正数为增加，负数为扣减
   balance_after numeric not null, -- 变动后总余额
   principal_portion numeric default 0, -- 本次变动中来自本金的部分
-  referral_portion numeric default 0,  -- 本次变动中来自返现的部分
+  referral_portion numeric default 0,  -- 本次变动中来自奖励金的部分
   order_id text,                 -- 关联结算订单 ID
-  related_benefit_id text,       -- 关联权益/返现记录 ID
+  related_benefit_id text,       -- 关联权益/奖励金记录 ID
   note text,
   created_at timestamptz default now(),
   created_by text,               -- 操作员工 ID
@@ -342,7 +342,7 @@ create table if not exists stockholder_benefit_records (
   id text primary key,
   shop_id text references shops(id) on delete cascade,
   customer_id text references customers(id) on delete cascade,
-  type text not null default 'cashback', -- cashback: 消费返现, referral_bonus: 推荐奖励
+  type text not null default 'cashback', -- cashback: 消费奖励, referral_bonus: 推荐奖励
   amount numeric(12,2) not null default 0,
   source_booking_id text references bookings(id) on delete set null,
   status text not null default 'granted', -- granted: 已发放
@@ -503,6 +503,6 @@ alter table product_order_items enable row level security;
 -- 1. 店铺、员工、客户、预约、评价、排队等基础表
 -- 2. 双轨会员体系所需的所有字段和表
 -- 3. 开单结算、权益核销、储值流水等功能表
--- 4. 推荐返现记录表
+-- 4. 推荐奖励记录表
 -- 5. MVP 商城所需商品表、商品订单表及明细表
 -- 6. 所有必要的索引和 RLS 安全策略

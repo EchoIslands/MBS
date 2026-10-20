@@ -92,10 +92,10 @@ const CustomerInvite: React.FC = () => {
           <div className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl p-5 text-white">
             <div className="flex items-center gap-2 mb-2">
               <Gift size={20} />
-              <h2 className="font-bold">好友消费，你赚返现</h2>
+              <h2 className="font-bold">好友消费，你得奖励金</h2>
             </div>
             <p className="text-sm text-white/90">
-              分享下方链接或二维码给好友，好友扫码领取新人优惠券并完成首次消费后，你将获得消费金额 {(currentCustomer?.referralBonusRate || 0.10) * 100}% 的返现奖励。
+              分享下方链接或二维码给好友，好友扫码领取新人优惠券并完成首次消费后，你将获得消费金额 {(currentCustomer?.referralBonusRate || 0.10) * 100}% 的奖励金。
             </p>
           </div>
 

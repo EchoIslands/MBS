@@ -143,7 +143,7 @@
         </view>
         <view class="invite-text">
           <view class="invite-title">邀请好友 · 一起变美</view>
-          <view class="invite-hint">好友消费后，你最高可赚 {{(customer.referralBonusRate || 0.10) * 100}}% 现金返现</view>
+          <view class="invite-hint">好友消费后，你可获得 {{(customer.referralBonusRate || 0.10) * 100}}% 奖励金，可用于店内消费</view>
         </view>
       </view>
       <mbs-icon name="chevronRight" size="32" color="#ffffff" />

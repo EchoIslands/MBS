@@ -302,7 +302,7 @@ export function calcStockholderDiscountedPrice(
 }
 
 /**
- * 计算消费返现金额
+ * 计算消费奖励金额
  */
 export function calcStockholderCashback(
   totalAmount: number,
@@ -346,7 +346,7 @@ export function getStockholderBenefitSummary(
       benefits.push(`每月${config.freeServicesPerMonth}次免费服务`);
     }
     if (config.cashbackRate > 0) {
-      benefits.push(`消费返现${Math.round(config.cashbackRate * 100)}%`);
+      benefits.push(`消费奖励${Math.round(config.cashbackRate * 100)}%`);
     }
     if (config.priorityBooking) {
       benefits.push('优先预约');

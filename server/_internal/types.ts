@@ -798,7 +798,7 @@ export interface Customer {
   sharedFund?: number;           // 共享基金
   totalSharedFund?: number;      // 合计共享基金
   withdrawableAmount?: number;   // 可取现金额
-  withdrawableReferralAmount?: number; // 可提现返现余额（股东消费返现等）
+  withdrawableReferralAmount?: number; // 可消费奖励金余额（股东消费奖励等）
   joinedAt: Date;
   lastVisitAt?: Date;
   preferences?: string[];

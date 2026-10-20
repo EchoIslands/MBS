@@ -245,7 +245,7 @@ const Profile: React.FC = () => {
             </div>
           </div>
 
-          {/* 数据速览 — 余额/返现/积分/综合折扣 */}
+          {/* 数据速览 — 余额/奖励金/积分/综合折扣 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <div className="bg-white/15 backdrop-blur-sm rounded-xl p-3">
               <div className="text-[11px] sm:text-xs text-white/70 mb-1 flex items-center gap-1">
@@ -328,7 +328,7 @@ const Profile: React.FC = () => {
                   <div className="text-left">
                     <div className="text-white font-medium">邀请好友</div>
                     <div className="text-xs text-white/70">
-                      好友消费后获得 {(currentCustomer?.referralBonusRate || 0.10) * 100}% 返现
+                      好友消费后获得 {(currentCustomer?.referralBonusRate || 0.10) * 100}% 奖励金
                     </div>
                   </div>
                 </div>
