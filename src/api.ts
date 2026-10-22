@@ -337,7 +337,7 @@ export const authApi = {
     if (!token) return null;
     
     // mock token 直接解析
-    if (token.startsWith('mock_')) {
+    if (!USE_REAL_API && token.startsWith('mock_')) {
       try {
         const user = JSON.parse(decodeURIComponent(token.replace('mock_', '')));
         saveAuthUser(user);
@@ -355,8 +355,9 @@ export const authApi = {
         return result.data;
       }
       return null;
-    } catch {
-      return null;
+    } catch (error) {
+      if ((error as {status?:number}).status===401 || (error as {status?:number}).status===403) return null;
+      throw error;
     }
   },
   
@@ -428,7 +429,7 @@ export const shopApi = {
 
   getShopBookings: async (id: string): Promise<Booking[]> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Booking[] }>(`${API_BASE}/shops/${id}/bookings`);
+      const result = await http<{ success: boolean; data: Booking[] }>(`${API_BASE}/bookings?shopId=${encodeURIComponent(id)}`, {headers:{Authorization:'Bearer '+getAuthToken()}});
       if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
@@ -437,7 +438,7 @@ export const shopApi = {
 
   getShopReviews: async (id: string): Promise<Review[]> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/shop/${id}`);
+      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/shop/${id}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} });
       if (result?.data) return result.data;
       // 真实 API 已启用但未返回数据，说明后端异常，直接抛错避免静默 fallback
       throw new Error('后端评价接口异常，请检查数据库和部署状态');
@@ -468,7 +469,7 @@ export const shopApi = {
 
   getShopQueue: async (id: string): Promise<Queue> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Queue }>(`${API_BASE}/shops/${id}/queue`);
+      const result = await http<{ success: boolean; data: Queue }>(`${API_BASE}/queues/${encodeURIComponent(id)}`);
       if (result?.data) return result.data;
     }
     await new Promise((r) => setTimeout(r, 200));
@@ -1070,12 +1071,17 @@ export const customerApi = {
     return newCustomer;
   },
 
-  update: async (id: string, data: Partial<Customer>): Promise<Customer | null> => {
+  update: async (id: string, data: Partial<Customer>, previous?: Customer): Promise<Customer | null> => {
     if (USE_REAL_API) {
+      // 资料表单保留打开时的快照，只发送实际修改字段，避免覆盖并发结算后的余额。
+      const patch = previous ? Object.fromEntries(Object.entries(data).filter(([key, value]) =>
+        JSON.stringify(value) !== JSON.stringify(previous[key as keyof Customer]))) : data;
+      if (previous && Object.keys(patch).length === 0) return previous;
+      const expected = previous ? Object.fromEntries(Object.keys(patch).map(key => [key, previous[key as keyof Customer] ?? null])) : {};
       const token = getAuthToken();
       const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...patch, _expected: expected }),
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return result.data;
@@ -1307,6 +1313,7 @@ export const reviewApi = {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Review }>(`${API_BASE}/reviews/${id}/reply`, {
         method: 'PUT',
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ reply, replyBy }),
       });
       if (result?.data && result.data.id) return result.data;
@@ -1326,6 +1333,7 @@ export const reviewApi = {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Review }>(`${API_BASE}/reviews/${id}/hide`, {
         method: 'PUT',
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ isHidden }),
       });
       if (result?.data && result.data.id) return result.data;
@@ -1614,6 +1622,7 @@ export const settlementApi = {
 
 // 会员权益相关 API
 export const memberBenefitApi = {
+  getOwn: async (id:string):Promise<MemberBenefitRecord[]> => httpThrowing<MemberBenefitRecord[]>(API_BASE+'/customers/'+encodeURIComponent(id)+'/benefits'),
   getAvailableByCustomer: async (customerId: string): Promise<MemberBenefitRecord[]> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
@@ -1769,6 +1778,8 @@ export const surveyApi = {
 
 // 退款管理 API
 export const refundApi = {
+  getByCustomer: async (id:string):Promise<RefundRequest[]> => httpThrowing<RefundRequest[]>(API_BASE+'/refunds/customer/'+encodeURIComponent(id)),
+  requestByCustomer: async (id:string,bookingId:string,reason:string):Promise<RefundRequest> => httpThrowing<RefundRequest>(API_BASE+'/refunds/customer/'+encodeURIComponent(id),{method:'POST',body:JSON.stringify({bookingId,reason})}),
   getByShop: async (shopId: string): Promise<RefundRequest[]> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
@@ -2447,37 +2458,17 @@ export const uploadImage = async (base64Image: string): Promise<string> => {
  */
 async function httpThrowing<T>(url: string, opts: RequestInit = {}, timeout = 15000): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort('请求超时'), timeout);
-
-  // 允许调用方传入外部 signal，组件卸载时取消请求，避免 StrictMode 重复挂载产生 AbortError 噪音
-  if (opts.signal) {
-    const externalSignal = opts.signal;
-    if (externalSignal.aborted) {
-      controller.abort(externalSignal.reason);
-    } else {
-      externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
-    }
-  }
-
-  const res = await fetch(url, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-    },
-    signal: controller.signal,
-  });
-  clearTimeout(timeoutId);
-
-  const data = (await res.json().catch(() => ({}))) as {
-    success?: boolean;
-    error?: string;
-    data?: T;
-  };
-  if (!res.ok || data.success === false) {
-    throw new Error(data.error || `请求失败 (${res.status})`);
-  }
-  return data.data as T;
+  const timer = setTimeout(() => controller.abort(), timeout);
+  const abort = () => controller.abort();
+  if (opts.signal?.aborted) controller.abort();
+  else opts.signal?.addEventListener('abort',abort,{once:true});
+  try {
+    const res=await fetch(url,{credentials:'include',...opts,headers:{'Content-Type':'application/json',...(opts.headers || {})},signal:controller.signal});
+    const data=await res.json().catch(()=>null);
+    if(!res.ok || data?.success===false) throw Object.assign(new Error(data?.error || '请求失败 ('+res.status+')'),{status:res.status,code:data?.code});
+    if(!data || !('data' in data)) throw new Error('服务返回格式异常，请刷新核对');
+    return data.data as T;
+  } finally {clearTimeout(timer);opts.signal?.removeEventListener('abort',abort);}
 }
 
 // 商品订单 API（MVP 商城）
@@ -2664,10 +2655,9 @@ export const productOrderApi = {
 
 // 队列相关 API
 export const queueApi = {
-  getQueue: async (shopId: string): Promise<Queue> => {
+  getQueue: async (shopId: string, date?: string): Promise<Queue> => {
     if (USE_REAL_API) {
-      const result = await http<Queue>(`${API_BASE}/queues/${shopId}`);
-      if (result && result.shopId) return result;
+      return await httpThrowing<Queue>(`${API_BASE}/queues/${shopId}${date ? '?date='+encodeURIComponent(date) : ''}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} });
     }
     await new Promise((r) => setTimeout(r, 200));
     let queue = mockQueues.find((q) => q.shopId === shopId);
@@ -2689,14 +2679,14 @@ export const queueApi = {
 
   updateQueue: async (shopId: string, data: Partial<Queue>): Promise<Queue> => {
     if (USE_REAL_API) {
-      const result = await http<Queue>(`${API_BASE}/queues/${shopId}`, {
+      return await httpThrowing<Queue>(`${API_BASE}/queues/${shopId}`, {
         method: 'PUT',
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
         body: JSON.stringify({
           currentNumber: data.currentNumber,
           estimatedWaitTime: data.estimatedWaitTime,
         }),
       });
-      if (result && result.shopId) return result;
     }
     await new Promise((r) => setTimeout(r, 200));
     const queue = mockQueues.find((q) => q.shopId === shopId);

@@ -56,7 +56,7 @@ class Query {
   if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
   if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
   if(this.operation==='delete')tables[this.table]=(tables[this.table]||[]).filter(r=>!rows.includes(r));
-  const data=rows.map(r=>this.columns==='*'?structuredClone(r):Object.fromEntries(this.columns.split(',').map(k=>[k.trim(),r[k.trim()]])));
+  const data=rows.map(r=>this.columns.includes('group_buy_batches(*)')?{...structuredClone(r),group_buy_batches:tables.group_buy_batches.find(b=>b.id===r.batch_id)}:this.columns==='*'?structuredClone(r):Object.fromEntries(this.columns.split(',').map(k=>[k.trim(),r[k.trim()]])));
   return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null}).then(resolve,reject);
  }catch(e){return Promise.reject(e).then(resolve,reject);}}
 }
@@ -67,6 +67,11 @@ let draftDeleteError: any = null;
 let completeCheckout = false;
 let checkoutRpcCalls = 0;
 (supabase as any).rpc = async (name: string, args: any) => {
+ if (name==='confirm_product_receipt_atomic') {
+  const row=(tables.product_orders||[]).find(r=>r.id===args.p_order_id&&r.customer_id===args.p_customer_id&&r.shop_id===args.p_shop_id);
+  if(!row) return {data:null,error:{message:'ORDER_NOT_FOUND'}};
+  row.status='completed';return {data:[row],error:null};
+ }
  if (name === 'delete_settlement_draft_atomic') return { data: null, error: draftDeleteError };
  if (name === 'release_stale_settlement_payment_claim') {
   const s=tables.settlements.find(row=>row.id===args.p_settlement_id && row.shop_id===args.p_shop_id);
@@ -251,6 +256,8 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/customers/c1/public',r.body.token)).status,401);
    assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'000001'})).status,200);
    const resetLogin=await request('/customers/login','','POST',{phone:'13800000001',password:'000001',client:'mini'});assert.equal(resetLogin.status,200);
+   assert.equal(resetLogin.body.data.mustChangePassword,true);
+   assert.equal((await request('/customers/c1/packages',resetLogin.body.token)).status,403);
    assert.equal((await request('/customers/c1/login-credential',cs,'POST',{identityVerified:true})).status,404);
     const legacyCredential=jwt.sign({id:'c1',shopId:'s1',kind:'customer-login'},getJwtSecret(),{algorithm:'HS256',audience:'customer-login',issuer:'mbs',expiresIn:900});
     assert.equal((await request('/customers/c1/public',legacyCredential)).status,401);
@@ -379,6 +386,144 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    weak.is_weak_password=true;
    assert.equal((await request('/customers/legacy/packages',changed.body.token)).status,403);
    tables.customers.splice(tables.customers.indexOf(weak),1);
+  });
+  await t.test('全项目复核：团购、上传、商品及优惠券写入拒绝匿名、低权限、跨店',async()=>{
+   tables.group_buy_batches=[{id:'gb1',shop_id:'s1',name:'Synthetic batch'},{id:'gb2',shop_id:'s2',name:'Foreign'}];
+   for(const [path,method,body] of [
+    ['/group-buy/batches','GET',undefined],['/group-buy/vouchers/verify','POST',{code:'123456'}],
+    ['/group-buy/vouchers/redeem','POST',{code:'123456'}],['/upload/image','POST',{image:'anything'}],
+    ['/queues/s1','PUT',{}],['/reviews/x/reply','PUT',{reply:'Forged'}],['/reviews/x/hide','PUT',{isHidden:true}],
+    ['/coupons/x/claim','POST',{customerId:'c1'}],['/product-orders/x/refund','POST',{reason:'Forged'}],
+    ['/product-orders/x/confirm','PUT',{customerId:'c1'}],['/product-orders/x/tracking','GET',undefined],
+    ['/reviews','POST',{customerId:'c1'}],['/referrals/invite','POST',{customerId:'c1'}],
+   ] as const) assert.equal((await request(path,'',method,body)).status,401,path);
+   assert.equal((await request('/group-buy/batches?shopId=s2',ceo)).status,403);
+   assert.equal((await request('/group-buy/batches/gb2',ceo,'PUT',{name:'Forged'})).status,404);
+   assert.equal((await request('/group-buy/batches',stylist,'POST',{})).status,403);
+   assert.equal((await request('/group-buy/batches?shopId=s1',ceo)).body.data.length,1);
+   const updated=await request('/group-buy/batches/gb1',manager,'PUT',{name:'Changed'});
+   assert.equal(updated.status,200);assert.equal(updated.body.data.shopId,'s1');
+   for(const path of ['/shops/s2/products','/shops/s2/products/p/inventory']) assert.equal((await request(path,ceo,'POST',{})).status,403);
+   assert.equal((await request('/shops/s1/products',stylist,'POST',{})).status,403);
+   assert.equal((await request('/coupons',manager,'POST',{shopId:'s2',name:'Forged',value:1})).status,403);
+   tables.coupons=[{id:'foreign',shop_id:'s2'}];
+   assert.equal((await request('/coupons/foreign',manager,'PUT',{value:999})).status,404);
+   assert.equal(tables.coupons[0].value,undefined);
+  });
+  await t.test('全项目复核：顾客资源归属、评价来源和公开隐私',async()=>{
+   const {signCustomerToken}=await import('../backend/lib/tokens.js');
+   const hash=await hashPassword('246810');tables.customers[1].password_hash=hash;tables.customers[1].is_weak_password=false;
+   const own=signCustomerToken('c2','s1',hash);
+   tables.product_orders=[{id:'o1',shop_id:'s1',customer_id:'c1',status:'shipped'},{id:'o2',shop_id:'s1',customer_id:'c2',status:'shipped',shipping_no:'SYNTHETIC'}];
+   for(const path of ['/product-orders/o1/tracking','/reviews/booking/b1']) assert.equal((await request(path,own)).status,404);
+   assert.equal((await request('/product-orders/o1/refund',own,'POST',{reason:'Forged'})).status,404);
+   assert.equal((await request('/product-orders/o2/confirm',own,'PUT',{customerId:'c1'})).status,403);
+   assert.equal((await request('/product-orders/o2/confirm',own,'PUT',{customerId:'c2'})).status,200);
+   assert.equal((await request('/product-orders/o2/tracking',own)).status,200);
+   tables.reviews=[{id:'r1',shop_id:'s1',customer_id:'c1',booking_id:'b1',customer_name:'Synthetic Private',comment:'Public',is_hidden:false},{id:'r2',shop_id:'s1',comment:'Hidden private',is_hidden:true},{id:'r3',shop_id:'s2',is_hidden:false}];
+   const pub=await request('/reviews/shop/s1');assert.equal(pub.body.data.length,1);
+   for(const key of ['customerId','bookingId','replyBy']) assert.equal(pub.body.data[0][key],undefined);
+   assert.notEqual(pub.body.data[0].customerName,'Synthetic Private');
+   assert.equal((await request('/reviews/shop/s1',ceo)).body.data.length,2);
+   assert.equal((await request('/reviews/r3/hide',ceo,'PUT',{isHidden:true})).status,404);
+   assert.equal((await request('/reviews/r1/reply',stylist,'PUT',{reply:'Forged'})).status,403);
+   assert.equal((await request('/reviews/r1/reply',cs,'PUT',{reply:'Thanks',replyBy:'Forged'})).body.data.replyBy,'Synthetic CS');
+   tables.bookings=[{id:'b1',shop_id:'s1',customer_id:'c1',status:'completed'},{id:'b2',shop_id:'s1',customer_id:'c2',status:'confirmed'}];
+   assert.equal((await request('/reviews',own,'POST',{shopId:'s1',customerId:'c2',bookingId:'b1',serviceScore:5,stylistScore:5})).status,404);
+   assert.equal((await request('/reviews',own,'POST',{shopId:'s1',customerId:'c2',bookingId:'b2',serviceScore:5,stylistScore:5})).status,409);
+   tables.bookings=[];tables.reviews=[];
+  });
+  await t.test('全项目复核：公开队列脱敏、JSON错误与过大请求明确拒绝',async()=>{
+   tables.bookings=[{id:'private',shop_id:'s1',customer_id:'c1',customer_name:'Sensitive',notes:'PRIVATE',status:'confirmed',service_id:'svc',scheduled_time:new Date().toISOString(),queue_number:1}];
+   const pub=await request('/queues/s1');assert.equal(pub.status,200);assert.equal(pub.body.data.bookings.length,1);
+   for(const key of ['id','customerId','customerName','notes']) assert.equal(pub.body.data.bookings[0][key],undefined);
+   assert.equal((await request('/queues/s1',ceo)).body.data.bookings[0].customerName,'Sensitive');
+   assert.equal((await request('/queues/s2',ceo)).status,403);
+   const invalid=await fetch(base+'/api/customers/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{invalid'});
+   assert.equal(invalid.status,400);assert.equal((await invalid.json()).success,false);
+   const large=await request('/customers/login','','POST',{value:'x'.repeat(3*1024*1024)});assert.equal(large.status,413);
+   tables.bookings=[];
+  });
+  await t.test('客户资料只改姓名不改余额，经营字段需旧值且拒绝过期覆盖',async()=>{
+   const c=tables.customers[0],before=structuredClone(c);
+   try {
+    assert.equal((await request('/customers/c1',ceo,'PUT',{name:'Edited'})).status,200);
+    assert.equal(c.stored_value_balance,before.stored_value_balance);
+    assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:999})).status,409);
+    assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:999,_expected:{storedValueBalance:0}})).status,409);
+    const response=await request('/customers/c1',ceo,'PUT',{storedValueBalance:222,_expected:{storedValueBalance:before.stored_value_balance}});
+    assert.equal(response.status,200);assert.equal(c.stored_value_balance,222);assert.equal(response.body.data.passwordHash,undefined);
+    assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:-1,_expected:{storedValueBalance:222}})).status,400);
+    assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:333,_expected:{storedValueBalance:before.stored_value_balance}})).status,409);
+   } finally {Object.assign(c,before);}
+  });
+  await t.test('退款终态防反转、拒绝需原因、重复请求不产生二次处理',async()=>{
+   tables.refund_requests=[{id:'refund-cas',shop_id:'s1',status:'pending',amount:10}];
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'rejected'})).status,400);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved',refundMethod:'forged'})).status,400);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved'})).status,200);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved'})).status,200);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'completed'})).status,200);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved'})).status,409);
+   tables.refund_requests=[];
+  });
+  await t.test('经营报表只统计同店已付，设计师列表识别实际角色并按本人过滤',async()=>{
+   const saved=[tables.settlements,tables.shops,tables.reviews];
+   const now=new Date().toISOString();
+   tables.shops=[{id:'s1',name:'Own',is_active:true},{id:'s2',name:'Foreign',is_active:true}];
+   tables.settlements=[{id:'paid',shop_id:'s1',total:10,payment_status:'completed',created_at:now,items:[{employeeId:'stylist',type:'service',total:10,quantity:1}]},{id:'draft',shop_id:'s1',total:999,payment_status:'pending',created_at:now},{id:'foreign',shop_id:'s2',total:888,payment_status:'completed',created_at:now}];tables.reviews=[];
+   try {
+    const owner=await request('/owner/dashboard',ceo);assert.equal(owner.status,200);assert.equal(owner.body.data.totalRevenue.today,10);assert.equal(owner.body.data.shopStats.length,1);
+    const financial=await request('/financial/report',ceo);assert.equal(financial.body.data.revenue.today,10);
+    const performance=await request('/stylists/performance',stylist);assert.equal(performance.status,200);assert.equal(performance.body.data.length,1);assert.equal(performance.body.data[0].revenue.today,10);
+   }finally{[tables.settlements,tables.shops,tables.reviews]=saved;}
+  });
+  await t.test('埋点不能伪造顾客身份或夹带凭证，上传拒绝SVG和伪装图片',async()=>{
+   tables.customer_events=[];
+   const event={event_type:'page_view',customer_id:'c1',page_path:'/profile?token=private',timestamp:new Date().toISOString(),properties:{phone:'PRIVATE',token:'PRIVATE',button:'book'}};
+   const r=await request('/analytics/events/batch','','POST',{events:[event]});assert.equal(r.status,200);
+   const stored=tables.customer_events[0];assert.equal(stored.customer_id,null);assert.equal(stored.page_path,'/profile');assert.deepEqual(stored.properties,{button:'book'});
+   assert.equal((await request('/analytics/events/batch','','POST',{events:Array(51).fill(event)})).status,400);
+   for(const image of ['data:image/svg+xml;base64,PHN2Zz4=','data:image/png;base64,SGVsbG8=']) assert.equal((await request('/upload/image',ceo,'POST',{image})).status,400);
+   tables.customer_events=[];
+  });
+  await t.test('团购结算核对活动归属和有效期，一券不能扩展为多次抵扣',async()=>{
+   const saved=[tables.group_buy_batches,tables.group_buy_vouchers,tables.shops[0].services];
+   const batch={id:'batch',shop_id:'s1',is_active:true,valid_from:new Date(Date.now()-86400000).toISOString(),valid_to:new Date(Date.now()+86400000).toISOString(),service_ids:['svc'],price_type:'fixed',fixed_price:40};
+   tables.group_buy_batches=[batch];tables.group_buy_vouchers=[{id:'voucher',batch_id:'batch',shop_id:'s1',status:'used',used_by_customer_id:'c1'}];tables.shops[0].services=[{id:'svc',name:'Synthetic',price:58}];
+   const body={customerId:'c1',items:[{type:'service',id:'svc',quantity:1,groupBuyVoucherId:'voucher'}],total:40,paymentMethod:'cash'};
+   failRpc=true;
+   try {
+    assert.equal((await request('/settlements',ceo,'POST',body)).status,503);
+    assert.equal((await request('/settlements',ceo,'POST',{...body,items:[{...body.items[0],quantity:2}],total:80})).status,400);
+    batch.is_active=false;assert.equal((await request('/settlements',ceo,'POST',body)).status,400);batch.is_active=true;
+    batch.valid_to='2000-01-01';assert.equal((await request('/settlements',ceo,'POST',body)).status,400);
+    batch.valid_to=new Date(Date.now()+86400000).toISOString();batch.shop_id='s2';assert.equal((await request('/settlements',ceo,'POST',body)).status,400);
+   }finally{failRpc=false;[tables.group_buy_batches,tables.group_buy_vouchers,tables.shops[0].services]=saved;}
+  });
+  await t.test('公开图片按需读取完整字节；跨店索引拒绝，资料保存不破坏原图',async()=>{
+   const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=';
+   const shop=tables.shops[0];const before=structuredClone(shop);const products=tables.products;
+   shop.avatar=png;shop.images=[png];tables.products=[{id:'image-product',shop_id:'s1',name:'Synthetic',images:[png],price:10,stock:1}];
+   try {
+    const read=await request('/shops/s1');assert.equal(read.body.data.avatar,'/api/shops/s1/media/avatar');
+    const response=await fetch(base+read.body.data.avatar);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/png');assert.equal(Buffer.from(await response.arrayBuffer()).toString('base64'),png.split(',')[1]);
+    assert.equal((await fetch(base+'/api/shops/s2/products/image-product/images/0')).status,404);
+    assert.equal((await request('/shops/s1',ceo,'PUT',{name:shop.name,avatar:read.body.data.avatar,images:read.body.data.images})).status,200);assert.equal(shop.avatar,png);assert.deepEqual(shop.images,[png]);
+    const product=await request('/shops/s1/products');assert.ok(product.body.data[0].images[0].startsWith('/api/shops/s1/products/'));
+    assert.equal((await request('/shops/s1/products/image-product',ceo,'PUT',{name:'Edited',images:product.body.data[0].images,stock:999})).status,200);assert.deepEqual(tables.products[0].images,[png]);assert.equal(tables.products[0].stock,1);
+   }finally{Object.assign(shop,before);tables.products=products;}
+  });
+  await t.test('服务端预约遵守门店营业配置，不信任前端可选时段',async()=>{
+   const shop=tables.shops[0],before=structuredClone(shop);tables.bookings=[];
+   const body={shopId:'s1',customerId:'c1',serviceId:'svc',stylistId:'stylist',scheduledTime:'2029-01-01T10:00:00+08:00'};
+   shop.services=[{id:'svc',name:'Synthetic',price:58,duration:30}];shop.opening_hours={monday:{isOpen:false,open:'09:00',close:'21:00'}};
+   try {
+    assert.equal((await request('/bookings',ceo,'POST',body)).status,400);
+    shop.opening_hours.monday={isOpen:true,open:'11:00',close:'18:00'};
+    assert.equal((await request('/bookings',ceo,'POST',body)).status,400);
+    assert.equal((await request('/bookings',ceo,'POST',{...body,scheduledTime:'2029-01-01T12:00:00+08:00'})).status,201);
+   } finally {Object.assign(shop,before);delete shop.opening_hours;tables.bookings=[];}
   });
   await t.test('停用、降权、改密即时影响现有员工会话',async()=>{
    tables.employees[0].role='stylist';assert.equal((await request('/financial/report',ceo)).status,403);tables.employees[0].role='ceo';

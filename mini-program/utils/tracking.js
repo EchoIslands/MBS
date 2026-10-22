@@ -143,7 +143,8 @@ export async function flush() {
     });
 
     // 上报成功后移除已发送事件
-    const remaining = queue.slice(batch.length);
+    // 请求期间可能继续入队；从最新队列删除本批，避免覆盖后来事件。
+    const remaining = readQueue().filter(event=>!batch.some(sent=>sent.session_id===event.session_id && sent.timestamp===event.timestamp && sent.event_type===event.event_type));
     writeQueue(remaining);
   } catch (err) {
     console.warn('[tracking] 上报失败，保留本地队列:', err.message || err);

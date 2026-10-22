@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Clock, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { mockRefundRequests, mockBookings } from '../../../shared/mockData';
-import { RefundStatus } from '../../../shared/types';
+import {isRealApi} from '../../../shared/api-base';
+import {refundApi,bookingApi} from '../../api';
+import { Booking, RefundRequest, RefundStatus } from '../../../shared/types';
 
 const RefundPage: React.FC = () => {
   const navigate = useNavigate();
@@ -13,28 +15,36 @@ const RefundPage: React.FC = () => {
   const [reason, setReason] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
-  // 获取顾客的退款记录
-  const customerRefunds = mockRefundRequests.filter(
-    r => r.customerId === currentCustomer?.id
-  );
-
-  // 获取可申请退款的预约
-  const refundableBookings = mockBookings.filter(
-    b => b.customerId === currentCustomer?.id && 
-    b.status !== 'cancelled' &&
-    !mockRefundRequests.some(r => r.bookingId === b.id && r.status !== RefundStatus.REJECTED)
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // 模拟提交退款申请
-    setSubmitted(true);
-    setTimeout(() => {
-      setShowApplyForm(false);
-      setSubmitted(false);
-      setSelectedBooking('');
-      setReason('');
-    }, 1500);
+  const [records,setRecords]=useState<RefundRequest[]>([]);
+  const [bookings,setBookings]=useState<Booking[]>([]);
+  const [error,setError]=useState('');
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{
+    if(!currentCustomer?.id) {setLoading(false);return;}
+    (async()=>{
+      try {
+        if(isRealApi()) {
+          const [refunds,appointments]=await Promise.all([refundApi.getByCustomer(currentCustomer.id),bookingApi.getCustomerBookings(currentCustomer.id)]);
+          setRecords(refunds);setBookings(appointments);
+        } else {setRecords(mockRefundRequests.filter(r=>r.customerId===currentCustomer.id));setBookings(mockBookings.filter(b=>b.customerId===currentCustomer.id));}
+      } catch(e) {setError(e instanceof Error?e.message:'退款信息加载失败');}
+      finally {setLoading(false);}
+    })();
+  },[currentCustomer?.id]);
+  const customerRefunds=records;
+  const refundableBookings=bookings.filter(b=>b.status!=='cancelled' && !records.some(r=>r.bookingId===b.id && r.status!==RefundStatus.REJECTED));
+  const handleSubmit=async(e:React.FormEvent)=>{
+    e.preventDefault();if(saving || !currentCustomer?.id) return;
+    setSaving(true);setError('');
+    try {
+      if(isRealApi()) {
+        const record=await refundApi.requestByCustomer(currentCustomer.id,selectedBooking,reason);
+        setRecords(prev=>[record,...prev.filter(r=>r.id!==record.id)]);
+      }
+      setSubmitted(true);
+    } catch(e) {setError(e instanceof Error?e.message:'退款申请未提交');}
+    finally {setSaving(false);}
   };
 
   const getStatusIcon = (status: RefundStatus) => {
@@ -99,6 +109,9 @@ const RefundPage: React.FC = () => {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {loading && <p className="text-gray-500">加载中...</p>}
+        {error && <p role="alert" className="text-red-600">{error}</p>}
+        <p className="text-sm text-gray-500">仅已付款的服务可申请退款，金额按实际付款核定。申请由门店审核，到账以门店实际处理结果为准。</p>
         {/* 申请退款按钮 */}
         {!showApplyForm && (
           <button
@@ -119,7 +132,7 @@ const RefundPage: React.FC = () => {
               <div className="text-center py-8">
                 <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
                 <p className="text-gray-800 font-medium">退款申请已提交</p>
-                <p className="text-sm text-gray-500 mt-2">我们将在1-3个工作日内处理</p>
+                <p className="text-sm text-gray-500 mt-2">已登记，请联系门店核对退款处理进度</p>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -166,7 +179,7 @@ const RefundPage: React.FC = () => {
                     取消
                   </button>
                   <button
-                    type="submit"
+                    type="submit" disabled={saving || loading}
                     className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors"
                   >
                     提交申请

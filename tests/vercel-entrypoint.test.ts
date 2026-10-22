@@ -11,4 +11,5 @@ test('Vercel api 目录只暴露统一入口，业务代码不再生成独立函
   assert.equal(config.functions['api/index.ts'].includeFiles, '{backend,shared,server}/**');
   const entry = await readFile(new URL('../api/index.ts', import.meta.url), 'utf8');
   assert.ok(entry.includes("import('../backend/app.js')"));
+  assert.match(entry,/helpers:\s*false/);
 });

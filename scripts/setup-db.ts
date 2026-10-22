@@ -1,4 +1,5 @@
-/** 仅补齐 025–032 结构，不初始化密码、不执行结算函数。 */
+import {checkOperationsSchema} from './lib/operations-schema.js';
+/** 仅补齐 025–036 结构，不初始化密码、不执行结算函数。 */
 import pg, { type ClientConfig } from 'pg';
 import dotenv from 'dotenv';
 import { readFile } from 'node:fs/promises';
@@ -14,6 +15,10 @@ export const SETUP_MIGRATIONS = [
   '030_restrict_sensitive_rpc_execution.sql',
   '031_booking_checkout_consistency.sql',
   '032_recover_unstarted_settlement_payment.sql',
+  '033_atomic_customer_operations.sql',
+  '034_restrict_business_table_access.sql',
+  '035_membership_and_shipping_atomic.sql',
+  '036_settlement_rewards_and_package_integrity.sql',
 ] as const;
 
 const BASE_TABLES = [
@@ -31,7 +36,7 @@ const EXPECTED_COLUMNS: Record<string, string> = {
 export type SetupConnection = { query: (sql: string, values?: any[]) => Promise<{ rows: any[] }> };
 
 export async function setupDatabase(connection: SetupConnection, log = console.log) {
-  // 先加载全部文件；029 自带事务边界，由 runner 统一管理六份文件的事务。
+  // 先加载全部文件；029 自带事务边界，由 runner 统一管理全部文件的事务。
   const migrations = await Promise.all(SETUP_MIGRATIONS.map(async file => {
     let sql = (await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')).replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
     if (file.startsWith('029_') || file.startsWith('030_')) sql = sql.replace(/^BEGIN;[ \t]*$/m, '').replace(/^COMMIT;[ \t]*$/m, '');
@@ -43,7 +48,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
     await connection.query('BEGIN');
     active = true;
     await connection.query("SET LOCAL statement_timeout = '10min'; SET LOCAL lock_timeout = '15s'; SET LOCAL search_path = public;");
-    const lock = await connection.query("SELECT pg_try_advisory_xact_lock(hashtext('mbs.setup.025-032')) AS locked");
+    const lock = await connection.query("SELECT pg_try_advisory_xact_lock(hashtext('mbs.setup.025-036')) AS locked");
     if (lock.rows[0]?.locked !== true) throw new Error('已有结构安装任务运行，请待其结束后重跑。');
     stage = '历史基础结构检查';
     const columns = await connection.query('SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema=$1 AND table_name=ANY($2::text[])', ['public', BASE_TABLES]);
@@ -54,6 +59,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
     for (const { file, sql } of migrations) {
       stage = file;
       log(`[建库] 正在执行 ${file}…`);
+      if(file.startsWith('035_')) await checkOperationsSchema(connection);
       await connection.query(sql);
       log(`[建库] ${file} 执行通过（等待统一提交）。`);
     }
@@ -66,7 +72,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
     await connection.query("NOTIFY pgrst, 'reload schema'");
     await connection.query('COMMIT');
     active = false;
-    log('[完成] 025–032 已全部提交，已通知 API 重载结构；未初始化密码、未执行消费或扣款。');
+    log('[完成] 025–036 已全部提交，已通知 API 重载结构；未初始化密码、未执行消费或扣款。');
   } catch (error) {
     if (active) { try { await connection.query('ROLLBACK'); } catch { /* 断连时数据库自行回滚未提交事务 */ } }
     if (error instanceof Error && (error.message.startsWith('缺少 001–024') || error.message.startsWith('客户字段') || error.message.startsWith('已有结构安装'))) throw error;
@@ -96,12 +102,12 @@ export function databaseConfig(env: NodeJS.ProcessEnv): ClientConfig {
       throw new Error('SUPABASE_DB_URL 与 SUPABASE_URL 的项目不一致，请核对连接串。');
     }
   }
-  return { connectionString: url.toString(), ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15_000, application_name: 'mbs-setup-025-032' };
+  return { connectionString: url.toString(), ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15_000, application_name: 'mbs-setup-025-036' };
 }
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：npx tsx scripts/setup-db.ts\n读取根目录 .env 的 SUPABASE_DB_URL，事务执行 025–032；不初始化密码。');
+    console.log('用法：npx tsx scripts/setup-db.ts\n读取根目录 .env 的 SUPABASE_DB_URL，事务执行 025–036；不初始化密码。');
     return;
   }
   if (process.argv.length > 2) throw new Error('未知参数；使用 --help 查看用法。');

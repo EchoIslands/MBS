@@ -21,6 +21,14 @@ function getApiBase() {
 
 const DEFAULT_TIMEOUT = 30000; // 小程序网络环境复杂，给予更充裕的超时时间
 
+// 小程序image不识别站点相对地址；只转换后端自己的图片接口。
+function resolveMedia(value, base) {
+  if (Array.isArray(value)) return value.map(item => resolveMedia(item, base));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,resolveMedia(item, base)]));
+  return typeof value === 'string' && /^\/api\/shops\/[^/]+\/(?:media\/|products\/[^/]+\/images\/|employees\/[^/]+\/avatar)/.test(value)
+    ? base.replace(/\/api\/?$/, '') + value : value;
+}
+
 export function request(url, options = {}) {
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
@@ -51,7 +59,8 @@ export function request(url, options = {}) {
           if (bodyStr.length > 512 * 1024) {
             console.warn(`[mini-api] ${fullUrl} 响应体过大: ${Math.round(bodyStr.length / 1024)}KB`);
           }
-          resolve(res.data);
+          if(res.data?.success===false) {reject(new Error(res.data.error || '操作未完成'));return;}
+          resolve(resolveMedia(res.data,base));
           return;
         }
 

@@ -1,9 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, MessageSquare, Mail, CheckCircle } from 'lucide-react';
 
+import {isRealApi} from '../../../shared/api-base';
+import {shopApi} from '../../api';
+import {useAppStore} from '../../store';
+
 const Feedback: React.FC = () => {
   const navigate = useNavigate();
+  const customer=useAppStore(state=>state.currentCustomer);
+  const [shopPhone,setShopPhone]=useState('');
+  useEffect(()=>{if(isRealApi() && customer?.shopId) shopApi.getShop(customer.shopId).then(shop=>setShopPhone(shop?.phone || '')).catch(()=>{});},[customer?.shopId]);
   const [type, setType] = useState<'suggestion' | 'complaint' | 'other'>('suggestion');
   const [contact, setContact] = useState('');
   const [content, setContent] = useState('');
@@ -26,6 +33,7 @@ const Feedback: React.FC = () => {
     }, 600);
   };
 
+  if(isRealApi()) return <div className="min-h-screen bg-gray-50 p-6"><button onClick={()=>navigate('/customer/profile')}>← 返回个人中心</button><div className="max-w-xl mx-auto mt-12 bg-white p-6 rounded-2xl"><h1 className="text-xl font-bold mb-4">意见反馈</h1><p>请直接联系门店反馈问题或建议。当前页面尚未接入线上反馈接收服务。</p>{shopPhone && <a className="block mt-4 text-orange-600" href={'tel:'+shopPhone}>联系门店：{shopPhone}</a>}</div></div>;
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 顶部导航 */}

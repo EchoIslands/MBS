@@ -14,8 +14,8 @@ export async function verifyRelease(connection: SetupConnection) {
   const signatures = new Set<string>();
   for (const file of SETUP_MIGRATIONS) {
     const sql = await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8');
-    for (const match of sql.matchAll(/REVOKE ALL ON FUNCTION\s+([\w]+\([^)]*\))\s+FROM PUBLIC/gi)) {
-      signatures.add('public.' + match[1].replace(/\s/g, '').toLowerCase());
+    for (const match of sql.matchAll(/REVOKE ALL ON FUNCTION\s+((?:public\.)?[\w]+\([^)]*\))\s+FROM PUBLIC/gi)) {
+      signatures.add('public.' + match[1].replace(/^public\./i,'').replace(/\s/g, '').toLowerCase());
     }
   }
   await connection.query('BEGIN READ ONLY');
@@ -47,6 +47,22 @@ export async function verifyRelease(connection: SetupConnection) {
       const found = await connection.query("SELECT c.relrowsecurity AS enabled FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=$1", [table]);
       if (found.rows[0]?.enabled !== true) issues.push('保护表缺失或未启用 RLS：' + table);
     }
+    const tableAccess=await connection.query(`SELECT c.relname AS table_name,c.relrowsecurity AS rls,
+      (has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE') OR has_any_column_privilege('anon',c.oid,'SELECT,INSERT,UPDATE')) AS anon_access,
+      (has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') OR has_any_column_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE')) AS authenticated_access
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relkind='r' AND c.relname=ANY($1::text[])`, [[
+      'bookings','coupons','customer_auth_limits','customer_coupons','customer_events','customer_packages','customer_password_initialization_runs',
+      'customer_profiles','customer_visit_records','customers','employees','group_buy_batches','group_buy_vouchers','member_benefit_records',
+      'member_benefits','membership_enrollments','package_usage_logs','payments','product_inventory_logs','product_order_items','product_order_refunds',
+      'product_orders','products','purchase_vip_configs','queues','referral_records','refund_requests','reviews','satisfaction_surveys','services',
+      'settlement_items','settlement_package_reservations','settlements','shipment_tracking','shop_vip_configs','shops','special_vip_configs',
+      'stockholder_benefit_records','stored_value_configs','stored_value_transactions','withdrawal_requests'
+    ]]);
+    for(const table of tableAccess.rows) {
+      if(!table.rls) issues.push('业务表未启用RLS：'+table.table_name);
+      if(table.anon_access || table.authenticated_access) issues.push('业务表存在直接客户端授权：'+table.table_name+' / '+[table.anon_access?'anon':'',table.authenticated_access?'authenticated':''].filter(Boolean).join(', ')+'；请核对034迁移');
+    }
     let counts: Record<string, string> | null = null;
     if (fields.every(field => present.has(field))) {
       const result = await connection.query(`SELECT COUNT(*)::text AS total,
@@ -59,8 +75,8 @@ export async function verifyRelease(connection: SetupConnection) {
       if (counts.empty_password !== '0') issues.push('仍有空密码记录；仅报告，不自动初始化');
       if (counts.whitespace_password !== '0') issues.push('存在空白字符密码；须单独核对，不自动覆盖');
     }
-    return { passed: issues.length === 0, issues, counts, checkedFunctions: signatures.size,
-      scope: '仅字段存在性、函数签名/执行权限、RLS 与客户数量汇总；不证明函数定义版本、密码正确性或交易验收通过' };
+    return { passed: issues.length === 0, issues, counts, checkedFunctions: signatures.size, checkedTables: tableAccess.rows.length,
+      scope: '仅字段存在性、函数签名/执行权限、业务表及列授权、RLS与客户数量汇总；不证明函数定义版本、密码正确性或交易验收通过' };
   } finally { await connection.query('ROLLBACK'); }
 }
 

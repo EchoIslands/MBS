@@ -21,6 +21,7 @@ export function getApiBase(): string {
  * 判断是否使用真实后端 API
  */
 export function isRealApi(): boolean {
+  if ((import.meta as { env?: Record<string, unknown> }).env?.PROD) return true;
   if (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string> }).env?.VITE_USE_REAL_API === 'true') {
     return true;
   }
@@ -31,16 +32,19 @@ export function isRealApi(): boolean {
  * 通用 HTTP 请求封装
  * - 15 秒超时
  * - 默认 Content-Type: application/json
- * - 非 2xx 状态码返回 null（404 视为预期行为，不警告）
- * - 网络错误返回 null 并打印警告
+ * - 非 2xx、业务失败或网络错误抛出异常，真实模式不得悄悄切换演示数据。
  *
  * 注意：本函数不处理认证 token，调用方需自行在 opts.headers 中传入 Authorization。
  */
 export async function http<T>(url: string, opts: RequestInit = {}): Promise<T | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const abort = () => controller.abort();
+  if (opts.signal?.aborted) controller.abort();
+  else opts.signal?.addEventListener('abort', abort, { once: true });
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(url, {
+      credentials: 'include',
       ...opts,
       headers: {
         'Content-Type': 'application/json',
@@ -48,18 +52,14 @@ export async function http<T>(url: string, opts: RequestInit = {}): Promise<T | 
       },
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      // 404 是预期行为（该路由尚未实现），不打印警告
-      if (res.status !== 404) {
-        console.warn(`[api] ${url} 返回 ${res.status}，将使用 mock 数据`);
-      }
-      return null;
+    const body = await res.json().catch(() => null);
+    if (!res.ok || body?.success === false) {
+      throw Object.assign(new Error(body?.error || `请求失败 (${res.status})`), { status: res.status, code: body?.code });
     }
-    return res.json() as T;
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[api] ${url} 请求失败（${message}），将使用 mock 数据`);
-    return null;
+    if (body === null) throw new Error('服务返回格式异常，请稍后重试');
+    return body as T;
+  } finally {
+    clearTimeout(timeoutId);
+    opts.signal?.removeEventListener('abort', abort);
   }
 }

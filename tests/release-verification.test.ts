@@ -17,7 +17,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
   } };
   try {
     await db.exec('CREATE ROLE service_role; CREATE ROLE anon; CREATE ROLE authenticated;');
-    const files = ['001_baseline_schema.sql', '007_create_product_tables.sql', '009_create_product_inventory_logs.sql', '011_create_product_order_refunds.sql', '013_create_group_buy.sql', '016_fix_coupon_schema.sql', '019_create_customer_packages.sql', '020_create_package_usage_logs.sql'];
+    const files = ['001_baseline_schema.sql', '019_create_customer_packages.sql', '021_create_membership_enrollments.sql',  '007_create_product_tables.sql', '010_add_shipping_to_orders.sql', '009_create_product_inventory_logs.sql', '011_create_product_order_refunds.sql', '013_create_group_buy.sql', '016_fix_coupon_schema.sql', '019_create_customer_packages.sql', '020_create_package_usage_logs.sql'];
     for (const file of files) await db.exec((await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')).replace(/^\uFEFF/, ''));
     const missing = await verifyRelease(connection);
     assert.equal(missing.passed, false);
@@ -35,7 +35,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     assert.deepEqual(report.issues, []);
     assert.equal(report.passed, true);
     assert.equal(report.counts?.must_change_password, '1');
-    assert.equal(report.checkedFunctions, 12);
+    assert.equal(report.checkedFunctions, 26);
     assert.equal(queries[0], 'BEGIN READ ONLY');
     assert.equal(queries.at(-1), 'ROLLBACK');
     assert.ok(queries.every(sql => /^(SELECT|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
@@ -43,13 +43,20 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     // 复现旧迁移只撤 PUBLIC 后仍遗留的 20 条有效授权。
     await db.exec('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;');
     const exposed = await verifyRelease(connection);
-    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 24);
+    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 52);
     await fixRpcPermissions(connection);
     const after030=await verifyRelease(connection);
     assert.equal(after030.passed,false);
-    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,4);
+    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,32);
     await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../migrations/033_atomic_customer_operations.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../migrations/035_membership_and_shipping_atomic.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../migrations/036_settlement_rewards_and_package_integrity.sql', import.meta.url), 'utf8'));
     assert.equal((await verifyRelease(connection)).passed, true);
+    await db.exec('GRANT SELECT(phone) ON customers TO anon;');
+    assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('customers') && issue.includes('anon')));
+    await db.exec(await readFile(new URL('../migrations/034_restrict_business_table_access.sql',import.meta.url),'utf8'));
+    assert.equal((await verifyRelease(connection)).passed,true);
     await fixRpcPermissions(connection); // 重入不影响数据和有效授权。
     assert.equal((await verifyRelease(connection)).passed, true);
     assert.equal((await db.query<any>('SELECT password_hash FROM customers')).rows[0].password_hash, 'synthetic');

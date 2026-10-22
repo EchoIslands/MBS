@@ -1,3 +1,4 @@
+import {bookingSlots} from '../../utils/booking-hours';
 import { getShop } from '../../api/shop';
 import { createBooking, getBookingsByShop } from '../../api/booking';
 import { getCustomerPublic } from '../../api/customer';
@@ -16,7 +17,7 @@ function generateDates() {
   for (let i = 0; i < 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = new Date(d.getTime()+8*3600000).toISOString().slice(0,10);
     arr.push({
       value: dateStr,
       label: `${d.getMonth() + 1}月${d.getDate()}日`,
@@ -27,14 +28,10 @@ function generateDates() {
 }
 
 // 生成时段
-function generateTimeSlots(selectedDate) {
-  const arr = [];
-  for (let h = 9; h <= 20; h++) {
-    arr.push(`${h.toString().padStart(2, '0')}:00`);
-    arr.push(`${h.toString().padStart(2, '0')}:30`);
-  }
+function generateTimeSlots(selectedDate, hours) {
+  const arr=bookingSlots(selectedDate,hours);
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = new Date(today.getTime()+8*3600000).toISOString().slice(0,10);
   if (selectedDate === todayStr) {
     const currentHour = today.getHours();
     const currentMinute = today.getMinutes();
@@ -98,7 +95,7 @@ function findFastestStylist(stylists, selectedDate, selectedTime, existingBookin
       if (bk.barberId !== barber.id && bk.stylistId !== barber.id) return false;
       if (bk.status === 'cancelled') return false;
       const bkDate = new Date(bk.scheduledTime);
-      return bkDate.toISOString().split('T')[0] === selectedDate;
+      return new Date(bkDate.getTime()+8*3600000).toISOString().slice(0,10) === selectedDate;
     });
 
     const ratingBonus = Math.min(10, ((barber.rating || 4.5) - 4) * 10);
@@ -131,6 +128,7 @@ Page({
     selectionMode: 'fastest',
     notes: '',
     existingBookings: [],
+    bookingsError: false,
     booking: false,
     customerId: '',
     showLogin: false,
@@ -147,7 +145,7 @@ Page({
   async onLoad(options) {
     const dates = generateDates();
     const selectedDate = dates[0].value;
-    const timeSlots = generateTimeSlots(selectedDate);
+    const timeSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
 
     const routeParams = takeRouteParams();
     const serviceId = options.serviceId || (routeParams && routeParams.serviceId);
@@ -219,6 +217,7 @@ Page({
           this.updateServiceScrollbar();
         });
         this.updateStylists(rawStylists);
+        this.updateTimeSlots();
       } else {
         this.setData({ loading: false });
         wx.showToast({ title: '店铺加载失败', icon: 'none' });
@@ -345,7 +344,7 @@ Page({
         if (bk.barberId !== s.id && bk.stylistId !== s.id) return false;
         if (bk.status === 'cancelled') return false;
         const bkDate = new Date(bk.scheduledTime);
-        return bkDate.toISOString().split('T')[0] === selectedDate;
+        return new Date(bkDate.getTime()+8*3600000).toISOString().slice(0,10) === selectedDate;
       });
       const ratingBonus = Math.min(10, ((s.rating || 4.5) - 4) * 10);
       const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
@@ -376,18 +375,19 @@ Page({
     if (!shop?.id || !selectedDate) return;
     try {
       const data = await getBookingsByShop(shop.id, selectedDate);
-      this.setData({ existingBookings: data || [] });
+      this.setData({ existingBookings: data || [], bookingsError:false });
       this.updateStylists((shop.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
       this.updateTimeSlots();
     } catch (error) {
       console.error('加载店铺预约失败:', error);
-      this.setData({ existingBookings: [] });
+      this.setData({ existingBookings: [], bookingsError:true });
+      wx.showToast({title:'档期加载失败，请稍后重试',icon:'none'});
     }
   },
 
   updateTimeSlots() {
     const { selectedDate, selectedTime, stylists, existingBookings } = this.data;
-    const rawSlots = generateTimeSlots(selectedDate);
+    const rawSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
     const duration = getServiceById(this.data.shop?.services || [],this.data.selectedService)?.duration;
     const timeSlots = rawSlots.map((time) => {
       const allBusy = stylists.length > 0 && stylists.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
@@ -414,7 +414,7 @@ Page({
 
   onDateSelect(e) {
     const selectedDate = e.currentTarget.dataset.value;
-    const timeSlots = generateTimeSlots(selectedDate);
+    const timeSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
     this.setData({
       selectedDate,
       timeSlots: timeSlots.map((t) => ({ time: t, full: false })),
@@ -468,6 +468,7 @@ Page({
   },
 
   async handleBooking() {
+    if(this.data.bookingsError) {await this.loadBookings();if(this.data.bookingsError) return;}
     const { selectedService, selectedDate, selectedTime, customerId } = this.data;
 
     if (!selectedService || !selectedDate || !selectedTime) {

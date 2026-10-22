@@ -50,7 +50,8 @@ export interface PaymentResult {
   message?: string;
 }
 
-const WECHAT_PAY_MOCK = process.env.WECHAT_PAY_MOCK !== 'false';
+// 演示支付必须显式开启，而且不能在生产环境生成假二维码。
+const WECHAT_PAY_MOCK = process.env.WECHAT_PAY_MOCK === 'true' && process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
 
 function isWechatChannel(channel: PaymentChannel): boolean {
   return ['wechat_h5', 'wechat_mini', 'wechat_native'].includes(channel);
@@ -220,6 +221,9 @@ async function fetchWechatPlatformCerts(): Promise<Record<string, string> | null
  */
 export async function createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
   const { shopId, customerId, settlementId, amount, channel, description } = input;
+  if (!Number.isFinite(amount) || amount <= 0 || Math.abs(Math.round(amount * 100) - amount * 100) > 1e-8) {
+    throw new Error('支付金额须为正数且最多两位小数');
+  }
 
   if (!isWechatChannel(channel)) {
     throw new Error(`createPayment 暂不支持非微信渠道: ${channel}`);

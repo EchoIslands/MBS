@@ -4,15 +4,20 @@ import { randomUUID, createHash } from 'crypto';
 import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified, FIRST_USE_MESSAGE } from '../lib/customerSecurity.js';
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
+import { operationError } from '../lib/rpcErrors.js';
+import {businessPeriods,businessDayRange,businessDate} from '../lib/businessTime.js';
+import {imageReference,sendStoredImage,restoreImageReference} from '../lib/imageData.js';
+import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
 import { bookingAccess } from '../middleware/bookingAccess.js';
+import { customerSession, resourceAccess, ownRecord, optionalStaff, shopContext } from '../middleware/resourceAccess.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
-import { mapCustomerBodyToDB, validateCustomerData, isValidPhone } from '../utils/customerMapper.js';
+import { mapCustomerBodyToDB, validateCustomerData, isValidPhone, CUSTOMER_ACCOUNT_FIELDS } from '../utils/customerMapper.js';
 import {
   calcDiscountedItemPrice,
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel, MembershipActivityType } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
 import { priceSettlement } from '../lib/settlementPricing.js';
@@ -433,304 +438,7 @@ employeesRouter.delete('/:id', authMiddleware, async (req: Request, res: Respons
 mainRouter.use('/employees', employeesRouter);
 
 // ===================== bookings =====================
-// ==================== 股东权益自动发放（三方协同：与 shared/lib/membership.ts 计算逻辑一致）====================
-
-interface StockholderBenefitConfig {
-  enabled: boolean;
-  serviceDiscountRate: number;
-  productDiscountRate: number;
-  cashbackRate: number;
-  freeServicesPerMonth: number;
-  priorityBooking: boolean;
-  birthdayGift: string;
-}
-
-function getEffectiveStockholderConfig(stockholderConfig: Record<string, unknown>): StockholderBenefitConfig {
-  if (stockholderConfig && typeof stockholderConfig === 'object') {
-    const cfg = stockholderConfig as Record<string, unknown>;
-    return {
-      enabled: cfg.enabled === true,
-      serviceDiscountRate: typeof cfg.serviceDiscountRate === 'number' ? cfg.serviceDiscountRate : 0.8,
-      productDiscountRate: typeof cfg.productDiscountRate === 'number' ? cfg.productDiscountRate : 0.85,
-      cashbackRate: typeof cfg.cashbackRate === 'number' ? cfg.cashbackRate : 0.05,
-      freeServicesPerMonth: typeof cfg.freeServicesPerMonth === 'number' ? cfg.freeServicesPerMonth : 1,
-      priorityBooking: !!cfg.priorityBooking,
-      birthdayGift: typeof cfg.birthdayGift === 'string' ? cfg.birthdayGift : '生日当月免费护理一次',
-    };
-  }
-  return {
-    enabled: true,
-    serviceDiscountRate: 0.8,
-    productDiscountRate: 0.85,
-    cashbackRate: 0.05,
-    freeServicesPerMonth: 1,
-    priorityBooking: true,
-    birthdayGift: '生日当月免费护理一次',
-  };
-}
-
-function calcStockholderCashback(totalAmount: number, isStockholder: boolean, stockholderConfig: Record<string, unknown>): number {
-  if (!isStockholder) return 0;
-  const config = getEffectiveStockholderConfig(stockholderConfig);
-  if (!config.enabled || config.cashbackRate <= 0) return 0;
-  return Math.round(totalAmount * config.cashbackRate * 100) / 100;
-}
-
-/**
- * 检查是否已针对该预约发放过股东奖励金（幂等性保护）
- */
-async function hasCashbackGrantedForBooking(bookingId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('stockholder_benefit_records')
-    .select('id')
-    .eq('source_booking_id', bookingId)
-    .eq('type', 'cashback')
-    .limit(1);
-  return !!(data && data.length > 0);
-}
-
-/**
- * 检查最近 1 分钟内是否有相同条件的奖励金记录（无预约关联时的幂等性保护）
- */
-async function hasRecentCashback(shopId: string, customerId: string, amount: number): Promise<boolean> {
-  const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from('stockholder_benefit_records')
-    .select('id')
-    .eq('shop_id', shopId)
-    .eq('customer_id', customerId)
-    .eq('amount', amount)
-    .eq('type', 'cashback')
-    .gte('granted_at', oneMinuteAgo)
-    .limit(1);
-  return !!(data && data.length > 0);
-}
-
-/**
- * 预约完成/结算时自动发放股东权益
- * D专家建议：奖励金入可消费余额；免费服务按自然月重置
- */
-async function grantStockholderBenefits(
-  shopId: string,
-  customerId: string,
-  totalAmount: number,
-  sourceBookingId: string | null
-) {
-  try {
-    // 1. 查询店铺配置和客户信息
-    const [{ data: shopData }, { data: customerData }] = await Promise.all([
-      supabase.from('shops').select('stockholder_config').eq('id', shopId).single(),
-      supabase.from('customers').select('is_stockholder, withdrawable_referral_amount').eq('id', customerId).single(),
-    ]);
-
-    if (!customerData?.is_stockholder) return;
-
-    const config = getEffectiveStockholderConfig(shopData?.stockholder_config);
-    if (!config.enabled) return;
-
-    // 2. 计算奖励金金额
-    const cashbackAmount = calcStockholderCashback(totalAmount, true, shopData?.stockholder_config);
-    if (cashbackAmount <= 0) return;
-
-    // 3. 幂等性保护
-    if (sourceBookingId) {
-      if (await hasCashbackGrantedForBooking(sourceBookingId)) {
-        console.log(`[股东权益] 预约 ${sourceBookingId} 已发放过奖励金，跳过`);
-        return;
-      }
-    } else {
-      // 无预约关联时，检查最近 1 分钟内是否有相同金额奖励金（防止重复结算）
-      if (await hasRecentCashback(shopId, customerId, cashbackAmount)) {
-        console.log(`[股东权益] 最近已发放过相同金额奖励金，跳过`);
-        return;
-      }
-    }
-
-    // 4. 写入权益记录并更新余额
-    const { error: insertError } = await supabase.from('stockholder_benefit_records').insert({
-        id: `shr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        shop_id: shopId,
-        customer_id: customerId,
-        type: 'cashback',
-        amount: cashbackAmount,
-        source_booking_id: sourceBookingId,
-        status: 'granted',
-        granted_at: new Date().toISOString(),
-      });
-
-      if (insertError) {
-        console.error('[股东权益] 写入奖励金记录失败:', insertError.message);
-      } else {
-        // 更新客户可消费余额
-        const oldAmount = customerData.withdrawable_referral_amount || 0;
-        const newAmount = Math.round((oldAmount + cashbackAmount) * 100) / 100;
-        await supabase.from('customers').update({ withdrawable_referral_amount: newAmount }).eq('id', customerId);
-
-        // 站内通知占位（后续可替换为微信模板消息或短信）
-        console.log(
-          `[股东权益通知占位] 客户 ${customerId} 获得消费奖励金 ${cashbackAmount} 元，已计入可消费余额`
-        );
-      }
-
-    // 5. 免费服务使用记录（自然月重置，D专家建议）
-    // 注意：当前未在预约数据中标记"是否使用免费服务"，此处预留框架。
-    // 若后续支持"使用免费次数抵扣"，可在此扣除当月配额。
-  } catch (err: unknown) {
-    console.error('[股东权益] 自动发放异常:', (err as Error).message);
-  }
-}
-
-/**
- * 处理推荐人自动升级股东并发放推荐奖励
- * 业务规则：被推荐人首次消费完成后，推荐人自动成为股东，并获得首次消费金额 × 10% 的奖励
- */
-async function processReferralPromotion(
-  shopId: string,
-  referredCustomerId: string,
-  firstSpentAmount: number,
-  sourceBookingId: string | null
-) {
-  try {
-    if (firstSpentAmount <= 0) return;
-
-    // 1. 查询被推荐人的推荐记录（referral_records 正式表）
-    // 支持 pending（老数据）或 couponed（扫码领券后）状态
-    const { data: referralRecords, error: _refError } = await supabase
-      .from('referral_records')
-      .select('*')
-      .eq('shop_id', shopId)
-      .eq('referred_id', referredCustomerId)
-      .in('status', ['pending', 'couponed'])
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    let referralRecord: unknown | null = referralRecords && referralRecords.length > 0 ? referralRecords[0] : null;
-
-    // 2. 如果没找到正式推荐记录，尝试用 customers 表的 source/referrer 字段兜底
-    if (!referralRecord) {
-      // 先检查该被推荐人是否已有已确认的推荐记录（防止重复发放）
-      const { data: confirmedRecords } = await supabase
-        .from('referral_records')
-        .select('id')
-        .eq('shop_id', shopId)
-        .eq('referred_id', referredCustomerId)
-        .eq('status', 'confirmed')
-        .limit(1);
-
-      if (confirmedRecords && confirmedRecords.length > 0) {
-        console.log(`[推荐转化] 被推荐人 ${referredCustomerId} 已有已确认推荐记录，跳过`);
-        return;
-      }
-
-      const { data: referredCustomer } = await supabase
-        .from('customers')
-        .select('referrer_name, referrer_phone, is_referred')
-        .eq('id', referredCustomerId)
-        .eq('shop_id', shopId)
-        .single();
-
-      if (referredCustomer?.is_referred && referredCustomer.referrer_phone) {
-        // 根据推荐人手机号找到推荐人
-        const { data: referrerList } = await supabase
-          .from('customers')
-          .select('id, name, phone, referral_bonus_rate, is_stockholder, withdrawable_referral_amount')
-          .eq('phone', referredCustomer.referrer_phone)
-          .eq('shop_id', shopId)
-          .limit(1);
-
-        if (referrerList && referrerList.length > 0) {
-          const referrer = referrerList[0];
-          referralRecord = {
-            id: `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-            shop_id: shopId,
-            referrer_id: referrer.id,
-            referrer_name: referrer.name,
-            referred_id: referredCustomerId,
-            referred_name: referredCustomer.referrer_name,
-            referred_phone: referredCustomer.referrer_phone,
-            bonus_amount: 0,
-            status: 'pending',
-            created_at: new Date().toISOString(),
-          };
-          // 创建一条推荐记录
-          await supabase.from('referral_records').insert(referralRecord);
-        }
-      }
-    }
-
-    if (!referralRecord) return;
-
-    const record = referralRecord as Record<string, unknown>;
-    const referrerId = record.referrer_id as string;
-    if (!referrerId) return;
-
-    // 3. 幂等性保护：检查该推荐记录是否已处理过
-    // 支持 pending（老数据）或 couponed（扫码领券后）状态触发奖励金，confirmed 表示已完成
-    if (record.status === 'confirmed') {
-      console.log(`[推荐转化] 推荐记录 ${record.id} 已处理，跳过`);
-      return;
-    }
-
-    // 4. 查询推荐人信息
-    const { data: referrer } = await supabase
-      .from('customers')
-      .select('id, is_stockholder, withdrawable_referral_amount, referral_bonus_rate, referral_earnings')
-      .eq('id', referrerId)
-      .eq('shop_id', shopId)
-      .single();
-
-    if (!referrer) return;
-
-    // 5. 计算推荐奖励金额：默认 10%，可被 referral_bonus_rate 覆盖
-    const bonusRate = typeof referrer.referral_bonus_rate === 'number' && referrer.referral_bonus_rate > 0
-      ? referrer.referral_bonus_rate
-      : 0.10;
-    const bonusAmount = Math.round(firstSpentAmount * bonusRate * 100) / 100;
-
-    // 6. 自动升级推荐人为股东（如果还不是）
-    const updatePayload: Record<string, unknown> = {
-      withdrawable_referral_amount: Math.round(((referrer.withdrawable_referral_amount || 0) + bonusAmount) * 100) / 100,
-      referral_earnings: Math.round(((referrer.referral_earnings || 0) + bonusAmount) * 100) / 100,
-    };
-    if (!referrer.is_stockholder) {
-      updatePayload.is_stockholder = true;
-      updatePayload.stockholder_since = new Date().toISOString();
-      updatePayload.membership_level = 'stockholder';
-    }
-
-    await supabase.from('customers').update(updatePayload).eq('id', referrerId).eq('shop_id', shopId);
-
-    // 7. 更新推荐记录状态
-    await supabase
-      .from('referral_records')
-      .update({
-        status: 'confirmed',
-        confirmed_at: new Date().toISOString(),
-        bonus_amount: bonusAmount,
-      })
-      .eq('id', record.id)
-      .eq('shop_id', shopId);
-
-    // 8. 写入股东权益变动记录
-    await supabase.from('stockholder_benefit_records').insert({
-      id: `shr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      shop_id: shopId,
-      customer_id: referrerId,
-      type: 'referral_bonus',
-      amount: bonusAmount,
-      source_booking_id: sourceBookingId,
-      status: 'granted',
-      granted_at: new Date().toISOString(),
-    });
-
-    console.log(
-      `[推荐转化] 推荐人 ${referrerId} 因被推荐人 ${referredCustomerId} 首次消费 ${firstSpentAmount} 元，获得奖励 ${bonusAmount} 元并已自动转为股东`
-    );
-  } catch (err: unknown) {
-    console.error('[推荐转化] 自动处理异常:', (err as Error).message);
-  }
-}
-
+// 结算奖励在036触发器内与结算同事务提交；不在响应后异步更新余额。
 const bookingsRouter = Router();
 bookingsRouter.use(bookingAccess);
 
@@ -818,14 +526,15 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     }
 
     if (dateStart) {
-      const start = new Date(dateStart);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
+      const range=businessDayRange(dateStart.slice(0,10));
+      if(!range) return res.status(400).json({success:false,error:'预约日期格式不正确'});
+      const {start,end}=range;
       query = query.gte('scheduled_time', start.toISOString()).lt('scheduled_time', end.toISOString());
     }
 
     const pageNum = parseInt(page, 10);
     const size = parseInt(pageSize, 10);
+    if(!Number.isInteger(pageNum) || pageNum<1 || !Number.isInteger(size) || size<1 || size>1000) return res.status(400).json({success:false,error:'分页参数不正确，每页允许1至1000条'});
     const offset = (pageNum - 1) * size;
 
     query = query.range(offset, offset + size - 1);
@@ -1668,12 +1377,13 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
     // 始终读取实际目录及确认规则，不能被客户端的显示字段绕过。
     const [customerResult, shopResult, stylistResult] = await Promise.all([
       supabase.from('customers').select('name, phone').eq('id', customerId).eq('shop_id', shopId).maybeSingle(),
-      supabase.from('shops').select('services, booking_confirm_mode').eq('id', shopId).maybeSingle(),
+      supabase.from('shops').select('services, booking_confirm_mode, opening_hours, is_active').eq('id', shopId).maybeSingle(),
       stylistId ? supabase.from('employees').select('name').eq('id', stylistId).eq('shop_id', shopId).eq('is_active', true).maybeSingle() : Promise.resolve({ data: null, error: null }),
     ]);
     if (customerResult.error || shopResult.error || stylistResult.error) return res.status(503).json({ success: false, error: '预约基础信息暂不可用' });
     const service = (shopResult.data?.services || []).find((s: any) => String(s.id) === String(serviceId) && s.isActive !== false);
     if (!customerResult.data || !service || (stylistId && !stylistResult.data)) return res.status(400).json({ success: false, error: '顾客、服务或设计师不属于本店有效目录' });
+    if(shopResult.data?.is_active===false || !startsDuringOpening(scheduledTimeDate,shopResult.data?.opening_hours)) return res.status(400).json({success:false,error:'预约开始时间不在门店设置的营业时间内，请重新选择'});
     const finalCustomerName = customerResult.data.name;
     const finalCustomerPhone = customerResult.data.phone;
     const finalServiceName = service.name;
@@ -1683,10 +1393,7 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
     const finalStylistName = stylistResult.data?.name || '';
 
     // 按店铺 + 预约日期 + 同一时段 + 有效状态统计排队人数，用于生成更合理的排队号
-    const scheduledDateStart = new Date(scheduledTimeDate);
-    scheduledDateStart.setHours(0, 0, 0, 0);
-    const scheduledDateEnd = new Date(scheduledDateStart);
-    scheduledDateEnd.setDate(scheduledDateEnd.getDate() + 1);
+    const {start:scheduledDateStart,end:scheduledDateEnd}=businessDayRange(businessDate(scheduledTimeDate))!;
 
     const slotStart = getBookingTimeSlotStart(scheduledTimeDate);
     const slotEnd = new Date(slotStart);
@@ -1753,6 +1460,7 @@ mainRouter.use('/bookings', bookingsRouter);
 
 // ===================== customer packages（次卡套餐）====================
 const customerPackagesRouter = Router();
+customerPackagesRouter.use(authMiddleware, shopContext);
 
 const packageFromDb = (p: Record<string, unknown>): Record<string, unknown> => ({
   id: p.id,
@@ -1804,47 +1512,13 @@ const membershipEnrollmentFromDb = (m: DbRecord): Record<string, unknown> => ({
 });
 
 /**
- * 写入会员入会记录（仅留痕，不修改客户会员状态）
- */
-async function recordMembershipEnrollment(opts: {
-  shopId: string;
-  customerId: string;
-  level: string;
-  source: string;
-  activityType?: string | null;
-  packageId?: string | null;
-  enrolledAt: string;
-  expiresAt: string;
-  note?: string;
-}): Promise<void> {
-  const ts = new Date().toISOString();
-  const { error } = await supabase.from('membership_enrollments').insert({
-    id: `enr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    shop_id: opts.shopId,
-    customer_id: opts.customerId,
-    level: opts.level,
-    source: opts.source,
-    activity_type: opts.activityType || null,
-    package_id: opts.packageId || null,
-    enrolled_at: opts.enrolledAt,
-    expires_at: opts.expiresAt,
-    status: 'active',
-    note: opts.note || '',
-    created_at: ts,
-    updated_at: ts,
-  });
-  if (error) {
-    console.error('[membership-enrollments] 写入会记录失败:', error.message);
-  }
-}
-
-/**
  * 查找店铺内「设计师洗剪吹」服务（钻石会员赠送的 58 元剪发服务）。
  * 优先精确匹配名称，其次匹配「名称含『剪』且价格 = 58」。
  */
 async function findDiamondHaircutService(shopId: string): Promise<{ id: string; name: string } | null> {
   try {
-    const { data } = await supabase.from('shops').select('services').eq('id', shopId).single();
+    const { data,error } = await supabase.from('shops').select('services').eq('id', shopId).single();
+    if(error) throw new Error('店铺服务配置查询失败');
     const services = (data?.services as Array<Record<string, unknown>>) || [];
     let svc = services.find((s) => String(s.name || '').trim() === '设计师洗剪吹');
     if (!svc) {
@@ -1854,106 +1528,8 @@ async function findDiamondHaircutService(shopId: string): Promise<{ id: string; 
     return { id: String(svc.id), name: String(svc.name) };
   } catch (err) {
     console.error('[membership] 查找58剪发服务失败:', err instanceof Error ? err.message : err);
-    return null;
+    throw new Error('店铺服务配置查询失败，请重试');
   }
-}
-
-/**
- * 为钻石会员赠送 3 次「设计师洗剪吹」次卡
- */
-async function grantDiamondGiftPackage(shopId: string, customerId: string): Promise<void> {
-  const service = await findDiamondHaircutService(shopId);
-  if (!service) {
-    console.warn('[membership] 店铺未配置 58 元剪发服务，跳过钻石会员次卡赠送');
-    return;
-  }
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + 365 * 86400000).toISOString();
-  const { error } = await supabase.from('customer_packages').insert({
-    id: `pkg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    shop_id: shopId,
-    customer_id: customerId,
-    name: `钻石会员赠送·${service.name}3次`,
-    service_id: service.id,
-    total_times: 3,
-    used_times: 0,
-    price: 0,
-    expires_at: expiresAt,
-    allow_holiday_use: true,
-    status: 'active',
-    source: 'vip_benefit',
-    activity_type: null,
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-  });
-  if (error) {
-    console.error('[membership] 赠送钻石会员次卡失败:', error.message);
-  }
-}
-
-/**
- * 会员入会：写记录 + 将客户升级为对应购买型 VIP（1 年有效期，未过期则在原到期时间上顺延）
- * @returns 新的到期时间；失败返回 null
- */
-async function enrollCustomerAsVIP(
-  shopId: string,
-  customerId: string,
-  level: string,
-  options: { source: string; activityType?: string | null; packageId?: string | null; note?: string }
-): Promise<string | null> {
-  const now = Date.now();
-  const { data: customer, error: fetchError } = await supabase
-    .from('customers')
-    .select('*')
-    .eq('id', customerId)
-    .eq('shop_id', shopId)
-    .single();
-  if (fetchError || !customer) {
-    console.error('[membership-enrollments] 查询客户失败:', fetchError?.message);
-    return null;
-  }
-
-  const currentExpiry = customer.purchase_vip_expires_at
-    ? new Date(customer.purchase_vip_expires_at).getTime()
-    : 0;
-  const baseTime = currentExpiry > now ? currentExpiry : now;
-  const expiresAt = new Date(baseTime + 365 * 86400000).toISOString();
-  const ts = new Date().toISOString();
-
-  const { error: updateError } = await supabase
-    .from('customers')
-    .update({
-      purchase_vip_level: level,
-      purchase_vip_expires_at: expiresAt,
-      is_member: true,
-      membership_level: customer.is_stockholder ? 'stockholder' : 'premium',
-      updated_at: ts,
-    })
-    .eq('id', customerId)
-    .eq('shop_id', shopId);
-  if (updateError) {
-    console.error('[membership-enrollments] 更新会员等级失败:', updateError.message);
-    return null;
-  }
-
-  await recordMembershipEnrollment({
-    shopId,
-    customerId,
-    level,
-    source: options.source,
-    activityType: options.activityType,
-    packageId: options.packageId,
-    enrolledAt: ts,
-    expiresAt,
-    note: options.note,
-  });
-
-  // 首次成为钻石会员：自动赠送 3 次 58 元剪发（设计师洗剪吹）
-  if (level === 'diamond' && customer.purchase_vip_level !== 'diamond') {
-    await grantDiamondGiftPackage(shopId, customerId);
-  }
-
-  return expiresAt;
 }
 
 // 查询次卡列表（店铺端查全部，顾客端按 customer_id）
@@ -1987,7 +1563,7 @@ customerPackagesRouter.get('/', authMiddleware, async (req: Request, res: Respon
 });
 
 // 查询单个次卡详情
-customerPackagesRouter.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+customerPackagesRouter.get('/:id', ownRecord('customer_packages'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { data, error } = await supabase.from('customer_packages').select('*').eq('id', id).single();
@@ -2008,7 +1584,7 @@ customerPackagesRouter.get('/:id', authMiddleware, async (req: Request, res: Res
 });
 
 // 创建次卡（店铺端手动开卡）
-customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+customerPackagesRouter.post('/', requirePermission('shop:edit'), async (req: Request, res: Response) => {
   try {
     const {
       customerId,
@@ -2024,6 +1600,14 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
 
     if (!customerId || !serviceId || !totalTimes || !expiresAt) {
       return res.status(400).json({ success: false, error: '缺少必要字段' });
+    }
+
+    const { data: owner, error: ownerError } = await supabase.from('customers').select('id')
+      .eq('id', customerId).eq('shop_id', employee.shopId).maybeSingle();
+    if (ownerError) return res.status(503).json({ success: false, error: '顾客归属校验暂不可用' });
+    if (!owner) return res.status(404).json({ success: false, error: '顾客不存在或不属于本店' });
+    if (!Number.isInteger(Number(totalTimes)) || Number(totalTimes) <= 0 || !Number.isFinite(Number(price || 0)) || Number(price || 0) < 0 || Number.isNaN(new Date(expiresAt).getTime())) {
+      return res.status(400).json({ success: false, error: '次卡次数、金额或有效期不正确' });
     }
 
     const packageData: Record<string, unknown> = {
@@ -2043,22 +1627,9 @@ customerPackagesRouter.post('/', authMiddleware, async (req: Request, res: Respo
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase.from('customer_packages').insert(packageData).select().single();
-
-    if (error) {
-      console.error('[customer-packages] 创建失败:', error.message);
-      return res.status(500).json({ success: false, error: '创建次卡失败' });
-    }
-
-    // 活动自动入会：购买「99元3次」即自动转为购买型钻石会员（5.8 折，1 年有效期）
-    if (activityType === MembershipActivityType.NINETY_NINE_THREE) {
-      await enrollCustomerAsVIP(employee.shopId, customerId, 'diamond', {
-        source: 'package',
-        activityType,
-        packageId: (data as DbRecord)?.id as string,
-        note: `购买活动「${name || '99元3次'}」自动入会`,
-      });
-    }
+    const {data:created,error}=await supabase.rpc('create_customer_package_atomic',{p_package:packageData,p_shop_id:employee.shopId});
+    if(error || !created?.[0]) return operationError(res,error || {},'开卡未完成，请刷新后核对');
+    const data=created[0];
 
     res.status(201).json({ success: true, data: packageFromDb(data) });
   } catch (err) {
@@ -2078,6 +1649,10 @@ customerPackagesRouter.put('/:id', authMiddleware, async (req: Request, res: Res
       return res.status(403).json({ success: false, error: '无权调整次卡' });
     }
 
+    const {data:current,error:currentError}=await supabase.from('customer_packages').select('id,total_times,used_times,reserved_times').eq('id',id).eq('shop_id',employee.shopId).single();
+    if(currentError || !current) return res.status(404).json({success:false,error:'次卡不存在或无权访问'});
+    const nextTotal=Number(totalTimes ?? current.total_times),nextUsed=Number(usedTimes ?? current.used_times);
+    if(!Number.isInteger(nextTotal) || !Number.isInteger(nextUsed) || nextTotal<=0 || nextUsed<0 || nextUsed>nextTotal || (price!==undefined && (!Number.isFinite(Number(price)) || Number(price)<0)) || (status && !['active','expired','used_up'].includes(status))) return res.status(400).json({success:false,error:'次卡次数、金额或状态不正确'});
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (totalTimes !== undefined) updateData.total_times = Number(totalTimes);
     if (usedTimes !== undefined) updateData.used_times = Number(usedTimes);
@@ -2092,7 +1667,7 @@ customerPackagesRouter.put('/:id', authMiddleware, async (req: Request, res: Res
       .from('customer_packages')
       .update(updateData)
       .eq('id', id)
-      .eq('shop_id', employee.shopId).eq('reserved_times', 0)
+      .eq('shop_id', employee.shopId).eq('reserved_times', 0).eq('used_times',current.used_times).eq('total_times',current.total_times)
       .select()
       .single();
 
@@ -2158,7 +1733,7 @@ customerPackagesRouter.post('/:id/consume', authMiddleware, async (req: Request,
 });
 
 // 查询次卡核销记录
-customerPackagesRouter.get('/:id/logs', authMiddleware, async (req: Request, res: Response) => {
+customerPackagesRouter.get('/:id/logs', ownRecord('customer_packages'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { data, error } = await supabase
@@ -2344,6 +1919,14 @@ customersRouter.get('/:id/public', (req, res, next) => { void customerIdentity(r
  * GET /api/customers/:id/packages
  * 获取本人同店次卡：必须持本人会话
  */
+customersRouter.get('/:id/benefits',personalCustomerAccess,async(req:Request,res:Response)=>{
+  try {
+    const {data,error}=await supabase.from('member_benefit_records').select('*').eq('customer_id',req.customer!.id).eq('shop_id',req.customer!.shopId).eq('status','available').or('expires_at.is.null,expires_at.gte.'+new Date().toISOString()).order('granted_at',{ascending:false});
+    if(error) return res.status(503).json({success:false,error:'权益加载失败'});
+    return res.json({success:true,data:(data || []).map(benefitFromDb)});
+  } catch {return res.status(503).json({success:false,error:'权益加载失败'});}
+});
+
 customersRouter.get('/:id/packages', personalCustomerAccess, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -2393,7 +1976,7 @@ customersRouter.post('/:id/password/reset', requirePermission('customer:credenti
     if (error) return res.status(503).json({ success: false, error: '客户信息暂不可用' });
     if (!customer || !/^1[3-9]\d{9}$/.test(customer.phone || '')) return res.status(404).json({ success: false, error: '未找到有效客户手机号' });
     const passwordHash = await hashCustomerPassword(customer.phone.slice(-6));
-    const { error: updateError } = await supabase.from('customers').update({ password_hash: passwordHash }).eq('id', customer.id).eq('shop_id', customer.shop_id);
+    const { error: updateError } = await supabase.from('customers').update({ password_hash: passwordHash, is_weak_password: true }).eq('id', customer.id).eq('shop_id', customer.shop_id);
     if (updateError) return res.status(503).json({ success: false, error: '密码重置失败' });
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ success: true, data: { reset: true } });
@@ -2538,37 +2121,42 @@ customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Requ
       return;
     }
 
-    // 如果前端传了 name，则姓名与电话都必须非空
-    if (updateData.name !== undefined) {
-      const validation = validateCustomerData(updateData);
-      if ('error' in validation) {
-        res.status(400).json({ success: false, error: validation.error });
-        return;
-      }
+    if (updateData.name !== undefined && (typeof updateData.name !== 'string' || !updateData.name.trim())) {
+      return res.status(400).json({success:false,error:'客户姓名不能为空'});
     }
-
-
-
-    const { data, error } = await supabase
-      .from('customers')
-      .update(updateData)
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .select()
-      .single();
+    const {data:current,error:loadError}=await supabase.from('customers').select('*').eq('id',id).eq('shop_id',shopId).maybeSingle();
+    if(loadError) return res.status(503).json({success:false,error:'客户资料暂不可用'});
+    if(!current) return res.status(404).json({success:false,error:'客户不存在'});
+    const expected=mapCustomerBodyToDB(body._expected && typeof body._expected==='object' ? body._expected : {});
+    const accountChanges:string[]=[];
+    for(const [field,value] of Object.entries(updateData)) {
+      if(!CUSTOMER_ACCOUNT_FIELDS.has(field)) continue;
+      if(canonicalJson(value ?? null)===canonicalJson(current[field] ?? null)) { delete updateData[field]; continue; }
+      if(!Object.prototype.hasOwnProperty.call(expected,field) || canonicalJson(expected[field] ?? null)!==canonicalJson(current[field] ?? null)) {
+        return res.status(409).json({success:false,error:'客户余额或会员资料已变化，请刷新后重新核对修改'});
+      }
+      if(typeof current[field]==='number' || ['balance','stored_value_balance','withdrawable_referral_amount','withdrawable_amount','referral_earnings','total_spent','points','visit_count','total_saved','shared_fund','total_shared_fund','referral_consumption','referral_bonus_rate'].includes(field)) {
+        if(typeof value!=='number' || !Number.isFinite(value) || value<0) return res.status(400).json({success:false,error:'金额和统计数值必须是非负数'});
+      }
+      accountChanges.push(field);
+    }
+    if(!Object.keys(updateData).length) return res.json({success:true,data:toCamelCase(current)});
+    let update=supabase.from('customers').update(updateData).eq('id',id).eq('shop_id',shopId);
+    for(const field of accountChanges) update=current[field]==null ? update.is(field,null) : update.eq(field,current[field]);
+    const {data,error}=await update.select().maybeSingle();
 
     if (error) {
       console.error('[customers] 更新客户失败:', error.message);
-      res.status(500).json({ success: false, error: '更新客户失败: ' + error.message });
+      res.status(500).json({ success: false, error: '更新客户失败，请检查手机号是否重复并重试' });
       return;
     }
 
     if (!data) {
-      res.status(404).json({ success: false, error: '客户不存在' });
+      res.status(409).json({ success: false, error: '客户资料已变化，请刷新后重新核对修改' });
       return;
     }
 
-    console.log(`[customers] 客户 ${data.name} 更新成功`);
+    console.log('[customers] 客户资料更新成功');
     res.json({ success: true, data: toCamelCase(data) });
   } catch (err: unknown) {
     console.error('[customers] 更新客户异常:', (err as Error).message);
@@ -2585,6 +2173,7 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
     const { id } = req.params;
     const shopId = req.employee!.shopId;
     const { purchaseVIPLevel, storedValueLevel } = req.body || {};
+    if ((!purchaseVIPLevel && !storedValueLevel) || (purchaseVIPLevel && !['regular','bronze','silver','gold','diamond'].includes(purchaseVIPLevel)) || (storedValueLevel && !['none','store_500','store_1000','store_2000','store_5000'].includes(storedValueLevel))) return res.status(400).json({success:false,error:'请选择有效的会员或储值档位'});
 
     const { data: customer, error: fetchError } = await supabase
       .from('customers')
@@ -2677,45 +2266,14 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
       updatePayload.membership_level = 'regular';
     }
 
-    const { data: updatedCustomer, error: updateError } = await supabase
-      .from('customers')
-      .update(updatePayload)
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('[customers] 更新会员状态失败:', updateError.message);
-      res.status(500).json({ success: false, error: '更新会员状态失败' });
-      return;
-    }
-
-    // 留痕：购买型 VIP 入会 / 续费记录（每次入会时间 + 次数）
-    if (purchaseVIPLevel && typeof purchaseVIPLevel === 'string' && purchaseVIPLevel !== 'regular') {
-      await recordMembershipEnrollment({
-        shopId,
-        customerId: id,
-        level: purchaseVIPLevel,
-        source: 'manual',
-        enrolledAt: now,
-        expiresAt:
-          (updatePayload.purchase_vip_expires_at as string) ||
-          new Date(Date.now() + 365 * 86400000).toISOString(),
-        note: `店铺端办理 ${purchaseVIPLevel} 会员`,
-      });
-
-      // 首次升级为钻石会员：自动赠送 3 次 58 元剪发（设计师洗剪吹）
-      if (purchaseVIPLevel === 'diamond' && customer.purchase_vip_level !== 'diamond') {
-        await grantDiamondGiftPackage(shopId, id);
-      }
-    }
-
-    // 创建储值流水
-    if (storedValueTx) {
-      const { error: txError } = await supabase.from('stored_value_transactions').insert(storedValueTx);
-      if (txError) {
-        console.error('[customers] 创建储值流水失败:', txError.message);
+    let enrollment: Record<string,unknown> | null=null;
+    let giftPackage: Record<string,unknown> | null=null;
+    let benefits: Record<string,unknown>[]=[];
+    if (purchaseVIPLevel && purchaseVIPLevel !== 'regular') {
+      enrollment={id:'enr_'+randomUUID(),level:purchaseVIPLevel,source:'manual',enrolled_at:now,expires_at:updatePayload.purchase_vip_expires_at,note:'店铺端办理 '+purchaseVIPLevel+' 会员'};
+      if (purchaseVIPLevel==='diamond' && customer.purchase_vip_level!=='diamond') {
+        const service=await findDiamondHaircutService(shopId);
+        if(service) giftPackage={id:'pkg_'+randomUUID(),name:'钻石会员赠送·'+service.name+'3次',service_id:service.id,total_times:3,expires_at:new Date(Date.now()+365*86400000).toISOString()};
       }
     }
 
@@ -2762,13 +2320,16 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
         expires_at: new Date(Date.now() + (expiryDays[b.type] || 365) * 86400000).toISOString(),
       }));
 
-      if (benefitsToInsert.length > 0) {
-        const { error: benefitError } = await supabase.from('member_benefit_records').insert(benefitsToInsert);
-        if (benefitError) {
-          console.error('[customers] 创建权益记录失败:', benefitError.message);
-        }
-      }
+      benefits=benefitsToInsert;
     }
+    // 比较读到的资金/会员快照；有并发扣款或变更则整笔拒绝，要求刷新。
+    const expected=Object.fromEntries(['balance','stored_value_balance','purchase_vip_level','purchase_vip_expires_at','stored_value_level','stored_value_expires_at','is_stockholder'].map(key=>[key,customer[key] ?? null]));
+    const {data:result,error:membershipError}=await supabase.rpc('apply_membership_atomic',{
+      p_customer_id:id,p_shop_id:shopId,p_expected:expected,p_patch:updatePayload,
+      p_enrollment:enrollment,p_transaction:storedValueTx,p_benefits:benefits,p_package:giftPackage,
+    });
+    if(membershipError || !result?.[0]) return operationError(res,membershipError || {},'会员办理未完成，请刷新后核对再操作');
+    const updatedCustomer=result[0];
 
     res.json({
       success: true,
@@ -2817,118 +2378,13 @@ customersRouter.get('/:id/membership-enrollments', requirePermission('customer:r
  * POST /api/customers/:id/membership/revoke
  * 撤销会员（仅 CEO / 客服）：降为普通用户，标记入会记录为已撤销；储值余额、股东身份、次卡剩余次数均不受影响
  */
-customersRouter.post('/:id/membership/revoke', async (req: Request, res: Response) => {
+customersRouter.post('/:id/membership/revoke', requirePermission('customer:edit'), requireCustomerScope, async(req: Request,res: Response)=>{
   try {
-    const { id } = req.params;
-    const employee = req.employee!;
-    const shopId = employee.shopId;
-
-    if (employee.role !== 'ceo' && employee.role !== 'customer_service') {
-      res.status(403).json({ success: false, error: '仅 CEO 或客服可撤销会员' });
-      return;
-    }
-
-    const { enrollmentId, note } = req.body || {};
-
-    // 找到待撤销的入会记录：指定 ID 或最近一条有效记录
-    let query = supabase
-      .from('membership_enrollments')
-      .select('*')
-      .eq('customer_id', id)
-      .eq('shop_id', shopId)
-      .eq('status', 'active');
-    if (enrollmentId) {
-      query = query.eq('id', enrollmentId);
-    }
-    const { data: records, error: recordError } = await query.order('enrolled_at', {
-      ascending: false,
-    });
-
-    if (recordError) {
-      console.error('[customers] 查询入会记录失败:', recordError.message);
-      res.status(500).json({ success: false, error: '撤销会员失败' });
-      return;
-    }
-    const target = ((records || []) as DbRecord[])[0];
-    if (!target) {
-      res.status(404).json({ success: false, error: '该顾客没有可撤销的入会记录' });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const { error: revokeError } = await supabase
-      .from('membership_enrollments')
-      .update({
-        status: 'revoked',
-        revoked_at: now,
-        revoked_by: employee.id,
-        revoked_by_name: employee.name,
-        note: note || target.note || '',
-        updated_at: now,
-      })
-      .eq('id', target.id)
-      .eq('shop_id', shopId);
-
-    if (revokeError) {
-      console.error('[customers] 撤销入会记录失败:', revokeError.message);
-      res.status(500).json({ success: false, error: '撤销会员失败' });
-      return;
-    }
-
-    // 客户降级为普通用户
-    const { data: customer, error: fetchError } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .single();
-    if (fetchError || !customer) {
-      res.status(404).json({ success: false, error: '客户不存在' });
-      return;
-    }
-    const hasStoredValue = customer.stored_value_level && customer.stored_value_level !== 'none';
-
-    const { data: updatedCustomer, error: updateError } = await supabase
-      .from('customers')
-      .update({
-        purchase_vip_level: 'regular',
-        purchase_vip_expires_at: null,
-        is_member: !!hasStoredValue,
-        membership_level: customer.is_stockholder
-          ? 'stockholder'
-          : hasStoredValue
-          ? 'premium'
-          : 'regular',
-      })
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .select()
-      .single();
-
-    if (updateError || !updatedCustomer) {
-      console.error('[customers] 撤销会员降级失败:', updateError?.message);
-      res.status(500).json({ success: false, error: '撤销会员失败' });
-      return;
-    }
-
-    res.json({
-      success: true,
-      data: {
-        customer: toCamelCase(updatedCustomer),
-        enrollment: membershipEnrollmentFromDb({
-          ...target,
-          status: 'revoked',
-          revoked_at: now,
-          revoked_by: employee.id,
-          revoked_by_name: employee.name,
-          updated_at: now,
-        }),
-      },
-    });
-  } catch (err: unknown) {
-    console.error('[customers] 撤销会员异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
-  }
+    const {enrollmentId,note}=req.body || {};
+    const {data,error}=await supabase.rpc('revoke_membership_atomic',{p_customer_id:req.params.id,p_shop_id:req.employee!.shopId,p_enrollment_id:enrollmentId || null,p_employee_id:req.employee!.id,p_employee_name:req.employee!.name,p_note:typeof note==='string'?note:''});
+    if(error || !data?.customer) return operationError(res,error || {},'撤销会员未完成，请刷新核对');
+    return res.json({success:true,data:{customer:toCamelCase(data.customer),enrollment:membershipEnrollmentFromDb(data.enrollment)}});
+  } catch {return res.status(503).json({success:false,error:'撤销会员暂不可用'});}
 });
 
 /**
@@ -3184,11 +2640,11 @@ const QUEUE_TIME_SLOT_MINUTES = 30;
 
 // 辅助：计算某一天的 00:00 和次日 00:00
 const getQueueDateRange = (dateStr?: string) => {
-  const base = dateStr ? new Date(dateStr) : new Date();
-  base.setHours(0, 0, 0, 0);
-  const end = new Date(base);
-  end.setDate(end.getDate() + 1);
-  return { start: base.toISOString(), end: end.toISOString() };
+  const day=dateStr || new Date(Date.now()+8*3600_000).toISOString().slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('日期格式不正确');
+  const base=new Date(day+'T00:00:00+08:00');
+  if(!Number.isFinite(base.getTime()) || new Date(base.getTime()+8*3600_000).toISOString().slice(0,10)!==day) throw new Error('日期不存在');
+  return {start:base.toISOString(),end:new Date(base.getTime()+86400_000).toISOString()};
 };
 
 // 获取预约时间所在时段的起始时间
@@ -3204,31 +2660,18 @@ const getQueueTimeSlotStart = (date: Date, slotMinutes: number = QUEUE_TIME_SLOT
 const DEFAULT_QUEUE_SERVICE_MINUTES = 30;
 
 // 从店铺服务列表中查询服务时长
-const getQueueServiceDuration = async (shopId: string, serviceId: string): Promise<number> => {
-  try {
-    const { data } = await supabase
-      .from('shops')
-      .select('services')
-      .eq('id', shopId)
-      .maybeSingle();
-
-    if (data?.services) {
-      const services = data.services as Record<string, unknown>[];
-      const svc = services.find((s: Record<string, unknown>) => s.id === serviceId);
-      if (svc && typeof svc.duration === 'number' && svc.duration > 0) {
-        return svc.duration;
-      }
-    }
-  } catch (e) {
-    console.error('[queues] 查询服务时长失败:', e);
-    return DEFAULT_QUEUE_SERVICE_MINUTES;
-  }};
+const getQueueDurations = async (shopId:string):Promise<Map<string,number>> => {
+  const {data,error}=await supabase.from('shops').select('services').eq('id',shopId).maybeSingle();
+  if(error) throw new Error('服务配置暂不可用');
+  return new Map((data?.services || []).map((service:Record<string,unknown>)=>[String(service.id),Number(service.duration)>0?Number(service.duration):DEFAULT_QUEUE_SERVICE_MINUTES]));
+};
 
 // 获取店铺当天排队状态（按同一时段分组）
 // GET /api/queues/:shopId?date=YYYY-MM-DD
-queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
+queuesRouter.get('/:shopId', optionalStaff, async (req: Request, res: Response) => {
   try {
     const { shopId } = req.params;
+    if (req.employee && req.employee.shopId !== shopId) return res.status(403).json({ success: false, error: '无权访问其他店铺队列' });
     const { start, end } = getQueueDateRange(req.query.date as string | undefined);
 
     // 拉取当天店铺所有有效预约
@@ -3248,9 +2691,10 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
     }
 
     // 为每个 booking 补充服务时长
+    const durations=await getQueueDurations(shopId);
     const list = await Promise.all(
       (bookings || []).map(async (b: Record<string, unknown>) => {
-        const duration = await getQueueServiceDuration(shopId, b.service_id as string);
+        const duration = durations.get(String(b.service_id)) || DEFAULT_QUEUE_SERVICE_MINUTES;
         return {
           id: b.id,
           shopId: b.shop_id,
@@ -3323,73 +2767,21 @@ queuesRouter.get('/:shopId', async (req: Request, res: Response) => {
         shopId,
         currentNumber,
         estimatedWaitTime,
-        bookings: list,
+        bookings: req.employee ? list : list.map(({ id: _id, customerId: _customerId, customerName: _name, notes: _notes, ...slot }) => slot),
         timeSlotMinutes: QUEUE_TIME_SLOT_MINUTES,
       },
     });
   } catch (error) {
     console.error('[queues] 获取排队信息失败:', error);
-    res.status(500).json({ success: false, error: '获取排队信息失败' });
+    const message=error instanceof Error?error.message:'';
+    const invalidDate=message.startsWith('日期');
+    res.status(invalidDate?400:503).json({ success: false, error: invalidDate?message:'获取排队信息失败' });
   }
 });
 
-// 店铺后台手动更新排队信息（叫号或调整预计等待）
-// PUT /api/queues/:shopId
-queuesRouter.put('/:shopId', async (req: Request, res: Response) => {
-  try {
-    const { shopId } = req.params;
-    const { currentNumber, estimatedWaitTime } = req.body || {};
-    const { start, end } = getQueueDateRange(req.query.date as string | undefined);
-
-    const { data: bookings, error } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('shop_id', shopId)
-      .in('status', ['pending', 'confirmed', 'serving'])
-      .gte('scheduled_time', start)
-      .lt('scheduled_time', end);
-
-    if (error) {
-      console.error('[queues] 查询预约失败:', error.message);
-      return res.status(500).json({ success: false, error: '更新排队信息失败' });
-    }
-
-    const list = await Promise.all(
-      (bookings || []).map(async (b: Record<string, unknown>) => {
-        const duration = await getQueueServiceDuration(shopId, b.service_id as string);
-        return {
-          id: b.id,
-          queueNumber: Number(b.queue_number) || 1,
-          status: b.status,
-          duration,
-        };
-      }),
-    );
-
-    const finalCurrentNumber = typeof currentNumber === 'number' ? currentNumber : 1;
-    const finalEstimatedWaitTime =
-      typeof estimatedWaitTime === 'number'
-        ? estimatedWaitTime
-        : list
-            .filter((b) => b.queueNumber >= finalCurrentNumber && b.status !== 'serving')
-            .slice(0, 3)
-            .reduce((sum, b) => sum + b.duration, 0);
-
-    res.json({
-      success: true,
-      data: {
-        id: `queue_${shopId}_${start.slice(0, 10)}`,
-        shopId,
-        currentNumber: finalCurrentNumber,
-        estimatedWaitTime: finalEstimatedWaitTime,
-        bookings: list,
-        timeSlotMinutes: QUEUE_TIME_SLOT_MINUTES,
-      },
-    });
-  } catch (error) {
-    console.error('[queues] 更新排队信息失败:', error);
-    res.status(500).json({ success: false, error: '更新排队信息失败' });
-  }
+// 旧接口没有持久化任何叫号状态，未被业务页面调用；拒绝伪成功。
+queuesRouter.put('/:shopId',authMiddleware,requireOwnShop('shopId'),(_req:Request,res:Response)=>{
+  return res.status(501).json({success:false,error:'手动叫号尚未接入，请在预约管理中更新实际服务状态'});
 });
 
 mainRouter.use('/queues', queuesRouter);
@@ -3397,7 +2789,7 @@ mainRouter.use('/queues', queuesRouter);
 // ===================== reviews =====================
 const reviewsRouter = Router();
 
-const reviewFromDb = (r: Record<string, unknown>): unknown => ({
+const reviewFromDb = (r: Record<string, unknown>): Record<string, unknown> => ({
   id: r.id,
   shopId: r.shop_id,
   customerId: r.customer_id,
@@ -3419,7 +2811,7 @@ const reviewFromDb = (r: Record<string, unknown>): unknown => ({
 });
 
 // 创建评价
-reviewsRouter.post('/', async (req: Request, res: Response) => {
+reviewsRouter.post('/', customerSession, async (req: Request, res: Response) => {
   try {
     const {
       shopId,
@@ -3439,6 +2831,16 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
         success: false,
         error: '缺少必要参数：shopId、customerId、bookingId',
       });
+    }
+
+    const { data: booking, error: bookingError } = await supabase.from('bookings')
+      .select('id,shop_id,customer_id,stylist_id,status').eq('id', bookingId)
+      .eq('shop_id', req.customer!.shopId).eq('customer_id', req.customer!.id).maybeSingle();
+    if (bookingError) return res.status(503).json({ success: false, error: '预约校验暂不可用' });
+    if (!booking) return res.status(404).json({ success: false, error: '预约不存在或无权评价' });
+    if (booking.status !== 'completed') return res.status(409).json({ success: false, error: '服务完成后方可评价' });
+    if (![serviceScore, stylistScore].every(score => typeof score === 'number' && Number.isFinite(score) && score >= 1 && score <= 5)) {
+      return res.status(400).json({ success: false, error: '评分须为1至5分' });
     }
 
     // 防止同一预约重复评价
@@ -3477,7 +2879,7 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
         customer_id: customerId,
         booking_id: bookingId,
         type: 'shop',
-        stylist_id: stylistId || null,
+        stylist_id: booking.stylist_id || null,
         service_score: Number(serviceScore || 5),
         skill_score: Number(stylistScore || 5),
         stylist_score: Number(stylistScore || 5),
@@ -3530,7 +2932,7 @@ reviewsRouter.post('/', async (req: Request, res: Response) => {
 });
 
 // 根据预约ID查询评价
-reviewsRouter.get('/booking/:bookingId', async (req: Request, res: Response) => {
+reviewsRouter.get('/booking/:bookingId', resourceAccess('bookings', 'bookingId', true), async (req: Request, res: Response) => {
   try {
     const { bookingId } = req.params;
     const { data, error } = await supabase
@@ -3595,9 +2997,10 @@ reviewsRouter.get('/customer/:customerId', (req, res, next) => personalCustomerA
 });
 
 // 获取店铺评价列表
-reviewsRouter.get('/shop/:shopId', async (req: Request, res: Response) => {
+reviewsRouter.get('/shop/:shopId', optionalStaff, async (req: Request, res: Response) => {
   try {
     const { shopId } = req.params;
+    if (req.employee && req.employee.shopId !== shopId) return res.status(403).json({ success: false, error: '无权访问其他店铺评价' });
 
     const { data, error } = await supabase
       .from('reviews')
@@ -3615,7 +3018,12 @@ reviewsRouter.get('/shop/:shopId', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: (data || []).map(reviewFromDb),
+      data: req.employee ? (data || []).map(reviewFromDb) : (data || []).filter(r => !r.is_hidden).map(r => {
+        const review = reviewFromDb(r);
+        for (const key of ['customerId', 'bookingId', 'replyBy']) delete review[key];
+        review.customerName = r.customer_name ? String(r.customer_name).slice(0, 1) + '**' : '顾客';
+        return review;
+      }),
     });
   } catch (error) {
     console.error('[reviews] 获取评价异常:', error);
@@ -3627,10 +3035,11 @@ reviewsRouter.get('/shop/:shopId', async (req: Request, res: Response) => {
 });
 
 // 回复评价
-reviewsRouter.put('/:id/reply', async (req: Request, res: Response) => {
+reviewsRouter.put('/:id/reply', authMiddleware, requirePermission('review:manage'), ownRecord('reviews'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { reply, replyBy } = req.body;
+    const { reply } = req.body;
+    const replyBy = req.employee!.name;
 
     if (!reply || !replyBy) {
       return res.status(400).json({
@@ -3672,7 +3081,7 @@ reviewsRouter.put('/:id/reply', async (req: Request, res: Response) => {
 });
 
 // 隐藏/显示评价
-reviewsRouter.put('/:id/hide', async (req: Request, res: Response) => {
+reviewsRouter.put('/:id/hide', authMiddleware, requirePermission('review:manage'), ownRecord('reviews'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { isHidden } = req.body;
@@ -3709,6 +3118,22 @@ mainRouter.use('/reviews', reviewsRouter);
 
 // ===================== shops =====================
 const shopsRouter = Router();
+shopsRouter.get('/:id/media/:image',async(req:Request,res:Response)=>{
+  const {data,error}=await supabase.from('shops').select('avatar,images').eq('id',req.params.id).maybeSingle();
+  if(error) return res.status(503).end();
+  const value=req.params.image==='avatar'?data?.avatar:Array.isArray(data?.images)?data.images[Number(req.params.image)]:null;
+  return sendStoredImage(res,value);
+});
+shopsRouter.get('/:id/products/:productId/images/:image',async(req:Request,res:Response)=>{
+  const {data,error}=await supabase.from('products').select('images').eq('id',req.params.productId).eq('shop_id',req.params.id).maybeSingle();
+  if(error) return res.status(503).end();
+  return sendStoredImage(res,Array.isArray(data?.images)?data.images[Number(req.params.image)]:null);
+});
+shopsRouter.get('/:id/employees/:employeeId/avatar',async(req:Request,res:Response)=>{
+  const {data,error}=await supabase.from('employees').select('avatar').eq('id',req.params.employeeId).eq('shop_id',req.params.id).eq('is_active',true).maybeSingle();
+  if(error) return res.status(503).end();
+  return sendStoredImage(res,data?.avatar);
+});
 
 // 计算两点之间的直线距离（公里）
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -3733,18 +3158,12 @@ const shopFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   longitude: s.longitude || 0,
   level: s.level || 'good',
   isActive: s.is_active !== false,
-  avatar: typeof s.avatar === 'string' && s.avatar.startsWith('data:')
-    ? s.avatar.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
-    : (s.avatar || ''),
-  images: ((s.images as unknown[]) || []).map((url) =>
-    typeof url === 'string' && url.startsWith('data:')
-      ? url.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
-      : url
-  ),
+  avatar: imageReference(s.avatar || '', '/api/shops/'+encodeURIComponent(String(s.id))+'/media/avatar'),
+  images: ((s.images as unknown[]) || []).map((url,index)=>imageReference(url,'/api/shops/'+encodeURIComponent(String(s.id))+'/media/'+index)),
   services: s.services || [],
-  products: truncateProductImages(s.products as unknown[]) || [],
+  products: productImageReferences(s.products as unknown[],String(s.id)),
   openingHours: s.opening_hours || {},
-  employees: s.employees || [],
+  employees: Array.isArray(s.employees) ? s.employees.map((raw) => { const e=raw as DbRecord; return {id:e.id,name:e.name,avatar:imageReference(e.avatar,'/api/shops/'+encodeURIComponent(String(s.id))+'/employees/'+encodeURIComponent(String(e.id))+'/avatar'),title:e.title,role:e.role,rating:e.rating,specialty:e.specialty,isGoldStylist:e.isGoldStylist ?? e.is_gold_stylist,isActive:e.isActive ?? e.is_active}; }) : [],
   bookingConfirmMode: s.booking_confirm_mode || 'auto',
   stockholderConfig: s.stockholder_config || null,
   rating: s.rating || 5,
@@ -3784,7 +3203,7 @@ shopsRouter.get('/', async (_req: Request, res: Response) => {
 });
 
 // 获取单条店铺
-shopsRouter.get('/:id', async (req: Request, res: Response) => {
+shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -3842,8 +3261,8 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
         employees: (employees || []).map((e: Record<string, unknown>) => ({
           id: e.id,
           name: e.name,
-          phone: e.phone,
-          avatar: e.avatar,
+          ...(req.employee?.shopId === id ? {phone:e.phone} : {}),
+          avatar: imageReference(e.avatar,'/api/shops/'+encodeURIComponent(id)+'/employees/'+encodeURIComponent(String(e.id))+'/avatar'),
           title: e.title,
           role: e.role,
           rating: e.rating || 5,
@@ -3893,8 +3312,16 @@ shopsRouter.put('/:id', authMiddleware, requirePermission('shop:edit'), requireO
     if (phone !== undefined) updatePayload.phone = phone;
     if (latitude !== undefined) updatePayload.latitude = latitude;
     if (longitude !== undefined) updatePayload.longitude = longitude;
-    if (avatar !== undefined) updatePayload.avatar = avatar;
-    if (images !== undefined) updatePayload.images = images;
+    if (avatar !== undefined || images !== undefined) {
+      const {data:original,error:originalError}=await supabase.from('shops').select('avatar,images').eq('id',id).maybeSingle();
+      if(originalError || !original) return res.status(503).json({success:false,error:'原图片读取失败，请稍后保存'});
+      const prefix='/api/shops/'+encodeURIComponent(id)+'/media/';
+      if(avatar!==undefined) updatePayload.avatar=restoreImageReference(avatar,original.avatar,prefix+'avatar');
+      if(images!==undefined) updatePayload.images=Array.isArray(images)?images.map(value=>{
+        const index=typeof value==='string'&&value.startsWith(prefix)?Number(value.slice(prefix.length)):NaN;
+        return Number.isInteger(index)&&Array.isArray(original.images)?original.images[index]:value;
+      }):images;
+    }
     if (services !== undefined) updatePayload.services = services;
     if (employees !== undefined) updatePayload.employees = employees;
     if (openingHours !== undefined) updatePayload.opening_hours = openingHours;
@@ -3949,26 +3376,12 @@ const productFromDb = (p: Record<string, unknown>): Record<string, unknown> => (
   updatedAt: p.updated_at,
 });
 
-// 对 base64 图片进行截断，避免单个产品图片达数 MB 导致 API 响应/小程序 setData 过大
-const MAX_BASE64_IMAGE_PREVIEW_LEN = 200;
-const truncateProductImages = (products: unknown[]): unknown[] => {
-  return (products || []).map((product) => {
-    if (!product || typeof product !== 'object') return product;
-    const p = product as Record<string, unknown>;
-    const rawImages = p.images;
-    if (!Array.isArray(rawImages)) return p;
-    const images = rawImages.map((url) => {
-      if (typeof url !== 'string') return url;
-      if (url.startsWith('data:')) {
-        return url.length > MAX_BASE64_IMAGE_PREVIEW_LEN
-          ? url.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
-          : url;
-      }
-      return url;
-    });
-    return { ...p, images };
-  });
-};
+// JSON内只返回图片地址；图片路由按需提供完整数据。
+const productImageReferences = (products: unknown[],shopId:string): unknown[] => (products || []).map(product=>{
+  if(!product || typeof product!=='object') return product;
+  const p=product as DbRecord;
+  return {...p,images:Array.isArray(p.images)?p.images.map((image:unknown,index:number)=>imageReference(image,'/api/shops/'+encodeURIComponent(shopId)+'/products/'+encodeURIComponent(String(p.id))+'/images/'+index)):[]};
+});
 
 // 前端 Product 对象 → 数据库 products 表字段
 const productToDb = (p: Record<string, unknown>): Record<string, unknown> => ({
@@ -4043,7 +3456,8 @@ const insertInventoryLog = async (payload: {
 const syncShopProductsJsonb = async (shopId: string) => {
   try {
     const { data: products } = await supabase.from('products').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
-    const jsonbProducts = truncateProductImages((products || []).map(productFromDb));
+    // 兼容缓存必须保存完整原值，不能把展示层的缩略内容写回数据库。
+    const jsonbProducts = (products || []).map(productFromDb);
     await supabase.from('shops').update({ products: jsonbProducts, updated_at: new Date().toISOString() }).eq('id', shopId);
   } catch (err) {
     console.error('[shops] 同步 shops.products JSONB 失败:', err);
@@ -4066,14 +3480,14 @@ shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
       console.error('[shops] 查询商品失败:', error.message);
       return res.status(500).json({ success: false, error: '查询商品失败' });
     }
-    res.json({ success: true, data: truncateProductImages((data || []).map(productFromDb)) });
+    res.json({ success: true, data: productImageReferences((data || []).map(productFromDb),id) });
   } catch (error) {
     console.error('[shops] 获取商品异常:', error);
     res.status(500).json({ success: false, error: '获取商品失败' });
   }
 });
 
-shopsRouter.post('/:id/products', authMiddleware, async (req: Request, res: Response) => {
+shopsRouter.post('/:id/products', authMiddleware, requirePermission('shop:edit'), requireOwnShop(), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const product = req.body || {};
@@ -4081,6 +3495,7 @@ shopsRouter.post('/:id/products', authMiddleware, async (req: Request, res: Resp
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
 
+    if(!Number.isFinite(Number(product.price)) || Number(product.price)<0 || !Number.isSafeInteger(Number(product.stock ?? 0)) || Number(product.stock ?? 0)<0) return res.status(400).json({success:false,error:'价格须非负，库存须为非负整数'});
     const newProduct = {
       ...product,
       id: product.id || `prod_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -4104,16 +3519,29 @@ shopsRouter.post('/:id/products', authMiddleware, async (req: Request, res: Resp
   }
 });
 
-shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request, res: Response) => {
+shopsRouter.put('/:id/products/:productId', authMiddleware, requirePermission('shop:edit'), requireOwnShop(), async (req: Request, res: Response) => {
   try {
     const { id, productId } = req.params;
     const updates = req.body || {};
 
+    if(updates.price!==undefined && (!Number.isFinite(Number(updates.price)) || Number(updates.price)<0)) return res.status(400).json({success:false,error:'商品价格不正确'});
+    // 库存只走有事务与流水的库存调整入口，避免旧编辑表单覆盖并发售出数量。
     const dbUpdates = productToDb({ ...updates, updatedAt: new Date().toISOString() });
     // 防止误改 id/shop_id/created_at
     delete dbUpdates.id;
     delete dbUpdates.shop_id;
     delete dbUpdates.created_at;
+    delete dbUpdates.stock;
+    delete dbUpdates.sales;
+    if(Array.isArray(dbUpdates.images)) {
+      const {data:original,error:originalError}=await supabase.from('products').select('images').eq('id',productId).eq('shop_id',id).maybeSingle();
+      if(originalError || !original) return res.status(503).json({success:false,error:'原商品图片读取失败，请稍后保存'});
+      const prefix='/api/shops/'+encodeURIComponent(id)+'/products/'+encodeURIComponent(productId)+'/images/';
+      dbUpdates.images=dbUpdates.images.map((value:unknown)=>{
+        const index=typeof value==='string'&&value.startsWith(prefix)?Number(value.slice(prefix.length)):NaN;
+        return Number.isInteger(index)&&Array.isArray(original.images)?original.images[index]:value;
+      });
+    }
 
     const { data, error: updateError } = await supabase
       .from('products')
@@ -4137,7 +3565,7 @@ shopsRouter.put('/:id/products/:productId', authMiddleware, async (req: Request,
   }
 });
 
-shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Request, res: Response) => {
+shopsRouter.delete('/:id/products/:productId', authMiddleware, requirePermission('shop:edit'), requireOwnShop(), async (req: Request, res: Response) => {
   try {
     const { id, productId } = req.params;
 
@@ -4157,66 +3585,23 @@ shopsRouter.delete('/:id/products/:productId', authMiddleware, async (req: Reque
 });
 
 // 店铺手动调整商品库存
-shopsRouter.post('/:id/products/:productId/inventory', authMiddleware, async (req: Request, res: Response) => {
+shopsRouter.post('/:id/products/:productId/inventory',authMiddleware,requirePermission('shop:edit'),requireOwnShop(),async(req: Request,res: Response)=>{
   try {
-    const { id, productId } = req.params;
-    const { stock, reason } = req.body || {};
-    if (stock === undefined || stock === null || Number(stock) < 0) {
-      return res.status(400).json({ success: false, error: '库存数量不能为负数' });
-    }
-    if (!reason || !String(reason).trim()) {
-      return res.status(400).json({ success: false, error: '请填写调整原因' });
-    }
-
-    const { data: product, error: findError } = await supabase
-      .from('products')
-      .select('*')
-      .eq('id', productId)
-      .eq('shop_id', id)
-      .single();
-    if (findError || !product) {
-      return res.status(404).json({ success: false, error: '商品不存在' });
-    }
-
-    const newStock = Math.max(0, Number(stock));
-    const oldStock = Number(product.stock || 0);
-    const changeAmount = newStock - oldStock;
-
-    const { data: updated, error: updateError } = await supabase
-      .from('products')
-      .update({ stock: newStock, updated_at: new Date().toISOString() })
-      .eq('id', productId)
-      .eq('shop_id', id)
-      .select()
-      .single();
-    if (updateError) {
-      console.error('[shops] 调整库存失败:', updateError.message);
-      return res.status(500).json({ success: false, error: '调整库存失败' });
-    }
-
-    const handler = (req as Request & { employee?: Record<string, unknown> }).employee;
-    await insertInventoryLog({
-      shopId: id,
-      productId,
-      productName: String(product.name || ''),
-      changeAmount,
-      stockAfter: newStock,
-      type: 'manual_adjust',
-      reason: String(reason).trim(),
-      operatorId: handler ? String(handler.id) : undefined,
-      operatorName: handler ? String(handler.name) : '店铺',
+    const stock=req.body?.stock,reason=String(req.body?.reason || '').trim();
+    if(!Number.isSafeInteger(stock) || stock<0 || !reason) return res.status(400).json({success:false,error:'库存须为非负整数，并填写调整原因'});
+    const {data,error}=await supabase.rpc('adjust_product_inventory_atomic',{
+      p_product_id:req.params.productId,p_shop_id:req.employee!.shopId,p_stock:stock,p_reason:reason,
+      p_employee_id:req.employee!.id,p_employee_name:req.employee!.name,
     });
-    await syncShopProductsJsonb(id);
-
-    res.json({ success: true, data: productFromDb(updated) });
-  } catch (error) {
-    console.error('[shops] 调整库存异常:', error);
-    res.status(500).json({ success: false, error: '调整库存失败' });
-  }
+    if(error) return operationError(res,error,'调整库存失败');
+    if(!data?.[0]) return res.status(503).json({success:false,error:'库存结果未确认，请刷新核对'});
+    await syncShopProductsJsonb(req.employee!.shopId);
+    res.json({success:true,data:productFromDb(data[0])});
+  } catch {res.status(503).json({success:false,error:'调整库存暂不可用'});}
 });
 
 // 查询商品库存变动记录
-shopsRouter.get('/:id/products/:productId/inventory-logs', authMiddleware, async (req: Request, res: Response) => {
+shopsRouter.get('/:id/products/:productId/inventory-logs', authMiddleware, requirePermission('shop:edit'), requireOwnShop(), async (req: Request, res: Response) => {
   try {
     const { id, productId } = req.params;
     const { data: logs, error } = await supabase
@@ -4275,9 +3660,10 @@ const customerCouponFromDb = (cc: DbRecord): CustomerCoupon => ({
 const couponsRouter = Router();
 
 // 店铺创建优惠券
-couponsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+couponsRouter.post('/', authMiddleware, requirePermission('shop:edit'), async (req: Request, res: Response) => {
   try {
     const { shopId, ...rest } = req.body || {};
+    if (shopId !== req.employee!.shopId) return res.status(403).json({ success: false, error: '无权操作其他店铺优惠券' });
     if (!shopId || !rest.name || rest.value === undefined) {
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
@@ -4335,76 +3721,19 @@ couponsRouter.get('/shop/:shopId', async (req: Request, res: Response) => {
 });
 
 // 顾客领取优惠券
-couponsRouter.post('/:id/claim', async (req: Request, res: Response) => {
+couponsRouter.post('/:id/claim', customerSession, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { customerId, customerName, customerPhone } = req.body || {};
-    if (!customerId) {
-      return res.status(400).json({ success: false, error: '缺少顾客ID' });
-    }
-
-    const { data: coupon, error: couponError } = await supabase.from('coupons').select('*').eq('id', id).single();
-    if (couponError || !coupon) {
-      return res.status(404).json({ success: false, error: '优惠券不存在' });
-    }
-    if (!coupon.is_active) {
-      return res.status(400).json({ success: false, error: '优惠券已停用' });
-    }
-    const now = new Date().toISOString();
-    if (now < coupon.start_at || (coupon.end_at && now > coupon.end_at)) {
-      return res.status(400).json({ success: false, error: '优惠券不在有效期内' });
-    }
-    if (Number(coupon.remaining_quantity) >= 0 && Number(coupon.remaining_quantity) <= 0) {
-      return res.status(400).json({ success: false, error: '优惠券已领完' });
-    }
-
-    const limit = Number(coupon.per_customer_limit) || 1;
-    const { count } = await supabase
-      .from('customer_coupons')
-      .select('*', { count: 'exact', head: true })
-      .eq('coupon_id', id)
-      .eq('customer_id', customerId);
-    if ((count || 0) >= limit) {
-      return res.status(400).json({ success: false, error: '您已达到领取上限' });
-    }
-
-    const customerCouponId = `cc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    const { data: claimed, error: insertError } = await supabase
-      .from('customer_coupons')
-      .insert({
-        id: customerCouponId,
-        coupon_id: id,
-        shop_id: coupon.shop_id,
-        customer_id: customerId,
-        customer_name: customerName || '',
-        customer_phone: customerPhone || '',
-        status: 'unused',
-        created_at: now,
-        updated_at: now,
-      })
-      .select()
-      .single();
-    if (insertError) {
-      console.error('[coupons] 领取优惠券失败:', insertError.message);
-      return res.status(500).json({ success: false, error: '领取优惠券失败' });
-    }
-
-    if (Number(coupon.remaining_quantity) > 0) {
-      await supabase
-        .from('coupons')
-        .update({ remaining_quantity: Number(coupon.remaining_quantity) - 1, updated_at: now })
-        .eq('id', id);
-    }
-
-    res.json({ success: true, data: customerCouponFromDb(claimed) });
-  } catch (error) {
-    console.error('[coupons] 领取优惠券异常:', error);
-    res.status(500).json({ success: false, error: '领取优惠券失败' });
-  }
+    const {data,error}=await supabase.rpc('claim_coupon_atomic',{
+      p_coupon_id:req.params.id,p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,p_referral_id:null,
+    });
+    if(error) return operationError(res,error,'领取优惠券失败，请稍后重试');
+    if(!data?.[0]) return res.status(503).json({success:false,error:'领券结果未确认，请刷新后核对'});
+    res.json({success:true,data:customerCouponFromDb(data[0])});
+  } catch {res.status(503).json({success:false,error:'领取优惠券暂不可用'});}
 });
 
 // 更新优惠券（启用/禁用、修改字段）
-couponsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
+couponsRouter.put('/:id', authMiddleware, requirePermission('shop:edit'), ownRecord('coupons'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const body = req.body || {};
@@ -4516,10 +3845,8 @@ const productOrderFromDb = (o: DbRecord): Record<string, unknown> => ({
   trackingInfo: o.tracking_info || [],
 });
 
-const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => {
-  const image = typeof i.image === 'string' && i.image.startsWith('data:')
-    ? i.image.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
-    : i.image;
+const productOrderItemFromDb = (i: DbRecord, shopId?:string): Record<string, unknown> => {
+  const image = typeof i.image==='string' && i.image.startsWith('data:') && shopId ? '/api/shops/'+encodeURIComponent(shopId)+'/products/'+encodeURIComponent(String(i.product_id))+'/images/0' : i.image;
   return {
     id: i.id,
     orderId: i.order_id,
@@ -4652,9 +3979,7 @@ productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityI
       originalTotalAmount += itemOriginalTotal;
 
       const rawImage = product.images?.[0] || null;
-      const image = typeof rawImage === 'string' && rawImage.startsWith('data:')
-        ? rawImage.slice(0, MAX_BASE64_IMAGE_PREVIEW_LEN)
-        : rawImage;
+      const image=imageReference(rawImage,'/api/shops/'+encodeURIComponent(shopId)+'/products/'+encodeURIComponent(String(product.id))+'/images/0');
       orderItems.push({
         product_id: product.id,
         name: product.name,
@@ -4784,7 +4109,7 @@ productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityI
       success: true,
       data: {
         ...productOrderFromDb(order),
-        items: orderItems.map((i) => productOrderItemFromDb({ ...i, order_id: orderId })),
+        items: orderItems.map((i) => productOrderItemFromDb({ ...i, order_id: orderId },shopId)),
         couponDiscount,
         customerCouponId: appliedCustomerCoupon?.id || undefined,
         couponName: appliedCoupon?.name || undefined,
@@ -4856,7 +4181,7 @@ productOrdersRouter.get('/customer/:customerId', (req, res, next) => personalCus
     const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
     (items || []).forEach((i: Record<string, unknown>) => {
       const list = itemsByOrderId.get(i.order_id as string) || [];
-      list.push(productOrderItemFromDb(i));
+      list.push(productOrderItemFromDb(i,String(shopId)));
       itemsByOrderId.set(i.order_id as string, list);
     });
 
@@ -4922,7 +4247,7 @@ productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, re
         .in('order_id', orderIds);
       (items || []).forEach((i: Record<string, unknown>) => {
         const list = itemsByOrderId.get(i.order_id as string) || [];
-        list.push(productOrderItemFromDb(i));
+        list.push(productOrderItemFromDb(i,req.customer!.shopId));
         itemsByOrderId.set(i.order_id as string, list);
       });
     }
@@ -4946,7 +4271,7 @@ productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, re
 });
 
 // 店铺更新订单状态（备货/可提货/完成/取消）
-productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res: Response) => {
+productOrdersRouter.put('/:id/status', authMiddleware, requirePermission('product:fulfill'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status, cancelReason } = req.body || {};
@@ -4976,6 +4301,10 @@ productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res:
       if(error || !data?.[0]) return res.status(409).json({success:false,error:'取消未完成，请核对订单状态和 028 迁移'});
       return res.json({success:true,data:productOrderFromDb(data[0])});
     }
+    const transitions: Record<string,string[]> = {pending:['paid'],paid:['preparing','ready','completed'],preparing:['ready','completed'],ready:['completed']};
+    if (!(transitions[existing.status] || []).includes(status)) return res.status(409).json({success:false,error:'订单状态已变化或不允许此操作，请刷新订单'});
+    if (status === 'paid' && existing.payment_method !== 'store_pickup') return res.status(409).json({success:false,error:'请使用付款接口完成支付'});
+    if (status !== 'paid' && existing.payment_status !== 'paid') return res.status(409).json({success:false,error:'请先确认订单付款'});
     if (existing.payment_method === 'balance' && existing.payment_status !== 'paid') return res.status(409).json({success:false,error:'余额订单需先由交易接口完成付款'});
     const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
     if (status === 'completed') {
@@ -5035,7 +4364,7 @@ productOrdersRouter.put('/:id/cancel', (req,res,next) => { req.params.customerId
 });
 
 // 店铺核销自提码
-productOrdersRouter.post('/:id/verify-pickup', authMiddleware, async (req: Request, res: Response) => {
+productOrdersRouter.post('/:id/verify-pickup', authMiddleware, requirePermission('product:fulfill'), ownRecord('product_orders'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { pickupCode } = req.body || {};
@@ -5045,7 +4374,7 @@ productOrdersRouter.post('/:id/verify-pickup', authMiddleware, async (req: Reque
       return res.status(404).json({ success: false, error: '订单不存在' });
     }
 
-    if (order.pickup_code !== pickupCode) {
+    if (typeof pickupCode !== 'string' || !pickupCode || order.pickup_code !== pickupCode) {
       return res.status(400).json({ success: false, error: '核销码错误' });
     }
 
@@ -5056,7 +4385,7 @@ productOrdersRouter.post('/:id/verify-pickup', authMiddleware, async (req: Reque
     // 余额支付订单：须为 paid/ready 方可核销
     // 到店自提付款订单：pending 即可核销（顾客到店付款并提货，一次性完成）
     const canVerify =
-      ['paid', 'ready'].includes(order.status) ||
+      (['paid', 'preparing', 'ready'].includes(order.status) && order.payment_status === 'paid') ||
       (order.status === 'pending' && order.payment_method === 'store_pickup');
     if (!canVerify) {
       return res.status(400).json({ success: false, error: '订单未付款或不可核销' });
@@ -5073,7 +4402,7 @@ productOrdersRouter.post('/:id/verify-pickup', authMiddleware, async (req: Reque
       updatePayload.paid_at = new Date().toISOString();
     }
 
-    const { data: updated, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).select().single();
+    const { data: updated, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).eq('shop_id',req.employee!.shopId).eq('status',order.status).eq('payment_status',order.payment_status).select().single();
     if (error) {
       return res.status(500).json({ success: false, error: '核销失败' });
     }
@@ -5105,78 +4434,17 @@ const productOrderRefundFromDb = (r: DbRecord): Record<string, unknown> => ({
 });
 
 // 顾客申请商品订单退款
-productOrdersRouter.post('/:id/refund', async (req: Request, res: Response) => {
+productOrdersRouter.post('/:id/refund',resourceAccess('product_orders','id'),async(req: Request,res: Response)=>{
   try {
-    const { id } = req.params;
-    const { reason } = req.body || {};
-    if (!reason || !String(reason).trim()) {
-      return res.status(400).json({ success: false, error: '请填写退款原因' });
-    }
-
-    const { data: order, error: orderError } = await supabase
-      .from('product_orders')
-      .select('*')
-      .eq('id', id)
-      .single();
-    if (orderError || !order) {
-      return res.status(404).json({ success: false, error: '订单不存在' });
-    }
-
-    // 仅余额支付且未结束的订单可申请退款
-    const eligibleStatuses = ['paid', 'preparing', 'ready'];
-    if (!eligibleStatuses.includes(order.status)) {
-      return res.status(400).json({ success: false, error: '当前订单状态不可申请退款' });
-    }
-    if (order.payment_method !== 'balance') {
-      return res.status(400).json({ success: false, error: '仅余额支付订单支持退款' });
-    }
-
-    // 检查是否已有进行中的退款
-    const { data: existingRefund } = await supabase
-      .from('product_order_refunds')
-      .select('id')
-      .eq('order_id', id)
-      .eq('status', 'pending')
-      .maybeSingle();
-    if (existingRefund) {
-      return res.status(400).json({ success: false, error: '已存在待处理的退款申请' });
-    }
-
-    const refundId = `por_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    const { data: refund, error } = await supabase
-      .from('product_order_refunds')
-      .insert({
-        id: refundId,
-        order_id: id,
-        shop_id: order.shop_id,
-        customer_id: order.customer_id,
-        customer_name: order.customer_name || '',
-        amount: Number(order.payable_amount || 0),
-        reason: String(reason).trim(),
-        status: 'pending',
-        previous_status: order.status,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[productOrders] 创建退款申请失败:', error.message);
-      return res.status(500).json({ success: false, error: '提交退款申请失败' });
-    }
-
-    // 将订单标记为退款中
-    await supabase
-      .from('product_orders')
-      .update({ status: 'refunding', updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    res.json({ success: true, data: productOrderRefundFromDb(refund) });
-  } catch (error) {
-    console.error('[productOrders] 申请退款异常:', error);
-    res.status(500).json({ success: false, error: '申请退款失败' });
-  }
+    const reason=String(req.body?.reason || '').trim();
+    if(!reason) return res.status(400).json({success:false,error:'请填写退款原因'});
+    const {data,error}=await supabase.rpc('request_product_refund_atomic',{
+      p_order_id:req.params.id,p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,p_reason:reason,
+    });
+    if(error) return operationError(res,error,'提交退款申请失败');
+    if(!data?.[0]) return res.status(503).json({success:false,error:'退款结果未确认，请刷新核对'});
+    res.json({success:true,data:productOrderRefundFromDb(data[0])});
+  } catch {res.status(503).json({success:false,error:'提交退款申请暂不可用'});}
 });
 
 // 店铺查看商品订单退款申请列表
@@ -5233,161 +4501,36 @@ productOrdersRouter.put('/refunds/:id/status', authMiddleware, requirePermission
  * POST /api/product-orders/:id/ship
  * 店铺端发货：填写物流公司和运单号
  */
-productOrdersRouter.post('/:id/ship', authMiddleware, async (req: Request, res: Response) => {
+productOrdersRouter.post('/:id/ship', authMiddleware, requirePermission('product:fulfill'), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { role, shopId } = req.employee!;
-    
-    if (role !== 'ceo' && role !== 'shop_manager' && role !== 'customer_service') {
-      return res.status(403).json({ success: false, error: '无权发货' });
-    }
-
-    const { company, no } = req.body;
-    if (!company || !no) {
-      return res.status(400).json({ success: false, error: '物流公司和运单号不能为空' });
-    }
-
-    // 查询订单
-    const { data: existing, error: findError } = await supabase
-      .from('product_orders')
-      .select('*')
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .single();
-
-    if (findError) {
-      console.error('[productOrders] 查询订单失败:', findError.message);
-      return res.status(500).json({ success: false, error: '查询订单失败' });
-    }
-
-    if (!existing) {
-      return res.status(404).json({ success: false, error: '订单不存在' });
-    }
-
-    // 只有待提货（ready）状态的订单可以发货
-    if (existing.status !== 'ready' && existing.status !== 'paid' && existing.status !== 'preparing') {
-      return res.status(400).json({ success: false, error: `当前订单状态（${existing.status}）不可发货` });
-    }
-
-    const now = new Date().toISOString();
-    const updatePayload: Record<string, unknown> = {
-      status: 'shipped',
-      shipping_company: company,
-      shipping_no: no,
-      shipped_at: now,
-      updated_at: now,
-    };
-
-    const { data: updated, error } = await supabase
-      .from('product_orders')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[productOrders] 发货失败:', error.message);
-      return res.status(500).json({ success: false, error: '发货失败' });
-    }
-
-    // 添加物流轨迹记录
-    await supabase.from('shipment_tracking').insert({
-      order_id: id,
-      shipping_company: company,
-      shipping_no: no,
-      event_time: now,
-      event_description: '订单已发货',
-      location: '',
-    });
-
-    console.log(`[productOrders] 订单 ${id} 发货成功: ${company} ${no}`);
-    res.json({ success: true, data: productOrderFromDb(updated) });
-  } catch (error) {
-    console.error('[productOrders] 发货异常:', error);
-    res.status(500).json({ success: false, error: '发货失败' });
-  }
+    const {company,no}=req.body || {};
+    if(typeof company!=='string' || typeof no!=='string' || !company.trim() || !no.trim() || company.length>100 || no.length>100) return res.status(400).json({success:false,error:'请填写有效的物流公司和运单号'});
+    const {data,error}=await supabase.rpc('ship_product_order_atomic',{p_order_id:req.params.id,p_shop_id:req.employee!.shopId,p_company:company.trim(),p_no:no.trim()});
+    if(error || !data?.[0]) return operationError(res,error || {},'发货未完成，请刷新订单核对');
+    return res.json({success:true,data:productOrderFromDb(data[0])});
+  } catch {return res.status(503).json({success:false,error:'发货暂不可用'});}
 });
 
 /**
  * PUT /api/product-orders/:id/confirm
  * 顾客端确认收货
  */
-productOrdersRouter.put('/:id/confirm', async (req: Request, res: Response) => {
+productOrdersRouter.put('/:id/confirm',resourceAccess('product_orders','id'),async(req: Request,res: Response)=>{
   try {
-    const { id } = req.params;
-    const { customerId } = req.body;
-
-    if (!customerId) {
-      return res.status(400).json({ success: false, error: '缺少顾客信息' });
-    }
-
-    // 查询订单
-    const { data: existing, error: findError } = await supabase
-      .from('product_orders')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (findError) {
-      console.error('[productOrders] 查询订单失败:', findError.message);
-      return res.status(500).json({ success: false, error: '查询订单失败' });
-    }
-
-    if (!existing) {
-      return res.status(404).json({ success: false, error: '订单不存在' });
-    }
-
-    // 验证顾客权限
-    if (existing.customer_id !== customerId) {
-      return res.status(403).json({ success: false, error: '无权操作该订单' });
-    }
-
-    // 只有已发货状态可以确认收货
-    if (existing.status !== 'shipped') {
-      return res.status(400).json({ success: false, error: `当前订单状态（${existing.status}）不可确认收货` });
-    }
-
-    const now = new Date().toISOString();
-    const { data: updated, error } = await supabase
-      .from('product_orders')
-      .update({
-        status: 'completed',
-        confirmed_at: now,
-        completed_at: now,
-        updated_at: now,
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[productOrders] 确认收货失败:', error.message);
-      return res.status(500).json({ success: false, error: '确认收货失败' });
-    }
-
-    // 添加物流轨迹记录
-    await supabase.from('shipment_tracking').insert({
-      order_id: id,
-      shipping_company: existing.shipping_company,
-      shipping_no: existing.shipping_no,
-      event_time: now,
-      event_description: '确认收货',
-      location: '',
+    const {data,error}=await supabase.rpc('confirm_product_receipt_atomic',{
+      p_order_id:req.params.id,p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,
     });
-
-    console.log(`[productOrders] 订单 ${id} 确认收货成功`);
-    res.json({ success: true, data: productOrderFromDb(updated) });
-  } catch (error) {
-    console.error('[productOrders] 确认收货异常:', error);
-    res.status(500).json({ success: false, error: '确认收货失败' });
-  }
+    if(error) return operationError(res,error,'确认收货失败');
+    if(!data?.[0]) return res.status(503).json({success:false,error:'收货结果未确认，请刷新核对'});
+    res.json({success:true,data:productOrderFromDb(data[0])});
+  } catch {res.status(503).json({success:false,error:'确认收货暂不可用'});}
 });
 
 /**
  * GET /api/product-orders/:id/tracking
  * 查询物流轨迹
  */
-productOrdersRouter.get('/:id/tracking', async (req: Request, res: Response) => {
+productOrdersRouter.get('/:id/tracking', resourceAccess('product_orders', 'id', true), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -5483,14 +4626,7 @@ async function processSettlementAfterPayment(params: {
   if (error) throw new Error(error.code === 'PGRST202' ? '请先执行 027 交易原子性迁移' : '交易未完成：余额、次卡或权益状态已变化，请核对');
   if (logStep) logStep('数据库原子提交完成');
 
-  // 股东权益与推荐奖励为非核心操作，失败不应影响结算结果
-  Promise.all([
-    grantStockholderBenefits(shopId, customerId, total || 0, bookingId || null),
-    processReferralPromotion(shopId, customerId, total || 0, bookingId || null),
-  ]).catch((err: unknown) => {
-    console.error('[settlements] 股东权益/推荐奖励处理失败（非阻塞）:', (err as Error).message);
-  });
-  if (logStep) logStep('股东权益/推荐奖励已异步触发');
+  if(logStep) logStep('结算及权益已原子提交');
 }
 
 // 创建结算记录
@@ -5594,8 +4730,6 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     }
 
     // 核心业务已在 create_settlement_atomic 同事务完成。
-    Promise.all([grantStockholderBenefits(shopId,customerId,amount,bookingId || null),processReferralPromotion(shopId,customerId,amount,bookingId || null)])
-      .catch(() => console.error('[settlements] 非核心奖励发放失败，需门店复核'));
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {
     console.error('[settlements] 创建结算异常:', error);
@@ -5854,13 +4988,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
     const shopId = req.employee!.shopId;
     const dateRange = (req.query.dateRange as string) || 'month';
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const weekStart = new Date(today);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const yearStart = new Date(today.getFullYear(), 0, 1);
-    const quarterStart = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+    const {today,weekStart,monthStart,yearStart,quarterStart}=businessPeriods();
 
     let trendStart = monthStart;
     if (dateRange === 'week') trendStart = weekStart;
@@ -5872,7 +5000,7 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
       .select('*')
       .eq('shop_id', shopId)
       .eq('payment_status', 'completed')
-      .gte('created_at', trendStart.toISOString());
+      .gte('created_at', new Date(Math.min(yearStart.getTime(),weekStart.getTime(),trendStart.getTime())).toISOString());
 
     if (error) {
       console.error('[financial] 查询结算失败:', error.message);
@@ -6023,20 +5151,15 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
   try {
     const shopId = req.employee!.shopId;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const weekStart = new Date(today);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const yearStart = new Date(today.getFullYear(), 0, 1);
+    const {today,weekStart,monthStart,yearStart,quarterStart}=businessPeriods();
 
     const [{ data: employees }, { data: settlements }, { data: reviews }] = await Promise.all([
-      supabase.from('employees').select('*').eq('shop_id', shopId).eq('role', 'STYLIST').eq('is_active', true),
-      supabase.from('settlements').select('*').eq('shop_id', shopId),
+      supabase.from('employees').select('*').eq('shop_id', shopId).in('role', ['stylist','STYLIST']).eq('is_active', true),
+      supabase.from('settlements').select('*').eq('shop_id', shopId).eq('payment_status','completed'),
       supabase.from('reviews').select('*').eq('shop_id', shopId),
     ]);
 
-    const performances = (employees || []).map((emp: Record<string, unknown>) => {
+    const performances = (employees || []).filter((emp: DbRecord)=>req.employee!.role!=='stylist' || emp.id===req.employee!.id).map((emp: Record<string, unknown>) => {
       const stylistId = emp.id;
 
       const revenue = { today: 0, week: 0, month: 0, year: 0 };
@@ -6234,20 +5357,19 @@ referralsRouter.get('/', authMiddleware, async (req: Request, res: Response) => 
       .order('created_at', { ascending: false });
 
     if (error) {
-      // 表未创建或结构异常时不阻塞会员管理页面，返回空数组并记录日志
-      console.error('[referrals] 查询推荐记录失败:', error.message);
-      return res.json({ success: true, data: [] });
+      console.error('[referrals] 查询推荐记录失败:',error.code || 'UNKNOWN');
+      return res.status(503).json({success:false,error:'推荐记录加载失败，请稍后重试'});
     }
 
     res.json({ success: true, data: (data || []).map(referralFromDb) });
   } catch (error) {
     console.error('[referrals] 获取推荐记录异常:', error);
-    res.json({ success: true, data: [] });
+    res.status(503).json({ success: false, error:'推荐记录加载失败，请稍后重试' });
   }
 });
 
 // 顾客生成邀请二维码（小程序端）
-referralsRouter.post('/invite', async (req: Request, res: Response) => {
+referralsRouter.post('/invite', customerSession, async (req: Request, res: Response) => {
   try {
     const { shopId = 'shop1', customerId } = req.body || {};
     if (!customerId) {
@@ -6377,168 +5499,25 @@ referralsRouter.get('/check-code', async (req: Request, res: Response) => {
 });
 
 // 扫码领取优惠券并绑定推荐关系（公开）
-referralsRouter.post('/claim', async (req: Request, res: Response) => {
+referralsRouter.post('/claim',customerSession,async(req: Request,res: Response)=>{
   try {
-    const { ref, phone, name } = req.body || {};
-    if (!ref || !phone) {
-      return res.status(400).json({ success: false, error: '缺少邀请码或手机号' });
-    }
-
-    const cleanPhone = String(phone).trim();
-    if (!/^1[3-9]\d{9}$/.test(cleanPhone)) {
-      return res.status(400).json({ success: false, error: '手机号格式不正确' });
-    }
-
-    // 查询邀请记录
-    const { data: record, error: recordError } = await supabase
-      .from('referral_records')
-      .select('id, shop_id, referrer_id, coupon_id, status, referred_id')
-      .eq('id', ref)
-      .single();
-
-    if (recordError || !record) {
-      return res.status(404).json({ success: false, error: '邀请码无效' });
-    }
-
-    if (record.status === 'confirmed') {
-      return res.status(400).json({ success: false, error: '该邀请已完成，无法重复领取' });
-    }
-
-    if (record.referred_id) {
-      return res.status(400).json({ success: false, error: '该邀请券已被领取' });
-    }
-
-    const shopId = record.shop_id;
-
-    // 查找或创建顾客
-    let { data: customer } = await supabase
-      .from('customers')
-      .select('id, name, phone')
-      .eq('phone', cleanPhone)
-      .eq('shop_id', shopId)
-      .maybeSingle();
-
-    if (!customer) {
-      const newCustomer = {
-        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        shop_id: shopId,
-        name: name?.trim() || `顾客${cleanPhone.slice(-4)}`,
-        phone: cleanPhone,
-        membership_level: 'regular',
-        purchase_vip_level: 'regular',
-        stored_value_level: 'none',
-        source: 'referral_scan',
-        is_referred: true,
-        created_at: new Date().toISOString(),
-      };
-      const { data: inserted, error: insertCustomerError } = await supabase
-        .from('customers')
-        .insert(newCustomer)
-        .select()
-        .single();
-      if (insertCustomerError || !inserted) {
-        console.error('[referrals] 创建顾客失败:', insertCustomerError?.message);
-        return res.status(500).json({ success: false, error: '创建顾客失败' });
-      }
-      customer = inserted;
-    }
-
-    // 不能自己邀请自己
-    if (customer.id === record.referrer_id) {
-      return res.status(400).json({ success: false, error: '不能领取自己的邀请券' });
-    }
-
-    // 查询优惠券模板
-    let coupon = null;
-    if (record.coupon_id) {
-      const { data: couponData } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('id', record.coupon_id)
-        .single();
-      coupon = couponData;
-    }
-
-    if (!coupon) {
-      // 没有指定优惠券时创建默认券
-      coupon = await ensureDefaultReferralCoupon(shopId);
-    }
-
-    if (!coupon) {
-      return res.status(500).json({ success: false, error: '优惠券配置异常' });
-    }
-
-    const now = new Date();
-    const validStart = now;
-    const validEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-    // 如果优惠券模板有效期不足 30 天，延长至领取后 30 天
-    const couponEnd = coupon.end_at ? new Date(coupon.end_at as string) : new Date(0);
-    if (couponEnd.getTime() < validEnd.getTime()) {
-      await supabase
-        .from('coupons')
-        .update({
-          start_at: validStart.toISOString(),
-          end_at: validEnd.toISOString(),
-          updated_at: now.toISOString(),
-        })
-        .eq('id', coupon.id);
-    }
-
-    // 创建用户优惠券（有效期固定为领取后 30 天）
-    const customerCouponId = `cc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    const { error: couponInsertError } = await supabase.from('customer_coupons').insert({
-      id: customerCouponId,
-      coupon_id: coupon.id,
-      shop_id: shopId,
-      customer_id: customer.id,
-      customer_name: customer.name,
-      customer_phone: cleanPhone,
-      status: 'unused',
-      valid_start: validStart.toISOString(),
-      valid_end: validEnd.toISOString(),
-      created_at: now.toISOString(),
-      updated_at: now.toISOString(),
+    const ref=String(req.body?.ref || '');
+    const {data:record,error:recordError}=await supabase.from('referral_records').select('id,shop_id,coupon_id').eq('id',ref).eq('shop_id',req.customer!.shopId).maybeSingle();
+    if(recordError) return res.status(503).json({success:false,error:'邀请信息暂不可用'});
+    if(!record) return res.status(404).json({success:false,error:'邀请码无效或不属于本店'});
+    const {data:customer,error:customerError}=await supabase.from('customers').select('id,phone').eq('id',req.customer!.id).eq('shop_id',req.customer!.shopId).maybeSingle();
+    if(customerError) return res.status(503).json({success:false,error:'顾客信息暂不可用'});
+    if(!customer || (req.body?.phone && String(req.body.phone).trim()!==customer.phone)) return res.status(403).json({success:false,error:'请使用本人登录手机号领取'});
+    const coupon=record.coupon_id ? {id:record.coupon_id} : await ensureDefaultReferralCoupon(req.customer!.shopId);
+    if(!coupon) return res.status(503).json({success:false,error:'优惠券配置暂不可用'});
+    const {data,error}=await supabase.rpc('claim_coupon_atomic',{
+      p_coupon_id:coupon.id,p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,p_referral_id:ref,
     });
-
-    if (couponInsertError) {
-      console.error('[referrals] 创建用户优惠券失败:', couponInsertError.message);
-      return res.status(500).json({ success: false, error: '领取优惠券失败' });
-    }
-
-    // 更新推荐记录
-    const { error: updateError } = await supabase
-      .from('referral_records')
-      .update({
-        referred_id: customer.id,
-        referred_name: customer.name,
-        referred_phone: cleanPhone,
-        status: 'couponed',
-        couponed_at: now.toISOString(),
-      })
-      .eq('id', ref);
-
-    if (updateError) {
-      console.error('[referrals] 更新推荐记录失败:', updateError.message);
-      return res.status(500).json({ success: false, error: '绑定推荐关系失败' });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        customerId: customer.id,
-        couponId: customerCouponId,
-        couponName: coupon.name,
-        type: coupon.type,
-        value: Number(coupon.value) || 0,
-        minOrderAmount: Number(coupon.min_order_amount) || 0,
-        validEnd: validEnd.toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error('[referrals] 领取优惠券异常:', error);
-    res.status(500).json({ success: false, error: '领取优惠券失败' });
-  }
+    if(error) return operationError(res,error,'领取邀请券失败');
+    const row=data?.[0];
+    if(!row) return res.status(409).json({success:false,error:'邀请已领取，请在我的优惠券中核对'});
+    res.json({success:true,data:{customerId:row.customer_id,couponId:row.id,couponName:row.coupon_name,type:row.type,value:Number(row.value),minOrderAmount:Number(row.min_order_amount || 0),validEnd:row.valid_end}});
+  } catch {res.status(503).json({success:false,error:'领取邀请券暂不可用'});}
 });
 
 mainRouter.use('/referrals', referralsRouter);
@@ -6591,7 +5570,11 @@ const specialConfigFromDb = (r: DbRecord): SpecialVIPConfig => {
   };
 };
 
-vipConfigsRouter.use(authMiddleware);
+vipConfigsRouter.use(authMiddleware, shopContext);
+vipConfigsRouter.use((req,res,next) => {
+  if (req.method === 'GET') { next(); return; }
+  requirePermission('vip:edit')(req,res,next);
+});
 
 // GET /vip-configs/purchase?shopId=xxx
 vipConfigsRouter.get('/purchase', async (req: Request, res: Response) => {
@@ -6778,7 +5761,7 @@ mainRouter.use('/vip-configs', vipConfigsRouter);
 // ===================== satisfaction surveys =====================
 const surveysRouter = Router();
 
-surveysRouter.use(authMiddleware);
+surveysRouter.use(authMiddleware, shopContext, requirePermission('survey:manage'));
 
 const surveyFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   id: s.id,
@@ -6824,6 +5807,9 @@ surveysRouter.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
 
+    if (!Number.isInteger(Number(rating)) || Number(rating)<1 || Number(rating)>5) return res.status(400).json({success:false,error:'评分须为1至5的整数'});
+    const {data:surveyBooking,error:surveyBookingError}=await supabase.from('bookings').select('id,customer_id,customer_name').eq('id',bookingId).eq('shop_id',shopId).eq('customer_id',customerId).single();
+    if(surveyBookingError || !surveyBooking) return res.status(404).json({success:false,error:'预约不存在或无权访问'});
     const id = `survey_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const { data, error } = await supabase
       .from('satisfaction_surveys')
@@ -6858,7 +5844,21 @@ mainRouter.use('/satisfaction-surveys', surveysRouter);
 // ===================== refunds =====================
 const refundsRouter = Router();
 
-refundsRouter.use(authMiddleware);
+// 顾客只登记本人已付服务退款申请；审批记录不等于实际退款到账。
+refundsRouter.get('/customer/:customerId',(req,res,next)=>personalCustomerAccess(req,res,next,'customerId'),async(req: Request,res: Response)=>{
+  const {data,error}=await supabase.from('refund_requests').select('*').eq('customer_id',req.customer!.id).eq('shop_id',req.customer!.shopId).order('created_at',{ascending:false});
+  if(error) return res.status(503).json({success:false,error:'退款记录加载失败'});
+  return res.json({success:true,data:(data || []).map(refundFromDb)});
+});
+refundsRouter.post('/customer/:customerId',(req,res,next)=>personalCustomerAccess(req,res,next,'customerId'),async(req: Request,res: Response)=>{
+  const {bookingId,reason}=req.body || {};
+  if(typeof bookingId!=='string' || typeof reason!=='string' || !reason.trim() || reason.length>2000) return res.status(400).json({success:false,error:'请选择预约并填写退款原因（最多2000字）'});
+  const {data,error}=await supabase.rpc('request_service_refund_atomic',{p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,p_booking_id:bookingId,p_reason:reason.trim()});
+  if(error || !data?.[0]) return operationError(res,error || {},'退款申请未提交，请稍后重试');
+  return res.status(201).json({success:true,data:refundFromDb(data[0])});
+});
+
+refundsRouter.use(authMiddleware, shopContext, requirePermission('shop:edit'));
 
 const refundFromDb = (r: Record<string, unknown>): unknown => ({
   id: r.id,
@@ -6902,44 +5902,16 @@ refundsRouter.get('/', async (req: Request, res: Response) => {
 // 创建退款申请
 refundsRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const shopId = req.employee!.shopId;
-    const { bookingId, customerId, customerName, amount, reason } = req.body || {};
-
-    if (!bookingId || !customerId || amount === undefined) {
-      return res.status(400).json({ success: false, error: '缺少必要字段' });
-    }
-
-    const id = `refund_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    const { data, error } = await supabase
-      .from('refund_requests')
-      .insert({
-        id,
-        shop_id: shopId,
-        booking_id: bookingId,
-        customer_id: customerId,
-        customer_name: customerName || '顾客',
-        amount: Number(amount),
-        reason: reason || '',
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[refunds] 创建退款申请失败:', error.message);
-      return res.status(500).json({ success: false, error: '创建退款申请失败' });
-    }
-
-    res.status(201).json({ success: true, data: refundFromDb(data) });
-  } catch (error) {
-    console.error('[refunds] 创建退款申请异常:', error);
-    res.status(500).json({ success: false, error: '创建退款申请失败' });
-  }
+    const {bookingId,customerId,reason}=req.body || {};
+    if(typeof bookingId!=='string' || typeof customerId!=='string' || typeof reason!=='string' || !reason.trim() || reason.length>2000) return res.status(400).json({success:false,error:'请选择顾客预约并填写退款原因（最多2000字）'});
+    const {data,error}=await supabase.rpc('request_service_refund_atomic',{p_customer_id:customerId,p_shop_id:req.employee!.shopId,p_booking_id:bookingId,p_reason:reason.trim()});
+    if(error || !data?.[0]) return operationError(res,error || {},'退款申请未提交，请稍后重试');
+    return res.status(201).json({success:true,data:refundFromDb(data[0])});
+  } catch {return res.status(503).json({success:false,error:'退款申请未提交，请稍后重试'});}
 });
 
 // 处理退款申请
-refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
+refundsRouter.put('/:id/status', ownRecord('refund_requests'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status, rejectReason, refundMethod } = req.body || {};
@@ -6947,6 +5919,15 @@ refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
     if (!status || !['approved', 'rejected', 'completed', 'cancelled'].includes(status)) {
       return res.status(400).json({ success: false, error: '无效的状态值' });
     }
+
+    if(refundMethod!==undefined && !['original','balance','bank'].includes(refundMethod)) return res.status(400).json({success:false,error:'无效的退款方式'});
+    const {data:current,error:loadError}=await supabase.from('refund_requests').select('*').eq('id',id).eq('shop_id',req.employee!.shopId).maybeSingle();
+    if(loadError) return res.status(503).json({success:false,error:'退款记录暂不可用'});
+    if(!current) return res.status(404).json({success:false,error:'退款申请不存在'});
+    if(current.status===status) return res.json({success:true,data:refundFromDb(current)});
+    const allowed:Record<string,string[]>={pending:['approved','rejected','cancelled'],approved:['completed','cancelled']};
+    if(!allowed[String(current.status)]?.includes(status)) return res.status(409).json({success:false,error:'退款状态已变化，请刷新后核对'});
+    if(status==='rejected' && (typeof rejectReason!=='string' || !rejectReason.trim())) return res.status(400).json({success:false,error:'请填写拒绝原因'});
 
     const updatePayload: Record<string, unknown> = { status };
     if (status === 'rejected' && rejectReason) {
@@ -6963,14 +5944,17 @@ refundsRouter.put('/:id/status', async (req: Request, res: Response) => {
       .from('refund_requests')
       .update(updatePayload)
       .eq('id', id)
+      .eq('shop_id', req.employee!.shopId)
+      .eq('status',current.status)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('[refunds] 更新退款申请失败:', error.message);
       return res.status(500).json({ success: false, error: '更新退款申请失败' });
     }
 
+    if(!data) return res.status(409).json({success:false,error:'退款状态已变化，请刷新后核对'});
     res.json({ success: true, data: refundFromDb(data) });
   } catch (error) {
     console.error('[refunds] 更新退款申请异常:', error);
@@ -6992,18 +5976,13 @@ ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, error: '无权访问老板视图' });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const weekStart = new Date(today);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const yearStart = new Date(today.getFullYear(), 0, 1);
+    const {today,weekStart,monthStart,yearStart,quarterStart}=businessPeriods();
 
     const [{ data: shops }, { data: settlements }, { data: bookings }, { data: reviews }] = await Promise.all([
-      supabase.from('shops').select('*').eq('is_active', true),
-      supabase.from('settlements').select('*'),
-      supabase.from('bookings').select('*'),
-      supabase.from('reviews').select('*'),
+      supabase.from('shops').select('*').eq('is_active', true).eq('id',req.employee!.shopId),
+      supabase.from('settlements').select('*').eq('shop_id',req.employee!.shopId).eq('payment_status','completed'),
+      supabase.from('bookings').select('*').eq('shop_id',req.employee!.shopId),
+      supabase.from('reviews').select('*').eq('shop_id',req.employee!.shopId),
     ]);
 
     const totalRevenue = { today: 0, week: 0, month: 0, year: 0 };

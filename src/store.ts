@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppState, UserRole, Customer, Shop, Employee, Product, CartItem } from '../shared/types';
 import { mockCustomers, mockShops, shopPasswords, stylistPasswords, ceoPasswords, csPasswords, managerPasswords } from '../shared/mockData';
-import { customerApi } from './api';
+import { customerApi, clearAuthToken, authApi, shopApi } from './api';
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -51,6 +51,7 @@ export const useAppStore = create<AppState>()(
         });
       },
       logout: () => {
+        clearAuthToken();
         if (isRealApi()) void fetch(getApiBase() + '/customers/logout', { method: 'POST', credentials: 'include' }).catch(() => {
           console.warn('[logout] 顾客会话注销请求未完成，请关闭共享设备上的浏览器');
         });
@@ -180,15 +181,28 @@ import { getEmployeePassword, setEmployeePassword } from './lib/employeePassword
 export { getEmployeePassword, setEmployeePassword };
 
 // 应用启动时恢复员工会话
-export const restoreEmployeeSession = () => {
-  const session = loadEmployeeSession();
-  if (session?.currentEmployee) {
-    useAppStore.setState({
-      currentShop: session.currentShop,
-      currentEmployee: session.currentEmployee,
-      userRole: session.userRole,
-    });
-  }
+let restoringEmployee: Promise<void> | null=null;
+export const restoreEmployeeSession = (): Promise<void> => {
+  if(restoringEmployee) return restoringEmployee;
+  restoringEmployee=(async()=>{
+    const session=loadEmployeeSession();
+    if(!session?.currentEmployee) return;
+    if(isRealApi()) {for(const key of Object.keys(localStorage)) if(key.startsWith('mbs_employee_password_')) localStorage.removeItem(key);}
+    if(!isRealApi()) {useAppStore.setState({...session});return;}
+    const user=await authApi.getCurrentUser() as (Employee & {shopId:string}) | null;
+    if(!user?.id || !user.shopId) {
+      clearAuthToken();saveEmployeeSession({currentShop:null,currentEmployee:null,userRole:null});
+      useAppStore.setState({currentShop:null,currentEmployee:null,userRole:null});return;
+    }
+    const shop=await shopApi.getShop(user.shopId);
+    if(!shop) throw new Error('门店信息不可用');
+    useAppStore.setState({currentShop:shop,currentEmployee:user,userRole:user.role});
+    saveEmployeeSession({currentShop:shop,currentEmployee:user,userRole:user.role});
+  })().catch(()=>{
+    // 恢复失败不能信任缓存身份；保留登录入口供重试。
+    useAppStore.setState({currentShop:null,currentEmployee:null,userRole:null});
+  }).finally(()=>{restoringEmployee=null;});
+  return restoringEmployee;
 };
 
 // 应用启动时恢复顾客会话
@@ -243,6 +257,7 @@ export const loginAsCustomer = async (
 };
 
 export const loginAsShop = (shopId: string, password?: string): Shop | null => {
+  if(isRealApi()) return null;
   const shop = mockShops.find(s => s.id === shopId);
   if (shop) {
     // 如果提供了密码，则验证密码
@@ -257,6 +272,7 @@ export const loginAsShop = (shopId: string, password?: string): Shop | null => {
 
 // 新增：登录为发型师
 export const loginAsStylist = (shopId: string, stylistId: string, password?: string): Employee | null => {
+  if(isRealApi()) return null;
   const shop = mockShops.find(s => s.id === shopId);
   const stylist = shop?.employees.find(e => e.id === stylistId);
   if (shop && stylist) {

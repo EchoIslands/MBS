@@ -18,7 +18,7 @@
       <view class="queue-hero-status-badge {{isStarted ? 'queue-hero-status-badge-serving' : ''}}">
         <view wx:if="{{isStarted}}" class="queue-hero-status-dot"></view>
         <mbs-icon wx:elif="{{!isStarted}}" name="clock" size="18" color="var(--primary)" />
-        <text>{{myBooking.status === 'pending' ? '待店铺确认' : isStarted ? '服务进行中' : '排队中'}}</text>
+        <text>{{myBooking.status === 'completed' ? '服务已完成' : myBooking.status === 'cancelled' ? '预约已取消' : myBooking.status === 'pending' ? '待店铺确认' : '等待门店服务'}}</text>
       </view>
     </view>
 
@@ -87,7 +87,7 @@
             </view>
             <view wx:else class="queue-status-badge queue-status-waiting">
               <mbs-icon name="clock" size="18" color="var(--primary)" />
-              <text>等待预约时间</text>
+              <text>等待门店服务</text>
             </view>
           </view>
         </view>
@@ -224,8 +224,8 @@
             <mbs-icon name="clock" size="32" color="var(--primary)" />
           </view>
           <view class="queue-appointment-info">
-            <view class="queue-appointment-title">预约尚未开始</view>
-            <view class="queue-appointment-desc">当前为预计排队状态，到店后将自动切换</view>
+            <view class="queue-appointment-title">预约信息</view>
+            <view class="queue-appointment-desc">排队时间为估算，实际服务以门店安排为准</view>
           </view>
         </view>
         <view class="queue-appointment-time">

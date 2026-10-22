@@ -5,6 +5,7 @@ import {
   Scissors, Star, Sparkles, Award, ChevronRight, Users,
 } from 'lucide-react';
 import { Booking, Queue as QueueType, Employee, Shop } from '../../../shared/types';
+import { isRealApi } from '../../../shared/api-base';
 import { mockShops } from '../../../shared/mockData';
 import { bookingApi, queueApi, shopApi } from '../../../src/api';
 
@@ -119,6 +120,7 @@ const Queue: React.FC = () => {
   const [queue, setQueue] = useState<QueueType | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError,setLoadError] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [selectedSound] = useState('清脆铃声');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -165,30 +167,31 @@ const Queue: React.FC = () => {
           };
           // 标记为真实数据（从 bookingApi 获取，无论是 mock 还是真实 API）
           setIsFromApi(true);
-          console.log('从 bookingApi 获取到预约:', fetchedBooking);
-          console.log('预约时间:', fetchedBooking.scheduledTime);
-          console.log('是否已到达预约时间:', new Date() >= scheduledTimeDate);
+          setLoadError('');
+
+
           setBooking(fetchedBooking);
 
           // 同时获取该店铺的排队信息与店铺详情
           try {
             const [queueResult, shopResult] = await Promise.all([
-              queueApi.getQueue(fetchedBooking.shopId),
+              queueApi.getQueue(fetchedBooking.shopId, new Date(scheduledTimeDate.getTime()+8*3600000).toISOString().slice(0,10)),
               shopApi.getShop(fetchedBooking.shopId),
             ]);
             if (queueResult) setQueue(queueResult);
             if (shopResult) setShop(shopResult);
           } catch (e) {
-            console.log('获取店铺/排队信息失败:', e);
+            if (isRealApi()) {setLoadError('店铺或排队信息加载失败，请稍后重试');setLoading(false);return;}
           }
 
           setLoading(false);
           return;
         }
       } catch (error) {
-        console.log('从 bookingApi 获取预约失败，使用模拟数据:', error);
+        if (isRealApi()) { setLoadError(error instanceof Error ? error.message : '预约加载失败'); setLoading(false); return; }
       }
 
+      if (isRealApi()) { setLoadError('预约不存在或无权访问'); setLoading(false); return; }
       // 兜底：使用模拟数据（兼容演示模式）
       console.log('使用模拟数据，预约时间将是15分钟后');
       const currentShop = mockShops[0];
@@ -247,7 +250,7 @@ const Queue: React.FC = () => {
 
   // 启动服务进度模拟
   useEffect(() => {
-    if (!booking || !isAppointmentTimeReached) {
+    if (isRealApi() || !booking || !isAppointmentTimeReached) {
       setServiceStarted(false);
       return;
     }
@@ -271,7 +274,7 @@ const Queue: React.FC = () => {
   }, [isAppointmentTimeReached, booking]);
 
   // 当前为您服务的发型师：严格按预约记录里的 barberId 匹配，不匹配则显示“待安排”，避免 fallback 到 CEO 或其他员工
-  const currentShop = shop || mockShops.find((s) => s.id === booking?.shopId) || mockShops[0];
+  const currentShop = shop || (!isRealApi() ? mockShops.find((s) => s.id === booking?.shopId) || mockShops[0] : null);
   const stylist: Employee | undefined = booking?.barberId
     ? currentShop?.employees.find((e) => e.id === booking.barberId)
     : undefined;
@@ -316,7 +319,7 @@ const Queue: React.FC = () => {
   const walkTime = Math.max(5, Math.ceil(distance / 0.083));
 
   // 从排队数据中获取当前预约的服务时长（分钟）
-  const currentBookingQueueInfo = queue?.bookings?.find((b) => b.id === booking?.id);
+  const currentBookingQueueInfo = queue?.bookings?.find((b) => b.id === booking?.id || (b.queueNumber === booking?.queueNumber && new Date(b.scheduledTime).getTime() === new Date(booking!.scheduledTime).getTime()));
   const serviceMinutes = (currentBookingQueueInfo as { duration?: number })?.duration || 30;
 
   // 如果服务已开始，显示剩余分钟；
@@ -363,6 +366,7 @@ const Queue: React.FC = () => {
     );
   }
 
+  if (loadError) return <div className="min-h-screen flex flex-col items-center justify-center gap-4"><p role="alert">{loadError}</p><button onClick={() => navigate('/customer/profile')}>返回个人中心</button></div>;
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-yellow-50">
       {/* 顶部导航 */}
@@ -392,7 +396,7 @@ const Queue: React.FC = () => {
             ) : (
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
                 <ClockIcon size={14} />
-                等待预约时间
+                {booking?.status==='completed' ? '服务已完成' : booking?.status==='cancelled' ? '预约已取消' : booking?.status==='pending' ? '待门店确认' : isAppointmentTimeReached ? '预约时间已到，等待门店服务' : '等待预约时间'}
               </div>
             )}
           </div>
@@ -544,15 +548,15 @@ const Queue: React.FC = () => {
         )}
 
         {/* ===== 预约尚未到达提醒 ===== */}
-        {!isAppointmentTimeReached && booking && (
+        {!serviceStarted && booking && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl shadow-lg p-5 mb-4 border border-blue-100">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                 <ClockIcon size={24} className="text-blue-600" />
               </div>
               <div>
-                <h3 className="font-bold text-gray-800">预约尚未开始</h3>
-                <p className="text-sm text-gray-500">当前为预计排队状态，到店后将自动切换为实时排队</p>
+                <h3 className="font-bold text-gray-800">预约信息</h3>
+                <p className="text-sm text-gray-500">排队时间为估算，实际服务以门店安排为准为实时排队</p>
               </div>
             </div>
             <div className="bg-white rounded-xl p-4">

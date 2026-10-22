@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import 'dotenv/config';
 import OSS from 'ali-oss';
+import { authMiddleware } from '../../backend/middleware/index.js';
+import { requirePermission } from '../../backend/middleware/permissions.js';
 
 const router = Router();
 
@@ -35,7 +37,7 @@ function getOssClient(): OSS {
 // 上传图片到阿里云 OSS
 // POST /api/upload/image
 // body: { image: 'data:image/png;base64,....' }
-router.post('/image', async (req: Request, res: Response) => {
+router.post('/image', authMiddleware, requirePermission('shop:edit'), async (req: Request, res: Response) => {
   try {
     const { image } = req.body || {};
     if (!image || typeof image !== 'string' || !image.startsWith('data:image/')) {
@@ -43,7 +45,7 @@ router.post('/image', async (req: Request, res: Response) => {
       return;
     }
 
-    const match = image.match(/^data:image\/(\w+);base64,(.*)$/);
+    const match = image.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/);
     if (!match) {
       res.status(400).json({ success: false, error: '图片格式不正确' });
       return;
@@ -53,6 +55,15 @@ router.post('/image', async (req: Request, res: Response) => {
     const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
     const base64 = match[2];
     const buffer = Buffer.from(base64, 'base64');
+
+    const validImage = ext === 'png' ? buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+      : ext === 'jpg' ? buffer[0]===255 && buffer[1]===216 && buffer[2]===255
+      : ext === 'webp' ? buffer.toString('ascii',0,4)==='RIFF' && buffer.toString('ascii',8,12)==='WEBP'
+      : ['GIF87a','GIF89a'].includes(buffer.toString('ascii',0,6));
+    if (!validImage || buffer.toString('base64') !== base64) {
+      res.status(400).json({success:false,error:'图片内容与格式不匹配，请重新选择图片'});
+      return;
+    }
 
     if (buffer.length > 2 * 1024 * 1024) {
       res.status(400).json({ success: false, error: '图片大小不能超过 2MB' });
@@ -67,7 +78,7 @@ router.post('/image', async (req: Request, res: Response) => {
     });
 
     const url = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${fileName}`;
-    res.json({ success: true, url });
+    res.json({ success: true, data: url, url });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[upload] 异常:', message);

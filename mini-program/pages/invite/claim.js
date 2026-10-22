@@ -1,5 +1,5 @@
 import { checkInviteCode, claimReferralCoupon } from '../../api/referral';
-import { setCustomerId } from '../../utils/storage';
+import { getToken, setCustomerId } from '../../utils/storage';
 
 Page({
   data: {
@@ -56,6 +56,10 @@ Page({
   async onClaim() {
     const { ref, phone, name, alreadyClaimed, claiming } = this.data;
     if (alreadyClaimed || claiming) return;
+    if (!getToken()) {
+      wx.showModal({title:'请先登录',content:'请登录本人账号领取，尚未建档请联系门店。',success:({confirm})=>{if(confirm)wx.navigateTo({url:'/pages/login/login?inviteRef='+encodeURIComponent(ref)});}});
+      return;
+    }
 
     if (!phone || !/^1[3-9]\d{9}$/.test(phone.trim())) {
       wx.showToast({ title: '请输入正确的手机号', icon: 'none' });

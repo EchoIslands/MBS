@@ -143,7 +143,7 @@ const CustomerManagement: React.FC = () => {
 
   // 更新客户
   const handleUpdateCustomer = async (updated: Customer) => {
-    await customerApi.update(updated.id, updated);
+    await customerApi.update(updated.id, updated, showEdit || undefined);
     setShowEdit(null);
     fetchCustomers();
   };

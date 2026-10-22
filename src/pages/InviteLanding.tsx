@@ -71,6 +71,7 @@ export default function InviteLanding() {
   };
 
   const handleClaim = async () => {
+    if (claiming) return;
     if (!phone || !/^1[3-9]\d{9}$/.test(phone.trim())) {
       alert('请输入正确的手机号');
       return;
@@ -83,6 +84,7 @@ export default function InviteLanding() {
         body: JSON.stringify({ ref, phone: phone.trim(), name: name.trim() }),
       });
       const data = await res.json();
+      if (res.status === 401) { navigate('/customer/login?returnTo=' + encodeURIComponent('/invite?ref=' + encodeURIComponent(ref || ''))); return; }
       if (data.success) {
         localStorage.setItem('mbs_customer_id', data.data.customerId);
         setClaimed(true);
@@ -164,7 +166,7 @@ export default function InviteLanding() {
             <div className="text-center text-red-500 py-4">该优惠券已被领取</div>
           ) : (
             <>
-              <div className="space-y-3">
+              <div className="space-y-3"><p className="text-sm text-gray-500">请登录本人账号领取；尚未建档请先联系门店。</p>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input

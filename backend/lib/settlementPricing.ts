@@ -51,11 +51,13 @@ export async function priceSettlement(shopId: string, body: Record<string, any>)
       if (raw.type !== 'service' || !Number.isFinite(raw.priceOverride) || raw.priceOverride < round(originalPrice * 0.58 * 0.7) || raw.priceOverride > originalPrice || raw.groupBuyVoucherId) throw new Error('手工改价超出允许范围');
       final = round(raw.priceOverride);
     } else if (raw.groupBuyVoucherId) {
+      if(raw.type!=='service' || raw.quantity!==1) throw new Error('一张团购券只可抵扣一个服务一次');
       if (raw.type !== 'service' || raw.quantity !== 1 || vouchers.has(raw.groupBuyVoucherId)) throw new Error('团购券不能重复抵扣');
       vouchers.add(raw.groupBuyVoucherId);
       const { data: voucher, error } = await supabase.from('group_buy_vouchers').select('*, group_buy_batches(*)').eq('id', raw.groupBuyVoucherId).eq('shop_id', shopId).maybeSingle();
       const batch = voucher?.group_buy_batches;
       if (error || !voucher || !batch || voucher.status !== 'used' || voucher.used_by_customer_id !== body.customerId || (voucher.used_order_id && voucher.used_order_id !== body.id) || !batch.service_ids?.includes(String(raw.id))) throw new Error('团购券归属或状态不正确');
+      if(batch.shop_id!==shopId || batch.is_active===false || !Number.isFinite(Date.parse(batch.valid_from)) || !Number.isFinite(Date.parse(batch.valid_to)) || new Date(batch.valid_from)>new Date() || new Date(batch.valid_to)<=new Date()) throw new Error('团购活动已停用或不在有效期内');
       final = batch.price_type === 'fixed' ? Number(batch.fixed_price) : batch.price_type === 'per_service' ? Number(batch.service_prices?.[raw.id]) : round(originalPrice * getPurchaseVIPDiscount(batch.vip_level));
       if (!Number.isFinite(final) || final < 0 || final > originalPrice) throw new Error('团购价格不正确');
     }

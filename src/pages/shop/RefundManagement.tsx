@@ -106,6 +106,7 @@ const RefundManagement: React.FC = () => {
       [RefundStatus.APPROVED]: { icon: CheckCircle, color: 'bg-blue-100 text-blue-700', text: '已批准' },
       [RefundStatus.REJECTED]: { icon: XCircle, color: 'bg-red-100 text-red-700', text: '已拒绝' },
       [RefundStatus.COMPLETED]: { icon: CheckCircle, color: 'bg-green-100 text-green-700', text: '已完成' },
+      [RefundStatus.CANCELLED]: { icon: XCircle, color: 'bg-gray-100 text-gray-700', text: '已取消' },
     };
     return configs[status];
   };
@@ -120,6 +121,7 @@ const RefundManagement: React.FC = () => {
   return (
     <ShopLayout title="退款管理">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        <div className="p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">此页登记退款申请和处理状态。批准申请不会自动退还余额或发起微信、支付宝退款，请在门店实际完成退款后再确认到账情况。</div>
         {/* 统计卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white rounded-2xl shadow-sm p-6">

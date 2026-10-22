@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Phone } from 'lucide-react';
 import { loginAsCustomer } from '../../store';
 
@@ -13,6 +13,9 @@ const CustomerLogin: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const back = params.get('returnTo');
+  const returnTo = back?.startsWith('/invite?ref=') ? back : null;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +39,7 @@ const CustomerLogin: React.FC = () => {
         return;
       }
       if (result.customer) {
-        navigate(result.customer.mustChangePassword ? '/customer/change-password' : `/customer/shop/${DEFAULT_SHOP_ID}`, { replace: true });
+        navigate(result.customer.mustChangePassword ? '/customer/change-password' : (returnTo || `/customer/shop/${DEFAULT_SHOP_ID}`), { replace: true });
       } else {
         setError('暂时无法登录，请检查手机号或联系门店');
       }

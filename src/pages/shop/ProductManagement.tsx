@@ -131,7 +131,7 @@ const ProductManagement: React.FC = () => {
     setSaving(true);
     try {
       if (editingProduct) {
-        const updated = await productApi.update(shopId, editingProduct.id, formData);
+        const updated = await productApi.update(shopId, editingProduct.id, {...formData,stock:undefined,sales:undefined});
         if (updated) {
           setProducts(products.map(p => 
             p.id === editingProduct.id 
@@ -697,6 +697,8 @@ const ProductManagement: React.FC = () => {
                   </label>
                   <input
                     type="number"
+                    disabled={!!editingProduct}
+                    title={editingProduct ? '库存请使用库存调整入口修改' : ''}
                     value={formData.stock}
                     onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"

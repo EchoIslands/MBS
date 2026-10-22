@@ -87,7 +87,7 @@ Page({
   progressTimer: null,
 
   async onLoad(options) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(Date.now()+8*3600000).toISOString().slice(0,10);
     this.setData({ currentDate: today });
 
     const routeParams = takeRouteParams();
@@ -144,6 +144,10 @@ Page({
   async loadMyBooking(id) {
     try {
       const booking = normalizeBooking(await getBooking(id));
+      if (!booking) throw new Error('预约不存在');
+      const currentDate=new Date(new Date(booking.scheduledTime).getTime()+8*3600000).toISOString().slice(0,10);
+      this.setData({shopId:booking.shopId,currentDate});
+      await this.loadShop();
       const { shop } = this.data;
       let stylist = null;
       if (booking?.barberId && shop?.employees) {
@@ -173,13 +177,14 @@ Page({
     const aheadCount = Math.max(0, position - currentNumber);
 
     // 服务时长：从队列中找当前预约
-    const currentBookingQueueInfo = queue?.bookings?.find((b) => b.id === myBooking?.id);
+    const currentBookingQueueInfo = queue?.bookings?.find((b) => b.id === myBooking?.id || (b.queueNumber === myBooking?.queueNumber && new Date(b.scheduledTime).getTime() === new Date(myBooking?.scheduledTime).getTime()));
     const serviceMinutes = currentBookingQueueInfo?.duration || 30;
 
     // 预约时间相关
     const now = new Date();
     const scheduled = myBooking?.scheduledTime ? new Date(myBooking.scheduledTime) : null;
-    const isStarted = scheduled ? now >= scheduled : false;
+    // 后台尚无真实开工状态，不能把预约时间到达伪装成服务已开始。
+    const isStarted = false;
 
     let appointmentInfo = { days: 0, hours: 0, minutes: 0, totalMinutes: 0, isToday: true };
     let timeSlotLabel = '';
@@ -282,10 +287,7 @@ Page({
   startProgressTimer() {
     this.stopProgressTimer();
     this.progressTimer = setInterval(() => {
-      if (this.data.isStarted) {
-        this.computeProgress();
-        this.refreshComputed();
-      }
+      this.refreshComputed();
     }, 3000);
   },
 

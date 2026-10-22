@@ -16,6 +16,10 @@ const policies = {
   'customer:credential': canEditCustomer,
   'financial:read': canViewFinancialReport,
   'shop:edit': canViewShopSettings,
+  'review:manage': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER].includes(role),
+  'product:fulfill': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER].includes(role),
+  'vip:edit': (role: UserRole) => role === UserRole.CEO,
+  'survey:manage': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE].includes(role),
   'settlement:override': (role: UserRole) => role === UserRole.CEO || role === UserRole.CASHIER,
 };
 export type Permission = keyof typeof policies;

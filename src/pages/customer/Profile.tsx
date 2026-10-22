@@ -5,10 +5,11 @@ import {
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
   X, Phone, Scissors, MapPin, Loader2, Ticket, Share2,
 } from 'lucide-react';
-import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType } from '../../../shared/types';
+import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType, Shop, MemberBenefitRecord } from '../../../shared/types';
 import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
+import {isRealApi} from '../../../shared/api-base';
 import { useAppStore } from '../../store';
-import { bookingApi, reviewApi } from '../../api';
+import { bookingApi, reviewApi, shopApi, memberBenefitApi } from '../../api';
 import {
   getPurchaseVIPLabel,
   getStoredValueLabel,
@@ -45,6 +46,9 @@ const storedBenefits = [
 ];
 
 const Profile: React.FC = () => {
+  const [shop,setShop]=useState<Shop|null>(null);
+  const [myBenefits,setMyBenefits]=useState<MemberBenefitRecord[]>([]);
+  const [loadError,setLoadError]=useState('');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [customerReviews, setCustomerReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +65,11 @@ const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { currentCustomer, setCurrentCustomer, logout } = useAppStore();
 
+  useEffect(()=>{
+    if(!currentCustomer) return;
+    if(!isRealApi()) {setShop(mockShops[0]);setMyBenefits(mockMemberBenefitRecords.filter(b=>b.customerId===currentCustomer.id && b.status==='available'));return;}
+    Promise.all([shopApi.getShop(currentCustomer.shopId),memberBenefitApi.getOwn(currentCustomer.id)]).then(([store,benefits])=>{setShop(store);setMyBenefits(benefits);}).catch(()=>setLoadError('门店或权益信息加载失败，请稍后重试'));
+  },[currentCustomer?.id,currentCustomer?.shopId]);
   const bookingReviewMap = useMemo(() => {
     const map = new Map<string, Review>();
     customerReviews.forEach((r) => map.set(r.bookingId, r));
@@ -72,11 +81,11 @@ const Profile: React.FC = () => {
     setLoading(true);
     try {
       const data = await bookingApi.getCustomerBookings(currentCustomer.id);
-      console.log('[Profile] 加载预约:', currentCustomer.id, '总数:', data.length, data.map((b) => ({ id: b.id, status: b.status, service: b.serviceName })));
+
       setBookings(data);
     } catch (error) {
       console.error('加载预约列表失败:', error);
-      setBookings([]);
+      setBookings([]);setLoadError('预约信息加载失败，请稍后刷新');
     } finally {
       setLoading(false);
     }
@@ -176,23 +185,13 @@ const Profile: React.FC = () => {
       currentCustomer.storedValueLevel !== StoredValueLevel.NONE)
   );
 
-  // 当前店铺信息（默认取第一个）
-  const shop = mockShops[0];
-
-  // 股东权益摘要
-  const stockholderSummary = getStockholderBenefitSummary(currentCustomer, shop);
-
-  // 我的可用权益
-  const myBenefits = currentCustomer
-    ? mockMemberBenefitRecords.filter(
-        (b) => b.customerId === currentCustomer.id && b.status === 'available'
-      )
-    : [];
+  const stockholderSummary=getStockholderBenefitSummary(shop ? currentCustomer:null,shop);
 
   if (!currentCustomer) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
+      {loadError && <p role="alert" className="p-4 text-red-600">{loadError}</p>}
       {/* 顶部会员卡（视觉焦点区域 — 让会员一眼看到自己的权益价值） */}
       <div className={`bg-gradient-to-br ${purchaseVIPGradient[purchaseLevel]} text-white relative overflow-hidden`}>
         {/* 装饰性背景 */}
@@ -609,7 +608,7 @@ const Profile: React.FC = () => {
                               </div>
                               {contactShopId === booking.id && (
                                 <div className="mt-2 text-xs text-amber-700 flex items-center gap-1">
-                                  <Phone size={12} /> 门店电话：{shop.phone || '暂无'}
+                                  <Phone size={12} /> 门店电话：{shop?.phone || '暂无'}
                                 </div>
                               )}
                             </div>

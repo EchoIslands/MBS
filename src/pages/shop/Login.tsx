@@ -41,7 +41,7 @@ const ShopLogin: React.FC = () => {
 
       if (result?.user) {
         // 登录成功，需要把用户同步设置到 zustand store
-        console.log('[Login] API 登录成功:', result.user);
+        console.log('[Login] 员工登录成功');
 
         const { setCurrentShop, setCurrentEmployee } = useAppStore.getState();
         const shopId = result.user.shopId || DEFAULT_SHOP_ID;

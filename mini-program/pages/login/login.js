@@ -12,11 +12,12 @@ Page({
     error: '',
   },
 
-  async onLoad() {
+  async onLoad(options = {}) {
+    this.inviteRef = options.inviteRef || '';
     if (getCustomerId() && getToken()) {
       try {
         const customer = await restoreCustomerSession();
-        if (customer) { wx.reLaunch({ url: customer.mustChangePassword ? '/pages/change-password/change-password' : '/pages/index/index' }); return; }
+        if (customer) { wx.reLaunch({ url: customer.mustChangePassword ? '/pages/change-password/change-password' : this.inviteRef ? '/pages/invite/claim?ref='+encodeURIComponent(this.inviteRef) : '/pages/index/index' }); return; }
       } catch {}
       clearCustomerId();
     }
@@ -30,6 +31,7 @@ Page({
   },
 
   async onLogin() {
+    if(this.data.loggingIn) return;
     const { phone } = this.data;
     if (!phone || !/^1\d{10}$/.test(phone)) {
       this.setData({ error: '请输入正确的手机号' });
@@ -46,7 +48,7 @@ Page({
       if (customer && customer.id) {
         setCustomerId(customer.id);
         wx.showToast({ title: '登录成功', icon: 'success' });
-        wx.reLaunch({ url: '/pages/index/index' });
+        wx.reLaunch({ url: customer.mustChangePassword ? '/pages/change-password/change-password' : this.inviteRef ? '/pages/invite/claim?ref='+encodeURIComponent(this.inviteRef) : '/pages/index/index' });
       } else {
         this.setData({ error: '登录失败，请检查手机号' });
       }

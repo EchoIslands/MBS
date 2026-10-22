@@ -1,54 +1,54 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation, Outlet } from "react-router-dom";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./store";
 
 // 角色选择
-import SelectRole from "./pages/SelectRole";
+const SelectRole = lazy(() => import('./pages/SelectRole'));
 
 // 顾客端
-import ChangePassword from './pages/customer/ChangePassword';
-import CustomerLogin from "./pages/customer/Login";
-import ShopDetail from "./pages/customer/ShopDetail";
-import Booking from "./pages/customer/Booking";
-import Queue from "./pages/customer/Queue";
-import Profile from "./pages/customer/Profile";
-import ReviewPage from "./pages/customer/Review";
-import RefundPage from "./pages/customer/Refund";
-import Feedback from "./pages/customer/Feedback";
-import ProductList from "./pages/customer/ProductList";
-import ProductDetail from "./pages/customer/ProductDetail";
-import Cart from "./pages/customer/Cart";
-import ProductOrders from "./pages/customer/ProductOrders";
-import MyCoupons from "./pages/customer/MyCoupons";
-import CustomerInvite from "./pages/customer/Invite";
-import CustomerPackages from "./pages/customer/Packages";
-import InviteLanding from "./pages/InviteLanding";
+const ChangePassword = lazy(() => import('./pages/customer/ChangePassword'));
+const CustomerLogin = lazy(() => import('./pages/customer/Login'));
+const ShopDetail = lazy(() => import('./pages/customer/ShopDetail'));
+const Booking = lazy(() => import('./pages/customer/Booking'));
+const Queue = lazy(() => import('./pages/customer/Queue'));
+const Profile = lazy(() => import('./pages/customer/Profile'));
+const ReviewPage = lazy(() => import('./pages/customer/Review'));
+const RefundPage = lazy(() => import('./pages/customer/Refund'));
+const Feedback = lazy(() => import('./pages/customer/Feedback'));
+const ProductList = lazy(() => import('./pages/customer/ProductList'));
+const ProductDetail = lazy(() => import('./pages/customer/ProductDetail'));
+const Cart = lazy(() => import('./pages/customer/Cart'));
+const ProductOrders = lazy(() => import('./pages/customer/ProductOrders'));
+const MyCoupons = lazy(() => import('./pages/customer/MyCoupons'));
+const CustomerInvite = lazy(() => import('./pages/customer/Invite'));
+const CustomerPackages = lazy(() => import('./pages/customer/Packages'));
+const InviteLanding = lazy(() => import('./pages/InviteLanding'));
 
 // 理发店端
-import ShopLogin from "./pages/shop/Login";
-import Dashboard from "./pages/shop/Dashboard";
-import ShopManage from "./pages/shop/Manage";
-import StylistDashboard from "./pages/shop/StylistDashboard";
-import FinancialReport from "./pages/shop/FinancialReport";
-import OwnerDashboard from "./pages/shop/OwnerDashboard";
-import CustomerInsights from "./pages/shop/CustomerInsights";
-import RefundManagement from "./pages/shop/RefundManagement";
-import ProductManagement from "./pages/shop/ProductManagement";
-import ProductOrderManagement from "./pages/shop/ProductOrderManagement";
-import CouponManagement from "./pages/shop/CouponManagement";
-import GroupBuyManagement from "./pages/shop/GroupBuyManagement";
-import CustomerManagement from "./pages/shop/CustomerManagement";
-import CustomerTableManagement from "./pages/shop/CustomerTableManagement";
-import SettlementManagement from "./pages/shop/SettlementManagement";
-import MembershipManagement from "./pages/shop/MembershipManagement";
-import VIPConfigManagement from "./pages/shop/VIPConfigManagement";
-import SatisfactionSurveyManagement from "./pages/shop/SatisfactionSurveyManagement";
-import ReviewManagement from "./pages/shop/ReviewManagement";
-import CustomerProfileForm from "./pages/shop/CustomerProfileForm";
-import CustomerRecall from "./pages/shop/CustomerRecall";
-import BookingManagement from "./pages/shop/BookingManagement";
-import Checkout from "./pages/shop/Checkout";
-import Packages from "./pages/shop/Packages";
+const ShopLogin = lazy(() => import('./pages/shop/Login'));
+const Dashboard = lazy(() => import('./pages/shop/Dashboard'));
+const ShopManage = lazy(() => import('./pages/shop/Manage'));
+const StylistDashboard = lazy(() => import('./pages/shop/StylistDashboard'));
+const FinancialReport = lazy(() => import('./pages/shop/FinancialReport'));
+const OwnerDashboard = lazy(() => import('./pages/shop/OwnerDashboard'));
+const CustomerInsights = lazy(() => import('./pages/shop/CustomerInsights'));
+const RefundManagement = lazy(() => import('./pages/shop/RefundManagement'));
+const ProductManagement = lazy(() => import('./pages/shop/ProductManagement'));
+const ProductOrderManagement = lazy(() => import('./pages/shop/ProductOrderManagement'));
+const CouponManagement = lazy(() => import('./pages/shop/CouponManagement'));
+const GroupBuyManagement = lazy(() => import('./pages/shop/GroupBuyManagement'));
+const CustomerManagement = lazy(() => import('./pages/shop/CustomerManagement'));
+const CustomerTableManagement = lazy(() => import('./pages/shop/CustomerTableManagement'));
+const SettlementManagement = lazy(() => import('./pages/shop/SettlementManagement'));
+const MembershipManagement = lazy(() => import('./pages/shop/MembershipManagement'));
+const VIPConfigManagement = lazy(() => import('./pages/shop/VIPConfigManagement'));
+const SatisfactionSurveyManagement = lazy(() => import('./pages/shop/SatisfactionSurveyManagement'));
+const ReviewManagement = lazy(() => import('./pages/shop/ReviewManagement'));
+const CustomerProfileForm = lazy(() => import('./pages/shop/CustomerProfileForm'));
+const CustomerRecall = lazy(() => import('./pages/shop/CustomerRecall'));
+const BookingManagement = lazy(() => import('./pages/shop/BookingManagement'));
+const Checkout = lazy(() => import('./pages/shop/Checkout'));
+const Packages = lazy(() => import('./pages/shop/Packages'));
 
 // 默认店铺ID
 const DEFAULT_SHOP_ID = "shop1";
@@ -84,10 +84,9 @@ const ShopRouteGuard = () => {
   const location = useLocation();
 
   useEffect(() => {
-    if (!checked && hasEmployeeSession()) {
-      restoreEmployeeSession();
-    }
-    setChecked(true);
+    let active=true;
+    (async()=>{if(!checked && hasEmployeeSession()) await restoreEmployeeSession();if(active) setChecked(true);})();
+    return ()=>{active=false;};
   }, [checked]);
 
   // 等待持久化恢复完成后再判断登录态，避免刷新时误判为未登录
@@ -159,12 +158,13 @@ export default function App() {
   useEffect(() => {
     if (!hasHydrated) return;
     // 从独立的会话存储中恢复登录态，避免多角色共用同一 key 互相覆盖
-    restoreEmployeeSession();
-    restoreCustomerSession();
+    if(window.location.pathname.startsWith('/shop')) void restoreEmployeeSession();
+    else void restoreCustomerSession();
   }, [hasHydrated]);
 
   return (
     <Router>
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">加载中...</div>}>
       <Routes>
         {/* 首页显示角色选择 */}
         <Route path="/" element={<SelectRole />} />
@@ -230,6 +230,7 @@ export default function App() {
         <Route path="/s/:shopId" element={<ShopRedirect />} />
         <Route path="/invite" element={<InviteLanding />} />
       </Routes>
+      </Suspense>
     </Router>
   );
 }

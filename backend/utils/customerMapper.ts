@@ -50,6 +50,16 @@ export const CUSTOMER_FIELD_WHITELIST = new Set([
   'recharge_level',
 ]);
 
+/** 经营数据允许原有人工纠错，但必须提供表单打开时的旧值并原子校验。 */
+export const CUSTOMER_ACCOUNT_FIELDS = new Set([
+  'visit_count', 'total_spent', 'membership_level', 'balance', 'points',
+  'is_stockholder', 'stockholder_since', 'referral_bonus_rate', 'referral_earnings',
+  'last_visit_at', 'purchase_vip_level', 'purchase_vip_expires_at', 'stored_value_level',
+  'stored_value_balance', 'stored_value_expires_at', 'withdrawable_referral_amount', 'total_saved',
+  'referral_consumption', 'shared_fund', 'total_shared_fund', 'withdrawable_amount',
+  'is_member', 'has_recharged', 'recharge_level',
+]);
+
 /**
  * 需要按日期处理的字段（只保留 YYYY-MM-DD 部分）
  */

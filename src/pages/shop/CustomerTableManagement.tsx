@@ -73,9 +73,9 @@ const CustomerTableManagement: React.FC = () => {
         referrerName: c.referrerName || '',
         referrerPhone: c.referrerPhone || '',
         referralConsumption: c.referralConsumption || 0,
-        sharedFund: c.sharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.10) : 0),
-        totalSharedFund: c.totalSharedFund ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.1) : 0),
-        withdrawableAmount: c.withdrawableAmount ?? (c.isStockholder ? ((c.totalSpent || 0) * 0.08) : 0),
+        sharedFund: c.sharedFund ?? 0,
+        totalSharedFund: c.totalSharedFund ?? 0,
+        withdrawableAmount: c.withdrawableAmount ?? 0,
       }));
       setCustomers(extended);
     } catch (err: unknown) {
@@ -278,7 +278,7 @@ const CustomerTableManagement: React.FC = () => {
 
   // 更新客户（调用 API 持久化）
   const handleUpdateCustomer = async (updatedCustomer: Customer) => {
-    await customerApi.update(updatedCustomer.id, updatedCustomer);
+    await customerApi.update(updatedCustomer.id, updatedCustomer, showEdit || undefined);
     fetchCustomers();
     setShowEdit(null);
   };

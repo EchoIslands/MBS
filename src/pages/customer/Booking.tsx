@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
   Scissors, Sparkles, Award, Zap
 } from 'lucide-react';
+import {isRealApi} from '../../../shared/api-base';
+import {bookingSlots} from '../../../shared/lib/bookingHours';
 import { mockShops } from '../../../shared/mockData';
 import { Employee, Shop, UserRole, Booking } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
@@ -18,6 +20,7 @@ const BookingPage: React.FC = () => {
   const { currentCustomer } = useAppStore();
 
   const [shop, setShop] = useState<Shop | null>(null);
+  const [loadError,setLoadError]=useState('');
   const [loadingShop, setLoadingShop] = useState(true);
   const [existingBookings, setExistingBookings] = useState<Booking[]>([]);
   const bookingLock = useRef(false);
@@ -34,7 +37,7 @@ const BookingPage: React.FC = () => {
   useEffect(() => {
     const loadShop = async () => {
       if (!shopId) {
-        setShop(mockShops[0]);
+        if(isRealApi()) {setLoadError('缺少门店信息，请返回门店页面重新预约');} else setShop(mockShops[0]);
         setLoadingShop(false);
         return;
       }
@@ -43,7 +46,7 @@ const BookingPage: React.FC = () => {
         setShop(shopData);
       } catch (error) {
         console.error('加载店铺信息失败:', error);
-        setShop(mockShops.find((s) => s.id === shopId) || mockShops[0]);
+        if(isRealApi()) {setLoadError('门店信息加载失败，请稍后重试');setShop(null);} else setShop(mockShops.find((s) => s.id === shopId) || mockShops[0]);
       } finally {
         setLoadingShop(false);
       }
@@ -60,7 +63,7 @@ const BookingPage: React.FC = () => {
         setExistingBookings(data || []);
       } catch (error) {
         console.error('加载店铺预约失败:', error);
-        setExistingBookings([]);
+        setExistingBookings([]);setLoadError('档期加载失败，请刷新后再预约');
       }
     }
     loadBookings();
@@ -73,7 +76,7 @@ const BookingPage: React.FC = () => {
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = new Date(d.getTime()+8*3600000).toISOString().slice(0,10);
       arr.push({
         value: dateStr,
         label: `${d.getMonth() + 1}月${d.getDate()}日`,
@@ -86,14 +89,10 @@ const BookingPage: React.FC = () => {
   // 生成时段（每30分钟）
   // 如果是今天，只显示当前时间之后的时段；如果是未来日期，显示所有时段
   const availableTimeSlots = useMemo(() => {
-    const arr: string[] = [];
-    for (let h = 9; h <= 20; h++) {
-      arr.push(`${h.toString().padStart(2, '0')}:00`);
-      arr.push(`${h.toString().padStart(2, '0')}:30`);
-    }
+    const arr=bookingSlots(selectedDate,shop?.openingHours);
     // 判断是否是今天
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = new Date(today.getTime()+8*3600000).toISOString().slice(0,10);
     if (selectedDate === todayStr) {
       // 今天，只显示当前时间之后的时段
       const currentHour = today.getHours();
@@ -106,12 +105,12 @@ const BookingPage: React.FC = () => {
       });
     }
     return arr;
-  }, [selectedDate]);
+  }, [selectedDate,shop?.openingHours]);
 
   // 默认选择第一个可用的时段
   useEffect(() => {
-    if (availableTimeSlots.length > 0 && !availableTimeSlots.includes(selectedTime)) {
-      setSelectedTime(availableTimeSlots[0]);
+    if (!availableTimeSlots.includes(selectedTime)) {
+      setSelectedTime(availableTimeSlots[0] || '');
     }
   }, [availableTimeSlots, selectedTime]);
 
@@ -275,6 +274,7 @@ const BookingPage: React.FC = () => {
     [currentCustomer, shop]
   );
 
+  if(loadError) return <div className="min-h-screen flex flex-col items-center justify-center gap-4"><p role="alert">{loadError}</p><button onClick={()=>navigate(-1)}>返回</button></div>;
   if (loadingShop || !shop) {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">店铺加载中...</div>;
   }
