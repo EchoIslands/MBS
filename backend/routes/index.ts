@@ -5541,7 +5541,8 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     const amount = priced.total;
     const isAsyncPayment = (method === 'wechat' || method === 'alipay') && amount > 0;
     const isDraft = paymentStatus === 'pending';
-    if (!isDraft && isAsyncPayment && !(await isCustomerVerified(customerId, shopId))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
+    // 本入口仅接受已认证的本店员工：门店收银不以顾客核实/改密状态为前提。
+    // 顾客自助资产支付的身份限制保留在独立顾客支付入口中。
     const { data: created, error: insertError } = await supabase.rpc('create_settlement_atomic', {
       p_settlement: { id: settlementId, checkout_request_key: requestKey, start_payment: !isDraft && isAsyncPayment, shop_id: shopId, customer_id: customerId, customer_name: priced.customerName,
         booking_id: bookingId || null, ...priced, items: priced.items, discount_detail: priced.discountDetail,

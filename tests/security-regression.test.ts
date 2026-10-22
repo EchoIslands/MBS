@@ -66,8 +66,8 @@ let completeCheckout = false;
 let checkoutRpcCalls = 0;
 (supabase as any).rpc = async (name: string, args: any) => {
  if (name === 'delete_settlement_draft_atomic') return { data: null, error: draftDeleteError };
+ if (name === 'create_settlement_atomic') checkoutRpcCalls++;
  if (name === 'create_settlement_atomic' && completeCheckout) {
-  checkoutRpcCalls++;
   const row={...args.p_settlement,payment_status:'completed'};
   tables.settlements.push(row);
   return {data:[row],error:null};
@@ -258,6 +258,31 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const r=await request('/settlements',cs,'POST',{...body,paymentMethod:'cash'});
    assert.equal(r.status,503);assert.equal(tables.settlements.length,0);
    failRpc=false;
+  });
+  await t.test('员工收银不以顾客核实和改密为前提，顾客凭证不能冒用员工结算',async()=>{
+   const c=tables.customers[0];
+   const saved={identity_verified:c.identity_verified,is_weak_password:c.is_weak_password};
+   Object.assign(c,{identity_verified:false,is_weak_password:true});
+   tables.shops[0].services=[{id:'svc',name:'Synthetic service',price:58}];
+   const body={customerId:'c1',items:[{type:'service',id:'svc',quantity:1}],total:58};
+   failRpc=true;
+   try {
+    for(const paymentMethod of ['cash','card','balance','wechat']) {
+     const before=checkoutRpcCalls;
+     const r=await request('/settlements',ceo,'POST',{...body,paymentMethod});
+     // 注入RPC缺失，证明已越过身份限制抵达事务入口；绝不实际发起网关收款。
+     assert.equal(r.status,503,paymentMethod);
+     assert.equal(checkoutRpcCalls,before+1,paymentMethod);
+     assert.notEqual(r.body.code,'CUSTOMER_IDENTITY_UNVERIFIED');
+    }
+    const customerToken=jwt.sign({id:'c1',shopId:'s1',kind:'customer'},getJwtSecret(),{algorithm:'HS256',audience:'customer',issuer:'mbs',expiresIn:900});
+    const before=checkoutRpcCalls;
+    assert.equal((await request('/settlements','','POST',{...body,paymentMethod:'wechat'})).status,401);
+    assert.equal((await request('/settlements',customerToken,'POST',{...body,paymentMethod:'wechat'})).status,401);
+    assert.equal((await request('/customer-packages/any/consume',customerToken,'POST',{})).status,401);
+    assert.equal(checkoutRpcCalls,before);
+    assert.equal(c.identity_verified,false);assert.equal(c.is_weak_password,true);
+   } finally {failRpc=false;Object.assign(c,saved);}
   });
   await t.test('零元微信纯核销直接完成；HTTP 重试不重复提交，改动后重试拒绝',async()=>{
    tables.shops[0].services=[{id:'zero',name:'Synthetic zero service',price:0}];
