@@ -438,7 +438,7 @@ npm run server:api
 
 **坑 21：Vercel Hobby 函数数量限制**
 - 现象：部署报错 `Serverless Function count exceeded`。
-- 解决：`vercel.json` 配置单一函数入口，把所有路由合并到一个 `api/index.ts`。
+- 解决：根目录 `api/` 只保留 `index.ts` 部署入口，应用、路由、中间件及工具放在 `backend/`，由入口导入。`vercel.json` 中的 `functions` 是函数配置而非入口白名单，`rewrites` 也不会阻止其他 api 文件被扫描为独立函数。新增后端模块不得直接放回 api 目录；发布时核验产物函数数量及最终 Ready 状态，不能仅凭 Build Completed 判定发布成功。
 
 **坑 21.5：API 返回 500 Internal Server Error**
 - 现象：Vercel Functions 日志显示函数启动失败或运行时错误。

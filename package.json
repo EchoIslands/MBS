@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "server:dev": "nodemon",
-    "server:api": "npx tsx api/server.ts",
+    "server:api": "npx tsx backend/server.ts",
     "dev": "concurrently \"npm run client:dev\" \"npm run server:api\"",
     "seed-db": "tsx scripts/seed-db.ts",
     "test:transactions": "tsx --test tests/transaction-regression.test.ts",

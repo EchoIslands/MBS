@@ -59,7 +59,8 @@ npm run preview
 ## 📁 项目结构
 
 ```
-├── api/           # 后端 API
+├── api/           # Vercel 单一函数入口
+├── backend/       # 后端应用、路由及工具模块
 ├── public/        # 静态资源
 ├── shared/        # 共享类型和模拟数据
 │   ├── types.ts   # 类型定义

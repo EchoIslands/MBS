@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createServer } from 'node:http';
 // 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
 process.env.SUPABASE_URL = 'https://synthetic.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
 process.env.JWT_SECRET = 'synthetic-test-secret-only-01234567890123456789';
 process.env.NODE_ENV = 'test';
-const { supabase } = await import('../api/db/index.js');
-const { hashPassword, verifyPassword, isPasswordHash } = await import('../api/lib/password.js');
-const { getJwtSecret } = await import('../api/lib/tokens.js');
+const { supabase } = await import('../backend/db/index.js');
+const { hashPassword, verifyPassword, isPasswordHash } = await import('../backend/lib/password.js');
+const { getJwtSecret } = await import('../backend/lib/tokens.js');
 const { default: jwt } = await import('jsonwebtoken');
 const realFetch = globalThis.fetch;
 let base = '';
@@ -67,8 +68,10 @@ let failRpc = false;
  return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
 };
 
-const {default:app}=await import('../api/app.js');
-const server=app.listen(0,'127.0.0.1');
+// 直接通过生产部署入口执行全部 HTTP 回归，覆盖移动后的动态导入链。
+const {default:handler}=await import('../api/index.js');
+const server=createServer((req,res)=>{ void handler(req as any,res as any); });
+server.listen(0,'127.0.0.1');
 await new Promise<void>(r=>server.once('listening',()=>r()));
 base='http://127.0.0.1:'+(server.address() as any).port;
 async function request(path:string, token='', method='GET', body?:unknown, cookie?:string){
@@ -169,7 +172,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    tables.shops[0].services=[{id:'svc',name:'Synthetic service',price:58}];
    tables.products=[{id:'product',shop_id:'s1',name:'Synthetic product',price:20,category:'hair_care',is_active:true}];
    tables.member_benefit_records=[];
-   const {priceSettlement}=await import('../api/lib/settlementPricing.js');
+   const {priceSettlement}=await import('../backend/lib/settlementPricing.js');
    const body={customerId:'c1',items:[{type:'service',id:'svc',quantity:1,originalPrice:0.01,discountedPrice:0.01}],total:58};
    assert.equal((await priceSettlement('s1',body)).total,58);
    await assert.rejects(priceSettlement('s1',{...body,total:0.01}),/金额/);
@@ -204,7 +207,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
      const blocked=await request(path,token);assert.equal(blocked.status,403);assert.equal(blocked.body.code,'PASSWORD_CHANGE_REQUIRED');
    }
    // 不相信 token 中的改密声明，数据库状态才是边界。
-   const {signCustomerToken}=await import('../api/lib/tokens.js');
+   const {signCustomerToken}=await import('../backend/lib/tokens.js');
    const bypass=signCustomerToken(weak.id,weak.shop_id,weak.password_hash,false);
    assert.equal((await request('/customers/legacy/packages',bypass)).status,403);
    assert.equal((await request('/customers/c1/password/change',token,'POST',{})).status,403);
