@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified, FIRST_USE_MESSAGE } from '../lib/customerSecurity.js';
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
+import { bookingAccess } from '../middleware/bookingAccess.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
 import { mapCustomerBodyToDB, validateCustomerData, isValidPhone } from '../utils/customerMapper.js';
 import {
@@ -21,6 +22,9 @@ import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
 const mainRouter = Router();
+const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
+  item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 
 // 数据库原始行通用类型：Supabase 返回的原始行字段类型在编译期无法确定，
 // 映射层统一用 any 接收，具体业务类型在 fromDb 转换函数中再约束。
@@ -728,6 +732,7 @@ async function processReferralPromotion(
 }
 
 const bookingsRouter = Router();
+bookingsRouter.use(bookingAccess);
 
 const generateBookingId = () => `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
@@ -794,8 +799,8 @@ const expireDelayNoResponse = async (): Promise<void> => {
 // 获取预约列表
 bookingsRouter.get('/', async (req: Request, res: Response) => {
   try {
-    await expireDelayNoResponse();
-    const shopId = String(req.query.shopId || 'shop1');
+    if (req.employee) await expireDelayNoResponse();
+    const shopId = req.employee?.shopId || String(req.query.shopId || 'shop1');
     const status = req.query.status as string | undefined;
     // 兼容小程序传入 date=YYYY-MM-DD 与 H5 传入 dateStart=YYYY-MM-DD
     const dateStart = (req.query.dateStart || req.query.date) as string | undefined;
@@ -836,7 +841,14 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
       });
     }
 
-    const bookings = (data || []).map(bookingFromDb);
+    const {data: slotShop,error: slotShopError} = req.employee ? {data:null,error:null} : await supabase.from('shops').select('services').eq('id',shopId).maybeSingle();
+    if (slotShopError) return res.status(503).json({success:false,error:'档期服务时长暂不可用'});
+    const bookings = (data || []).map(b => req.employee ? bookingFromDb(b) : {
+      scheduledTime: b.scheduled_time, scheduledEndTime: b.scheduled_end_time,
+      actualStartTime: b.actual_start_time, actualEndTime: b.actual_end_time,
+      stylistId: b.stylist_id, barberId: b.stylist_id, serviceId: b.service_id, status: b.status,
+      duration: Math.max(1, Number((slotShop?.services || []).find((service:any) => String(service.id)===String(b.service_id))?.duration) || 30),
+    });
     const total = count || 0;
     const totalPages = Math.ceil(total / size);
 
@@ -1000,8 +1012,7 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
         return res.status(403).json({ success: false, error: '只有对应发型师或 CEO 可标记服务完成' });
       }
     } else if (status === 'cancelled') {
-      const isCustomerSelf = customerId && customerId === originalBooking.customer_id;
-      if (!isCEO && !isCustomerService && !isCustomerSelf) {
+      if (!isCEO && !isCustomerService && !isManager) {
         return res.status(403).json({ success: false, error: '无权取消该预约' });
       }
     } else {
@@ -1016,6 +1027,8 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
       .from('bookings')
       .update({ status })
       .eq('id', id)
+      .eq('shop_id', req.employee!.shopId)
+      .eq('status', originalBooking.status)
       .select()
       .single();
 
@@ -1027,69 +1040,7 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
       });
     }
 
-    // 如果是完成服务，生成到店记录并更新客户消费数据
-    if (status === 'completed') {
-      const visitRecord = {
-        id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        customer_id: originalBooking.customer_id,
-        shop_id: originalBooking.shop_id,
-        booking_id: originalBooking.id,
-        stylist_id: originalBooking.stylist_id,
-        stylist_name: originalBooking.stylist_name,
-        service_ids: originalBooking.service_id ? [originalBooking.service_id] : [],
-        service_names: originalBooking.service_name ? [originalBooking.service_name] : [],
-        total_amount: originalBooking.price || 0,
-        check_in_time: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
-
-      const { error: visitError } = await supabase
-        .from('customer_visit_records')
-        .insert(visitRecord);
-
-      if (visitError) {
-        console.error('[bookings] 创建到店记录失败:', visitError.message);
-      }
-
-      // 更新客户消费统计
-      if (originalBooking.customer_id) {
-        const { data: customer, error: custError } = await supabase
-          .from('customers')
-          .select('visit_count, total_spent')
-          .eq('id', originalBooking.customer_id)
-          .single();
-
-        if (!custError && customer) {
-          await supabase
-            .from('customers')
-            .update({
-              visit_count: (customer.visit_count || 0) + 1,
-              total_spent: (customer.total_spent || 0) + (originalBooking.price || 0),
-              last_visit_at: new Date().toISOString(),
-            })
-            .eq('id', originalBooking.customer_id);
-        }
-      }
-
-
-      // 次卡由结算事务统一核销，服务状态变化不再独立扣次数。
-      // 自动发放股东权益（三方协同）
-      if (originalBooking.customer_id) {
-        await grantStockholderBenefits(
-          originalBooking.shop_id,
-          originalBooking.customer_id,
-          originalBooking.price || 0,
-          originalBooking.id
-        );
-        // 处理推荐人自动升级股东并发放推荐奖励
-        await processReferralPromotion(
-          originalBooking.shop_id,
-          originalBooking.customer_id,
-          originalBooking.price || 0,
-          originalBooking.id
-        );
-      }
-    }
+    // 服务完成只改变服务状态；消费统计、到店记录和次卡统一在结算事务入账。
 
     res.json({
       success: true,
@@ -1170,7 +1121,7 @@ bookingsRouter.put('/:id/package', authMiddleware, async (req: Request, res: Res
   }
 });
 
-// 顾客自主取消预约（无需员工登录，仅校验 customerId）
+// 顾客自主取消：路由统一中间件已验证本人会话及预约归属。
 bookingsRouter.put('/:id/cancel', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1236,7 +1187,7 @@ bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Resp
     const { stylistId, stylistName } = req.body;
     const employee = req.employee!;
 
-    if (!stylistId || !stylistName) {
+    if (!stylistId) {
       return res.status(400).json({ success: false, error: '缺少发型师信息' });
     }
 
@@ -1259,9 +1210,12 @@ bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Resp
       return res.status(404).json({ success: false, error: '预约不存在' });
     }
 
+    const { data: stylist, error: stylistError } = await supabase.from('employees').select('name').eq('id', stylistId).eq('shop_id', employee.shopId).eq('is_active', true).maybeSingle();
+    if (stylistError) return res.status(503).json({ success: false, error: '设计师信息暂不可用' });
+    if (!stylist) return res.status(400).json({ success: false, error: '设计师不属于本店有效员工' });
     const { data, error } = await supabase
       .from('bookings')
-      .update({ stylist_id: stylistId, stylist_name: stylistName })
+      .update({ stylist_id: stylistId, stylist_name: stylist.name })
       .eq('id', id)
       .select()
       .single();
@@ -1711,56 +1665,22 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    // 自动补全客户信息：查 customers 表获取姓名和手机号
-    let finalCustomerName = customerName;
-    let finalCustomerPhone = '';
-    if (!finalCustomerName || finalCustomerName === '顾客') {
-      const { data: custData } = await supabase
-        .from('customers')
-        .select('name, phone')
-        .eq('id', customerId)
-        .maybeSingle();
-      if (custData) {
-        finalCustomerName = custData.name || finalCustomerName;
-        finalCustomerPhone = custData.phone || '';
-      }
-    }
-
-    // 自动补全服务信息：查 shops 表获取服务名称和价格，同时读取预约确认方式
-    let finalServiceName = serviceName;
-    let finalPrice = price;
-    let bookingConfirmMode = 'auto';
-    if (!finalServiceName || finalServiceName === '服务' || !finalPrice) {
-      const { data: shopData } = await supabase
-        .from('shops')
-        .select('services, booking_confirm_mode')
-        .eq('id', shopId)
-        .maybeSingle();
-      if (shopData?.services) {
-        const services = shopData.services as Record<string, unknown>[];
-        const svc = services.find((s: Record<string, unknown>) => s.id === serviceId);
-        if (svc) {
-          finalServiceName = svc.name || finalServiceName;
-          finalPrice = svc.price || finalPrice;
-        }
-      }
-      if (shopData?.booking_confirm_mode) {
-        bookingConfirmMode = shopData.booking_confirm_mode;
-      }
-    }
-
-    // 自动补全发型师姓名
-    let finalStylistName = stylistName;
-    if (stylistId && (!finalStylistName || finalStylistName === '')) {
-      const { data: empData } = await supabase
-        .from('employees')
-        .select('name')
-        .eq('id', stylistId)
-        .maybeSingle();
-      if (empData?.name) {
-        finalStylistName = empData.name;
-      }
-    }
+    // 始终读取实际目录及确认规则，不能被客户端的显示字段绕过。
+    const [customerResult, shopResult, stylistResult] = await Promise.all([
+      supabase.from('customers').select('name, phone').eq('id', customerId).eq('shop_id', shopId).maybeSingle(),
+      supabase.from('shops').select('services, booking_confirm_mode').eq('id', shopId).maybeSingle(),
+      stylistId ? supabase.from('employees').select('name').eq('id', stylistId).eq('shop_id', shopId).eq('is_active', true).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (customerResult.error || shopResult.error || stylistResult.error) return res.status(503).json({ success: false, error: '预约基础信息暂不可用' });
+    const service = (shopResult.data?.services || []).find((s: any) => String(s.id) === String(serviceId) && s.isActive !== false);
+    if (!customerResult.data || !service || (stylistId && !stylistResult.data)) return res.status(400).json({ success: false, error: '顾客、服务或设计师不属于本店有效目录' });
+    const finalCustomerName = customerResult.data.name;
+    const finalCustomerPhone = customerResult.data.phone;
+    const finalServiceName = service.name;
+    const finalPrice = Number(service.price);
+    if (!Number.isFinite(finalPrice) || finalPrice < 0) return res.status(400).json({ success: false, error: '服务价格无效' });
+    const bookingConfirmMode = shopResult.data?.booking_confirm_mode || 'auto';
+    const finalStylistName = stylistResult.data?.name || '';
 
     // 按店铺 + 预约日期 + 同一时段 + 有效状态统计排队人数，用于生成更合理的排队号
     const scheduledDateStart = new Date(scheduledTimeDate);
@@ -1812,7 +1732,7 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
       console.error('[bookings] 创建预约失败:', error.message);
       return res.status(500).json({
         success: false,
-        error: '创建预约失败: ' + error.message,
+        error: error.message?.includes('BOOKING_SLOT_TAKEN') ? '该设计师的时段已被预约，请刷新预约列表或选择其他时间' : '预约未确认成功，请查看我的预约后再操作',
       });
     }
 
@@ -5607,20 +5527,39 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     const method = paymentMethod || 'cash';
     if (!['cash','balance','card','wechat','alipay'].includes(method)) return res.status(400).json({ success: false, error: '不支持的支付方式' });
     if (method === 'alipay') return res.status(400).json({ success: false, error: '支付宝网关尚未接入，请使用其他支付方式' });
+    const settlementId = id || 'settle_' + randomUUID();
+    const requestKey = createHash('sha256').update(canonicalJson(req.body)).digest('hex');
+    if (id) {
+      const { data: existing, error: existingError } = await supabase.from('settlements').select('*').eq('id', id).eq('shop_id', shopId).maybeSingle();
+      if (existingError) return res.status(503).json({ success: false, error: '结算状态暂不可用，请稍后使用原单号重试' });
+      if (existing?.payment_status === 'completed') {
+        if (existing.customer_id !== customerId || existing.checkout_request_key !== requestKey) return res.status(409).json({ success: false, error: '此结算单已完成，请勿更改后重复收款' });
+        return res.json({ success: true, data: settlementFromDb(existing) });
+      }
+    }
     const priced = await priceSettlement(shopId, req.body);
     const amount = priced.total;
     const isAsyncPayment = (method === 'wechat' || method === 'alipay') && amount > 0;
     const isDraft = paymentStatus === 'pending';
     if (!isDraft && isAsyncPayment && !(await isCustomerVerified(customerId, shopId))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
-    const settlementId = id || 'settle_' + randomUUID();
     const { data: created, error: insertError } = await supabase.rpc('create_settlement_atomic', {
-      p_settlement: { id: settlementId, shop_id: shopId, customer_id: customerId, customer_name: priced.customerName,
+      p_settlement: { id: settlementId, checkout_request_key: requestKey, start_payment: !isDraft && isAsyncPayment, shop_id: shopId, customer_id: customerId, customer_name: priced.customerName,
         booking_id: bookingId || null, ...priced, items: priced.items, discount_detail: priced.discountDetail,
         payment_method: method, payment_status: 'pending', used_benefit_ids: usedBenefitIds || [], processed_by: employee.name,
         customer_package_id: req.body.customerPackageId || null },
       p_employee_id: employee.id, p_employee_name: employee.name, p_complete: !isDraft && !isAsyncPayment,
     });
-    if (insertError) return res.status(insertError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: insertError.code === 'PGRST202' ? '请先执行 027 交易原子性迁移' : '交易未创建：余额、次卡或权益状态已变化' });
+    if (insertError) {
+      const reason = String(insertError.message || '');
+      const message = reason.includes('PAYMENT_ORDER_EXISTS') || reason.includes('BOOKING_PAYMENT_IN_PROGRESS') ? '此预约已有支付订单，请从待支付列表确认原订单，勿重复收款'
+        : reason.includes('BOOKING_ALREADY_SETTLED') ? '此预约已结算，请刷新预约列表'
+        : reason.includes('BOOKING_CANCELLED') ? '此预约已取消，不能结算'
+        : reason.includes('OWNER_MISMATCH') ? '预约、顾客或门店不匹配，请重新打开正确订单'
+        : insertError.code === 'PGRST202' ? '结算函数不可用，请先核对数据库迁移'
+        : '结算未完成：余额、次卡或权益状态已变化；原草稿已保留';
+      console.error('[settlements] 原子提交失败', insertError.code || 'UNKNOWN');
+      return res.status(insertError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: message });
+    }
     const settlement = created?.[0];
     if (!settlement) return res.status(503).json({ success: false, error: '结算结果暂不可用' });
     logStep('结算记录创建成功');
@@ -5641,7 +5580,8 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
       if (mappingError) return res.status(503).json({ success: false, error: '支付映射保存失败，尚未发起网关支付' });
       const paymentResult = await createPayment({ paymentId, shopId, customerId, settlementId, amount,
         channel: 'wechat_native', description: 'MBS 门店结算 ' + settlementId });
-      if (paymentResult.prepayId) await supabase.from('payments').update({ prepay_id: paymentResult.prepayId }).eq('id',paymentId);
+      const { error: paymentDetailsError } = await supabase.from('payments').update({ prepay_id: paymentResult.prepayId || null, code_url: paymentResult.codeUrl || null }).eq('id',paymentId);
+      if (paymentDetailsError) console.error('[settlements] 支付二维码保存失败，需保留原支付订单核对');
       logStep('微信支付参数已生成');
       return res.status(201).json({
         success: true,
@@ -5769,7 +5709,23 @@ settlementsRouter.delete('/:id', authMiddleware, async (req: Request, res: Respo
     }
 
     const { error: deleteError } = await supabase.rpc('delete_settlement_draft_atomic', { p_settlement_id: id, p_shop_id: shopId });
-    if (deleteError) return res.status(409).json({ success: false, error: '不能删除：已生成支付订单需先对账；纯草稿删除需先执行 027 迁移' });
+    if (deleteError) {
+      // 不输出数据库 detail/客户行，仅记录数据库错误代码用于内部定位。
+      console.error('[settlements] 删除草稿 RPC 失败 code=%s', deleteError.code || 'UNKNOWN');
+      const message = String(deleteError.message || '');
+      const reason = deleteError.code === 'PGRST202'
+        ? { status: 503, code: 'DRAFT_RPC_MISSING', error: '草稿删除功能未就绪，请联系管理员检查交易迁移与结构缓存' }
+        : message.includes('PAYMENT_ORDER_EXISTS')
+        ? { status: 409, code: 'DRAFT_HAS_PAYMENT', error: '原结算已生成支付订单，不能删除后重新开单；请先核对该订单的收款状态' }
+        : message.includes('NOT_A_DELETABLE_DRAFT')
+        ? { status: 409, code: 'DRAFT_STATE_CHANGED', error: '原结算状态已变化，请刷新未完成结算列表后核对，勿重复结算' }
+        : deleteError.code === '42501'
+        ? { status: 503, code: 'DRAFT_PERMISSION_DENIED', error: '后端没有草稿删除权限，请联系管理员检查数据库授权' }
+        : deleteError.code === '23503'
+        ? { status: 409, code: 'DRAFT_HAS_REFERENCES', error: '原结算仍有关联记录，不能删除；请联系管理员核对关联单据' }
+        : { status: 409, code: 'DRAFT_DELETE_FAILED', error: '草稿删除失败，尚未创建新结算；请联系管理员查看函数日志' };
+      return res.status(reason.status).json({ success: false, code: reason.code, error: reason.error });
+    }
     res.json({ success: true, data: { id } });
   } catch (error) {
     console.error('[settlements] 删除结算记录异常:', error);
@@ -5796,7 +5752,7 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
 
     const { data: payment } = await supabase
       .from('payments')
-      .select('id, status, transaction_id, prepay_id, paid_at')
+      .select('id, status, transaction_id, prepay_id, paid_at, code_url, amount')
       .eq('settlement_id', id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -5806,7 +5762,7 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
       success: true,
       data: {
         settlementStatus: settlement.payment_status,
-        payment: payment || null,
+        payment: payment ? { ...payment, paymentId: payment.id, codeUrl: payment.code_url, amount: Number(payment.amount) } : null,
       },
     });
   } catch (error) {
@@ -5950,7 +5906,8 @@ financialRouter.get('/report', async (req: Request, res: Response) => {
         ticketCount.year += 1;
       }
 
-      (itemsBySettlement.get(s.id as string) || []).forEach((item: Record<string, unknown>) => {
+      // 新交易以事务内 JSON 明细为准，兼容旧表明细，避免报表丢失服务/设计师业绩。
+      (Array.isArray(s.items) && s.items.length ? s.items : (itemsBySettlement.get(s.id as string) || [])).forEach((item: Record<string, unknown>) => {
         const itemTotal = Number(item.total) || 0;
         const qty = Number(item.quantity) || 1;
         const empId = (item.employee_id || item.employeeId) as string;

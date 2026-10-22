@@ -74,23 +74,25 @@ function getBarberById(stylists, id) {
 }
 
 // 判断发型师是否忙碌
-function isBarberBusy(barberId, date, time, bookings) {
+function isBarberBusy(barberId, date, time, bookings, duration = 30) {
   return bookings.some((bk) => {
-    if (bk.status === 'cancelled') return false;
+    if (bk.status !== 'confirmed' && bk.status !== 'pending') return false;
     if (bk.barberId !== barberId && bk.stylistId !== barberId) return false;
-    const bkDate = new Date(bk.scheduledTime);
-    return bkDate.toISOString().split('T')[0] === date
-      && bkDate.toTimeString().slice(0, 5) === time;
+    const start = new Date(`${date}T${time}:00+08:00`).getTime();
+    const end = start + (Number(duration) || 30) * 60000;
+    const bookedStart = new Date(bk.scheduledTime).getTime();
+    const bookedEnd = bk.scheduledEndTime ? new Date(bk.scheduledEndTime).getTime() : bookedStart + (Number(bk.duration) || 30) * 60000;
+    return bookedStart < end && bookedEnd > start;
   });
 }
 
 // 找最快可服务的发型师
-function findFastestStylist(stylists, selectedDate, selectedTime, existingBookings) {
+function findFastestStylist(stylists, selectedDate, selectedTime, existingBookings, duration = 30) {
   if (!stylists || stylists.length === 0 || !selectedDate || !selectedTime) return null;
   let best = null;
   let minWait = Infinity;
   for (const barber of stylists) {
-    if (isBarberBusy(barber.id, selectedDate, selectedTime, existingBookings)) continue;
+    if (isBarberBusy(barber.id, selectedDate, selectedTime, existingBookings, duration)) continue;
 
     const sameDayBookings = existingBookings.filter((bk) => {
       if (bk.barberId !== barber.id && bk.stylistId !== barber.id) return false;
@@ -338,7 +340,7 @@ Page({
 
     const stylists = rawStylists.map((s) => {
       const eligible = isEligible(s);
-      const isAvailable = !isBarberBusy(s.id, selectedDate, selectedTime, existingBookings);
+      const isAvailable = !isBarberBusy(s.id, selectedDate, selectedTime, existingBookings, service?.duration);
       const sameDayBookings = existingBookings.filter((bk) => {
         if (bk.barberId !== s.id && bk.stylistId !== s.id) return false;
         if (bk.status === 'cancelled') return false;
@@ -361,7 +363,7 @@ Page({
       };
     });
 
-    const fastest = findFastestStylist(eligibleRaw, selectedDate, selectedTime, existingBookings);
+    const fastest = findFastestStylist(eligibleRaw, selectedDate, selectedTime, existingBookings, service?.duration);
     this.setData({
       stylists,
       fastest,
@@ -386,8 +388,9 @@ Page({
   updateTimeSlots() {
     const { selectedDate, selectedTime, stylists, existingBookings } = this.data;
     const rawSlots = generateTimeSlots(selectedDate);
+    const duration = getServiceById(this.data.shop?.services || [],this.data.selectedService)?.duration;
     const timeSlots = rawSlots.map((time) => {
-      const allBusy = stylists.length > 0 && stylists.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings));
+      const allBusy = stylists.length > 0 && stylists.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
       return { time, full: allBusy };
     });
     const stillValid = rawSlots.includes(selectedTime);
@@ -480,6 +483,7 @@ Page({
   },
 
   async doBooking() {
+    if (this.data.booking) return;
     const { selectedService, selectedDate, selectedTime, selectionMode, selectedBarberId, notes, shop, customerId, stylists } = this.data;
 
     const target = selectionMode === 'specific'
@@ -523,7 +527,7 @@ Page({
       }
     } catch (error) {
       console.error('预约失败:', error);
-      wx.showToast({ title: '预约失败，请检查网络连接', icon: 'none' });
+      wx.showToast({ title: error.message || '预约失败，请检查网络连接', icon: 'none' });
     } finally {
       this.setData({ booking: false });
     }

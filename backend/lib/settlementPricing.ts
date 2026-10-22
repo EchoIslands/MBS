@@ -3,18 +3,20 @@ import { calcSettlementDiscountDetail, getEffectivePurchaseVIPLevel, getEffectiv
 import { Customer, MemberBenefitRecord, ProductCategory, PurchaseVIPLevel, StoredValueLevel, SettlementItem } from '../../shared/types.js';
 
 const round = (n: number) => Math.round(n * 100) / 100;
-const levelPrices: Record<string, number> = { normal: 0, gold: 20, director: 40 };
 
 /** 请求中的金额仅作核对；目录、会员级别、权益、次卡、团购均从数据库读取。 */
 export async function priceSettlement(shopId: string, body: Record<string, any>) {
-  const [customerResult, shopResult, productResult, benefitResult, packageResult] = await Promise.all([
+  const employeeIds = Array.isArray(body.items) ? [...new Set(body.items.map((item: any) => item?.employeeId).filter(Boolean))] : [];
+  const [customerResult, shopResult, productResult, benefitResult, packageResult, employeeResult] = await Promise.all([
     supabase.from('customers').select('*').eq('id', body.customerId).eq('shop_id', shopId).maybeSingle(),
     supabase.from('shops').select('services').eq('id', shopId).maybeSingle(),
     supabase.from('products').select('id, name, price, category, is_active').eq('shop_id', shopId),
     supabase.from('member_benefit_records').select('*').eq('customer_id', body.customerId).eq('shop_id', shopId).in('id', body.usedBenefitIds || []),
     body.customerPackageId ? supabase.from('customer_packages').select('*').eq('id', body.customerPackageId).eq('shop_id', shopId).eq('customer_id', body.customerId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    employeeIds.length ? supabase.from('employees').select('id, name').eq('shop_id', shopId).eq('is_active', true).in('id', employeeIds) : Promise.resolve({data:[],error:null}),
   ]);
-  if ([customerResult, shopResult, productResult, benefitResult, packageResult].some(r => r.error)) throw new Error('结算基础数据暂不可用');
+  if ([customerResult, shopResult, productResult, benefitResult, packageResult, employeeResult].some(r => r.error)) throw new Error('结算基础数据暂不可用');
+  if ((employeeResult.data || []).length !== employeeIds.length) throw new Error('服务设计师不属于本店有效员工');
   const c = customerResult.data;
   if (!c || !shopResult.data) throw new Error('客户或店铺不存在');
   if (!Array.isArray(body.items) || !body.items.length || body.items.length > 100) throw new Error('结算项目数量不正确');
@@ -36,9 +38,8 @@ export async function priceSettlement(shopId: string, body: Record<string, any>)
     if (!raw || !['service','product'].includes(raw.type) || !Number.isInteger(raw.quantity) || raw.quantity < 1 || raw.quantity > 100) throw new Error('结算项目或数量不正确');
     const row = raw.type === 'service' ? (shopResult.data.services || []).find((s: any) => String(s.id) === String(raw.id)) : (productResult.data || []).find(p => p.id === raw.id && p.is_active !== false);
     if (!row) throw new Error('项目不在本店有效目录中');
-    const level = raw.employeeLevel || 'normal';
-    if (!(level in levelPrices)) throw new Error('设计师等级不正确');
-    let originalPrice = round(Number(row.price) + (raw.type === 'service' ? levelPrices[level] : 0));
+    // 价格只取门店目录；旧客户端的 employeeLevel 不作为加价依据。
+    let originalPrice = round(Number(row.price));
     if (!Number.isFinite(originalPrice) || originalPrice < 0) throw new Error('目录价格不正确');
     const category = raw.type === 'service' ? 'service' : row.category;
     let final: number | undefined;
@@ -54,7 +55,7 @@ export async function priceSettlement(shopId: string, body: Record<string, any>)
       vouchers.add(raw.groupBuyVoucherId);
       const { data: voucher, error } = await supabase.from('group_buy_vouchers').select('*, group_buy_batches(*)').eq('id', raw.groupBuyVoucherId).eq('shop_id', shopId).maybeSingle();
       const batch = voucher?.group_buy_batches;
-      if (error || !voucher || !batch || voucher.status !== 'used' || voucher.used_by_customer_id !== body.customerId || voucher.used_order_id || !batch.service_ids?.includes(String(raw.id))) throw new Error('团购券归属或状态不正确');
+      if (error || !voucher || !batch || voucher.status !== 'used' || voucher.used_by_customer_id !== body.customerId || (voucher.used_order_id && voucher.used_order_id !== body.id) || !batch.service_ids?.includes(String(raw.id))) throw new Error('团购券归属或状态不正确');
       final = batch.price_type === 'fixed' ? Number(batch.fixed_price) : batch.price_type === 'per_service' ? Number(batch.service_prices?.[raw.id]) : round(originalPrice * getPurchaseVIPDiscount(batch.vip_level));
       if (!Number.isFinite(final) || final < 0 || final > originalPrice) throw new Error('团购价格不正确');
     }
@@ -62,8 +63,8 @@ export async function priceSettlement(shopId: string, body: Record<string, any>)
     else { extraSubtotal += originalPrice * raw.quantity; extraTotal += final * raw.quantity; }
     const discountedPrice = final ?? (category === 'wig' ? originalPrice : round(originalPrice * getFinalDiscount(purchase, stored)));
     items.push({ type: raw.type, id: String(row.id), name: row.name, originalPrice, quantity: raw.quantity,
-      discountedPrice, total: round(discountedPrice * raw.quantity), category, employeeId: raw.employeeId, employeeName: raw.employeeName,
-      employeeLevel: level, priceOverride: raw.priceOverride, groupBuyVoucherId: raw.groupBuyVoucherId });
+      discountedPrice, total: round(discountedPrice * raw.quantity), category, employeeId: raw.employeeId, employeeName: employeeResult.data?.find(e => e.id === raw.employeeId)?.name,
+      priceOverride: raw.priceOverride, groupBuyVoucherId: raw.groupBuyVoucherId });
   }
   if (pkg && packageLines !== 1) throw new Error('次卡与服务不匹配');
   const detail = calcSettlementDiscountDetail(normal, purchase, stored, benefits as unknown as MemberBenefitRecord[]);

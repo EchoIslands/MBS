@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
   Scissors, Sparkles, Award, Zap
 } from 'lucide-react';
-import { mockShops, mockBookings } from '../../../shared/mockData';
+import { mockShops } from '../../../shared/mockData';
 import { Employee, Shop, UserRole, Booking } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
@@ -19,7 +19,8 @@ const BookingPage: React.FC = () => {
 
   const [shop, setShop] = useState<Shop | null>(null);
   const [loadingShop, setLoadingShop] = useState(true);
-  const [existingBookings, setExistingBookings] = useState<Booking[]>(mockBookings);
+  const [existingBookings, setExistingBookings] = useState<Booking[]>([]);
+  const bookingLock = useRef(false);
 
   const [selectedService, setSelectedService] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -56,10 +57,10 @@ const BookingPage: React.FC = () => {
       if (!shop?.id || !selectedDate) return;
       try {
         const data = await bookingApi.getBookingsByShop(shop.id, selectedDate);
-        setExistingBookings(data && data.length > 0 ? data : mockBookings);
+        setExistingBookings(data || []);
       } catch (error) {
         console.error('加载店铺预约失败:', error);
-        setExistingBookings(mockBookings);
+        setExistingBookings([]);
       }
     }
     loadBookings();
@@ -156,13 +157,15 @@ const BookingPage: React.FC = () => {
   const isBarberBusy = useCallback(
     (barberId: string, date: string, time: string) =>
       existingBookings.some((bk) => {
-        if (bk.status === 'cancelled') return false;
+        if (bk.status !== 'confirmed' && bk.status !== 'pending') return false;
         if (bk.barberId !== barberId && bk.stylistId !== barberId) return false;
-        const bkDate = new Date(bk.scheduledTime);
-        return bkDate.toISOString().split('T')[0] === date
-          && bkDate.toTimeString().slice(0, 5) === time;
+        const start = new Date(`${date}T${time}:00+08:00`).getTime();
+        const end = start + (Number(selectedServiceData?.duration) || 30) * 60000;
+        const bookedStart = new Date(bk.scheduledTime).getTime();
+        const bookedEnd = bk.scheduledEndTime ? new Date(bk.scheduledEndTime).getTime() : bookedStart + 30*60000;
+        return bookedStart < end && bookedEnd > start;
       }),
-    [existingBookings]
+    [existingBookings, selectedServiceData?.duration]
   );
 
   // 计算技师可用性与预计等待时间
@@ -211,6 +214,7 @@ const BookingPage: React.FC = () => {
   }, [eligibleStylists, selectedDate, selectedTime, existingBookings, isBarberBusy]);
 
   const handleBooking = async () => {
+    if (bookingLock.current) return;
     if (!selectedService || !selectedDate || !selectedTime) {
       alert('请填写完整预约信息');
       return;
@@ -228,6 +232,7 @@ const BookingPage: React.FC = () => {
       return;
     }
     setBooking(true);
+    bookingLock.current = true;
 
     // 构建预约时间
     const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
@@ -257,8 +262,10 @@ const BookingPage: React.FC = () => {
       navigate(`/customer/queue/${newBooking.id}`);
     } catch (error) {
       console.error('预约失败:', error);
-      alert('预约失败，请检查网络连接');
+      alert(error instanceof Error ? error.message : '预约失败，请检查网络连接');
       setBooking(false);
+    } finally {
+      bookingLock.current = false;
     }
   };
 

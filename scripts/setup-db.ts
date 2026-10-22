@@ -1,4 +1,4 @@
-/** 仅补齐 025–030 结构，不初始化密码、不执行结算函数。 */
+/** 仅补齐 025–031 结构，不初始化密码、不执行结算函数。 */
 import pg, { type ClientConfig } from 'pg';
 import dotenv from 'dotenv';
 import { readFile } from 'node:fs/promises';
@@ -12,6 +12,7 @@ export const SETUP_MIGRATIONS = [
   '028_atomic_product_order_payments.sql',
   '029_customer_password_change_required.sql',
   '030_restrict_sensitive_rpc_execution.sql',
+  '031_booking_checkout_consistency.sql',
 ] as const;
 
 const BASE_TABLES = [
@@ -64,7 +65,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
     await connection.query("NOTIFY pgrst, 'reload schema'");
     await connection.query('COMMIT');
     active = false;
-    log('[完成] 025–030 已全部提交，已通知 API 重载结构；未初始化密码、未执行消费或扣款。');
+    log('[完成] 025–031 已全部提交，已通知 API 重载结构；未初始化密码、未执行消费或扣款。');
   } catch (error) {
     if (active) { try { await connection.query('ROLLBACK'); } catch { /* 断连时数据库自行回滚未提交事务 */ } }
     if (error instanceof Error && (error.message.startsWith('缺少 001–024') || error.message.startsWith('客户字段') || error.message.startsWith('已有结构安装'))) throw error;
@@ -99,7 +100,7 @@ export function databaseConfig(env: NodeJS.ProcessEnv): ClientConfig {
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：npx tsx scripts/setup-db.ts\n读取根目录 .env 的 SUPABASE_DB_URL，事务执行 025–030；不初始化密码。');
+    console.log('用法：npx tsx scripts/setup-db.ts\n读取根目录 .env 的 SUPABASE_DB_URL，事务执行 025–031；不初始化密码。');
     return;
   }
   if (process.argv.length > 2) throw new Error('未知参数；使用 --help 查看用法。');

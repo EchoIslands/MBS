@@ -66,7 +66,6 @@ interface CartItem {
   category?: ProductCategory | 'service';
   employeeId?: string;
   employeeName?: string;
-  employeeLevel?: 'normal' | 'gold' | 'director';
   groupBuyInfo?: {
     voucherId: string;
     code: string;
@@ -74,18 +73,6 @@ interface CartItem {
     description: string;
   };
 }
-
-const designerPriceMap: Record<string, number> = {
-  normal: 0,
-  gold: 20,
-  director: 40,
-};
-
-const designerLabelMap: Record<string, string> = {
-  normal: '不限理发师',
-  gold: '金牌设计师',
-  director: '总监设计师',
-};
 
 // 前台/收银手动改价的最低折扣率：钻石 0.58 × 最高储值(随心卡) 0.7
 const MIN_DISCOUNT_RATE = getPurchaseVIPDiscount(PurchaseVIPLevel.DIAMOND) * getStoredValueDiscount(StoredValueLevel.STORE_5000);
@@ -97,6 +84,10 @@ const Checkout: React.FC = () => {
 
   const initialCustomerId = searchParams.get('customerId');
   const initialBookingId = searchParams.get('bookingId');
+  const [activeBookingId, setActiveBookingId] = useState<string | null>(initialBookingId);
+  const submissionId = useRef(`settle_${crypto.randomUUID()}`);
+  const submissionLock = useRef(false);
+  const initializedParams = useRef('');
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -106,6 +97,7 @@ const Checkout: React.FC = () => {
   const [shop, setShop] = useState<Shop | null>(null);
   const [loadingShop, setLoadingShop] = useState(true);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [loadingBooking, setLoadingBooking] = useState(Boolean(initialBookingId));
   const [error, setError] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -211,17 +203,19 @@ const Checkout: React.FC = () => {
       try {
         const all = await settlementApi.getByShop(shopId);
         const existing = all.find(
-          (s) => s.bookingId === initialBookingId && s.paymentStatus === 'pending' && s.paymentMethod === 'cash'
+          (s) => s.bookingId === booking.id && s.paymentStatus === 'pending'
         );
         if (existing) {
-          setCurrentDraftId(existing.id);
+          await handleContinueSettlement(existing);
           return;
         }
+        const draftTotal = customer ? Math.round(booking.price * getCustomerEffectiveDiscount(customer) * 100) / 100 : booking.price;
         const draft = await settlementApi.create({
+          id: submissionId.current,
           shopId,
           customerId: booking.customerId,
           customerName: customer?.name || '',
-          bookingId: initialBookingId || undefined,
+          bookingId: booking.id,
           items: [serviceItem],
           subtotal: booking.price,
           discountDetail: {
@@ -237,7 +231,7 @@ const Checkout: React.FC = () => {
           discount: 0,
           couponDiscount: 0,
           tax: 0,
-          total: booking.price,
+          total: draftTotal,
           paymentMethod: 'cash',
           paymentStatus: 'pending',
           usedBenefitIds: [],
@@ -245,15 +239,18 @@ const Checkout: React.FC = () => {
         const d = draft as Settlement;
         if (d?.id) setCurrentDraftId(d.id);
       } catch (e) {
-        console.warn('[checkout] 创建/查找未完成结算草稿失败:', e);
+        setError(e instanceof Error ? e.message : '预约草稿加载失败，请刷新后继续');
       }
     },
-    [currentShop?.id, initialBookingId]
+    [currentShop?.id, initialBookingId, shop]
   );
 
   // 初始化：根据 URL 参数选择客户或预约
   useEffect(() => {
-    if (loadingCustomers || customers.length === 0) return;
+    if (loadingCustomers || loadingShop || customers.length === 0) return;
+    const key = `${initialBookingId || ''}:${initialCustomerId || ''}`;
+    if (initializedParams.current === key) return;
+    initializedParams.current = key;
 
     const initFromParams = async () => {
       if (initialCustomerId) {
@@ -264,9 +261,14 @@ const Checkout: React.FC = () => {
         try {
           const booking = await bookingApi.getBooking(initialBookingId);
           if (booking && booking.customerId) {
+            const currentService = services.find(service => String(service.id) === String(booking.serviceId));
+            if (!currentService) throw new Error('预约服务已不在有效目录，请核对服务后重新开单');
+            booking.price = currentService.price;
+            booking.serviceName = currentService.name;
             const c = customers.find((cust) => cust.id === booking.customerId);
             if (c) setSelectedCustomer(c);
-            if (booking.serviceId && booking.price) {
+            if (booking.status === 'cancelled') throw new Error('该预约已取消，不能结算');
+            if (booking.serviceId && Number.isFinite(booking.price)) {
               setCart([
                 {
                   id: booking.serviceId,
@@ -284,12 +286,15 @@ const Checkout: React.FC = () => {
             }
           }
         } catch (e) {
-          console.warn('[checkout] 加载预约失败:', e);
+          setError(e instanceof Error ? e.message : '预约加载失败，请刷新重试');
+          initializedParams.current = '';
+        } finally {
+          setLoadingBooking(false);
         }
       }
     };
     initFromParams();
-  }, [initialCustomerId, initialBookingId, customers, loadingCustomers, ensureDraftForBooking]);
+  }, [initialCustomerId, initialBookingId, customers, loadingCustomers, loadingShop, ensureDraftForBooking]);
 
   // 选中客户后加载可用权益
   useEffect(() => {
@@ -380,9 +385,6 @@ const Checkout: React.FC = () => {
   const cartWithAdjustedPrices = useMemo(() => {
     return cart.map((item) => {
       let price = item.originalPrice;
-      if (item.type === 'service' && item.employeeLevel) {
-        price = price + designerPriceMap[item.employeeLevel];
-      }
       if (selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId) {
         price = 0;
       }
@@ -406,11 +408,8 @@ const Checkout: React.FC = () => {
     let overrideDiscount = 0;
 
     cart.forEach((item, index) => {
-      // 该 item 自动计算的应收价（设计师加价 + 次卡抵扣）
+      // 以门店目录价为原价，仅处理已选择的次卡抵扣。
       let autoPrice = item.originalPrice;
-      if (item.type === 'service' && item.employeeLevel) {
-        autoPrice += designerPriceMap[item.employeeLevel];
-      }
       if (selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId) {
         autoPrice = 0;
       }
@@ -475,7 +474,6 @@ const Checkout: React.FC = () => {
         originalPrice: service.price,
         quantity: 1,
         category: 'service' as const,
-        employeeLevel: 'normal',
       },
     ]);
   };
@@ -534,20 +532,6 @@ const Checkout: React.FC = () => {
     setPriceOverrides((prev) => {
       const next = { ...prev };
       delete next[index];
-      return next;
-    });
-  };
-
-  const updateServiceLevel = (index: number, level: 'normal' | 'gold' | 'director') => {
-    setCart((prev) => {
-      const next = [...prev];
-      const item = next[index];
-      if (item.type === 'service') {
-        // 还原基础价后再加新等级差价
-        const basePrice = services.find((s) => s.id === item.id)?.price || item.originalPrice;
-        item.originalPrice = basePrice;
-        item.employeeLevel = level;
-      }
       return next;
     });
   };
@@ -680,7 +664,10 @@ const Checkout: React.FC = () => {
   };
 
   // 继续未完成的结算（草稿 / 待支付），恢复其内容供继续编辑
-  const handleContinueSettlement = (s: Settlement) => {
+  const handleContinueSettlement = async (s: Settlement) => {
+    if (submissionLock.current) return;
+    setActiveBookingId(s.bookingId || null);
+    submissionId.current = s.id;
     setCurrentDraftId(s.id);
     const c = customers.find((cust) => cust.id === s.customerId);
     if (c) setSelectedCustomer(c);
@@ -693,7 +680,6 @@ const Checkout: React.FC = () => {
       category: it.category,
       employeeId: it.employeeId,
       employeeName: it.employeeName,
-      employeeLevel: it.employeeLevel,
       groupBuyInfo: it.groupBuyVoucherId ? { voucherId: it.groupBuyVoucherId, code: '', price: it.discountedPrice, description: '已绑定团购券' } : undefined,
     }));
     setCart(restoredCart);
@@ -702,6 +688,19 @@ const Checkout: React.FC = () => {
     setPriceOverrides(Object.fromEntries((s.items || []).flatMap((item, index) => item.priceOverride === undefined ? [] : [[index, item.priceOverride]])));
     setSelectedPackageId(s.customerPackageId || '');
     setSelectedBenefits(s.usedBenefitIds || []);
+    if (['wechat', 'alipay'].includes(s.paymentMethod) && s.total > 0) {
+      try {
+        const state = await settlementApi.getPaymentStatus(s.id);
+        if (state.settlementStatus === 'completed') { setSuccess(true); return; }
+        if (state.payment?.codeUrl) {
+          setWechatPayment(state.payment);
+          setPendingSettlementId(s.id);
+          setShowWechatModal(true);
+        } else {
+          alert('此单处于支付处理中，请先核对原订单收款状态，勿重新开单');
+        }
+      } catch (err) { alert(err instanceof Error ? err.message : '支付状态查询失败'); }
+    }
     // 滚动到结算表单，让用户能看到已恢复的内容
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -709,6 +708,7 @@ const Checkout: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    if (loadingBooking || error || submissionLock.current) return;
     if (!selectedCustomer) {
       alert('请先选择客户');
       return;
@@ -733,6 +733,8 @@ const Checkout: React.FC = () => {
   };
 
   const doSubmit = async () => {
+    if (submissionLock.current) return;
+    submissionLock.current = true;
     setSubmitting(true);
 
     const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item, index) => {
@@ -760,18 +762,17 @@ const Checkout: React.FC = () => {
         category: item.category,
         employeeId: item.employeeId,
         employeeName: item.employeeName,
-        employeeLevel: item.employeeLevel,
         priceOverride: isOverridden ? override : undefined,
         groupBuyVoucherId: item.groupBuyInfo?.voucherId,
       };
     });
 
     const newSettlement = {
-      id: `settle${Date.now()}`,
+      id: currentDraftId || submissionId.current,
       shopId: currentShop?.id || 'shop1',
       customerId: selectedCustomer!.id,
       customerName: selectedCustomer!.name,
-      bookingId: initialBookingId || undefined,
+      bookingId: activeBookingId || undefined,
       items: settlementItems,
       subtotal,
       discountDetail: {
@@ -792,19 +793,8 @@ const Checkout: React.FC = () => {
     };
 
     try {
-      if (currentDraftId) { await settlementApi.delete(currentDraftId); setCurrentDraftId(null); }
       const result = await settlementApi.create(newSettlement);
-      console.log('settlementApi.create result:', result);
 
-      // 正式结算已创建，删除对应的未完成结算草稿
-      if (currentDraftId) {
-        try {
-          await settlementApi.delete(currentDraftId);
-        } catch (e) {
-          console.warn('[checkout] 删除结算草稿失败:', e);
-        }
-        setCurrentDraftId(null);
-      }
       loadPendingSettlements();
 
       // 微信支付/支付宝：进入待支付流程，显示二维码
@@ -818,7 +808,7 @@ const Checkout: React.FC = () => {
 
       // 若异步支付方式未返回 payment，说明支付流程未启动，不应显示结算成功；
       // 金额为 0（纯核销）时后端不会生成支付，直接按完成处理，不弹此提示
-      if ((paymentMethod === 'wechat' || paymentMethod === 'alipay') && total > 0) {
+      if ((paymentMethod === 'wechat' || paymentMethod === 'alipay') && total > 0 && !('paymentStatus' in result && result.paymentStatus === 'completed')) {
         alert('支付流程未正确启动，请检查网络或联系管理员');
         setSubmitting(false);
         return;
@@ -856,6 +846,8 @@ const Checkout: React.FC = () => {
     } catch (err: unknown) {
       alert((err as Error).message || '结算失败，请重试');
       setSubmitting(false);
+    } finally {
+      submissionLock.current = false;
     }
   };
 
@@ -942,6 +934,11 @@ const Checkout: React.FC = () => {
               <button
                 onClick={() => {
                   setSuccess(false);
+                  setCurrentDraftId(null);
+                  setActiveBookingId(null);
+                  submissionId.current = `settle_${crypto.randomUUID()}`;
+                  setSelectedPackageId('');
+                  setPriceOverrides({});
                   setCart([]);
                   setSelectedBenefits([]);
                   setPaymentMethod('cash');
@@ -1049,6 +1046,10 @@ const Checkout: React.FC = () => {
                     </div>
                     <button
                       onClick={() => {
+                        if (activeBookingId || currentDraftId) {
+                          alert('此单已关联预约或草稿，请从预约列表重新打开其他顾客的结算');
+                          return;
+                        }
                         setSelectedCustomer(null);
                         setCustomerSearch('');
                       }}
@@ -1238,18 +1239,6 @@ const Checkout: React.FC = () => {
                             <Trash2 size={14} className="text-red-500" />
                           </button>
                         </div>
-
-                        {item.type === 'service' && !isOverridden && (
-                          <select
-                            value={item.employeeLevel || 'normal'}
-                            onChange={(e) => updateServiceLevel(index, e.target.value as 'normal' | 'gold' | 'director')}
-                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 mb-2 outline-none"
-                          >
-                            <option value="normal">{designerLabelMap.normal} (+¥0)</option>
-                            <option value="gold">{designerLabelMap.gold} (+¥20)</option>
-                            <option value="director">{designerLabelMap.director} (+¥40)</option>
-                          </select>
-                        )}
 
                         {item.type === 'service' && canAdjustPrice && (
                           <div className="mb-2 p-2 bg-orange-50 border border-orange-100 rounded-lg">
@@ -1471,7 +1460,7 @@ const Checkout: React.FC = () => {
 
                 <button
                   onClick={handleSubmit}
-                  disabled={!selectedCustomer || cart.length === 0 || submitting}
+                  disabled={!selectedCustomer || cart.length === 0 || submitting || loadingBooking || Boolean(error)}
                   className="w-full py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-xl font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                   {submitting ? (

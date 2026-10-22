@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Calendar,
   Clock,
@@ -41,7 +41,8 @@ const BookingManagement: React.FC = () => {
   const [stylists, setStylists] = useState<Employee[]>([]);
   const [selectedStylistId, setSelectedStylistId] = useState<string>('');
   const [reassigning, setReassigning] = useState(false);
-  const { currentEmployee, userRole } = useAppStore();
+  const { currentEmployee, currentShop, userRole } = useAppStore();
+  const fetchingBookings = useRef(false);
 
   // 服务时间编辑状态
   const [editingSchedule, setEditingSchedule] = useState(false);
@@ -70,12 +71,14 @@ const BookingManagement: React.FC = () => {
   const [delayResult, setDelayResult] = useState<{ expectedEnd: string; affected: Booking[] } | null>(null);
 
   // 从 API 获取预约列表
-  const fetchBookings = useCallback(async () => {
-    setLoading(true);
+  const fetchBookings = useCallback(async (quiet = false) => {
+    if (fetchingBookings.current) return;
+    fetchingBookings.current = true;
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const data = await bookingApi.getBookingsByShop(
-        'shop1',
+        currentShop?.id || 'shop1',
         dateFilter || undefined,
         statusFilter !== 'all' ? statusFilter : undefined
       );
@@ -84,11 +87,16 @@ const BookingManagement: React.FC = () => {
       setError(err instanceof Error ? err.message : '网络错误');
     } finally {
       setLoading(false);
+      fetchingBookings.current = false;
     }
-  }, [statusFilter, dateFilter]);
+  }, [statusFilter, dateFilter, currentShop?.id]);
 
   useEffect(() => {
     fetchBookings();
+    const refresh = () => { if (document.visibilityState === 'visible') void fetchBookings(true); };
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 20000);
+    return () => { window.removeEventListener('focus',refresh); window.clearInterval(timer); };
   }, [fetchBookings]);
 
   // 打开详情弹窗时，默认选中当前发型师并初始化时间表单
@@ -677,7 +685,7 @@ const BookingManagement: React.FC = () => {
             </button>
           )}
           <button
-            onClick={fetchBookings}
+            onClick={() => void fetchBookings()}
             className="flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
             title="刷新数据"
           >
@@ -728,7 +736,7 @@ const BookingManagement: React.FC = () => {
           <AlertCircle size={48} className="mx-auto mb-3 text-red-400" />
           <p className="text-red-600 mb-3">{error}</p>
           <button
-            onClick={fetchBookings}
+            onClick={() => void fetchBookings()}
             className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition-colors text-sm"
           >
             重试

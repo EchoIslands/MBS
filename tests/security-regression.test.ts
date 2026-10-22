@@ -61,7 +61,17 @@ class Query {
 (supabase as any).from=(table:string)=>new Query(table);
 let rpcFailures = 0;
 let failRpc = false;
+let draftDeleteError: any = null;
+let completeCheckout = false;
+let checkoutRpcCalls = 0;
 (supabase as any).rpc = async (name: string, args: any) => {
+ if (name === 'delete_settlement_draft_atomic') return { data: null, error: draftDeleteError };
+ if (name === 'create_settlement_atomic' && completeCheckout) {
+  checkoutRpcCalls++;
+  const row={...args.p_settlement,payment_status:'completed'};
+  tables.settlements.push(row);
+  return {data:[row],error:null};
+ }
  if (failRpc) return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
  if (name === 'begin_customer_auth_attempt') return { data: [{allowed: rpcFailures < 5}], error: null };
  if (name === 'finish_customer_auth_attempt') { rpcFailures = args.p_succeeded ? 0 : rpcFailures+1; return {data:null,error:null}; }
@@ -82,6 +92,28 @@ const login=async(id:string)=>{const r=await request('/auth/login','','POST',{ph
 
 test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',async(t)=>{
  try {
+  await t.test('结算草稿删除：具体原因保留，已付款或跨店不放行',async()=>{
+   const token=await login('ceo');
+   tables.settlements.push({id:'synthetic-draft',shop_id:'s1',payment_status:'pending'});
+   for(const [error,status,code] of [
+    [{code:'P0001',message:'PAYMENT_ORDER_EXISTS'},409,'DRAFT_HAS_PAYMENT'],
+    [{code:'P0001',message:'NOT_A_DELETABLE_DRAFT'},409,'DRAFT_STATE_CHANGED'],
+    [{code:'PGRST202',message:'missing'},503,'DRAFT_RPC_MISSING'],
+    [{code:'42501',message:'denied'},503,'DRAFT_PERMISSION_DENIED'],
+    [{code:'23503',message:'reference'},409,'DRAFT_HAS_REFERENCES'],
+    [{code:'XX000',message:'internal customer data'},409,'DRAFT_DELETE_FAILED'],
+   ] as const){
+    draftDeleteError=error;
+    const r=await request('/settlements/synthetic-draft',token,'DELETE');
+    assert.equal(r.status,status);assert.equal(r.body.code,code);
+    assert.ok(!JSON.stringify(r.body).includes('internal customer data'));
+   }
+   draftDeleteError=null;
+   assert.equal((await request('/settlements/synthetic-draft',token,'DELETE')).status,200);
+   tables.settlements[0].payment_status='completed';
+   assert.equal((await request('/settlements/synthetic-draft',token,'DELETE')).status,400);
+   tables.settlements.length=0;
+  });
   await t.test('旧明文首次登录迁移，之后哈希登录，错误密码不迁移',async()=>{
    const before=tables.employees[0].password_hash;
    assert.equal((await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'wrong'})).status,401);
@@ -90,6 +122,40 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const migrated=tables.employees[0].password_hash;await login('ceo');assert.equal(tables.employees[0].password_hash,migrated);
   });
   const ceo=await login('ceo'),cs=await login('cs'),stylist=await login('stylist'),manager=await login('manager');
+  await t.test('预约本人凭证、跨店隔离、人工确认、真实信息和公开档期脱敏',async()=>{
+   tables.bookings=[];
+   tables.shops[0].services=[{id:'svc',name:'Actual service',price:0,duration:30}];
+   tables.shops[0].booking_confirm_mode='manual';
+   const body={shopId:'s1',customerId:'c1',serviceId:'svc',stylistId:'stylist',scheduledTime:'2029-01-01T10:00:00+08:00',customerName:'Forged',stylistName:'Forged',serviceName:'Forged',price:99};
+   assert.equal((await request('/bookings','','POST',body)).status,401);
+   assert.equal((await request('/bookings',ceo,'POST',{...body,shopId:'s2'})).status,403);
+   const created=await request('/bookings',ceo,'POST',body);
+   assert.equal(created.status,201);
+   assert.equal(created.body.data.status,'pending');
+   assert.equal(created.body.data.customerName,'Synthetic one');
+   assert.equal(created.body.data.stylistName,'Synthetic stylist');
+   assert.equal(created.body.data.price,0);
+   const id=created.body.data.id;
+   const slots=await request('/bookings?shopId=s1');
+   assert.equal(slots.status,200);
+   for(const key of ['id','customerId','customerName','customerPhone','notes']) assert.equal(slots.body.data[0][key],undefined);
+   assert.equal((await request('/bookings/'+id)).status,401);
+   assert.equal((await request('/bookings/'+id+'/cancel','','PUT',{customerId:'c1'})).status,401);
+   const oldHash=tables.customers[0].password_hash;
+   tables.customers[0].password_hash=await hashPassword('123456');
+   const {signCustomerToken}=await import('../backend/lib/tokens.js');
+   const customer=signCustomerToken('c1','s1',tables.customers[0].password_hash);
+   assert.equal((await request('/bookings/'+id,customer)).status,200);
+   assert.equal((await request('/bookings',customer,'POST',{...body,customerId:'c2'})).status,403);
+   const visits=tables.customers[0].visit_count,spent=tables.customers[0].total_spent;
+   assert.equal((await request('/bookings/'+id,ceo,'PUT',{status:'completed'})).status,200);
+   assert.equal(tables.customers[0].visit_count,visits);assert.equal(tables.customers[0].total_spent,spent);
+   assert.equal(tables.customer_visit_records.length,0);
+   tables.bookings.push({...tables.bookings[0],id:'foreign',shop_id:'s2'});
+   assert.equal((await request('/bookings/foreign',ceo,'PUT',{status:'confirmed'})).status,404);
+   tables.customers[0].password_hash=oldHash;
+   tables.bookings=[];
+  });
   await t.test('无登录与低权限被拒；发型师列表仅返回本人服务且同店客户',async()=>{
    assert.equal((await request('/customers')).status,401);
    const own=await request('/customers',stylist);assert.equal(own.status,200);assert.deepEqual(own.body.data.map((r:any)=>r.id),['c1']);
@@ -175,6 +241,14 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const {priceSettlement}=await import('../backend/lib/settlementPricing.js');
    const body={customerId:'c1',items:[{type:'service',id:'svc',quantity:1,originalPrice:0.01,discountedPrice:0.01}],total:58};
    assert.equal((await priceSettlement('s1',body)).total,58);
+   for (const employeeLevel of ['gold','director']) {
+    const legacyBody={...body,items:[{...body.items[0],employeeLevel}]};
+    const priced=await priceSettlement('s1',legacyBody);
+    assert.equal(priced.total,58,'历史等级字段不能改变门店目录价');
+    assert.equal(priced.items[0].originalPrice,58);
+    assert.equal(priced.items[0].employeeLevel,undefined);
+    await assert.rejects(priceSettlement('s1',{...legacyBody,total:employeeLevel==='gold'?78:98}),/金额/);
+   }
    await assert.rejects(priceSettlement('s1',{...body,total:0.01}),/金额/);
    await assert.rejects(priceSettlement('s1',{...body,tax:1}),/金额/);
    await assert.rejects(priceSettlement('s1',{...body,items:[{type:'service',id:'svc',quantity:-1}]}),/数量/);
@@ -184,6 +258,20 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const r=await request('/settlements',cs,'POST',{...body,paymentMethod:'cash'});
    assert.equal(r.status,503);assert.equal(tables.settlements.length,0);
    failRpc=false;
+  });
+  await t.test('零元微信纯核销直接完成；HTTP 重试不重复提交，改动后重试拒绝',async()=>{
+   tables.shops[0].services=[{id:'zero',name:'Synthetic zero service',price:0}];
+   const body={id:'same-request',customerId:'c1',items:[{type:'service',id:'zero',quantity:1}],total:0,paymentMethod:'wechat'};
+   completeCheckout=true;
+   checkoutRpcCalls=0;
+   try {
+    const first=await request('/settlements',ceo,'POST',body);
+    assert.equal(first.status,201);assert.equal(first.body.data.paymentStatus,'completed');assert.equal(first.body.data.payment,undefined);
+    const repeat=await request('/settlements',ceo,'POST',body);
+    assert.equal(repeat.status,200);assert.equal(checkoutRpcCalls,1);
+    assert.equal((await request('/settlements',ceo,'POST',{...body,total:1})).status,409);
+    assert.equal(checkoutRpcCalls,1);
+   } finally {completeCheckout=false;tables.settlements=[];}
   });
   await t.test('伪造/过期 token、旧员工 token、数据库验证失败均不能放行',async()=>{
    const expired=jwt.sign({id:'c1',shopId:'s1',kind:'customer'},getJwtSecret(),{algorithm:'HS256',audience:'customer',issuer:'mbs',expiresIn:-1});

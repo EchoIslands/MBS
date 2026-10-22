@@ -611,6 +611,9 @@ function normalizeBooking(b: unknown): Booking {
     barberId: (raw.barberId || raw.stylistId || raw.barber_id || raw.stylist_id) as string | undefined,
     barberName: (raw.barberName || raw.stylistName || raw.barber_name || raw.stylist_name) as string,
     scheduledTime,
+    scheduledEndTime: raw.scheduledEndTime || raw.scheduled_end_time
+      ? new Date((raw.scheduledEndTime || raw.scheduled_end_time) as string)
+      : new Date(scheduledTime.getTime() + (Number(raw.duration) || 30) * 60000),
     status: (raw.status || 'confirmed') as Booking['status'],
     queueNumber: (raw.queueNumber || raw.queue_number || 1) as number,
     serviceName: (raw.serviceName || raw.service_name || '服务') as string,
@@ -647,15 +650,13 @@ export const bookingApi = {
     },
   ): Promise<Booking> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings`, {
+      const result = await httpThrowing<Booking>(`${API_BASE}/bookings`, {
         method: 'POST',
         body: JSON.stringify(data),
+        headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
       });
-      if (result?.data && result.data.id) {
-        console.log('[api] createBooking 返回真实数据:', result.data);
-        return normalizeBooking(result.data);
-      }
-      console.warn('[api] /api/bookings 创建失败，使用本地模拟');
+      if (!result?.id) throw new Error('预约结果暂不可用，请核对预约列表，勿重复提交');
+      return normalizeBooking(result);
     }
     await new Promise((r) => setTimeout(r, 300));
     const shop = mockShops.find((s) => s.id === data.shopId);
@@ -684,11 +685,9 @@ export const bookingApi = {
 
   getBooking: async (id: string): Promise<Booking> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`);
-      if (result?.data && result.data.id) {
-        console.log('[api] getBooking 返回真实数据:', result.data);
-        return normalizeBooking(result.data);
-      }
+      const result = await httpThrowing<Booking>(`${API_BASE}/bookings/${id}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} });
+      if (!result?.id) throw new Error('预约不存在或无权访问');
+      return normalizeBooking(result);
     }
     await new Promise((r) => setTimeout(r, 200));
     const booking = mockBookings.find((b) => b.id === id);
@@ -701,21 +700,17 @@ export const bookingApi = {
     if (USE_REAL_API) {
       // 顾客自主取消走独立接口，无需员工 token
       if (status === 'cancelled' && customerId) {
-        const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}/cancel`, {
+        return normalizeBooking(await httpThrowing<Booking>(`${API_BASE}/bookings/${id}/cancel`, {
           method: 'PUT',
           body: JSON.stringify({ customerId }),
-        });
-        if (result?.data && result.data.id) return result.data;
-        throw new Error('取消预约失败');
+        }));
       }
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Booking }>(`${API_BASE}/bookings/${id}`, {
+      return normalizeBooking(await httpThrowing<Booking>(`${API_BASE}/bookings/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ status, customerId }),
         headers: { Authorization: `Bearer ${token}` },
-      });
-      if (result?.data && result.data.id) return result.data;
-      throw new Error('更新预约状态失败');
+      }));
     }
     await new Promise((r) => setTimeout(r, 200));
     const idx = mockBookings.findIndex((b) => b.id === id);
@@ -887,10 +882,10 @@ export const bookingApi = {
       if (dateStart) params.set('dateStart', dateStart);
       if (status) params.set('status', status);
       params.set('pageSize', '1000');
-      const result = await http<{ success: boolean; data: Booking[] }>(
-        `${API_BASE}/bookings?${params.toString()}`
+      const result = await httpThrowing<Booking[]>(
+        `${API_BASE}/bookings?${params.toString()}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} }
       );
-      if (result?.data) return result.data.map(normalizeBooking);
+      return (result || []).map(normalizeBooking);
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockBookings.filter((b) => {
@@ -1394,7 +1389,7 @@ export const settlementApi = {
       );
     }
     // Mock fallback
-    const isAsyncPayment = data.paymentMethod === 'wechat' || data.paymentMethod === 'alipay';
+    const isAsyncPayment = Number(data.total) > 0 && (data.paymentMethod === 'wechat' || data.paymentMethod === 'alipay');
     const newSettlement = {
       id: `settle_${Date.now()}`,
       ...data,
@@ -1405,7 +1400,7 @@ export const settlementApi = {
     saveSettlementsToCache();
 
     // 微信支付/支付宝 mock：返回待支付流程
-    if (data.paymentMethod === 'wechat') {
+    if (isAsyncPayment && data.paymentMethod === 'wechat') {
       return {
         settlement: newSettlement,
         payment: {
@@ -1514,10 +1509,10 @@ export const settlementApi = {
   getByShop: async (shopId: string): Promise<Settlement[]> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Settlement[] }>(`${API_BASE}/settlements?shopId=${shopId}`, {
+      const result = await httpThrowing<Settlement[]>(`${API_BASE}/settlements?shopId=${shopId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.data) return result.data;
+      return result || [];
     }
     return mockSettlements.filter((s) => s.shopId === shopId);
   },
@@ -1537,13 +1532,11 @@ export const settlementApi = {
   confirmPayment: async (settlementId: string, transactionId?: string): Promise<Settlement> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Settlement }>(`${API_BASE}/settlements/${settlementId}/confirm-payment`, {
+      return await httpThrowing<Settlement>(`${API_BASE}/settlements/${settlementId}/confirm-payment`, {
         method: 'POST',
         body: JSON.stringify({ transactionId }),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!result || !result.success) throw new Error('确认收款失败');
-      return result.data;
     }
     // Mock fallback
     const idx = mockSettlements.findIndex((s) => s.id === settlementId);
@@ -1597,12 +1590,10 @@ export const settlementApi = {
   delete: async (settlementId: string): Promise<{ id: string }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: { id: string } }>(
+      return await httpThrowing<{ id: string }>(
         `${API_BASE}/settlements/${settlementId}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
       );
-      if (!result || !result.success) throw new Error('删除结算记录失败');
-      return result.data;
     }
     // Mock fallback
     const idx = mockSettlements.findIndex((s) => s.id === settlementId);
