@@ -1,0 +1,83 @@
+/** 只读汇总验收；不执行业务 RPC，不读取客户明细，不修改数据库。 */
+import pg from 'pg';
+import dotenv from 'dotenv';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import { databaseConfig, SETUP_MIGRATIONS, type SetupConnection } from './setup-db.js';
+import { databaseErrorDiagnostic } from './init-legacy-passwords.js';
+
+export async function verifyRelease(connection: SetupConnection) {
+  const issues: string[] = [];
+  const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
+  const protectedTables = ['customer_auth_limits', 'settlement_package_reservations', 'customer_password_initialization_runs'];
+  const signatures = new Set<string>();
+  for (const file of SETUP_MIGRATIONS) {
+    const sql = await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8');
+    for (const match of sql.matchAll(/REVOKE ALL ON FUNCTION\s+([\w]+\([^)]*\))\s+FROM PUBLIC/gi)) {
+      signatures.add('public.' + match[1].replace(/\s/g, '').toLowerCase());
+    }
+  }
+  await connection.query('BEGIN READ ONLY');
+  try {
+    await connection.query("SET LOCAL statement_timeout = '30s'");
+    const actual = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='customers'");
+    const present = new Set(actual.rows.map(row => row.column_name));
+    for (const field of fields) if (!present.has(field)) issues.push('缺少 customers.' + field);
+    const roles = await connection.query("SELECT rolname FROM pg_roles WHERE rolname=ANY($1::text[])", [['service_role', 'anon', 'authenticated']]);
+    const roleNames = new Set(roles.rows.map(row => row.rolname));
+    for (const role of ['service_role', 'anon', 'authenticated']) if (!roleNames.has(role)) issues.push('缺少数据库角色 ' + role);
+    for (const signature of signatures) {
+      const found = await connection.query('SELECT to_regprocedure($1)::text AS name', [signature]);
+      if (!found.rows[0]?.name) { issues.push('缺少函数 ' + signature); continue; }
+      for (const role of roleNames) {
+        const result = await connection.query('SELECT has_function_privilege($1, $2, \'EXECUTE\') AS allowed', [role, signature]);
+        if (result.rows[0]?.allowed !== (role === 'service_role')) issues.push('函数权限不合格 ' + signature + ' / ' + role);
+      }
+    }
+    for (const table of protectedTables) {
+      const found = await connection.query("SELECT c.relrowsecurity AS enabled FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=$1", [table]);
+      if (found.rows[0]?.enabled !== true) issues.push('保护表缺失或未启用 RLS：' + table);
+    }
+    let counts: Record<string, string> | null = null;
+    if (fields.every(field => present.has(field))) {
+      const result = await connection.query(`SELECT COUNT(*)::text AS total,
+        COUNT(*) FILTER (WHERE password_hash IS NULL OR password_hash='')::text AS empty_password,
+        COUNT(*) FILTER (WHERE password_hash IS NOT NULL AND password_hash<>'' AND btrim(password_hash)='')::text AS whitespace_password,
+        COUNT(*) FILTER (WHERE is_weak_password IS TRUE)::text AS must_change_password,
+        COUNT(*) FILTER (WHERE identity_verified IS NOT TRUE)::text AS unverified
+        FROM public.customers`);
+      counts = result.rows[0];
+      if (counts.empty_password !== '0') issues.push('仍有空密码记录；仅报告，不自动初始化');
+      if (counts.whitespace_password !== '0') issues.push('存在空白字符密码；须单独核对，不自动覆盖');
+    }
+    return { passed: issues.length === 0, issues, counts, checkedFunctions: signatures.size,
+      scope: '仅字段存在性、函数签名/执行权限、RLS 与客户数量汇总；不证明函数定义版本、密码正确性或交易验收通过' };
+  } finally { await connection.query('ROLLBACK'); }
+}
+
+async function main() {
+  if (process.argv.includes('--help')) {
+    console.log('用法：npx tsx scripts/verify-release.ts\n读取 .env SUPABASE_DB_URL，READ ONLY 事务核查结构/权限/密码数量汇总；不修改客户，不执行业务函数。检查不通过退出码 2。');
+    return;
+  }
+  if (process.argv.length > 2) throw new Error('未知参数，请使用 --help');
+  dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)), quiet: true });
+  const config = databaseConfig(process.env);
+  config.application_name = 'mbs-readonly-release-check';
+  const secrets = [process.env.SUPABASE_DB_URL || '', decodeURIComponent(new URL(config.connectionString!).password)];
+  const client = new pg.Client(config);
+  client.on('error', () => {});
+  try {
+    await client.connect();
+    const report = await verifyRelease(client);
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.passed) process.exitCode = 2;
+  } catch (error) {
+    console.error('[检查失败] ' + databaseErrorDiagnostic(error, secrets));
+    process.exitCode = 1;
+  } finally { await client.end(); }
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(() => { console.error('[检查失败] 请核对本地配置，未执行数据库写入。'); process.exitCode = 1; });
+}

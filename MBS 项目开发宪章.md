@@ -37,6 +37,8 @@
 | P-13 | 测试环境隔离原则 | 验证 migrations 时，必须使用独立 schema（如 `mbs_test`）或独立项目，绝不能在线上 schema 直接跑。Supabase SQL Editor 每次 Run 都是新会话，`SET search_path` 会丢失。正确做法是把 `SET search_path` + 所有 migration 合并成一个脚本，一次性执行。测试完成后，用 `DROP SCHEMA ... CASCADE` 清理干净。 |
 | P-14 | 失败经验必须记录 | 任何花超过 2 小时才解决的问题，必须写入宪章的"踩坑百科"。每个坑要记录：现象、根因、解决方式、预防措施。 |
 
+数据库敏感 RPC 授权补充（2026-10-22）：撤销 PUBLIC 不等于撤销 anon/authenticated 的角色显式或继承权限。仅供后端使用的函数必须按精确签名显式撤销客户端角色授权，保留 service_role，并以 has_function_privilege 核验最终有效权限。隔离测试须模拟托管平台默认授权，禁止只凭 RLS 或迁移文本判断 SECURITY DEFINER 函数不可调用。见迁移 030 及 docs/RPC权限修复-2026-10-22.md。
+
 ### 1.4 快速索引
 
 | 关键词 | 导航 |
