@@ -5735,6 +5735,24 @@ settlementsRouter.delete('/:id', authMiddleware, async (req: Request, res: Respo
 });
 
 // 查询结算支付状态
+settlementsRouter.post('/:id/release-unstarted-payment', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { data, error } = await supabase.rpc('release_stale_settlement_payment_claim', {
+      p_settlement_id: req.params.id, p_shop_id: req.employee!.shopId,
+    });
+    if (error) {
+      const exists = String(error.message || '').includes('PAYMENT_RECORD_EXISTS');
+      const statusChanged = String(error.message || '').includes('SETTLEMENT_NOT_RECOVERABLE');
+      return res.status(exists || statusChanged ? 409 : 503).json({ success: false,
+        error: exists ? '原单存在支付记录，必须先核对，不能重新生成二维码'
+          : statusChanged ? '原单状态已变化，请刷新列表后核对' : '历史支付认领恢复功能未就绪，请检查 032 数据库迁移' });
+    }
+    return res.json({ success: true, data: { released: data === true } });
+  } catch {
+    return res.status(503).json({ success: false, error: '历史支付认领恢复失败，请勿重新开单收款' });
+  }
+});
+
 settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
@@ -5742,7 +5760,7 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
 
     const { data: settlement, error } = await supabase
       .from('settlements')
-      .select('payment_status')
+      .select('payment_status, checkout_payment_started, total')
       .eq('id', id)
       .eq('shop_id', shopId)
       .single();
@@ -5751,18 +5769,24 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
       return res.status(404).json({ success: false, error: '结算记录不存在' });
     }
 
-    const { data: payment } = await supabase
+    const { data: payment, error: paymentError } = await supabase
       .from('payments')
       .select('id, status, transaction_id, prepay_id, paid_at, code_url, amount')
       .eq('settlement_id', id)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (paymentError) return res.status(503).json({ success: false, error: '原支付记录暂无法查询，尚不能判断是否可继续结算，请稍后重试' });
+    const recoveryState = settlement.payment_status === 'completed' ? 'completed'
+      : payment ? (payment.status === 'pending' && payment.code_url && Number(payment.amount) === Number(settlement.total) ? 'qr_available' : 'payment_needs_review')
+      : settlement.checkout_payment_started ? 'initialization_started' : 'editable';
 
     res.json({
       success: true,
       data: {
         settlementStatus: settlement.payment_status,
+        recoveryState,
         payment: payment ? { ...payment, paymentId: payment.id, codeUrl: payment.code_url, amount: Number(payment.amount) } : null,
       },
     });

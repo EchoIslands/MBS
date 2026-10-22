@@ -121,6 +121,7 @@ const Checkout: React.FC = () => {
   const [pendingSettlements, setPendingSettlements] = useState<Settlement[]>([]);
   const [loadingPendingSettlements, setLoadingPendingSettlements] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [paymentRecoveryBlock, setPaymentRecoveryBlock] = useState('');
   const formRef = useRef<HTMLDivElement>(null);
 
   // 前台/收银手动改价（key 为购物车项 index，value 为改后的最终单价）
@@ -666,6 +667,10 @@ const Checkout: React.FC = () => {
   // 继续未完成的结算（草稿 / 待支付），恢复其内容供继续编辑
   const handleContinueSettlement = async (s: Settlement) => {
     if (submissionLock.current) return;
+    submissionLock.current = true;
+    setPaymentRecoveryBlock('正在核对原单支付状态，请稍候');
+    setWechatPayment(null);
+    setShowWechatModal(false);
     setActiveBookingId(s.bookingId || null);
     submissionId.current = s.id;
     setCurrentDraftId(s.id);
@@ -688,19 +693,29 @@ const Checkout: React.FC = () => {
     setPriceOverrides(Object.fromEntries((s.items || []).flatMap((item, index) => item.priceOverride === undefined ? [] : [[index, item.priceOverride]])));
     setSelectedPackageId(s.customerPackageId || '');
     setSelectedBenefits(s.usedBenefitIds || []);
-    if (['wechat', 'alipay'].includes(s.paymentMethod) && s.total > 0) {
       try {
-        const state = await settlementApi.getPaymentStatus(s.id);
+        let state = await settlementApi.getPaymentStatus(s.id);
         if (state.settlementStatus === 'completed') { setSuccess(true); return; }
-        if (state.payment?.codeUrl) {
+        if (state.recoveryState === 'initialization_started') {
+          const released = await settlementApi.releaseUnstartedPayment(s.id);
+          if (released) state = await settlementApi.getPaymentStatus(s.id);
+        }
+        if (state.recoveryState === 'editable') {
+          setPaymentRecoveryBlock('');
+        } else if (state.recoveryState === 'qr_available' && state.payment?.codeUrl) {
+          setPaymentRecoveryBlock(`原单 ${s.id} 已有支付订单，请使用原二维码，勿再次生成收款单`);
           setWechatPayment(state.payment);
           setPendingSettlementId(s.id);
           setShowWechatModal(true);
         } else {
-          alert('此单处于支付处理中，请先核对原订单收款状态，勿重新开单');
+          const reason = state.recoveryState === 'initialization_started'
+            ? '支付认领尚未过期或状态不能安全释放，请稍后重试或联系管理员核对'
+            : state.payment ? '已有支付记录，但没有可安全恢复的待支付二维码，需核对原单收款状态'
+            : '无法确认原单是否已发起支付，请核对部署版本与支付状态';
+          setPaymentRecoveryBlock(`原单 ${s.id}：${reason}。请勿重新开单收款。`);
         }
-      } catch (err) { alert(err instanceof Error ? err.message : '支付状态查询失败'); }
-    }
+      } catch (err) { setPaymentRecoveryBlock(`原单 ${s.id}：${err instanceof Error ? err.message : '支付状态查询失败'}。暂不可再次提交。`); }
+      finally { submissionLock.current = false; }
     // 滚动到结算表单，让用户能看到已恢复的内容
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -708,7 +723,7 @@ const Checkout: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (loadingBooking || error || submissionLock.current) return;
+    if (loadingBooking || error || paymentRecoveryBlock || submissionLock.current) return;
     if (!selectedCustomer) {
       alert('请先选择客户');
       return;
@@ -733,7 +748,7 @@ const Checkout: React.FC = () => {
   };
 
   const doSubmit = async () => {
-    if (submissionLock.current) return;
+    if (submissionLock.current || paymentRecoveryBlock) return;
     submissionLock.current = true;
     setSubmitting(true);
 
@@ -1458,9 +1473,10 @@ const Checkout: React.FC = () => {
                   </div>
                 )}
 
+                {paymentRecoveryBlock && <p className="mb-3 text-sm text-amber-800 bg-amber-50 p-3 rounded-lg" role="status">{paymentRecoveryBlock}</p>}
                 <button
                   onClick={handleSubmit}
-                  disabled={!selectedCustomer || cart.length === 0 || submitting || loadingBooking || Boolean(error)}
+                  disabled={!selectedCustomer || cart.length === 0 || submitting || loadingBooking || Boolean(error) || Boolean(paymentRecoveryBlock)}
                   className="w-full py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-xl font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                   {submitting ? (

@@ -34,6 +34,7 @@ const tables: Record<string, Row[]> = {
 let calls = 0;
 let failMigration = false;
 let failAuthentication = false;
+let failPaymentQuery = false;
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
  constructor(public table:string) { calls++; }
@@ -48,6 +49,7 @@ class Query {
  delete(){this.operation='delete';return this;}
  single(){this.singleRow=true;return this;} maybeSingle(){this.singleRow=true;return this;}
  then(resolve:any,reject:any){try{
+  if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
   let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r))).slice(0,this.maxRows);
   if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
@@ -66,6 +68,14 @@ let completeCheckout = false;
 let checkoutRpcCalls = 0;
 (supabase as any).rpc = async (name: string, args: any) => {
  if (name === 'delete_settlement_draft_atomic') return { data: null, error: draftDeleteError };
+ if (name === 'release_stale_settlement_payment_claim') {
+  const s=tables.settlements.find(row=>row.id===args.p_settlement_id && row.shop_id===args.p_shop_id);
+  if(!s || !['pending','failed'].includes(s.payment_status)) return {data:null,error:{message:'SETTLEMENT_NOT_RECOVERABLE'}};
+  if((tables.payments||[]).some(p=>p.settlement_id===s.id)) return {data:null,error:{message:'PAYMENT_RECORD_EXISTS'}};
+  if(!s.checkout_payment_started) return {data:true,error:null};
+  if(s.checkout_payment_started_at || !s.created_at || Date.now()-new Date(s.created_at).getTime()<5*60_000) return {data:false,error:null};
+  s.checkout_payment_started=false;s.checkout_request_key=null;return {data:true,error:null};
+ }
  if (name === 'create_settlement_atomic') checkoutRpcCalls++;
  if (name === 'create_settlement_atomic' && completeCheckout) {
   const row={...args.p_settlement,payment_status:'completed'};
@@ -113,6 +123,35 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    tables.settlements[0].payment_status='completed';
    assert.equal((await request('/settlements/synthetic-draft',token,'DELETE')).status,400);
    tables.settlements.length=0;
+  });
+  await t.test('历史支付恢复区分草稿、原二维码、缺二维码及初始化认领，跨店拒绝',async()=>{
+   const token=await login('ceo');
+   const row={id:'recover',shop_id:'s1',payment_status:'pending',total:58,checkout_payment_started:false,created_at:new Date(Date.now()-24*3600_000).toISOString()};
+   tables.settlements.push(row);tables.payments=[];
+   const state=async()=> (await request('/settlements/recover/payment-status',token)).body.data.recoveryState;
+   try {
+    assert.equal(await state(),'editable');
+    failPaymentQuery=true;
+    const unavailable=await request('/settlements/recover/payment-status',token);
+    assert.equal(unavailable.status,503);assert.equal(unavailable.body.data,undefined);
+    failPaymentQuery=false;
+    row.checkout_payment_started=true;assert.equal(await state(),'initialization_started');
+    const released=await request('/settlements/recover/release-unstarted-payment',token,'POST',{});
+    assert.equal(released.status,200);assert.equal(released.body.data.released,true);assert.equal(await state(),'editable');
+    row.checkout_payment_started=true;row.checkout_payment_started_at=new Date().toISOString();
+    const tooRecent=await request('/settlements/recover/release-unstarted-payment',token,'POST',{});
+    assert.equal(tooRecent.status,200);assert.equal(tooRecent.body.data.released,false);
+    row.checkout_payment_started_at=new Date(Date.now()-3600_000).toISOString();
+    tables.payments.push({id:'pay',settlement_id:'recover',status:'pending',amount:58,code_url:null});
+    const protectedPayment=await request('/settlements/recover/release-unstarted-payment',token,'POST',{});
+    assert.equal(protectedPayment.status,409);
+    assert.equal(await state(),'payment_needs_review');
+    tables.payments[0].code_url='synthetic:original';assert.equal(await state(),'qr_available');
+    tables.payments[0].amount=59;assert.equal(await state(),'payment_needs_review');
+    tables.payments[0].amount=58;tables.payments[0].status='paid';assert.equal(await state(),'payment_needs_review');
+    row.payment_status='completed';assert.equal(await state(),'completed');
+    row.shop_id='s2';assert.equal((await request('/settlements/recover/payment-status',token)).status,404);
+   } finally {failPaymentQuery=false;tables.settlements=[];tables.payments=[];}
   });
   await t.test('旧明文首次登录迁移，之后哈希登录，错误密码不迁移',async()=>{
    const before=tables.employees[0].password_hash;

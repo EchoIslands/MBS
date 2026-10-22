@@ -25,7 +25,7 @@ test('真实引擎：无 025–029 时完整安装、重复执行、已有数据
   const logs: string[] = [];
   try {
     await setupDatabase(connection, line => logs.push(line));
-    assert.equal(logs.filter(line => line.includes('等待统一提交')).length, 7);
+    assert.equal(logs.filter(line => line.includes('等待统一提交')).length, 8);
     const row = (await db.query<any>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
     assert.equal(row.password_hash, null); assert.equal(row.is_weak_password, false); assert.equal(row.identity_verified, false); assert.equal(Number(row.balance), 100);
     await db.exec("UPDATE customers SET password_hash='synthetic-preserved',is_weak_password=true,identity_verified=true WHERE id='c';");

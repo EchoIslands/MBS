@@ -11,11 +11,28 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
       await db.exec((await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')).replace(/^\uFEFF/, ''));
     }
     await db.exec(await readFile(new URL('../migrations/031_booking_checkout_consistency.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
     await db.exec(`INSERT INTO shops(id,name) VALUES ('s','Synthetic shop');
       INSERT INTO customers(id,shop_id,name,phone,stored_value_balance,balance,withdrawable_referral_amount) VALUES('c','s','Synthetic customer','13800000001',100,100,20);
       INSERT INTO customer_packages(id,shop_id,customer_id,name,service_id,total_times,used_times,expires_at) VALUES('p','s','c','Synthetic package','svc',2,0,NOW()+INTERVAL '1 day');`);
     const scalar = async (sql: string) => Object.values((await db.query(sql)).rows[0] as object)[0];
     const create = (id: string, total: number, complete = true, pkg: string | null = null) => db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,$4)', [JSON.stringify({ id,shop_id:'s',customer_id:'c',items:[{type:'service',id:'svc',name:'Synthetic service',quantity:1,originalPrice:pkg?0:total}],subtotal:total,discount:0,total,payment_method:'balance',customer_package_id:pkg,used_benefit_ids:[] }), 'staff','Synthetic staff',complete]);
+    await t.test('历史无支付记录可释放过期认领；近期认领与有支付记录单据拒绝释放', async () => {
+      await create('legacy-claim', 58, false);
+      await db.exec("UPDATE settlements SET checkout_payment_started=TRUE WHERE id='legacy-claim'");
+      await db.exec("UPDATE settlements SET checkout_payment_started_at=NULL,created_at=NOW()-INTERVAL '1 day' WHERE id='legacy-claim'");
+      assert.equal(await scalar("SELECT release_stale_settlement_payment_claim('legacy-claim','s')"), true);
+      assert.equal(await scalar("SELECT checkout_payment_started FROM settlements WHERE id='legacy-claim'"), false);
+      await create('recent-claim',58,false);
+      await db.exec("UPDATE settlements SET checkout_payment_started=TRUE WHERE id='recent-claim'");
+      assert.equal(await scalar("SELECT release_stale_settlement_payment_claim('recent-claim','s')"), false);
+      assert.equal(await scalar("SELECT checkout_payment_started FROM settlements WHERE id='recent-claim'"), true);
+      await create('payment-claim',58,false);
+      await db.exec("UPDATE settlements SET checkout_payment_started=TRUE WHERE id='payment-claim'");
+      await db.exec("UPDATE settlements SET checkout_payment_started_at=NOW()-INTERVAL '1 hour' WHERE id='payment-claim'; INSERT INTO payments(id,shop_id,customer_id,settlement_id,channel,amount) VALUES('pay','s','c','payment-claim','wechat_native',58)");
+      await assert.rejects(db.query("SELECT release_stale_settlement_payment_claim('payment-claim','s')"),/PAYMENT_RECORD_EXISTS/);
+      assert.equal(await scalar("SELECT checkout_payment_started FROM settlements WHERE id='payment-claim'"), true);
+    });
     await t.test('限流持久化：每日十次、第五次失败锁定、到期解锁且不跨日清除未到期锁', async () => {
       for (let i=0;i<5;i++) {
         assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,true);

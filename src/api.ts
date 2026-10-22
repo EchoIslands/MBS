@@ -1547,15 +1547,13 @@ export const settlementApi = {
     return mockSettlements[idx];
   },
 
-  getPaymentStatus: async (settlementId: string): Promise<{ settlementStatus: string; payment: WechatPaymentResult | null }> => {
+  getPaymentStatus: async (settlementId: string): Promise<{ settlementStatus: string; recoveryState?: string; payment: WechatPaymentResult | null }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: { settlementStatus: string; payment: WechatPaymentResult | null } }>(
+      return await httpThrowing<{ settlementStatus: string; recoveryState?: string; payment: WechatPaymentResult | null }>(
         `${API_BASE}/settlements/${settlementId}/payment-status`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (!result || !result.success) throw new Error('查询支付状态失败');
-      return result.data;
     }
     // Mock fallback
     const settlement = mockSettlements.find((s) => s.id === settlementId);
@@ -1563,6 +1561,15 @@ export const settlementApi = {
       settlementStatus: settlement?.paymentStatus || 'completed',
       payment: null,
     };
+  },
+
+  releaseUnstartedPayment: async (settlementId: string): Promise<boolean> => {
+    if (!USE_REAL_API) return true;
+    const token = getAuthToken();
+    const result = await httpThrowing<{ released: boolean }>(`${API_BASE}/settlements/${settlementId}/release-unstarted-payment`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    });
+    return result.released;
   },
 
   retryPayment: async (settlementId: string): Promise<WechatPaymentResult> => {
