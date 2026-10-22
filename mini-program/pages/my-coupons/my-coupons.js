@@ -131,7 +131,4 @@ Page({
     wx.navigateTo({ url: `/pages/products/products?shopId=${shopId}` });
   },
 
-  goBack() {
-    wx.navigateBack();
-  },
 });

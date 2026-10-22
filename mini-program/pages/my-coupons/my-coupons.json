@@ -1,6 +1,7 @@
 {
-  "navigationStyle": "custom",
+  "navigationStyle": "default",
   "usingComponents": {
     "mbs-icon": "/components/icon/icon"
-  }
+  },
+  "navigationBarTitleText": "我的优惠券"
 }

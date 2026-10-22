@@ -4,42 +4,6 @@
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
-/* ===== Sticky Header ===== */
-.coupon-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(16rpx + var(--status-bar-height, 0)) 32rpx 16rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
-}
-
-.coupon-header__back {
-  width: 72rpx;
-  height: 72rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
-.coupon-header__back:active {
-  background: var(--gray-100);
-}
-
-.coupon-header__title {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: var(--gray-800);
-}
-
-.coupon-header__spacer {
-  width: 72rpx;
-}
-
 /* ===== Tab Bar ===== */
 .coupon-tabs {
   display: flex;
