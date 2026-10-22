@@ -640,7 +640,7 @@
   min-width: 0;
 }
 
-.booking-shop {
+.booking-stylist {
   font-size: 30rpx;
   font-weight: 600;
   color: var(--text-primary);

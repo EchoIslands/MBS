@@ -273,7 +273,7 @@
           >
             <view class="booking-main">
               <view class="booking-info">
-                <view class="booking-shop">{{booking.shopName || 'MBS 理发店'}}</view>
+                <view class="booking-stylist">设计师：{{booking.barberName || '待安排'}}</view>
                 <view class="booking-service">{{booking.serviceName}}</view>
               </view>
               <mbs-status-badge status="{{booking.status}}" />
