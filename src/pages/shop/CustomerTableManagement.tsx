@@ -24,7 +24,7 @@ import { Customer, MembershipLevel, PurchaseVIPLevel, StoredValueLevel } from '.
 import { getPurchaseVIPLabel, getStoredValueLabel } from '../../lib/membership';
 import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
-import { canExportCustomers } from '../../../shared/permissions';
+import { canExportCustomers, canDeleteCustomer, canEditCustomer, canCreateCustomer } from '../../../shared/permissions';
 import ShopLayout from './ShopLayout';
 
 // 根据双轨会员体系生成统一的会员级别显示文本
@@ -376,7 +376,8 @@ const CustomerTableManagement: React.FC = () => {
           {/* 按钮组 */}
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={() => setShowAdd(true)}
+              disabled={!canCreateCustomer(userRole)}
+                        onClick={() => setShowAdd(true)}
               className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
             >
               <Plus size={16} />
@@ -652,6 +653,7 @@ const CustomerTableManagement: React.FC = () => {
                         <Eye size={14} />
                       </button>
                       <button
+                        disabled={!canEditCustomer(userRole)}
                         onClick={() => setShowEdit(customer)}
                         className="p-1.5 hover:bg-orange-50 rounded-lg transition-colors text-orange-500"
                         title="编辑"
@@ -659,6 +661,7 @@ const CustomerTableManagement: React.FC = () => {
                         <Edit size={14} />
                       </button>
                       <button
+                        disabled={!canDeleteCustomer(userRole)}
                         onClick={() => handleDeleteCustomer(customer.id)}
                         className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-red-500"
                         title="删除"
@@ -710,6 +713,14 @@ const CustomerTableManagement: React.FC = () => {
               </button>
             </div>
 
+            <button className="mb-4 text-green-700" disabled={showDetail.identityVerified} onClick={async () => {
+              if (!window.confirm('请确认顾客本人已到店，并已人工核实其手机号和档案。确认完成核实？')) return;
+              try {
+                await customerApi.verifyIdentity(showDetail.id);
+                setShowDetail({ ...showDetail, identityVerified: true });
+                alert('顾客本人身份已核实');
+              } catch (err) { alert(err instanceof Error ? err.message : '核实失败'); }
+            }}>{showDetail.identityVerified ? '顾客本人已核实' : '确认顾客本人'}</button>
             {/* 头部信息 */}
             <div className="flex flex-col md:flex-row items-start gap-6 mb-6 pb-6 border-b border-gray-100">
               <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-500 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg flex-shrink-0">

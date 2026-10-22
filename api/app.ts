@@ -47,26 +47,17 @@ const jsonBodyParser = async (req: RequestWithBody, _res: Response, next: NextFu
 
   try {
     const raw = await getRawBody(req);
-    console.log('[body-parser] raw body:', raw);
     req.rawBody = raw;
     req.body = raw ? JSON.parse(raw) : {};
     req._body = true;
     next();
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[body-parser] parse error:', message);
+    console.error('[body-parser] JSON 请求解析失败');
     next(err);
   }
 };
 
 app.use(jsonBodyParser);
-
-// 调试：打印 customers 路由收到的请求体和请求头
-app.use('/api/customers', (req, _res, next) => {
-  console.log('[customers] 收到请求体:', JSON.stringify(req.body));
-  console.log('[customers] 收到请求头 content-type:', req.headers['content-type']);
-  next();
-});
 
 // 健康检查
 app.get('/api/health', (req, res) => {

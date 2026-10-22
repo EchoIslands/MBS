@@ -1,22 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Phone, User } from 'lucide-react';
+import { ArrowLeft, Phone } from 'lucide-react';
 import { loginAsCustomer } from '../../store';
 
 const DEFAULT_SHOP_ID = "shop1";
 
 const CustomerLogin: React.FC = () => {
   const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [setupRequired, setSetupRequired] = useState(false);
   const [error, setError] = useState('');
-  const [warning, setWarning] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setWarning('');
 
     const trimmedPhone = phone.trim();
     if (!/^1[3-9]\d{9}$/.test(trimmedPhone)) {
@@ -27,34 +27,25 @@ const CustomerLogin: React.FC = () => {
     setLoading(true);
 
     try {
-      const trimmedName = name.trim();
-      const customer = await loginAsCustomer(trimmedPhone, trimmedName || undefined);
-      if (customer) {
-        navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
-      } else {
-        setError('手机号不存在，请检查输入');
+      if (password && !/^\d{6}$/.test(password)) throw new Error('密码必须为六位数字');
+      if (setupRequired && password !== confirmPassword) throw new Error('两次输入的密码不一致');
+      const result = await loginAsCustomer(trimmedPhone, password || undefined, setupRequired);
+      if (result.setupRequired) {
+        setSetupRequired(true);
+        setPassword(''); setConfirmPassword('');
+        return;
       }
-    } catch (_err) {
-      setError('登录失败，请稍后重试');
+      if (result.customer) {
+        navigate(result.customer.mustChangePassword ? '/customer/change-password' : `/customer/shop/${DEFAULT_SHOP_ID}`, { replace: true });
+      } else {
+        setError('暂时无法登录，请检查手机号或联系门店');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '登录失败，请稍后重试');
     } finally {
       setLoading(false);
     }
   };
-
-  // 监听真实 API 失败回退到 mock 的提示（由 api-base 打印 warn）
-  useEffect(() => {
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      const msg = args.join(' ');
-      if (msg.includes('/api/customers/login') && msg.includes('mock')) {
-        setWarning('服务器响应较慢，当前使用本地演示数据登录');
-      }
-      originalWarn.apply(console, args);
-    };
-    return () => {
-      console.warn = originalWarn;
-    };
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-3 sm:p-4">
@@ -73,26 +64,6 @@ const CustomerLogin: React.FC = () => {
         <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              称呼 <span className="text-gray-400 font-normal">（选填）</span>
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="请输入称呼"
-                autoComplete="off"
-                className="w-full pl-10 pr-4 py-3 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm sm:text-base"
-              />
-            </div>
-            <p className="mt-1.5 text-xs text-gray-400">
-              称呼只需填写一次，之后登录仅需手机号即可
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
               手机号
             </label>
             <div className="relative">
@@ -108,11 +79,13 @@ const CustomerLogin: React.FC = () => {
             </div>
           </div>
           
-          {warning && (
-            <div className="bg-yellow-50 text-yellow-700 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
-              {warning}
-            </div>
-          )}
+          {setupRequired && <p className="text-sm text-gray-600">首次使用，请设置六位数字密码。</p>}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{setupRequired ? '设置六位数字密码' : '六位数字密码'}</label>
+            <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={password} onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 6))} autoComplete={setupRequired ? 'new-password' : 'current-password'} placeholder="请输入六位数字密码" className="w-full p-3 border border-gray-300 rounded-xl" />
+          </div>
+          {setupRequired && <div><label className="block text-sm font-medium text-gray-700 mb-2">确认密码</label><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value.replace(/\D/g, '').slice(0, 6))} autoComplete="new-password" placeholder="再次输入密码" className="w-full p-3 border border-gray-300 rounded-xl" /></div>}
+          <p className="text-xs text-gray-500">忘记密码？请联系门店重置，重置密码为手机号后六位。</p>
 
           {error && (
             <div className="bg-red-50 text-red-600 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
@@ -125,7 +98,7 @@ const CustomerLogin: React.FC = () => {
             disabled={loading}
             className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 sm:py-3.5 px-4 sm:px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 text-sm sm:text-base min-h-[52px]"
           >
-            {loading ? '登录中...' : '登录'}
+            {loading ? '处理中...' : setupRequired ? '设置密码并登录' : '登录'}
           </button>
           
         </form>

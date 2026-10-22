@@ -6,6 +6,7 @@ import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./s
 import SelectRole from "./pages/SelectRole";
 
 // 顾客端
+import ChangePassword from './pages/customer/ChangePassword';
 import CustomerLogin from "./pages/customer/Login";
 import ShopDetail from "./pages/customer/ShopDetail";
 import Booking from "./pages/customer/Booking";
@@ -110,11 +111,14 @@ const CustomerRouteGuard = () => {
   const location = useLocation();
 
   useEffect(() => {
-    if (!checked && hasCustomerSession()) {
-      restoreCustomerSession();
-    }
-    setChecked(true);
-  }, [checked]);
+    let active = true;
+    const restore = async () => {
+      if (hasCustomerSession()) await restoreCustomerSession();
+      if (active) setChecked(true);
+    };
+    void restore();
+    return () => { active = false; };
+  }, []);
 
   if (!hasHydrated || !checked) {
     return (
@@ -125,6 +129,16 @@ const CustomerRouteGuard = () => {
   }
   if (!currentCustomer && location.pathname !== "/customer/login") {
     return <Navigate to="/customer/login" replace />;
+  }
+  return <Outlet />;
+};
+
+// 包含公开顾客页面：已登录的受限账号不能通过地址栏绕开改密。
+const CustomerPasswordGate = () => {
+  const customer = useAppStore(state => state.currentCustomer);
+  const location = useLocation();
+  if (customer?.mustChangePassword && location.pathname.startsWith('/customer') && location.pathname !== '/customer/change-password') {
+    return <Navigate to="/customer/change-password" replace />;
   }
   return <Outlet />;
 };
@@ -158,6 +172,7 @@ export default function App() {
         {/* 角色选择页面 */}
         <Route path="/select-role" element={<SelectRole />} />
 
+        <Route element={<CustomerPasswordGate />}>
         {/* 顾客端路由 */}
         <Route path="/customer/login" element={<CustomerLogin />} />
         <Route path="/customer" element={<Navigate to={`/customer/shop/${DEFAULT_SHOP_ID}`} replace />} />
@@ -167,6 +182,7 @@ export default function App() {
         <Route path="/customer/booking/:shopId" element={<Booking />} />
         <Route path="/customer/queue/:bookingId" element={<Queue />} />
         <Route element={<CustomerRouteGuard />}>
+          <Route path="/customer/change-password" element={<ChangePassword />} />
           <Route path="/customer/profile" element={<Profile />} />
           <Route path="/customer/packages" element={<CustomerPackages />} />
           <Route path="/customer/invite" element={<CustomerInvite />} />
@@ -176,6 +192,8 @@ export default function App() {
           <Route path="/customer/review/:bookingId" element={<ReviewPage />} />
           <Route path="/customer/refund" element={<RefundPage />} />
           <Route path="/customer/feedback" element={<Feedback />} />
+        </Route>
+
         </Route>
 
         {/* 理发店端路由 */}

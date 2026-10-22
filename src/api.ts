@@ -25,6 +25,7 @@ const BOOKINGS_CACHE_KEY = 'mbs_bookings_cache';
 const SETTLEMENTS_CACHE_KEY = 'mbs_settlements_cache';
 const BENEFITS_CACHE_KEY = 'mbs_benefits_cache';
 const SHOPS_CACHE_KEY = 'mbs_shops_cache';
+if (USE_REAL_API) { try { localStorage.removeItem(CUSTOMERS_CACHE_KEY); } catch (_e) { /* ignore */ } }
 
 // 启动时从 localStorage 恢复客户数据（真实 API 模式下不要覆盖 mock fallback）
 if (!USE_REAL_API) {
@@ -454,6 +455,7 @@ export const shopApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.data) return result.data;
+      throw new Error('店铺设置保存失败或无权访问');
     }
     const idx = mockShops.findIndex((s) => s.id === id);
     if (idx !== -1) {
@@ -995,17 +997,37 @@ const normalizeCustomerDates = (customer: Customer): Customer => {
 
 // 客户相关 API
 export const customerApi = {
-  // 按手机号登录（查询真实 API，失败返回 null 由上层 fallback 到 mock）
-  login: async (phone: string, name?: string): Promise<Customer | null> => {
-    if (!USE_REAL_API) return null;
-    const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/login`, {
-      method: 'POST',
-      body: JSON.stringify({ phone, ...(name ? { name } : {}) }),
+  changePassword: async (id: string, currentPassword: string, newPassword: string, confirmPassword: string): Promise<void> => {
+    const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/password/change', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
     });
-    if (result?.success && result.data) {
-      return normalizeCustomerDates(result.data);
-    }
-    return null;
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || '修改失败');
+  },
+  verifyIdentity: async (id: string): Promise<void> => {
+    const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/identity/verify', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + getAuthToken() },
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || '核实失败');
+  },
+  login: async (phone: string, password?: string, setupPassword = false): Promise<{ setupRequired: boolean; customer?: Customer } | null> => {
+    if (!USE_REAL_API) return null;
+    const response = await fetch(API_BASE + '/customers/login', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password, setupPassword }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || '身份验证失败');
+    return result.setupRequired ? { setupRequired: true } : { setupRequired: false, customer: normalizeCustomerDates(result.data) };
+  },
+  resetPassword: async (id: string): Promise<void> => {
+    const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/password/reset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getAuthToken() },
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || '重置失败');
   },
 
   // 获取全部客户（带缓存回退）
@@ -1018,10 +1040,11 @@ export const customerApi = {
       );
       if (result?.success && Array.isArray(result.data)) {
         // 更新本地缓存
-        try { localStorage.setItem(CUSTOMERS_CACHE_KEY, JSON.stringify(result.data)); } catch (_e) { /* ignore */ }
+        // 真实客户资料不写入跨角色共享缓存。
+        try { localStorage.removeItem(CUSTOMERS_CACHE_KEY); } catch (_e) { /* ignore */ }
         return result.data.map(normalizeCustomerDates);
       }
-      console.warn('[api] 获取客户列表失败，回退到本地缓存');
+      throw new Error('客户列表加载失败或无权访问，请重新登录后重试');
     }
     // 回退：先读 localStorage 缓存，再读 mock
     const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
@@ -1043,6 +1066,7 @@ export const customerApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return result.data;
+      throw new Error('操作失败或无权访问');
     }
     // Mock fallback
     const newCustomer = { id: `cust${Date.now()}`, ...data, joinedAt: new Date() } as Customer;
@@ -1060,6 +1084,7 @@ export const customerApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return result.data;
+      throw new Error('操作失败或无权访问');
     }
     const idx = mockCustomers.findIndex((c) => c.id === id);
     if (idx !== -1) {
@@ -1078,6 +1103,7 @@ export const customerApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success) return true;
+      throw new Error('删除失败或无权访问');
     }
     const idx = mockCustomers.findIndex((c) => c.id === id);
     if (idx !== -1) {
@@ -1091,10 +1117,11 @@ export const customerApi = {
   getById: async (id: string): Promise<Customer | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}${token ? '' : '/public'}`, {
+        credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (result?.success && result.data) return result.data;
+      throw new Error('资料加载失败或无权访问，请重新登录');
     }
     const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
     if (cached) {
@@ -1116,6 +1143,7 @@ export const customerApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (result?.success && result.data) return result.data;
+      throw new Error('资料保存失败或无权修改，请重新登录');
     }
     const idx = mockCustomers.findIndex((c) => c.id === id);
     if (idx !== -1) {

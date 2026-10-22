@@ -1,5 +1,19 @@
+import { enforcePasswordChange } from './utils/password-gate';
+// 所有 Page 的深链、返回和切 tab 均受同一守卫约束。
+const registerPage = Page;
+Page = function(config) {
+  const guarded = { ...config };
+  ['onLoad', 'onShow'].forEach((lifecycle) => {
+    const original = config[lifecycle];
+    guarded[lifecycle] = function(...args) {
+      if (enforcePasswordChange(this.route)) return;
+      return original && original.apply(this, args);
+    };
+  });
+  return registerPage(guarded);
+};
 // 小程序全局入口
-// 注意：当前顾客端仍使用 customerId 明文传参，待资质到位后统一改造为 token 鉴权。
+// 顾客 API 使用缓存的短期 bearer token 验证本人身份，customerId 仅用于资源定位。
 
 // 需要过滤的游客模式/开发者工具内部错误
 const IGNORE_ERROR_PATTERNS = [

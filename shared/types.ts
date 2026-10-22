@@ -376,6 +376,9 @@ export enum StoredValueTxType {
 
 // 结算项明细（含原价、折扣后价）
 export interface SettlementItem {
+  employeeLevel?: 'normal' | 'gold' | 'director';
+  priceOverride?: number;
+  groupBuyVoucherId?: string;
   type: 'service' | 'product';
   id: string;
   name: string;
@@ -402,6 +405,7 @@ export interface SettlementDiscountDetail {
 
 // 结算记录
 export interface Settlement {
+  customerPackageId?: string;
   id: string;
   shopId: string;
   customerId: string;
@@ -1168,6 +1172,8 @@ export interface FollowUpRecord {
 
 // 扩展Customer，添加技师关联（该客户由哪些技师服务过
 export interface Customer {
+  identityVerified?: boolean;
+  mustChangePassword?: boolean;
   id: string;
   shopId?: string;               // 所属店铺
   name: string;

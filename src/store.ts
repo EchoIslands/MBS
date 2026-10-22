@@ -1,3 +1,4 @@
+import { isRealApi, getApiBase } from '../shared/api-base';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppState, UserRole, Customer, Shop, Employee, Product, CartItem } from '../shared/types';
@@ -50,6 +51,9 @@ export const useAppStore = create<AppState>()(
         });
       },
       logout: () => {
+        if (isRealApi()) void fetch(getApiBase() + '/customers/logout', { method: 'POST', credentials: 'include' }).catch(() => {
+          console.warn('[logout] 顾客会话注销请求未完成，请关闭共享设备上的浏览器');
+        });
         saveCustomerSession(null);
         saveEmployeeSession({ currentShop: null, currentEmployee: null, userRole: null });
         set({ 
@@ -188,41 +192,54 @@ export const restoreEmployeeSession = () => {
 };
 
 // 应用启动时恢复顾客会话
-export const restoreCustomerSession = () => {
+export const restoreCustomerSession = async () => {
   const customer = loadCustomerSession();
-  if (customer) {
-    useAppStore.setState({
-      currentCustomer: customer,
-      userRole: UserRole.CUSTOMER,
-    });
+  if (!customer) return;
+  if (isRealApi()) {
+    try {
+      const response = await fetch(getApiBase() + '/customers/' + encodeURIComponent(customer.id) + '/public', { credentials: 'include' });
+      if (!response.ok) throw new Error('会话失效');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error('会话失效');
+      useAppStore.getState().setCurrentCustomer(result.data);
+    } catch {
+      saveCustomerSession(null);
+      useAppStore.setState({ currentCustomer: null });
+    }
+    return;
   }
+  useAppStore.setState({ currentCustomer: customer, userRole: UserRole.CUSTOMER });
 };
 
-// 顾客登录：优先调用真实 API，失败时回退到 mock 数据
+// 顾客登录：真实模式必须通过身份验证，失败不能回退演示数据
 export const loginAsCustomer = async (
   phone: string,
-  name?: string
-): Promise<Customer | null> => {
+  password?: string,
+  setupPassword = false
+): Promise<{ setupRequired: boolean; customer?: Customer }> => {
   const trimmedPhone = phone.trim();
 
   // 1. 尝试真实 API 登录
   try {
-    const apiCustomer = await customerApi.login(trimmedPhone, name);
-    if (apiCustomer) {
-      useAppStore.getState().setCurrentCustomer(apiCustomer);
-      return apiCustomer;
+    const result = await customerApi.login(trimmedPhone, password, setupPassword);
+    if (result?.setupRequired) return result;
+    if (result) {
+      if (result.customer) useAppStore.getState().setCurrentCustomer(result.customer);
+      return result;
     }
   } catch (err) {
-    console.error('[loginAsCustomer] 真实 API 登录失败:', err);
+    if (isRealApi()) throw err;
+    console.error('[loginAsCustomer] 登录失败');
   }
 
-  // 2. 回退到 mock 数据
+  if (isRealApi()) return { setupRequired: false };
+  // 2. 仅演示模式使用 mock 数据
   const customer = mockCustomers.find(c => c.phone === trimmedPhone);
   if (customer) {
     useAppStore.getState().setCurrentCustomer(customer);
-    return customer;
+    return { setupRequired: false, customer };
   }
-  return null;
+  return { setupRequired: false };
 };
 
 export const loginAsShop = (shopId: string, password?: string): Shop | null => {

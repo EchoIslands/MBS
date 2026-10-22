@@ -11,6 +11,7 @@ import WxPay from 'wechatpay-node-v3';
 export type PaymentChannel = 'wechat_h5' | 'wechat_mini' | 'wechat_native' | 'alipay' | 'cash' | 'balance';
 
 export interface CreatePaymentInput {
+  paymentId?: string;
   shopId: string;
   customerId: string;
   settlementId: string;
@@ -226,7 +227,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
 
   // 微信支付要求 out_trade_no 长度 6~32 位，只能用字母/数字/-/_；
   // 去掉横杠的 UUID 正好 32 位，满足要求。
-  const paymentId = randomUUID().replace(/-/g, '');
+  const paymentId = input.paymentId || randomUUID().replace(/-/g, '');
 
   if (WECHAT_PAY_MOCK) {
     // mock 模式：返回一个可识别的占位二维码，前端提示"配置中"
@@ -354,7 +355,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
  * 查询支付状态
  * mock 模式下直接返回 pending，真实环境调微信订单查询接口。
  */
-export async function queryPaymentStatus(paymentId: string): Promise<Pick<PaymentResult, 'status' | 'message'>> {
+export async function queryPaymentStatus(paymentId: string): Promise<Pick<PaymentResult, 'status' | 'message'> & { amount?: number }> {
   if (WECHAT_PAY_MOCK) {
     return { status: 'pending', message: 'mock 模式：请手动确认收款' };
   }
@@ -369,7 +370,11 @@ export async function queryPaymentStatus(paymentId: string): Promise<Pick<Paymen
     console.log('[wechatpay] 查询订单状态:', paymentId, result);
 
     const state = result?.data?.trade_state as string | undefined;
-    if (state === 'SUCCESS') return { status: 'paid', message: '支付成功' };
+    if (state === 'SUCCESS') {
+      const data = result.data;
+      if (data.mchid !== process.env.WECHAT_MCH_ID || data.appid !== process.env.WECHAT_APP_ID || data.amount?.currency !== 'CNY' || !Number.isInteger(data.amount?.total)) return { status: 'failed', message: '支付金额或商户不匹配' };
+      return { status: 'paid', amount: Number(data.amount.total) / 100, message: '支付成功' };
+    }
     if (state === 'NOTPAY') return { status: 'pending', message: '等待支付' };
     if (state === 'CLOSED') return { status: 'failed', message: '订单已关闭' };
     if (state === 'REVOKED') return { status: 'failed', message: '订单已撤销' };
@@ -392,7 +397,7 @@ export async function handleWechatCallback(params: {
   signature: string;
   timestamp: string;
   nonce: string;
-}): Promise<{ success: boolean; message: string; paymentId?: string; transactionId?: string }> {
+}): Promise<{ success: boolean; message: string; paymentId?: string; transactionId?: string; amount?: number }> {
   if (WECHAT_PAY_MOCK) {
     return { success: true, message: 'mock 回调已忽略' };
   }
@@ -445,10 +450,16 @@ export async function handleWechatCallback(params: {
 
     const decryptedRaw = decryptAesGcm(ciphertext, associatedData, nonce, apiv3Key);
     const decrypted = JSON.parse(decryptedRaw) as Record<string, unknown>;
-    console.log('[wechatpay-webhook] 回调解密结果:', decrypted);
+    console.log('[wechatpay-webhook] 回调解密完成');
 
     if (decrypted.trade_state !== 'SUCCESS') {
       return { success: true, message: `交易状态: ${decrypted.trade_state}` };
+    }
+
+    const paidAmount = decrypted.amount as Record<string, unknown> | undefined;
+    if (decrypted.mchid !== process.env.WECHAT_MCH_ID || decrypted.appid !== process.env.WECHAT_APP_ID ||
+      !paidAmount || paidAmount.currency !== 'CNY' || !Number.isInteger(paidAmount.total) || Number(paidAmount.total) < 0) {
+      return { success: false, message: '支付商户、应用或金额信息不匹配' };
     }
 
     return {
@@ -456,6 +467,7 @@ export async function handleWechatCallback(params: {
       message: 'OK',
       paymentId: decrypted.out_trade_no as string,
       transactionId: decrypted.transaction_id as string,
+      amount: Number(paidAmount.total) / 100,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

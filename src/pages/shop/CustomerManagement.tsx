@@ -814,6 +814,19 @@ const CustomerManagement: React.FC = () => {
               </button>
             </div>
 
+            {canEditCustomer(userRole) && <button className="mb-4 text-blue-600" onClick={async () => {
+              if (!window.confirm(`确认重置 ${viewingCustomer.name} 的顾客密码？新密码为其手机号后六位，请通过可靠方式告知本人。`)) return;
+              try { await customerApi.resetPassword(viewingCustomer.id); alert('密码已重置为手机号后六位'); }
+              catch (err) { alert(err instanceof Error ? err.message : '重置失败'); }
+            }}>重置顾客密码</button>}
+            <button className="mb-4 ml-4 text-green-700" disabled={viewingCustomer.identityVerified} onClick={async () => {
+              if (!window.confirm('请确认顾客本人已到店，并已人工核实其手机号和档案。确认完成核实？')) return;
+              try {
+                await customerApi.verifyIdentity(viewingCustomer.id);
+                setViewingCustomer({ ...viewingCustomer, identityVerified: true });
+                alert('顾客本人身份已核实');
+              } catch (err) { alert(err instanceof Error ? err.message : '核实失败'); }
+            }}>{viewingCustomer.identityVerified ? '顾客本人已核实' : '确认顾客本人'}</button>
             {/* 头部信息 */}
             <div className="flex flex-col items-center mb-5 pb-5 border-b border-gray-100">
               <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center mb-3">

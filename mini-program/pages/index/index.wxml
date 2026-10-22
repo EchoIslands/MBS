@@ -232,7 +232,6 @@
                 <text wx:if="{{item.isManager}}" class="stylist-badge stylist-badge-manager">店长</text>
               </view>
             </view>
-            <view class="stylist-title">{{item.title || '资深发型师'}}</view>
             <view class="stylist-rating-line" wx:if="{{item.rating}}">
               <mbs-icon name="star" size="20" color="var(--warning)" />
               <text>{{item.rating}} 分</text>

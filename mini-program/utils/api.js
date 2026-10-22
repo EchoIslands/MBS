@@ -1,3 +1,5 @@
+import { enforcePasswordChange } from './password-gate';
+import { getToken, clearToken, clearCustomerId, setPasswordChangeRequired } from './storage';
 /**
  * 小程序专用请求封装
  *
@@ -33,6 +35,7 @@ export function request(url, options = {}) {
       method: options.method || 'GET',
       header: {
         'Content-Type': 'application/json',
+        ...(getToken() && !url.startsWith('http') ? { Authorization: 'Bearer ' + getToken() } : {}),
         ...(options.headers || {}),
       },
       data: options.body,
@@ -52,7 +55,16 @@ export function request(url, options = {}) {
           return;
         }
 
+        if (res.statusCode === 401) { clearToken(); clearCustomerId(); }
+        if (res.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+          setPasswordChangeRequired(true);
+          const pages = getCurrentPages();
+          enforcePasswordChange(pages[pages.length - 1]?.route);
+        }
         const errMsg = res.data?.error || res.data?.message || `请求失败（${res.statusCode}）`;
+        if (res.data?.code === 'CUSTOMER_IDENTITY_UNVERIFIED') {
+          wx.showModal({ title: '首次使用需由门店核实身份', content: '请在到店消费时联系店员，确认顾客本人后即可使用线上支付。', showCancel: false });
+        }
         if (res.statusCode !== 404) {
           console.warn(`[mini-api] ${fullUrl} 返回 ${res.statusCode}: ${errMsg}`);
         }

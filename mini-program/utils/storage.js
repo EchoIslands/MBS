@@ -4,6 +4,9 @@
  * - 与 H5 的 localStorage 逻辑对应，保证两端登录态存储方式符合各自平台
  */
 
+const PASSWORD_CHANGE_KEY = 'mbs_password_change_required';
+export function setPasswordChangeRequired(value) { wx.setStorageSync(PASSWORD_CHANGE_KEY, value === true); }
+export function getPasswordChangeRequired() { return wx.getStorageSync(PASSWORD_CHANGE_KEY) === true; }
 const TOKEN_KEY = 'mbs_token';
 const CUSTOMER_ID_KEY = 'mbs_customer_id';
 
@@ -28,6 +31,8 @@ export function getCustomerId() {
 }
 
 export function clearCustomerId() {
+  clearToken();
+  wx.removeStorageSync(PASSWORD_CHANGE_KEY);
   wx.removeStorageSync(CUSTOMER_ID_KEY);
 }
 

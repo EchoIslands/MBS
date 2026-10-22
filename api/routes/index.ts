@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
+import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified, FIRST_USE_MESSAGE } from '../lib/customerSecurity.js';
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
@@ -13,6 +14,11 @@ import {
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel, MembershipActivityType } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
 import QRCode from 'qrcode';
+import { priceSettlement } from '../lib/settlementPricing.js';
+import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
+import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS } from '../lib/tokens.js';
+import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
+import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
 const mainRouter = Router();
 
@@ -23,7 +29,7 @@ type DbRecord = Record<string, any>;
 
 // ===================== auth =====================
 const authRouter = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mbs-dev-secret-2024';
+getJwtSecret(); // 生产密钥配置不合格时拒绝启动
 
 /**
  * POST /api/auth/login
@@ -33,7 +39,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
   try {
     const { phone, password } = req.body;
 
-    if (!phone || !password) {
+    if (typeof phone !== 'string' || typeof password !== 'string' || !phone || !password) {
       res.status(400).json({ success: false, error: '手机号和密码不能为空' });
       return;
     }
@@ -58,10 +64,27 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     const employee = employees[0];
 
-    // 2. 验证密码（当前 password_hash 字段存的是明文 '123456'，直接用 === 比对）
-    if (employee.password_hash !== password) {
+    // 成功校验旧密码后平滑迁移为哈希。
+    if (!(await verifyPassword(password, employee.password_hash))) {
       res.status(401).json({ success: false, error: '手机号或密码错误' });
       return;
+    }
+
+    if (!isPasswordHash(employee.password_hash)) {
+      // 条件更新防止并发改密被旧登录覆盖；兼容旧密码不强制修改原密码。
+      const migratedHash = await hashPassword(password, true);
+      const { data: migrated, error: migrationError } = await supabase.from('employees')
+        .update({ password_hash: migratedHash }).eq('id', employee.id)
+        .eq('password_hash', employee.password_hash).eq('is_active', true).select('password_hash').maybeSingle();
+      if (migrationError) return res.status(503).json({ success: false, error: '密码安全升级暂未完成，请稍后重试' });
+      if (migrated) employee.password_hash = migrated.password_hash;
+      else {
+        const { data: latest, error } = await supabase.from('employees').select('password_hash, is_active').eq('id', employee.id).maybeSingle();
+        if (error || !latest?.is_active || !(await verifyPassword(password, latest.password_hash))) {
+          return res.status(401).json({ success: false, error: '账号状态或密码已变更，请重新登录' });
+        }
+        employee.password_hash = latest.password_hash;
+      }
     }
 
     // 3. 签发 JWT（有效期 7 天）
@@ -73,7 +96,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       phone: employee.phone || phone,
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ ...payload, kind: 'employee', passwordVersion: passwordVersion(employee.password_hash) }, getJwtSecret(), { algorithm: 'HS256', audience: 'employee', issuer: 'mbs', expiresIn: '7d' });
 
     const user = {
       id: employee.id,
@@ -87,7 +110,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       rating: Number(employee.rating) || 5.0,
     };
 
-    console.log(`[auth] 员工 ${employee.name} (${employee.phone}) 登录成功`);
+    console.log('[auth] 员工登录成功');
     res.json({ success: true, data: { token, user } });
   } catch (err: unknown) {
     console.error('[auth] 登录异常:', (err as Error).message);
@@ -178,7 +201,7 @@ employeesRouter.get('/', authMiddleware, async (req: Request, res: Response) => 
       return;
     }
 
-    res.json({ success: true, data: data || [] });
+    res.json({ success: true, data: (data || []).map(({ password_hash: _password, ...employee }) => employee) });
   } catch (err: unknown) {
     console.error('[employees] 查询异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -239,7 +262,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       phone,
       title: title || '',
       role: newRole,
-      password_hash: password,
+      password_hash: await hashPassword(password),
       specialty: specialty || '',
       avatar: avatar || '',
       rating: 5.0,
@@ -256,7 +279,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
-    res.status(201).json({ success: true, data });
+    res.status(201).json({ success: true, data: data ? Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'password_hash')) : data });
   } catch (err: unknown) {
     console.error('[employees] 创建异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -275,7 +298,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
     if (title !== undefined) updateData.title = title;
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
-    if (password !== undefined) updateData.password_hash = password;
+    if (password !== undefined) updateData.password_hash = await hashPassword(password);
 
     const { data, error } = await supabase
       .from('employees')
@@ -291,7 +314,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: data ? Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'password_hash')) : data });
   } catch (err: unknown) {
     console.error('[employees] 更新个人资料异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -334,7 +357,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
     if (newRole !== undefined) updateData.role = newRole;
-    if (password !== undefined) updateData.password_hash = password;
+    if (password !== undefined) updateData.password_hash = await hashPassword(password);
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
     if (isGoldStylist !== undefined || is_gold_stylist !== undefined) updateData.is_gold_stylist = (isGoldStylist ?? is_gold_stylist) === true;
@@ -355,7 +378,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: data ? Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'password_hash')) : data });
   } catch (err: unknown) {
     console.error('[employees] 更新异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -841,7 +864,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
 });
 
 // 获取某个客户的所有预约
-bookingsRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
+bookingsRouter.get('/customer/:customerId', (req, res, next) => personalCustomerAccess(req, res, next, 'customerId'), async (req: Request, res: Response) => {
   try {
     await expireDelayNoResponse();
     const { customerId } = req.params;
@@ -1049,44 +1072,7 @@ bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =
       }
 
 
-      // 如果预约关联了次卡，完成服务时自动核销 1 次
-      if (originalBooking.package_id && originalBooking.customer_id && originalBooking.service_id) {
-        try {
-          const { data: pkgList, error: pkgQueryError } = await supabase
-            .from('customer_packages')
-            .select('*')
-            .eq('id', originalBooking.package_id)
-            .eq('shop_id', originalBooking.shop_id)
-            .eq('customer_id', originalBooking.customer_id)
-            .eq('service_id', originalBooking.service_id)
-            .eq('status', 'active')
-            .single();
-
-          if (!pkgQueryError && pkgList) {
-            const now = new Date();
-            const expiresAt = new Date(pkgList.expires_at as string);
-            if (expiresAt.getTime() > now.getTime() && (pkgList.used_times as number) < (pkgList.total_times as number)) {
-              const newUsedTimes = (pkgList.used_times as number) + 1;
-              const newStatus = newUsedTimes >= (pkgList.total_times as number) ? 'used_up' : 'active';
-              await supabase
-                .from('customer_packages')
-                .update({ used_times: newUsedTimes, status: newStatus, updated_at: now.toISOString() })
-                .eq('id', pkgList.id);
-              await supabase.from('package_usage_logs').insert({
-                package_id: pkgList.id,
-                booking_id: originalBooking.id,
-                customer_id: originalBooking.customer_id,
-                shop_id: originalBooking.shop_id,
-                used_at: now.toISOString(),
-                used_by: employee?.id || null,
-                note: '服务完成自动核销',
-              });
-            }
-          }
-        } catch (consumeErr) {
-          console.error('[bookings] 次卡自动核销失败:', consumeErr);
-        }
-      }
+      // 次卡由结算事务统一核销，服务状态变化不再独立扣次数。
       // 自动发放股东权益（三方协同）
       if (originalBooking.customer_id) {
         await grantStockholderBenefits(
@@ -2186,7 +2172,7 @@ customerPackagesRouter.put('/:id', authMiddleware, async (req: Request, res: Res
       .from('customer_packages')
       .update(updateData)
       .eq('id', id)
-      .eq('shop_id', employee.shopId)
+      .eq('shop_id', employee.shopId).eq('reserved_times', 0)
       .select()
       .single();
 
@@ -2212,14 +2198,14 @@ customerPackagesRouter.delete('/:id', authMiddleware, async (req: Request, res: 
       return res.status(403).json({ success: false, error: '无权作废次卡' });
     }
 
-    const { error } = await supabase
+    const { data: voided, error } = await supabase
       .from('customer_packages')
       .update({ status: 'expired', updated_at: new Date().toISOString() })
       .eq('id', id)
-      .eq('shop_id', employee.shopId);
+      .eq('shop_id', employee.shopId).eq('reserved_times',0).select('id').maybeSingle();
 
-    if (error) {
-      console.error('[customer-packages] 作废失败:', error.message);
+    if (error || !voided) {
+      console.error('[customer-packages] 作废失败:', error?.message || '次卡正在被待支付结算占用');
       return res.status(500).json({ success: false, error: '作废次卡失败' });
     }
 
@@ -2237,66 +2223,13 @@ customerPackagesRouter.post('/:id/consume', authMiddleware, async (req: Request,
     const { bookingId, note } = req.body;
     const employee = req.employee!;
 
-    const { data: pkg, error: fetchError } = await supabase
-      .from('customer_packages')
-      .select('*')
-      .eq('id', id)
-      .eq('shop_id', employee.shopId)
-      .single();
-
-    if (fetchError) {
-      console.error('[customer-packages] 查询次卡失败:', fetchError.message);
-      return res.status(500).json({ success: false, error: '查询次卡失败' });
-    }
-    if (!pkg) {
-      return res.status(404).json({ success: false, error: '次卡不存在' });
-    }
-
-    // 自动检查过期
-    const now = new Date();
-    const expiresAt = new Date(pkg.expires_at as string);
-    if (expiresAt.getTime() <= now.getTime()) {
-      await supabase.from('customer_packages').update({ status: 'expired' }).eq('id', id);
-      return res.status(400).json({ success: false, error: '次卡已过期' });
-    }
-    if ((pkg.status as string) !== 'active') {
-      return res.status(400).json({ success: false, error: '次卡不可用' });
-    }
-    if ((pkg.used_times as number) >= (pkg.total_times as number)) {
-      await supabase.from('customer_packages').update({ status: 'used_up' }).eq('id', id);
-      return res.status(400).json({ success: false, error: '次卡次数已用完' });
-    }
-
-    const newUsedTimes = (pkg.used_times as number) + 1;
-    const newStatus = newUsedTimes >= (pkg.total_times as number) ? 'used_up' : 'active';
-
-    const { data: updatedPkg, error: updateError } = await supabase
-      .from('customer_packages')
-      .update({ used_times: newUsedTimes, status: newStatus, updated_at: now.toISOString() })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('[customer-packages] 核销失败:', updateError.message);
-      return res.status(500).json({ success: false, error: '核销失败' });
-    }
-
-    // 写核销记录
-    const { error: logError } = await supabase.from('package_usage_logs').insert({
-      package_id: id,
-      booking_id: bookingId || null,
-      customer_id: pkg.customer_id,
-      shop_id: pkg.shop_id,
-      used_at: now.toISOString(),
-      used_by: employee.id,
-      note: note || '',
+    const { data, error } = await supabase.rpc('consume_customer_package_atomic', {
+      p_package_id: id, p_shop_id: employee.shopId, p_employee_id: employee.id,
+      p_booking_id: bookingId || null, p_note: note || '',
     });
-
-    if (logError) {
-      console.error('[customer-packages] 写核销记录失败:', logError.message);
-    }
-
+    if (error) return res.status(error.code === 'PGRST202' ? 503 : 409).json({ success: false, error: error.code === 'PGRST202' ? '请先执行 027 交易原子性迁移' : '次卡不可用或核销未完成，未扣减次数' });
+    const updatedPkg = data?.[0];
+    if (!updatedPkg) return res.status(503).json({ success: false, error: '核销结果不可用' });
     res.json({ success: true, data: packageFromDb(updatedPkg) });
   } catch (err) {
     console.error('[customer-packages] 核销异常:', err);
@@ -2365,103 +2298,107 @@ mainRouter.use('/customer-packages', customerPackagesRouter);
 
 // ===================== customers =====================
 const customersRouter = Router();
+// 本人展示白名单：不返回证件、微信标识、员工备注及客户画像。
+const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
 
 /**
  * POST /api/customers/login
- * 顾客公开登录：通过手机号查询客户，不需要 JWT
+ * 顾客登录：手机号 + 自设六位数字密码
  */
 customersRouter.post('/login', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { phone, password, setupPassword } = req.body || {};
+  if (typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone.trim())) return res.status(400).json({ success: false, error: '请输入正确的手机号' });
+  const normalizedPhone = phone.trim();
+  // Vercel overwrites its own forwarding header; do not trust arbitrary X-Forwarded-For.
+  const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
+  const loginIp = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
   try {
-    const { phone, name } = req.body || {};
-    const cleanPhone = String(phone || '').trim();
-    if (!cleanPhone) {
-      res.status(400).json({ success: false, error: '手机号不能为空' });
-      return;
+    if (!(await beginCustomerAuthAttempt(loginIp))) return res.status(429).json({ success: false, error: '尝试次数过多，请稍后再试或联系门店' });
+    const { data: customers, error } = await supabase.from('customers')
+      .select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('phone', normalizedPhone).limit(2);
+    if (error) return res.status(503).json({ success: false, error: '身份验证暂不可用' });
+    if (!customers?.length) {
+      await finishCustomerAuthAttempt(loginIp, false);
+      return res.status(401).json({ success: false, error: '手机号或密码错误；如首次使用，请联系门店核实手机号' });
     }
-    if (!isValidPhone(cleanPhone)) {
-      res.status(400).json({ success: false, error: '手机号格式不正确，请输入 11 位手机号' });
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('phone', cleanPhone)
-      .maybeSingle();
-
-    if (error) {
-      console.error('[customers] 登录查询失败:', error.message);
-      res.status(500).json({ success: false, error: '查询客户失败' });
-      return;
-    }
-
-    if (!data) {
-      // 陌生手机号自动注册为当前店铺新客户
-      const displayName = name?.trim() || `顾客${cleanPhone.slice(-4)}`;
-      const newCustomer = {
-        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        shop_id: 'shop1',
-        name: displayName,
-        phone: cleanPhone,
-        membership_level: 'regular',
-        purchase_vip_level: 'regular',
-        stored_value_level: 'none',
-        created_at: new Date().toISOString(),
-      };
-
-      const { data: inserted, error: insertError } = await supabase
-        .from('customers')
-        .insert(newCustomer)
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('[customers] 自动注册新客户失败:', insertError.message);
-        res.status(500).json({ success: false, error: '客户不存在且自动注册失败' });
-        return;
-      }
-
-      console.log(`[customers] 自动注册新客户: ${inserted.phone} (${inserted.id})`);
-      res.json({ success: true, data: toCamelCase(inserted) });
-      return;
-    }
-
-    // 已存在客户：如果本次填写了称呼且与现有不同，则更新
-    const providedName = name?.trim();
-    if (providedName && providedName !== data.name) {
-      const { data: updated, error: updateError } = await supabase
-        .from('customers')
-        .update({ name: providedName })
-        .eq('id', data.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        console.error('[customers] 更新称呼失败:', updateError.message);
-      } else {
-        res.json({ success: true, data: toCamelCase(updated) });
-        return;
+    if (customers.length !== 1) return res.status(409).json({ success: false, error: '该手机号关联多个客户档案，请联系门店处理' });
+    const customer = customers[0];
+    let passwordHash = customer.password_hash;
+    if (!passwordHash) {
+      if (!setupPassword) return res.json({ success: true, setupRequired: true });
+      if (!isCustomerPassword(password)) return res.status(400).json({ success: false, error: '请设置六位数字密码' });
+      passwordHash = await hashCustomerPassword(password);
+      const { data: saved, error: saveError } = await supabase.from('customers').update({ password_hash: passwordHash, identity_verified: false, identity_verified_at: null, identity_verified_by: null })
+        .eq('id', customer.id).eq('shop_id', customer.shop_id).is('password_hash', null).select('id').maybeSingle();
+      if (saveError) return res.status(503).json({ success: false, error: '密码设置失败，请重试' });
+      if (!saved) return res.status(409).json({ success: false, error: '密码状态已更新，请重新登录' });
+    } else {
+      if (!isCustomerPassword(password)) return res.status(400).json({ success: false, error: '请输入六位数字密码' });
+      if (!(await verifyCustomerPassword(password, passwordHash))) {
+        await finishCustomerAuthAttempt(loginIp, false);
+        return res.status(401).json({ success: false, error: '手机号或密码错误' });
       }
     }
-
-    res.json({ success: true, data: toCamelCase(data) });
-  } catch (err: unknown) {
-    console.error('[customers] 登录异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
-  }
+    await finishCustomerAuthAttempt(loginIp, true);
+    const { password_hash: _passwordHash, is_weak_password: weakPassword, ...safeCustomer } = customer;
+    const mustChangePassword = weakPassword === true;
+    const verifiedCustomer = mustChangePassword ? { id: customer.id, shop_id: customer.shop_id, must_change_password: true, identity_verified: false } : { ...safeCustomer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) };
+    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash, mustChangePassword);
+    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
+    return res.json({ success: true, data: toCamelCase(verifiedCustomer), ...(req.body?.client === 'mini' ? { token } : {}) });
+  } catch { return res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
 });
+// 受限会话仅能恢复状态、改密和退出；所有业务路径仍走默认本人中间件。
+customersRouter.post('/:id/password/change', (req, res, next) => { void customerIdentity(req, res, next, 'id', true); }, async (req: Request, res: Response) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body || {};
+  if (!isCustomerPassword(currentPassword) || !isCustomerPassword(newPassword) || newPassword !== confirmPassword || newPassword === '123456' || newPassword === currentPassword) {
+    return res.status(400).json({ success: false, error: '请输入原密码，并设置不同于原密码及 123456 的六位数字密码，两次输入须一致' });
+  }
+  const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
+  const ip = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
+  try {
+    if (!(await beginCustomerAuthAttempt(ip))) return res.status(429).json({ success: false, error: '尝试次数过多，请稍后再试或联系门店' });
+    const { data: customer, error } = await supabase.from('customers').select('id, shop_id, password_hash')
+      .eq('id', req.customer!.id).eq('shop_id', req.customer!.shopId).maybeSingle();
+    if (error) return res.status(503).json({ success: false, error: '改密服务暂不可用' });
+    if (!customer || passwordVersion(customer.password_hash) !== req.customer!.passwordVersion) return res.status(401).json({ success: false, error: '会话已失效，请重新登录' });
+    if (!(await verifyCustomerPassword(currentPassword, customer.password_hash))) {
+      await finishCustomerAuthAttempt(ip, false);
+      return res.status(400).json({ success: false, error: '原密码错误' });
+    }
+    const hash = await hashCustomerPassword(newPassword);
+    await finishCustomerAuthAttempt(ip, true);
+    // 比较旧哈希，防止并发改密覆盖员工重置；不修改任何身份核实字段。
+    const { data: saved, error: saveError } = await supabase.from('customers').update({ password_hash: hash, is_weak_password: false })
+      .eq('id', customer.id).eq('shop_id', customer.shop_id).eq('password_hash', customer.password_hash).select('id').maybeSingle();
+    if (saveError) return res.status(503).json({ success: false, error: '密码保存失败，请重试' });
+    if (!saved) return res.status(409).json({ success: false, error: '密码已被更新，请重新登录' });
+    const token = signCustomerToken(customer.id, customer.shop_id, hash);
+    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
+    return res.json({ success: true, data: { id: customer.id, shopId: customer.shop_id, mustChangePassword: false }, ...(req.body?.client === 'mini' ? { token } : {}) });
+  } catch { return res.status(503).json({ success: false, error: '改密服务暂不可用' }); }
+});
+customersRouter.post('/logout', (_req: Request, res: Response) => {
+  res.clearCookie(CUSTOMER_COOKIE, { httpOnly: true, sameSite: 'strict', path: '/api' });
+  res.json({ success: true });
+});
+
 
 /**
  * GET /api/customers/:id/public
- * 公开获取单个客户基本信息（顾客端小程序/H5使用，不含敏感字段）
+ * 获取本人账户信息：必须持本人会话，接口路径为旧版本兼容保留
  */
-customersRouter.get('/:id/public', async (req: Request, res: Response) => {
+customersRouter.get('/:id/public', (req, res, next) => { void customerIdentity(req, res, next, 'id', true); }, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (req.customer?.mustChangePassword) {
+      return res.json({ success: true, data: { id, shopId: req.customer.shopId, mustChangePassword: true, identityVerified: false } });
+    }
 
     const { data: customer, error } = await supabase
       .from('customers')
-      .select('id, name, phone, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate')
+      .select(CUSTOMER_SELF_FIELDS)
       .eq('id', id)
       .maybeSingle();
 
@@ -2476,7 +2413,7 @@ customersRouter.get('/:id/public', async (req: Request, res: Response) => {
       return;
     }
 
-    res.json({ success: true, data: toCamelCase(customer) });
+    res.json({ success: true, data: { ...toCamelCase(customer), mustChangePassword: false, identityVerified: await isCustomerVerified(customer.id, customer.shop_id) } });
   } catch (err: unknown) {
     console.error('[customers] 获取公开客户信息异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -2485,19 +2422,17 @@ customersRouter.get('/:id/public', async (req: Request, res: Response) => {
 
 /**
  * GET /api/customers/:id/packages
- * 公开获取顾客次卡列表（顾客端小程序使用，无需 JWT）
+ * 获取本人同店次卡：必须持本人会话
  */
-customersRouter.get('/:id/packages', async (req: Request, res: Response) => {
+customersRouter.get('/:id/packages', personalCustomerAccess, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // 顾客端「我的次卡」按顾客维度返回，不按店铺过滤：
-    // 小程序拿到的 customer.shopId 与开卡时写入的 shop_id 可能不一致，
-    // 过滤店铺会导致顾客看不到自己已开的卡。
     const { data, error } = await supabase
       .from('customer_packages')
       .select('*')
       .eq('customer_id', id)
+      .eq('shop_id', req.customer!.shopId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -2517,99 +2452,39 @@ customersRouter.get('/:id/packages', async (req: Request, res: Response) => {
  * POST /api/customers/:id/recharge
  * 顾客端自助储值充值（小程序/H5）
  */
-customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { shopId, storedValueLevel } = req.body || {};
-
-    if (!shopId) {
-      return res.status(400).json({ success: false, error: '缺少店铺ID' });
-    }
-    if (!storedValueLevel) {
-      return res.status(400).json({ success: false, error: '缺少储值档位' });
-    }
-
-    const planAmounts: Record<string, number> = {
-      store_500: 500,
-      store_1000: 1000,
-      store_2000: 2000,
-      store_5000: 5000,
-    };
-    const targetAmount = planAmounts[storedValueLevel];
-    if (targetAmount === undefined) {
-      return res.status(400).json({ success: false, error: '无效的储值档位' });
-    }
-
-    const { data: customer, error: fetchError } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .single();
-    if (fetchError || !customer) {
-      const message = fetchError?.message || '客户不存在';
-      return res.status(404).json({ success: false, error: '客户不存在', details: message });
-    }
-
-    const currentBalance = Number(customer.stored_value_balance || 0);
-    const addAmount = Math.max(0, targetAmount - currentBalance);
-    const newBalance = currentBalance + addAmount;
-    const hadRecharged = customer.stored_value_level && customer.stored_value_level !== 'none';
-    const now = new Date().toISOString();
-
-    const { data: updatedCustomer, error: updateError } = await supabase
-      .from('customers')
-      .update({
-        stored_value_level: storedValueLevel,
-        stored_value_balance: newBalance,
-        balance: newBalance,
-        has_recharged: true,
-        recharge_level: storedValueLevel,
-        stored_value_expires_at: new Date(Date.now() + 2 * 365 * 86400000).toISOString(),
-        is_member: true,
-        membership_level: customer.is_stockholder ? 'stockholder' : 'premium',
-      })
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .select()
-      .single();
-    if (updateError || !updatedCustomer) {
-      const message = updateError?.message || '更新客户信息失败';
-      console.error('[customers] 自助储值失败:', message);
-      return res.status(500).json({ success: false, error: '充值失败', details: message });
-    }
-
-    if (addAmount > 0) {
-      await supabase.from('stored_value_transactions').insert({
-        id: `svtx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        customer_id: id,
-        type: hadRecharged ? 'upgrade' : 'recharge',
-        amount: addAmount,
-        balance_after: newBalance,
-        referral_portion: 0,
-        note: hadRecharged ? `自助储值升级至 ${storedValueLevel}` : `自助开通 ${storedValueLevel}`,
-        created_at: now,
-        created_by: id,
-        created_by_name: customer.name || '顾客',
-      });
-    }
-
-    res.json({ success: true, data: toCamelCase(updatedCustomer) });
-  } catch (err: unknown) {
-    const message = (err as Error).message || String(err);
-    console.error('[customers] 自助储值异常:', message);
-    res.status(500).json({ success: false, error: '服务器错误', details: message });
-  }
+customersRouter.post('/:id/recharge', (_req: Request, res: Response) => {
+  res.status(403).json({ success: false, code: 'SELF_SERVICE_RECHARGE_DISABLED', error: '线上自助充值暂未开放，请联系门店办理，已有余额可正常使用' });
 });
 
 // 所有客户接口都需要登录
 customersRouter.use(authMiddleware);
+customersRouter.post('/:id/identity/verify', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
+  try {
+    const { error } = await supabase.from('customers').update({ identity_verified: true, identity_verified_at: new Date().toISOString(), identity_verified_by: req.employee!.id })
+      .eq('id', req.params.id).eq('shop_id', req.employee!.shopId);
+    if (error) return res.status(503).json({ success: false, error: '核实状态暂无法保存，请先执行 026 身份与限流迁移' });
+    return res.json({ success: true });
+  } catch { return res.status(503).json({ success: false, error: '核实状态保存失败' }); }
+});
+
+customersRouter.post('/:id/password/reset', requirePermission('customer:credential'), requireCustomerScope, async (req: Request, res: Response) => {
+  try {
+    const { data: customer, error } = await supabase.from('customers').select('id, phone, shop_id').eq('id', req.params.id).eq('shop_id', req.employee!.shopId).maybeSingle();
+    if (error) return res.status(503).json({ success: false, error: '客户信息暂不可用' });
+    if (!customer || !/^1[3-9]\d{9}$/.test(customer.phone || '')) return res.status(404).json({ success: false, error: '未找到有效客户手机号' });
+    const passwordHash = await hashCustomerPassword(customer.phone.slice(-6));
+    const { error: updateError } = await supabase.from('customers').update({ password_hash: passwordHash }).eq('id', customer.id).eq('shop_id', customer.shop_id);
+    if (updateError) return res.status(503).json({ success: false, error: '密码重置失败' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, data: { reset: true } });
+  } catch { return res.status(503).json({ success: false, error: '密码重置失败' }); }
+});
 
 /**
  * GET /api/customers
  * 获取当前店铺的客户列表（含客户画像、到店记录）
  */
-customersRouter.get('/', async (req: Request, res: Response) => {
+customersRouter.get('/', requirePermission('customer:read'), async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
 
@@ -2618,10 +2493,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('shop_id', shopId)
+    const { data, error } = await scopeCustomerQuery(supabase.from('customers').select('*'), req)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -2677,7 +2549,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
  * POST /api/customers
  * 创建新客户
  */
-customersRouter.post('/', async (req: Request, res: Response) => {
+customersRouter.post('/', requirePermission('customer:create'), async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
 
@@ -2687,7 +2559,7 @@ customersRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const body = req.body || {};
-    console.log('[customers] 收到请求体:', JSON.stringify(body));
+
 
     const insertData = mapCustomerBodyToDB(body);
     const validation = validateCustomerData(insertData);
@@ -2726,7 +2598,7 @@ customersRouter.post('/', async (req: Request, res: Response) => {
  * PUT /api/customers/:id
  * 更新客户信息
  */
-customersRouter.put('/:id', async (req: Request, res: Response) => {
+customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -2755,7 +2627,7 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    console.log('[customers] 准备更新:', id, JSON.stringify(updateData));
+
 
     const { data, error } = await supabase
       .from('customers')
@@ -2788,7 +2660,7 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
  * PUT /api/customers/:id/membership
  * 更新客户会员状态（VIP/储值升级），同步创建权益和流水
  */
-customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
+customersRouter.put('/:id/membership', requirePermission('customer:edit'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -2996,7 +2868,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
  * GET /api/customers/:id/membership-enrollments
  * 查询顾客的会员入会记录（入会时间 / 次数 / 状态）
  */
-customersRouter.get('/:id/membership-enrollments', async (req: Request, res: Response) => {
+customersRouter.get('/:id/membership-enrollments', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -3143,7 +3015,7 @@ customersRouter.post('/:id/membership/revoke', async (req: Request, res: Respons
  * DELETE /api/customers/:id
  * 删除客户
  */
-customersRouter.delete('/:id', async (req: Request, res: Response) => {
+customersRouter.delete('/:id', requirePermission('customer:delete'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -3172,7 +3044,7 @@ customersRouter.delete('/:id', async (req: Request, res: Response) => {
  * GET /api/customers/:id
  * 获取单个客户详情（含画像、到店记录）
  */
-customersRouter.get('/:id', async (req: Request, res: Response) => {
+customersRouter.get('/:id', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -3224,7 +3096,7 @@ customersRouter.get('/:id', async (req: Request, res: Response) => {
  * GET /api/customers/:id/profile
  * 获取客户画像
  */
-customersRouter.get('/:id/profile', async (req: Request, res: Response) => {
+customersRouter.get('/:id/profile', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -3265,7 +3137,7 @@ customersRouter.get('/:id/profile', async (req: Request, res: Response) => {
  * POST /api/customers/:id/profile
  * 创建客户画像
  */
-customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
+customersRouter.post('/:id/profile', requirePermission('customer:edit'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -3319,7 +3191,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
  * PUT /api/customers/:id/profile
  * 更新客户画像（不存在则创建）
  */
-customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
+customersRouter.put('/:id/profile', requirePermission('customer:edit'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = req.employee!.shopId;
@@ -3771,7 +3643,7 @@ reviewsRouter.get('/booking/:bookingId', async (req: Request, res: Response) => 
 });
 
 // 获取顾客评价列表
-reviewsRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
+reviewsRouter.get('/customer/:customerId', (req, res, next) => personalCustomerAccess(req, res, next, 'customerId'), async (req: Request, res: Response) => {
   try {
     const { customerId } = req.params;
 
@@ -4071,7 +3943,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
 });
 
 // 更新店铺信息
-shopsRouter.put('/:id', async (req: Request, res: Response) => {
+shopsRouter.put('/:id', authMiddleware, requirePermission('shop:edit'), requireOwnShop(), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const {
@@ -4648,7 +4520,7 @@ couponsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) =>
 });
 
 // 查询顾客优惠券
-couponsRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
+couponsRouter.get('/customer/:customerId', (req, res, next) => personalCustomerAccess(req, res, next, 'customerId'), async (req: Request, res: Response) => {
   try {
     const { customerId } = req.params;
     const { shopId, status } = req.query;
@@ -4743,37 +4615,6 @@ const productOrderItemFromDb = (i: DbRecord): Record<string, unknown> => {
 };
 
 // 取消订单时回滚库存并记录变动
-const rollbackProductOrderInventory = async (orderId: string, shopId: string, cancelReason?: string) => {
-  const { data: items } = await supabase.from('product_order_items').select('*').eq('order_id', orderId);
-  for (const item of items || []) {
-    const { data: product } = await supabase.from('products').select('stock, sales, name').eq('id', item.product_id).single();
-    if (product) {
-      const quantity = Number(item.quantity || 1);
-      const newStock = Math.max(0, Number(product.stock || 0) + quantity);
-      const newSales = Math.max(0, Number(product.sales || 0) - quantity);
-      await supabase
-        .from('products')
-        .update({
-          stock: newStock,
-          sales: newSales,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', item.product_id);
-      await insertInventoryLog({
-        shopId,
-        productId: String(item.product_id),
-        productName: String(product.name || ''),
-        changeAmount: quantity,
-        stockAfter: newStock,
-        type: 'cancel',
-        orderId,
-        reason: `订单取消回滚库存 ${cancelReason || '用户取消'}`,
-      });
-    }
-  }
-  await syncShopProductsJsonb(shopId);
-};
-
 // 生成订单号：PO + 年月日 + 4位随机
 const generateOrderNo = () => {
   const now = new Date();
@@ -4808,7 +4649,7 @@ const calcCouponDiscount = (coupon: Coupon, baseAmount: number): number => {
 };
 
 // 顾客创建商品订单（MVP：支持余额支付和到店自提付款，支持优惠券抵扣）
-productOrdersRouter.post('/', async (req: Request, res: Response) => {
+productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityId = req.body?.customerId; personalCustomerAccess(req, res, next, 'customerIdentityId'); }, async (req: Request, res: Response) => {
   try {
     const { shopId, customerId, items, paymentMethod, pickupName, pickupPhone, notes, customerCouponId } = req.body || {};
 
@@ -4819,6 +4660,8 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
     if (!['balance', 'store_pickup'].includes(paymentMethod)) {
       return res.status(400).json({ success: false, error: '暂不支持的支付方式' });
     }
+
+    if (paymentMethod === 'balance' && !(await isCustomerVerified(customerId, shopId))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
 
     // 获取顾客信息（含会员等级，用于计算商品折扣）
     const { data: customer, error: customerError } = await supabase
@@ -4869,7 +4712,8 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
       if (!product.is_active) {
         return res.status(400).json({ success: false, error: `商品已下架: ${product.name}` });
       }
-      const quantity = Math.max(1, Math.floor(Number(item.quantity || 1)));
+      if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100) return res.status(400).json({ success: false, error: '商品数量不正确' });
+      const quantity = item.quantity;
       if (Number(product.stock || 0) < quantity) {
         return res.status(400).json({ success: false, error: `商品库存不足: ${product.name}` });
       }
@@ -5003,124 +4847,17 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
     const orderNo = generateOrderNo();
     const pickupCode = generatePickupCode();
 
-    // 创建订单
-    const { data: order, error: orderError } = await supabase
-      .from('product_orders')
-      .insert({
-        id: orderId,
-        shop_id: shopId,
-        customer_id: customerId,
-        customer_name: customer.name || '',
-        customer_phone: customer.phone || '',
-        order_no: orderNo,
-        total_amount: totalAmount,
-        discount_amount: discountAmount,
-        payable_amount: payableAmount,
-        status: paymentMethod === 'balance' ? 'paid' : 'pending',
-        payment_method: paymentMethod,
-        payment_status: paymentMethod === 'balance' ? 'paid' : 'pending',
-        paid_at: paymentMethod === 'balance' ? new Date().toISOString() : null,
-        pickup_code: pickupCode,
-        pickup_name: pickupName || customer.name || '',
-        pickup_phone: pickupPhone || customer.phone || '',
-        notes: notes || '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (orderError) {
-      console.error('[productOrders] 创建订单失败:', orderError.message);
-      return res.status(500).json({ success: false, error: '创建订单失败' });
-    }
-
-    // 创建订单明细
-    const orderItemsWithOrderId = orderItems.map((i) => ({ ...i, order_id: orderId }));
-    const { error: itemsError } = await supabase.from('product_order_items').insert(orderItemsWithOrderId);
-    if (itemsError) {
-      console.error('[productOrders] 创建订单明细失败:', itemsError.message);
-      // 回滚订单
-      await supabase.from('product_orders').delete().eq('id', orderId);
-      return res.status(500).json({ success: false, error: '创建订单明细失败' });
-    }
-
-    // 标记优惠券为已使用
-    if (appliedCustomerCoupon && appliedCustomerCoupon.id) {
-      const { error: couponUseError } = await supabase
-        .from('customer_coupons')
-        .update({
-          status: 'used',
-          used_at: new Date().toISOString(),
-          order_id: orderId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', appliedCustomerCoupon.id)
-        .eq('status', 'unused');
-      if (couponUseError) {
-        console.error('[productOrders] 标记优惠券已使用失败:', couponUseError.message);
-        // 不影响订单本身，记录日志即可
-      }
-    }
-
-    // 扣减库存并记录变动
-    for (const item of items) {
-      const product = productMap.get(item.productId);
-      if (product) {
-        const quantity = Number(item.quantity || 1);
-        const oldStock = Number(product.stock || 0);
-        const newStock = Math.max(0, oldStock - quantity);
-        const newSales = Number(product.sales || 0) + quantity;
-        await supabase
-          .from('products')
-          .update({ stock: newStock, sales: newSales, updated_at: new Date().toISOString() })
-          .eq('id', product.id);
-        await insertInventoryLog({
-          shopId,
-          productId: String(product.id),
-          productName: String(product.name || ''),
-          changeAmount: -quantity,
-          stockAfter: newStock,
-          type: 'sale',
-          orderId,
-          reason: `商品订单消费 ${orderNo}`,
-        });
-      }
-    }
-
-    // 余额支付：扣减余额并记录流水
-    if (paymentMethod === 'balance') {
-      const currentBalance = Number(customer.stored_value_balance || 0);
-      const currentReferral = Number(customer.withdrawable_referral_amount || 0);
-      const principal = Math.max(0, currentBalance - currentReferral);
-      const usedPrincipal = Math.min(payableAmount, principal);
-      const usedReferral = payableAmount - usedPrincipal;
-
-      const newBalance = Math.round((currentBalance - payableAmount) * 100) / 100;
-      const newReferral = Math.round((currentReferral - usedReferral) * 100) / 100;
-
-      await supabase
-        .from('customers')
-        .update({ stored_value_balance: newBalance, balance: newBalance, withdrawable_referral_amount: newReferral })
-        .eq('id', customerId)
-        .eq('shop_id', shopId);
-
-      await supabase.from('stored_value_transactions').insert({
-        id: `svt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        customer_id: customerId,
-        type: 'consume',
-        amount: -payableAmount,
-        balance_after: newBalance,
-        principal_portion: -usedPrincipal,
-        referral_portion: -usedReferral,
-        order_id: orderId,
-        note: `商品订单消费 ${orderNo}`,
-        created_at: new Date().toISOString(),
-        created_by: customerId,
-        created_by_name: customer.name || '顾客',
-      });
-    }
-
+    const { data: createdOrders, error: orderError } = await supabase.rpc('create_product_order_atomic', {
+      p_order: {
+        id: orderId, shop_id: shopId, customer_id: customerId, customer_name: customer.name || '', customer_phone: customer.phone || '',
+        order_no: orderNo, total_amount: totalAmount, discount_amount: discountAmount, payable_amount: payableAmount,
+        payment_method: paymentMethod, pickup_code: pickupCode, pickup_name: pickupName || customer.name || '',
+        pickup_phone: pickupPhone || customer.phone || '', notes: notes || '',
+      }, p_items: orderItems, p_coupon_id: appliedCustomerCoupon?.id || null,
+    });
+    if (orderError) return res.status(orderError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: orderError.code === 'PGRST202' ? '请先执行 028 商城交易迁移' : '订单未创建：余额、库存或优惠券状态已变化' });
+    const order = createdOrders?.[0];
+    if (!order) return res.status(503).json({ success: false, error: '订单结果暂不可用' });
     await syncShopProductsJsonb(shopId);
 
     res.status(201).json({
@@ -5140,7 +4877,7 @@ productOrdersRouter.post('/', async (req: Request, res: Response) => {
 });
 
 // 顾客继续支付待支付订单
-productOrdersRouter.post('/:id/pay', async (req: Request, res: Response) => {
+productOrdersRouter.post('/:id/pay', (req, res, next) => { req.params.customerIdentityId = req.body?.customerId; personalCustomerAccess(req, res, next, 'customerIdentityId'); }, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { customerId, paymentMethod } = req.body || {};
@@ -5167,77 +4904,12 @@ productOrdersRouter.post('/:id/pay', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '订单不是待支付状态' });
     }
 
-    const payableAmount = Number(order.payable_amount || 0);
-    const shopId = order.shop_id;
-    const orderNo = order.order_no;
-
-    const updatePayload: Record<string, unknown> = {
-      status: 'paid',
-      payment_status: 'paid',
-      paid_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (paymentMethod === 'balance') {
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .select('stored_value_balance, withdrawable_referral_amount, name')
-        .eq('id', customerId)
-        .eq('shop_id', shopId)
-        .single();
-      if (customerError || !customer) {
-        return res.status(404).json({ success: false, error: '顾客不存在' });
-      }
-
-      const currentBalance = Number(customer.stored_value_balance || 0);
-      const currentReferral = Number(customer.withdrawable_referral_amount || 0);
-      if (currentBalance < payableAmount) {
-        return res.status(400).json({ success: false, error: '储值余额不足' });
-      }
-
-      const principal = Math.max(0, currentBalance - currentReferral);
-      const usedPrincipal = Math.min(payableAmount, principal);
-      const usedReferral = payableAmount - usedPrincipal;
-      const newBalance = Math.round((currentBalance - payableAmount) * 100) / 100;
-      const newReferral = Math.round((currentReferral - usedReferral) * 100) / 100;
-
-      await supabase
-        .from('customers')
-        .update({ stored_value_balance: newBalance, balance: newBalance, withdrawable_referral_amount: newReferral })
-        .eq('id', customerId)
-        .eq('shop_id', shopId);
-
-      await supabase.from('stored_value_transactions').insert({
-        id: `svt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        customer_id: customerId,
-        type: 'consume',
-        amount: -payableAmount,
-        balance_after: newBalance,
-        principal_portion: -usedPrincipal,
-        referral_portion: -usedReferral,
-        order_id: id,
-        note: `商品订单消费 ${orderNo}`,
-        created_at: new Date().toISOString(),
-        created_by: customerId,
-        created_by_name: customer.name || '顾客',
-      });
-    }
-
-    // store_pickup 支付：到店自提付款，顾客确认后标记为已付款
-    if (paymentMethod === 'store_pickup') {
-      updatePayload.payment_method = 'store_pickup';
-    }
-
-    const { data: updatedOrder, error: updateError } = await supabase
-      .from('product_orders')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single();
-    if (updateError) {
-      return res.status(500).json({ success: false, error: '支付订单失败' });
-    }
-
+    if (paymentMethod === 'store_pickup') return res.status(400).json({ success: false, error: '到店付款请由门店确认收款，顾客端不能自行标记已付' });
+    if (!(await isCustomerVerified(customerId, order.shop_id))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
+    const { data, error: paymentError } = await supabase.rpc('pay_product_order_atomic', { p_order_id: id, p_customer_id: customerId });
+    if (paymentError) return res.status(paymentError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: paymentError.code === 'PGRST202' ? '请先执行 028 商城交易迁移' : '支付未完成，请核对余额和订单状态' });
+    const updatedOrder = data?.[0];
+    if (!updatedOrder) return res.status(503).json({ success: false, error: '支付结果暂不可用' });
     res.json({ success: true, data: productOrderFromDb(updatedOrder) });
   } catch (error) {
     console.error('[productOrders] 支付订单异常:', error);
@@ -5246,7 +4918,7 @@ productOrdersRouter.post('/:id/pay', async (req: Request, res: Response) => {
 });
 
 // 顾客查看自己的商品订单列表
-productOrdersRouter.get('/customer/:customerId', async (req: Request, res: Response) => {
+productOrdersRouter.get('/customer/:customerId', (req, res, next) => personalCustomerAccess(req, res, next, 'customerId'), async (req: Request, res: Response) => {
   try {
     const { customerId } = req.params;
     const { shopId } = req.query;
@@ -5377,29 +5049,31 @@ productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res:
       return res.status(400).json({ success: false, error: '仅待支付订单可直接取消' });
     }
 
+    if (existing.shop_id !== req.employee!.shopId) return res.status(404).json({ success:false,error:'订单不存在' });
+    if (status === 'refunded') return res.status(400).json({ success:false,error:'退款请使用退款审批流程' });
+    if (status === 'cancelled') {
+      const {data,error}=await supabase.rpc('cancel_product_order_atomic',{p_order_id:id,p_customer_id:existing.customer_id,p_shop_id:req.employee!.shopId,p_reason:cancelReason || '店铺取消'});
+      if(error || !data?.[0]) return res.status(409).json({success:false,error:'取消未完成，请核对订单状态和 028 迁移'});
+      return res.json({success:true,data:productOrderFromDb(data[0])});
+    }
+    if (existing.payment_method === 'balance' && existing.payment_status !== 'paid') return res.status(409).json({success:false,error:'余额订单需先由交易接口完成付款'});
     const updatePayload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
     if (status === 'completed') {
       updatePayload.completed_at = new Date().toISOString();
     }
-    if (status === 'cancelled') {
-      updatePayload.cancelled_at = new Date().toISOString();
-      updatePayload.cancel_reason = cancelReason || '店铺取消';
-    }
+
     // 到店自提付款：标记为 paid 时记录付款时间
     if (status === 'paid' && existing.payment_method === 'store_pickup') {
       updatePayload.payment_status = 'paid';
       updatePayload.paid_at = new Date().toISOString();
     }
 
-    const { data: order, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).select().single();
+    const { data: order, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).eq('status',existing.status).eq('payment_status',existing.payment_status).select().single();
     if (error) {
       return res.status(500).json({ success: false, error: '更新订单失败' });
     }
 
-    // 取消订单时回滚库存并记录变动
-    if (status === 'cancelled') {
-      await rollbackProductOrderInventory(id, existing.shop_id, cancelReason || '店铺取消');
-    }
+
 
     res.json({ success: true, data: productOrderFromDb(order) });
   } catch (error) {
@@ -5409,7 +5083,7 @@ productOrdersRouter.put('/:id/status', authMiddleware, async (req: Request, res:
 });
 
 // 顾客自主取消待支付订单
-productOrdersRouter.put('/:id/cancel', async (req: Request, res: Response) => {
+productOrdersRouter.put('/:id/cancel', (req,res,next) => { req.params.customerIdentityId=req.body?.customerId; personalCustomerAccess(req,res,next,'customerIdentityId'); }, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { customerId, cancelReason } = req.body || {};
@@ -5430,21 +5104,9 @@ productOrdersRouter.put('/:id/cancel', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '仅待支付订单可取消' });
     }
 
-    const updatePayload: Record<string, unknown> = {
-      status: 'cancelled',
-      cancelled_at: new Date().toISOString(),
-      cancel_reason: cancelReason || '用户取消',
-      updated_at: new Date().toISOString(),
-    };
-
-    const { data: order, error } = await supabase.from('product_orders').update(updatePayload).eq('id', id).select().single();
-    if (error) {
-      return res.status(500).json({ success: false, error: '取消订单失败' });
-    }
-
-    // 回滚库存
-    await rollbackProductOrderInventory(id, existing.shop_id, cancelReason || '用户取消');
-
+    const { data, error } = await supabase.rpc('cancel_product_order_atomic', { p_order_id:id,p_customer_id:customerId,p_shop_id:existing.shop_id,p_reason:cancelReason || '用户取消' });
+    if (error || !data?.[0]) return res.status(409).json({ success: false,error:'取消未完成，请核对订单状态和 028 迁移' });
+    const order=data[0];
     res.json({ success: true, data: productOrderFromDb(order) });
   } catch (error) {
     console.error('[productOrders] 顾客取消订单异常:', error);
@@ -5625,7 +5287,7 @@ productOrdersRouter.get('/refunds/shop/:shopId', authMiddleware, async (req: Req
 });
 
 // 店铺处理商品订单退款申请
-productOrdersRouter.put('/refunds/:id/status', authMiddleware, async (req: Request, res: Response) => {
+productOrdersRouter.put('/refunds/:id/status', authMiddleware, requirePermission('financial:read'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status, rejectReason } = req.body || {};
@@ -5633,140 +5295,13 @@ productOrdersRouter.put('/refunds/:id/status', authMiddleware, async (req: Reque
       return res.status(400).json({ success: false, error: '无效的处理状态' });
     }
 
-    const { data: refund, error: refundError } = await supabase
-      .from('product_order_refunds')
-      .select('*')
-      .eq('id', id)
-      .single();
-    if (refundError || !refund) {
-      return res.status(404).json({ success: false, error: '退款申请不存在' });
-    }
-    if (refund.status !== 'pending') {
-      return res.status(400).json({ success: false, error: '退款申请已处理' });
-    }
-
-    const { data: order } = await supabase
-      .from('product_orders')
-      .select('*')
-      .eq('id', refund.order_id)
-      .single();
-    if (!order) {
-      return res.status(404).json({ success: false, error: '订单不存在' });
-    }
-
-    const now = new Date().toISOString();
-    const updatePayload: Record<string, unknown> = {
-      status,
-      updated_at: now,
-      handled_at: now,
-    };
-    if (status === 'rejected') {
-      updatePayload.reject_reason = rejectReason || '店铺拒绝';
-    }
-    const handler = (req as Request & { employee?: Record<string, unknown> }).employee;
-    if (handler) {
-      updatePayload.handler_id = handler.id;
-      updatePayload.handler_name = handler.name;
-    }
-
-    const { data: updatedRefund, error } = await supabase
-      .from('product_order_refunds')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) {
-      return res.status(500).json({ success: false, error: '处理退款申请失败' });
-    }
-
-    let orderStatus = refund.previous_status;
-    if (status === 'approved') {
-      orderStatus = 'refunded';
-      // 回滚库存并记录变动
-      const { data: items } = await supabase
-        .from('product_order_items')
-        .select('*')
-        .eq('order_id', refund.order_id);
-      for (const item of items || []) {
-        const { data: product } = await supabase
-          .from('products')
-          .select('stock, sales, name')
-          .eq('id', item.product_id)
-          .single();
-        if (product) {
-          const quantity = Number(item.quantity || 1);
-          const newStock = Math.max(0, Number(product.stock || 0) + quantity);
-          const newSales = Math.max(0, Number(product.sales || 0) - quantity);
-          await supabase
-            .from('products')
-            .update({
-              stock: newStock,
-              sales: newSales,
-              updated_at: now,
-            })
-            .eq('id', item.product_id);
-          await insertInventoryLog({
-            shopId: refund.shop_id,
-            productId: String(item.product_id),
-            productName: String(product.name || ''),
-            changeAmount: quantity,
-            stockAfter: newStock,
-            type: 'refund',
-            orderId: refund.order_id,
-            reason: `订单退款回滚库存 ${order.order_no}`,
-            operatorId: handler ? String(handler.id) : undefined,
-            operatorName: handler ? String(handler.name) : '店铺',
-          });
-        }
-      }
-
-      // 退还余额（仅增加储值余额，不得影响可消费推荐金额）
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('stored_value_balance, balance')
-        .eq('id', refund.customer_id)
-        .eq('shop_id', refund.shop_id)
-        .single();
-      if (customer) {
-        const refundAmount = Number(refund.amount || 0);
-        const currentBalance = Number(customer.stored_value_balance || 0);
-        const currentDisplayBalance = Number(customer.balance || currentBalance);
-        const newBalance = Math.round((currentBalance + refundAmount) * 100) / 100;
-        const newDisplayBalance = Math.round((currentDisplayBalance + refundAmount) * 100) / 100;
-        await supabase
-          .from('customers')
-          .update({
-            stored_value_balance: newBalance,
-            balance: newDisplayBalance,
-            updated_at: now,
-          })
-          .eq('id', refund.customer_id)
-          .eq('shop_id', refund.shop_id);
-
-        await supabase.from('stored_value_transactions').insert({
-          id: `svt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-          customer_id: refund.customer_id,
-          type: 'refund',
-          amount: refundAmount,
-          balance_after: newBalance,
-          principal_portion: refundAmount,
-          referral_portion: 0,
-          order_id: refund.order_id,
-          note: `商品订单退款 ${order.order_no}`,
-          created_at: now,
-          created_by: handler ? handler.id : null,
-          created_by_name: handler ? handler.name : '店铺',
-        });
-      }
-
-      await syncShopProductsJsonb(refund.shop_id);
-    }
-
-    await supabase
-      .from('product_orders')
-      .update({ status: orderStatus, updated_at: now })
-      .eq('id', refund.order_id);
-
+    const employee = req.employee!;
+    const { data, error } = await supabase.rpc('handle_product_refund_atomic', {
+      p_refund_id: id, p_shop_id: employee.shopId, p_status: status, p_employee_id: employee.id,
+      p_employee_name: employee.name, p_reason: rejectReason || '',
+    });
+    if (error || !data?.[0]) return res.status(error?.code === 'PGRST202' ? 503 : 409).json({ success: false, error: '退款未完成：请核对订单、同店权限和 028 迁移状态' });
+    const updatedRefund=data[0];
     res.json({ success: true, data: productOrderRefundFromDb(updatedRefund) });
   } catch (error) {
     console.error('[productOrders] 处理退款异常:', error);
@@ -5978,6 +5513,7 @@ const settlementFromDb = (s: Record<string, unknown>): Record<string, unknown> =
   customerName: s.customer_name,
   bookingId: s.booking_id,
   items: s.items || [],
+  customerPackageId: s.customer_package_id || undefined,
   subtotal: Number(s.subtotal) || 0,
   discountDetail: s.discount_detail || {},
   discount: Number(s.discount) || 0,
@@ -6017,98 +5553,15 @@ async function processSettlementAfterPayment(params: {
     logStep,
   } = params;
 
-  // 核心后续操作并行执行：更新客户、核销权益、创建到店记录
-  const coreTasks: Promise<unknown>[] = [];
-
-  // 更新客户消费统计
-  coreTasks.push(
-    (async () => {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('visit_count, total_spent, stored_value_balance, withdrawable_referral_amount, points')
-        .eq('id', customerId)
-        .eq('shop_id', shopId)
-        .single();
-
-      if (customer) {
-        const newVisitCount = (customer.visit_count || 0) + 1;
-        const newTotalSpent = Number(customer.total_spent || 0) + Number(total || 0);
-        const earnedPoints = Math.round(Number(total || 0));
-        const updatePayload: Record<string, unknown> = {
-          visit_count: newVisitCount,
-          total_spent: newTotalSpent,
-          last_visit_at: new Date().toISOString(),
-          points: (Number(customer.points) || 0) + earnedPoints,
-        };
-
-        // 储值支付：扣减余额
-        if (paymentMethod === 'balance') {
-          const currentBalance = Number(customer.stored_value_balance || 0);
-          const currentReferral = Number(customer.withdrawable_referral_amount || 0);
-          const principal = currentBalance - currentReferral;
-          const usedPrincipal = Math.min(Number(total), principal);
-          const usedReferral = Number(total) - usedPrincipal;
-
-          updatePayload.stored_value_balance = Math.round((currentBalance - Number(total)) * 100) / 100;
-          updatePayload.balance = updatePayload.stored_value_balance;
-          if (usedReferral > 0) {
-            updatePayload.withdrawable_referral_amount = Math.round((currentReferral - usedReferral) * 100) / 100;
-          }
-        }
-
-        await supabase.from('customers').update(updatePayload).eq('id', customerId).eq('shop_id', shopId);
-      }
-    })()
-  );
-
-  // 核销权益
-  const benefits = usedBenefitIds || [];
-  if (benefits.length > 0) {
-    coreTasks.push(
-      (async () => {
-        await supabase
-          .from('member_benefit_records')
-          .update({
-            status: 'used',
-            used_at: new Date().toISOString(),
-            used_by: processedByEmployee.id,
-            used_by_name: processedByEmployee.name,
-            used_order_id: settlementId,
-          })
-          .in('id', benefits)
-          .eq('customer_id', customerId);
-      })()
-    );
-  }
-
-  // 创建到店记录
-  coreTasks.push(
-    (async () => {
-      const { data: settlementRow } = await supabase
-        .from('settlements')
-        .select('items')
-        .eq('id', settlementId)
-        .single();
-
-      const items = (settlementRow?.items as Array<Record<string, unknown>>) || [];
-      await supabase.from('customer_visit_records').insert({
-        id: `visit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        customer_id: customerId,
-        shop_id: shopId,
-        booking_id: bookingId || null,
-        stylist_id: null,
-        stylist_name: processedByEmployee.name,
-        service_ids: items.filter((i) => i.type === 'service').map((i) => i.id),
-        service_names: items.filter((i) => i.type === 'service').map((i) => i.name),
-        total_amount: total || 0,
-        check_in_time: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      });
-    })()
-  );
-
-  await Promise.all(coreTasks);
-  if (logStep) logStep('核心后续操作完成');
+  const { data: latest, error: lookupError } = await supabase.from('settlements').select('customer_package_id').eq('id', settlementId).eq('shop_id', shopId).single();
+  if (lookupError) throw new Error('请先执行 027 交易原子性迁移');
+  const { error } = await supabase.rpc('finalize_settlement_atomic', {
+    p_settlement_id: settlementId, p_shop_id: shopId,
+    p_employee_id: processedByEmployee.id, p_employee_name: processedByEmployee.name,
+    p_booking_id: bookingId, p_package_id: latest?.customer_package_id || null, p_package_note: '结算核销',
+  });
+  if (error) throw new Error(error.code === 'PGRST202' ? '请先执行 027 交易原子性迁移' : '交易未完成：余额、次卡或权益状态已变化，请核对');
+  if (logStep) logStep('数据库原子提交完成');
 
   // 股东权益与推荐奖励为非核心操作，失败不应影响结算结果
   Promise.all([
@@ -6121,7 +5574,10 @@ async function processSettlementAfterPayment(params: {
 }
 
 // 创建结算记录
-settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.post('/', authMiddleware, (req, res, next) => {
+  if (Array.isArray(req.body?.items) && req.body.items.some((item: Record<string, unknown>) => item?.priceOverride !== undefined)) return requirePermission('settlement:override')(req, res, next);
+  next();
+}, async (req: Request, res: Response) => {
   const startTime = Date.now();
   const logStep = (step: string) => console.log(`[settlements] ${step}: +${Date.now() - startTime}ms`);
 
@@ -6149,41 +5605,24 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     }
 
     const method = paymentMethod || 'cash';
-    const amount = Number(total) || 0;
-    // 微信/支付宝为异步支付；金额为 0（纯核销/次卡抵扣）时无需走支付网关，直接完成
+    if (!['cash','balance','card','wechat','alipay'].includes(method)) return res.status(400).json({ success: false, error: '不支持的支付方式' });
+    if (method === 'alipay') return res.status(400).json({ success: false, error: '支付宝网关尚未接入，请使用其他支付方式' });
+    const priced = await priceSettlement(shopId, req.body);
+    const amount = priced.total;
     const isAsyncPayment = (method === 'wechat' || method === 'alipay') && amount > 0;
-    // 草稿/待结算：仅落库不执行业务闭环，供顾客中途退出后找回继续结算
     const isDraft = paymentStatus === 'pending';
-    const settlementId = id || `settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-    logStep('开始创建结算记录');
-    const { data: settlement, error: insertError } = await supabase
-      .from('settlements')
-      .insert({
-        id: settlementId,
-        shop_id: shopId,
-        customer_id: customerId,
-        customer_name: customerName || '',
-        booking_id: bookingId || null,
-        items: items,
-        subtotal: subtotal || 0,
-        discount_detail: discountDetail || {},
-        discount: discount || 0,
-        tax: tax || 0,
-        total: total || 0,
-        payment_method: method,
-        payment_status: isDraft || isAsyncPayment ? 'pending' : 'completed',
-        used_benefit_ids: usedBenefitIds || [],
-        processed_by: employee.name,
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('[settlements] 创建结算记录失败:', insertError.message);
-      return res.status(500).json({ success: false, error: '创建结算记录失败: ' + insertError.message });
-    }
+    if (!isDraft && isAsyncPayment && !(await isCustomerVerified(customerId, shopId))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
+    const settlementId = id || 'settle_' + randomUUID();
+    const { data: created, error: insertError } = await supabase.rpc('create_settlement_atomic', {
+      p_settlement: { id: settlementId, shop_id: shopId, customer_id: customerId, customer_name: priced.customerName,
+        booking_id: bookingId || null, ...priced, items: priced.items, discount_detail: priced.discountDetail,
+        payment_method: method, payment_status: 'pending', used_benefit_ids: usedBenefitIds || [], processed_by: employee.name,
+        customer_package_id: req.body.customerPackageId || null },
+      p_employee_id: employee.id, p_employee_name: employee.name, p_complete: !isDraft && !isAsyncPayment,
+    });
+    if (insertError) return res.status(insertError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: insertError.code === 'PGRST202' ? '请先执行 027 交易原子性迁移' : '交易未创建：余额、次卡或权益状态已变化' });
+    const settlement = created?.[0];
+    if (!settlement) return res.status(503).json({ success: false, error: '结算结果暂不可用' });
     logStep('结算记录创建成功');
 
     // 草稿/待结算：不生成支付、不执行业务闭环，直接返回
@@ -6192,33 +5631,17 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
     }
 
     // 微信支付：金额大于 0 时创建 payment 记录并返回支付参数；金额为 0（纯核销）直接走后续完成
-    if (method === 'wechat' && amount > 0) {
-      const paymentResult = await createPayment({
-        shopId,
-        customerId,
-        settlementId,
-        amount,
-        channel: 'wechat_native',
-        description: `MBS 门店结算 ${settlementId}`,
+    if (isAsyncPayment) {
+      const paymentId = randomUUID().replace(/-/g, '');
+      // 必须先持久化映射，再创建网关订单；网关异常不删除映射，以便迟到回调和对账。
+      const { error: mappingError } = await supabase.from('payments').insert({
+        id: paymentId, shop_id: shopId, customer_id: customerId, booking_id: bookingId || null,
+        settlement_id: settlementId, channel: 'wechat_native', amount, status: 'pending', created_at: new Date().toISOString(),
       });
-
-      const { error: paymentInsertError } = await supabase.from('payments').insert({
-        id: paymentResult.paymentId,
-        shop_id: shopId,
-        customer_id: customerId,
-        booking_id: bookingId || null,
-        settlement_id: settlementId,
-        channel: 'wechat_native',
-        amount,
-        status: paymentResult.status,
-        prepay_id: paymentResult.prepayId || null,
-        created_at: new Date().toISOString(),
-      });
-
-      if (paymentInsertError) {
-        console.error('[settlements] 创建 payment 记录失败:', paymentInsertError.message);
-      }
-
+      if (mappingError) return res.status(503).json({ success: false, error: '支付映射保存失败，尚未发起网关支付' });
+      const paymentResult = await createPayment({ paymentId, shopId, customerId, settlementId, amount,
+        channel: 'wechat_native', description: 'MBS 门店结算 ' + settlementId });
+      if (paymentResult.prepayId) await supabase.from('payments').update({ prepay_id: paymentResult.prepayId }).eq('id',paymentId);
       logStep('微信支付参数已生成');
       return res.status(201).json({
         success: true,
@@ -6229,24 +5652,14 @@ settlementsRouter.post('/', authMiddleware, async (req: Request, res: Response) 
       });
     }
 
-    // 现金 / 余额 / 刷卡：立即完成业务闭环
-    await processSettlementAfterPayment({
-      shopId,
-      customerId,
-      settlementId,
-      bookingId: bookingId || null,
-      total: Number(total) || 0,
-      paymentMethod: method,
-      usedBenefitIds: usedBenefitIds || [],
-      processedByEmployee: employee,
-      logStep,
-    });
-
+    // 核心业务已在 create_settlement_atomic 同事务完成。
+    Promise.all([grantStockholderBenefits(shopId,customerId,amount,bookingId || null),processReferralPromotion(shopId,customerId,amount,bookingId || null)])
+      .catch(() => console.error('[settlements] 非核心奖励发放失败，需门店复核'));
     res.status(201).json({ success: true, data: settlementFromDb(settlement) });
   } catch (error) {
     console.error('[settlements] 创建结算异常:', error);
     const message = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ success: false, error: `创建结算失败: ${message}` });
+    res.status(400).json({ success: false, error: `创建结算失败: ${message}` });
   }
 });
 
@@ -6269,26 +5682,16 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
       return res.status(404).json({ success: false, error: '结算记录不存在' });
     }
 
+    if (settlement.payment_status === 'completed') return res.json({ success: true, data: settlementFromDb(settlement) });
     if (settlement.payment_status !== 'pending') {
       return res.status(400).json({ success: false, error: '该结算记录不在待支付状态' });
     }
 
-    const { error: updateError } = await supabase
-      .from('settlements')
-      .update({ payment_status: 'completed' })
-      .eq('id', id);
-
-    if (updateError) {
-      console.error('[settlements] 确认收款更新失败:', updateError.message);
-      return res.status(500).json({ success: false, error: '确认收款失败' });
+    if (Number(settlement.total) > 0 && ['wechat','alipay'].includes(String(settlement.payment_method)) && process.env.WECHAT_PAY_MOCK !== 'true') {
+      const { data: payment } = await supabase.from('payments').select('id').eq('settlement_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const gateway = payment ? await queryPaymentStatus(payment.id) : null;
+      if (!gateway || gateway.status !== 'paid' || gateway.amount !== Number(settlement.total)) return res.status(409).json({ success: false, error: '支付平台尚未确认收款，请稍后重试' });
     }
-
-    // 更新 payment 记录
-    await supabase
-      .from('payments')
-      .update({ status: 'paid', transaction_id: transactionId || null, paid_at: new Date().toISOString() })
-      .eq('settlement_id', id);
-
     // 执行业务闭环
     await processSettlementAfterPayment({
       shopId,
@@ -6301,7 +5704,7 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
       processedByEmployee: employee,
     });
 
-    res.json({ success: true, data: settlementFromDb(settlement) });
+    res.json({ success: true, data: settlementFromDb({ ...settlement, payment_status: 'completed' }) });
   } catch (error) {
     console.error('[settlements] 确认收款异常:', error);
     res.status(500).json({ success: false, error: '确认收款失败' });
@@ -6334,35 +5737,10 @@ settlementsRouter.post('/:id/retry-payment', authMiddleware, async (req: Request
       return res.status(400).json({ success: false, error: '仅支持重新生成微信/支付宝支付二维码' });
     }
 
-    const total = Number(settlement.total) || 0;
-    const channel: PaymentChannel = method === 'wechat' ? 'wechat_native' : 'alipay';
-    const paymentResult = await createPayment({
-      shopId,
-      customerId: settlement.customer_id as string,
-      settlementId: id,
-      amount: total,
-      channel,
-      description: `MBS 门店结算 ${id}`,
-    });
+    const { data: existingPayment } = await supabase.from('payments').select('id').eq('settlement_id',id).limit(1).maybeSingle();
+    if (existingPayment) return res.status(409).json({ success: false, error: '该结算已有支付订单，请使用原二维码或先由门店对账关闭，勿重复付款' });
+    return res.status(409).json({ success: false, error: '支付初始化未完成，请联系门店核对后处理' });
 
-    const { error: paymentInsertError } = await supabase.from('payments').insert({
-      id: paymentResult.paymentId,
-      shop_id: shopId,
-      customer_id: settlement.customer_id,
-      booking_id: settlement.booking_id || null,
-      settlement_id: id,
-      channel,
-      amount: total,
-      status: paymentResult.status,
-      prepay_id: paymentResult.prepayId || null,
-      created_at: new Date().toISOString(),
-    });
-
-    if (paymentInsertError) {
-      console.error('[settlements] 创建新 payment 记录失败:', paymentInsertError.message);
-    }
-
-    res.json({ success: true, data: paymentResult });
   } catch (error) {
     console.error('[settlements] 重新生成支付二维码异常:', error);
     res.status(500).json({ success: false, error: '重新生成支付二维码失败' });
@@ -6390,26 +5768,8 @@ settlementsRouter.delete('/:id', authMiddleware, async (req: Request, res: Respo
       return res.status(400).json({ success: false, error: '仅允许删除待支付或支付失败的结算记录' });
     }
 
-    // 先删除关联支付记录，避免外键约束导致失败
-    const { error: deletePaymentsError } = await supabase
-      .from('payments')
-      .delete()
-      .eq('settlement_id', id);
-
-    if (deletePaymentsError) {
-      console.error('[settlements] 删除关联支付记录失败:', deletePaymentsError.message);
-    }
-
-    const { error: deleteError } = await supabase
-      .from('settlements')
-      .delete()
-      .eq('id', id);
-
-    if (deleteError) {
-      console.error('[settlements] 删除结算记录失败:', deleteError.message);
-      return res.status(500).json({ success: false, error: '删除结算记录失败' });
-    }
-
+    const { error: deleteError } = await supabase.rpc('delete_settlement_draft_atomic', { p_settlement_id: id, p_shop_id: shopId });
+    if (deleteError) return res.status(409).json({ success: false, error: '不能删除：已生成支付订单需先对账；纯草稿删除需先执行 027 迁移' });
     res.json({ success: true, data: { id } });
   } catch (error) {
     console.error('[settlements] 删除结算记录异常:', error);
@@ -6506,7 +5866,7 @@ mainRouter.use('/settlements', settlementsRouter);
 // ===================== financial =====================
 const financialRouter = Router();
 
-financialRouter.use(authMiddleware);
+financialRouter.use(authMiddleware, requirePermission('financial:read'));
 
 financialRouter.get('/report', async (req: Request, res: Response) => {
   try {
@@ -7862,11 +7222,12 @@ mainRouter.post('/webhook/wechat-pay', async (req: Request, res: Response) => {
     if (result.paymentId && result.transactionId) {
       const { data: paymentRow } = await supabase
         .from('payments')
-        .select('settlement_id')
+        .select('settlement_id, amount, shop_id, customer_id')
         .eq('id', result.paymentId)
         .single();
 
-      const settlementId = paymentRow?.settlement_id as string | undefined;
+      if (!paymentRow || result.amount !== Number(paymentRow.amount)) return res.status(409).json({ code: 'FAIL', message: '支付映射或金额不匹配' });
+      const settlementId = paymentRow.settlement_id as string | undefined;
 
       if (settlementId) {
         // 幂等：只有 pending 才更新
@@ -7876,17 +7237,8 @@ mainRouter.post('/webhook/wechat-pay', async (req: Request, res: Response) => {
           .eq('id', settlementId)
           .single();
 
-        if (settlement && settlement.payment_status === 'pending') {
-          await supabase
-            .from('settlements')
-            .update({ payment_status: 'completed' })
-            .eq('id', settlementId);
-
-          await supabase
-            .from('payments')
-            .update({ status: 'paid', transaction_id: result.transactionId, paid_at: new Date().toISOString() })
-            .eq('id', result.paymentId);
-
+        if (!settlement || Number(settlement.total) !== result.amount || settlement.shop_id !== paymentRow.shop_id || settlement.customer_id !== paymentRow.customer_id) return res.status(409).json({ code: 'FAIL', message: '结算映射或金额不匹配' });
+        if (settlement.payment_status === 'pending') {
           // 执行客户统计、权益核销、到店记录等业务闭环
           const fallbackEmployee: AuthEmployee = {
             id: 'system_wechat',

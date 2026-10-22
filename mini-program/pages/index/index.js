@@ -284,7 +284,7 @@ Page({
         memberHeaderClass: this.computeMemberHeaderClass(purchaseLevel),
       });
     } catch (err) {
-      console.error('[index] 加载顾客信息失败:', err);
+      if (err.statusCode === 401) wx.reLaunch({ url: '/pages/login/login' });
     }
   },
 

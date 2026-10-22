@@ -545,7 +545,7 @@ const Checkout: React.FC = () => {
       if (item.type === 'service') {
         // 还原基础价后再加新等级差价
         const basePrice = services.find((s) => s.id === item.id)?.price || item.originalPrice;
-        item.originalPrice = basePrice + designerPriceMap[level];
+        item.originalPrice = basePrice;
         item.employeeLevel = level;
       }
       return next;
@@ -679,16 +679,6 @@ const Checkout: React.FC = () => {
     });
   };
 
-  // 核销已选次卡
-  const consumeSelectedPackage = async () => {
-    if (!selectedPackageId) return;
-    try {
-      await packageApi.consume(selectedPackageId, initialBookingId || undefined);
-    } catch (e) {
-      console.warn('[checkout] 次卡核销失败:', e);
-    }
-  };
-
   // 继续未完成的结算（草稿 / 待支付），恢复其内容供继续编辑
   const handleContinueSettlement = (s: Settlement) => {
     setCurrentDraftId(s.id);
@@ -698,18 +688,20 @@ const Checkout: React.FC = () => {
       id: it.id,
       type: it.type,
       name: it.name,
-      originalPrice: it.originalPrice,
+      originalPrice: it.type === 'service' ? (services.find(service => String(service.id) === String(it.id))?.price ?? it.originalPrice) : it.originalPrice,
       quantity: it.quantity,
       category: it.category,
       employeeId: it.employeeId,
       employeeName: it.employeeName,
+      employeeLevel: it.employeeLevel,
+      groupBuyInfo: it.groupBuyVoucherId ? { voucherId: it.groupBuyVoucherId, code: '', price: it.discountedPrice, description: '已绑定团购券' } : undefined,
     }));
     setCart(restoredCart);
     setPaymentMethod(s.paymentMethod || 'cash');
     // 重置与草稿无关的临时状态，避免上一单的状态串进来
-    setPriceOverrides({});
-    setSelectedPackageId('');
-    setSelectedBenefits([]);
+    setPriceOverrides(Object.fromEntries((s.items || []).flatMap((item, index) => item.priceOverride === undefined ? [] : [[index, item.priceOverride]])));
+    setSelectedPackageId(s.customerPackageId || '');
+    setSelectedBenefits(s.usedBenefitIds || []);
     // 滚动到结算表单，让用户能看到已恢复的内容
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -768,6 +760,9 @@ const Checkout: React.FC = () => {
         category: item.category,
         employeeId: item.employeeId,
         employeeName: item.employeeName,
+        employeeLevel: item.employeeLevel,
+        priceOverride: isOverridden ? override : undefined,
+        groupBuyVoucherId: item.groupBuyInfo?.voucherId,
       };
     });
 
@@ -792,10 +787,12 @@ const Checkout: React.FC = () => {
       total,
       paymentMethod,
       usedBenefitIds: selectedBenefits,
+      customerPackageId: selectedPackageId || undefined,
       processedBy: currentEmployee?.name,
     };
 
     try {
+      if (currentDraftId) { await settlementApi.delete(currentDraftId); setCurrentDraftId(null); }
       const result = await settlementApi.create(newSettlement);
       console.log('settlementApi.create result:', result);
 
@@ -853,7 +850,7 @@ const Checkout: React.FC = () => {
       setAvailableBenefits((prev) => prev.filter((b) => !selectedBenefits.includes(b.id)));
       setSelectedBenefits([]);
       // 核销已选次卡
-      await consumeSelectedPackage();
+      // 次卡由服务端与结算在同一事务核销。
       setSubmitting(false);
       setSuccess(true);
     } catch (err: unknown) {
@@ -869,7 +866,7 @@ const Checkout: React.FC = () => {
     try {
       await settlementApi.confirmPayment(pendingSettlementId);
       // 核销已选次卡
-      await consumeSelectedPackage();
+      // 次卡由服务端与结算在同一事务核销。
       setShowWechatModal(false);
       setWechatPayment(null);
       setPendingSettlementId(null);

@@ -1,0 +1,1795 @@
+diff --git a/api/app.ts b/api/app.ts
+index 57389a3..fb8818a 100644
+--- a/api/app.ts
++++ b/api/app.ts
+@@ -47,27 +47,18 @@ const jsonBodyParser = async (req: RequestWithBody, _res: Response, next: NextFu
+ 
+   try {
+     const raw = await getRawBody(req);
+-    console.log('[body-parser] raw body:', raw);
+     req.rawBody = raw;
+     req.body = raw ? JSON.parse(raw) : {};
+     req._body = true;
+     next();
+   } catch (err: unknown) {
+-    const message = err instanceof Error ? err.message : String(err);
+-    console.error('[body-parser] parse error:', message);
++    console.error('[body-parser] JSON 请求解析失败');
+     next(err);
+   }
+ };
+ 
+ app.use(jsonBodyParser);
+ 
+-// 调试：打印 customers 路由收到的请求体和请求头
+-app.use('/api/customers', (req, _res, next) => {
+-  console.log('[customers] 收到请求体:', JSON.stringify(req.body));
+-  console.log('[customers] 收到请求头 content-type:', req.headers['content-type']);
+-  next();
+-});
+-
+ // 健康检查
+ app.get('/api/health', (req, res) => {
+   res.json({ success: true, message: 'ok' });
+diff --git a/api/middleware/index.ts b/api/middleware/index.ts
+index f9fa53a..7061942 100644
+--- a/api/middleware/index.ts
++++ b/api/middleware/index.ts
+@@ -1,42 +1,34 @@
+ import { Request, Response, NextFunction } from 'express';
+ import jwt from 'jsonwebtoken';
++import { supabase } from '../db/index.js';
++import { getJwtSecret } from '../lib/tokens.js';
++import { passwordVersion } from '../lib/password.js';
+ 
+-const JWT_SECRET = process.env.JWT_SECRET || 'mbs-dev-secret-2024';
+-
+-export interface AuthEmployee {
+-  id: string;
+-  shopId: string;
+-  name: string;
+-  role: string;
+-  phone: string;
+-}
+-
+-// 扩展 Express Request 类型
++export interface AuthEmployee { id: string; shopId: string; name: string; role: string; phone: string; }
+ declare global {
+-  // eslint-disable-next-line @typescript-eslint/no-namespace
+   namespace Express {
+-    interface Request {
+-      employee?: AuthEmployee;
+-    }
++    interface Request { employee?: AuthEmployee; customer?: { id: string; shopId: string }; }
+   }
+ }
+-
+-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+-  const authHeader = req.headers.authorization;
+-
+-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+-    res.status(401).json({ success: false, error: '未登录，请先登录' });
+-    return;
+-  }
+-
+-  const token = authHeader.split(' ')[1];
+-
++export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
++  const header = req.headers.authorization;
++  if (!header?.startsWith('Bearer ')) { res.status(401).json({ success: false, error: '未登录，请先登录' }); return; }
++  let decoded: jwt.JwtPayload;
++  try {
++    const value = jwt.verify(header.slice(7), getJwtSecret(), { algorithms: ['HS256'], audience: 'employee', issuer: 'mbs' });
++    if (typeof value === 'string' || value.kind !== 'employee' || typeof value.id !== 'string') throw new Error();
++    decoded = value;
++  } catch { res.status(401).json({ success: false, error: '登录已过期，请重新登录' }); return; }
+   try {
+-    const decoded = jwt.verify(token, JWT_SECRET) as AuthEmployee;
+-    req.employee = decoded;
++    const { data: employee, error } = await supabase.from('employees')
++      .select('id, shop_id, name, role, phone, is_active, password_hash').eq('id', decoded.id).maybeSingle();
++    if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
++    if (!employee || employee.is_active !== true || !employee.shop_id ||
++      decoded.passwordVersion !== passwordVersion(String(employee.password_hash || ''))) {
++      res.status(401).json({ success: false, error: '账号或会话已失效，请重新登录' }); return;
++    }
++    req.employee = { id: employee.id, shopId: employee.shop_id, name: employee.name, role: employee.role, phone: employee.phone };
++    res.setHeader('Cache-Control', 'no-store');
+     next();
+-  } catch (err: unknown) {
+-    console.error('[middleware] JWT 验证失败:', (err as Error).message);
+-    res.status(401).json({ success: false, error: '登录已过期，请重新登录' });
+-  }
+-}
+\ No newline at end of file
++  } catch { res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
++}
+diff --git a/api/routes/index.ts b/api/routes/index.ts
+index ec4111a..1d59dae 100644
+--- a/api/routes/index.ts
++++ b/api/routes/index.ts
+@@ -13,6 +13,9 @@ import {
+ import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel, MembershipActivityType } from '../../shared/types.js';
+ import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
+ import QRCode from 'qrcode';
++import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
++import { getJwtSecret, signCustomerToken, verifyCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS } from '../lib/tokens.js';
++import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess } from '../middleware/permissions.js';
+ 
+ const mainRouter = Router();
+ 
+@@ -23,7 +26,7 @@ type DbRecord = Record<string, any>;
+ 
+ // ===================== auth =====================
+ const authRouter = Router();
+-const JWT_SECRET = process.env.JWT_SECRET || 'mbs-dev-secret-2024';
++getJwtSecret(); // 生产密钥配置不合格时拒绝启动
+ 
+ /**
+  * POST /api/auth/login
+@@ -33,7 +36,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
+   try {
+     const { phone, password } = req.body;
+ 
+-    if (!phone || !password) {
++    if (typeof phone !== 'string' || typeof password !== 'string' || !phone || !password) {
+       res.status(400).json({ success: false, error: '手机号和密码不能为空' });
+       return;
+     }
+@@ -58,12 +61,29 @@ authRouter.post('/login', async (req: Request, res: Response) => {
+ 
+     const employee = employees[0];
+ 
+-    // 2. 验证密码（当前 password_hash 字段存的是明文 '123456'，直接用 === 比对）
+-    if (employee.password_hash !== password) {
++    // 成功校验旧密码后平滑迁移为哈希。
++    if (!(await verifyPassword(password, employee.password_hash))) {
+       res.status(401).json({ success: false, error: '手机号或密码错误' });
+       return;
+     }
+ 
++    if (!isPasswordHash(employee.password_hash)) {
++      // 条件更新防止并发改密被旧登录覆盖；兼容旧密码不强制修改原密码。
++      const migratedHash = await hashPassword(password, true);
++      const { data: migrated, error: migrationError } = await supabase.from('employees')
++        .update({ password_hash: migratedHash }).eq('id', employee.id)
++        .eq('password_hash', employee.password_hash).eq('is_active', true).select('password_hash').maybeSingle();
++      if (migrationError) return res.status(503).json({ success: false, error: '密码安全升级暂未完成，请稍后重试' });
++      if (migrated) employee.password_hash = migrated.password_hash;
++      else {
++        const { data: latest, error } = await supabase.from('employees').select('password_hash, is_active').eq('id', employee.id).maybeSingle();
++        if (error || !latest?.is_active || !(await verifyPassword(password, latest.password_hash))) {
++          return res.status(401).json({ success: false, error: '账号状态或密码已变更，请重新登录' });
++        }
++        employee.password_hash = latest.password_hash;
++      }
++    }
++
+     // 3. 签发 JWT（有效期 7 天）
+     const payload: AuthEmployee = {
+       id: employee.id,
+@@ -73,7 +93,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
+       phone: employee.phone || phone,
+     };
+ 
+-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
++    const token = jwt.sign({ ...payload, kind: 'employee', passwordVersion: passwordVersion(employee.password_hash) }, getJwtSecret(), { algorithm: 'HS256', audience: 'employee', issuer: 'mbs', expiresIn: '7d' });
+ 
+     const user = {
+       id: employee.id,
+@@ -87,7 +107,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
+       rating: Number(employee.rating) || 5.0,
+     };
+ 
+-    console.log(`[auth] 员工 ${employee.name} (${employee.phone}) 登录成功`);
++    console.log('[auth] 员工登录成功');
+     res.json({ success: true, data: { token, user } });
+   } catch (err: unknown) {
+     console.error('[auth] 登录异常:', (err as Error).message);
+@@ -178,7 +198,7 @@ employeesRouter.get('/', authMiddleware, async (req: Request, res: Response) =>
+       return;
+     }
+ 
+-    res.json({ success: true, data: data || [] });
++    res.json({ success: true, data: (data || []).map(({ password_hash: _password, ...employee }) => employee) });
+   } catch (err: unknown) {
+     console.error('[employees] 查询异常:', (err as Error).message);
+     res.status(500).json({ success: false, error: '服务器错误' });
+@@ -239,7 +259,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
+       phone,
+       title: title || '',
+       role: newRole,
+-      password_hash: password,
++      password_hash: await hashPassword(password),
+       specialty: specialty || '',
+       avatar: avatar || '',
+       rating: 5.0,
+@@ -256,7 +276,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
+       return;
+     }
+ 
+-    res.status(201).json({ success: true, data });
++    res.status(201).json({ success: true, data: data ? Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'password_hash')) : data });
+   } catch (err: unknown) {
+     console.error('[employees] 创建异常:', (err as Error).message);
+     res.status(500).json({ success: false, error: '服务器错误' });
+@@ -275,7 +295,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
+     if (title !== undefined) updateData.title = title;
+     if (specialty !== undefined) updateData.specialty = specialty;
+     if (avatar !== undefined) updateData.avatar = avatar;
+-    if (password !== undefined) updateData.password_hash = password;
++    if (password !== undefined) updateData.password_hash = await hashPassword(password);
+ 
+     const { data, error } = await supabase
+       .from('employees')
+@@ -291,7 +311,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
+       return;
+     }
+ 
+-    res.json({ success: true, data });
++    res.json({ success: true, data: data ? Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'password_hash')) : data });
+   } catch (err: unknown) {
+     console.error('[employees] 更新个人资料异常:', (err as Error).message);
+     res.status(500).json({ success: false, error: '服务器错误' });
+@@ -334,7 +354,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response)
+     if (phone !== undefined) updateData.phone = phone;
+     if (title !== undefined) updateData.title = title;
+     if (newRole !== undefined) updateData.role = newRole;
+-    if (password !== undefined) updateData.password_hash = password;
++    if (password !== undefined) updateData.password_hash = await hashPassword(password);
+     if (specialty !== undefined) updateData.specialty = specialty;
+     if (avatar !== undefined) updateData.avatar = avatar;
+     if (isGoldStylist !== undefined || is_gold_stylist !== undefined) updateData.is_gold_stylist = (isGoldStylist ?? is_gold_stylist) === true;
+@@ -355,7 +375,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response)
+       return;
+     }
+ 
+-    res.json({ success: true, data });
++    res.json({ success: true, data: data ? Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'password_hash')) : data });
+   } catch (err: unknown) {
+     console.error('[employees] 更新异常:', (err as Error).message);
+     res.status(500).json({ success: false, error: '服务器错误' });
+@@ -2365,103 +2385,49 @@ mainRouter.use('/customer-packages', customerPackagesRouter);
+ 
+ // ===================== customers =====================
+ const customersRouter = Router();
++// 本人展示白名单：不返回证件、微信标识、员工备注及客户画像。
++const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
+ 
+ /**
+  * POST /api/customers/login
+- * 顾客公开登录：通过手机号查询客户，不需要 JWT
++ * 顾客登录：手机号匹配已核实身份的短期凭证，签发独立顾客会话
+  */
+ customersRouter.post('/login', async (req: Request, res: Response) => {
+-  try {
+-    const { phone, name } = req.body || {};
+-    const cleanPhone = String(phone || '').trim();
+-    if (!cleanPhone) {
+-      res.status(400).json({ success: false, error: '手机号不能为空' });
+-      return;
+-    }
+-    if (!isValidPhone(cleanPhone)) {
+-      res.status(400).json({ success: false, error: '手机号格式不正确，请输入 11 位手机号' });
+-      return;
+-    }
+-
+-    const { data, error } = await supabase
+-      .from('customers')
+-      .select('*')
+-      .eq('phone', cleanPhone)
+-      .maybeSingle();
+-
+-    if (error) {
+-      console.error('[customers] 登录查询失败:', error.message);
+-      res.status(500).json({ success: false, error: '查询客户失败' });
+-      return;
+-    }
+-
+-    if (!data) {
+-      // 陌生手机号自动注册为当前店铺新客户
+-      const displayName = name?.trim() || `顾客${cleanPhone.slice(-4)}`;
+-      const newCustomer = {
+-        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+-        shop_id: 'shop1',
+-        name: displayName,
+-        phone: cleanPhone,
+-        membership_level: 'regular',
+-        purchase_vip_level: 'regular',
+-        stored_value_level: 'none',
+-        created_at: new Date().toISOString(),
+-      };
+-
+-      const { data: inserted, error: insertError } = await supabase
+-        .from('customers')
+-        .insert(newCustomer)
+-        .select()
+-        .single();
+-
+-      if (insertError) {
+-        console.error('[customers] 自动注册新客户失败:', insertError.message);
+-        res.status(500).json({ success: false, error: '客户不存在且自动注册失败' });
+-        return;
+-      }
+-
+-      console.log(`[customers] 自动注册新客户: ${inserted.phone} (${inserted.id})`);
+-      res.json({ success: true, data: toCamelCase(inserted) });
+-      return;
+-    }
+-
+-    // 已存在客户：如果本次填写了称呼且与现有不同，则更新
+-    const providedName = name?.trim();
+-    if (providedName && providedName !== data.name) {
+-      const { data: updated, error: updateError } = await supabase
+-        .from('customers')
+-        .update({ name: providedName })
+-        .eq('id', data.id)
+-        .select()
+-        .single();
+-
+-      if (updateError) {
+-        console.error('[customers] 更新称呼失败:', updateError.message);
+-      } else {
+-        res.json({ success: true, data: toCamelCase(updated) });
+-        return;
+-      }
+-    }
+-
+-    res.json({ success: true, data: toCamelCase(data) });
+-  } catch (err: unknown) {
+-    console.error('[customers] 登录异常:', (err as Error).message);
+-    res.status(500).json({ success: false, error: '服务器错误' });
++  res.setHeader('Cache-Control', 'no-store');
++  const { phone, credential } = req.body || {};
++  if (typeof phone !== 'string' || typeof credential !== 'string') {
++    return res.status(401).json({ success: false, error: '请联系门店核实身份并获取登录凭证' });
+   }
++  let identity: { id: string; shopId: string };
++  try { identity = verifyCustomerToken(credential.trim(), 'customer-login'); }
++  catch { return res.status(401).json({ success: false, error: '登录凭证无效或已过期，请联系门店' }); }
++  try {
++    const { data: customer, error } = await supabase.from('customers')
++      .select(CUSTOMER_SELF_FIELDS).eq('id', identity.id).eq('shop_id', identity.shopId).eq('phone', phone.trim()).maybeSingle();
++    if (error) return res.status(503).json({ success: false, error: '身份验证暂不可用' });
++    if (!customer) return res.status(401).json({ success: false, error: '手机号与登录凭证不匹配' });
++    const token = signCustomerToken(identity.id, identity.shopId);
++    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
++    return res.json({ success: true, data: toCamelCase(customer), ...(req.body?.client === 'mini' ? { token } : {}) });
++  } catch { return res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
+ });
++customersRouter.post('/logout', (_req: Request, res: Response) => {
++  res.clearCookie(CUSTOMER_COOKIE, { httpOnly: true, sameSite: 'strict', path: '/api' });
++  res.json({ success: true });
++});
++
+ 
+ /**
+  * GET /api/customers/:id/public
+- * 公开获取单个客户基本信息（顾客端小程序/H5使用，不含敏感字段）
++ * 获取本人账户信息：必须持本人会话，接口路径为旧版本兼容保留
+  */
+-customersRouter.get('/:id/public', async (req: Request, res: Response) => {
++customersRouter.get('/:id/public', personalCustomerAccess, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+ 
+     const { data: customer, error } = await supabase
+       .from('customers')
+-      .select('id, name, phone, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate')
++      .select(CUSTOMER_SELF_FIELDS)
+       .eq('id', id)
+       .maybeSingle();
+ 
+@@ -2485,19 +2451,17 @@ customersRouter.get('/:id/public', async (req: Request, res: Response) => {
+ 
+ /**
+  * GET /api/customers/:id/packages
+- * 公开获取顾客次卡列表（顾客端小程序使用，无需 JWT）
++ * 获取本人同店次卡：必须持本人会话
+  */
+-customersRouter.get('/:id/packages', async (req: Request, res: Response) => {
++customersRouter.get('/:id/packages', personalCustomerAccess, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+ 
+-    // 顾客端「我的次卡」按顾客维度返回，不按店铺过滤：
+-    // 小程序拿到的 customer.shopId 与开卡时写入的 shop_id 可能不一致，
+-    // 过滤店铺会导致顾客看不到自己已开的卡。
+     const { data, error } = await supabase
+       .from('customer_packages')
+       .select('*')
+       .eq('customer_id', id)
++      .eq('shop_id', req.customer!.shopId)
+       .order('created_at', { ascending: false });
+ 
+     if (error) {
+@@ -2517,99 +2481,23 @@ customersRouter.get('/:id/packages', async (req: Request, res: Response) => {
+  * POST /api/customers/:id/recharge
+  * 顾客端自助储值充值（小程序/H5）
+  */
+-customersRouter.post('/:id/recharge', async (req: Request, res: Response) => {
+-  try {
+-    const { id } = req.params;
+-    const { shopId, storedValueLevel } = req.body || {};
+-
+-    if (!shopId) {
+-      return res.status(400).json({ success: false, error: '缺少店铺ID' });
+-    }
+-    if (!storedValueLevel) {
+-      return res.status(400).json({ success: false, error: '缺少储值档位' });
+-    }
+-
+-    const planAmounts: Record<string, number> = {
+-      store_500: 500,
+-      store_1000: 1000,
+-      store_2000: 2000,
+-      store_5000: 5000,
+-    };
+-    const targetAmount = planAmounts[storedValueLevel];
+-    if (targetAmount === undefined) {
+-      return res.status(400).json({ success: false, error: '无效的储值档位' });
+-    }
+-
+-    const { data: customer, error: fetchError } = await supabase
+-      .from('customers')
+-      .select('*')
+-      .eq('id', id)
+-      .eq('shop_id', shopId)
+-      .single();
+-    if (fetchError || !customer) {
+-      const message = fetchError?.message || '客户不存在';
+-      return res.status(404).json({ success: false, error: '客户不存在', details: message });
+-    }
+-
+-    const currentBalance = Number(customer.stored_value_balance || 0);
+-    const addAmount = Math.max(0, targetAmount - currentBalance);
+-    const newBalance = currentBalance + addAmount;
+-    const hadRecharged = customer.stored_value_level && customer.stored_value_level !== 'none';
+-    const now = new Date().toISOString();
+-
+-    const { data: updatedCustomer, error: updateError } = await supabase
+-      .from('customers')
+-      .update({
+-        stored_value_level: storedValueLevel,
+-        stored_value_balance: newBalance,
+-        balance: newBalance,
+-        has_recharged: true,
+-        recharge_level: storedValueLevel,
+-        stored_value_expires_at: new Date(Date.now() + 2 * 365 * 86400000).toISOString(),
+-        is_member: true,
+-        membership_level: customer.is_stockholder ? 'stockholder' : 'premium',
+-      })
+-      .eq('id', id)
+-      .eq('shop_id', shopId)
+-      .select()
+-      .single();
+-    if (updateError || !updatedCustomer) {
+-      const message = updateError?.message || '更新客户信息失败';
+-      console.error('[customers] 自助储值失败:', message);
+-      return res.status(500).json({ success: false, error: '充值失败', details: message });
+-    }
+-
+-    if (addAmount > 0) {
+-      await supabase.from('stored_value_transactions').insert({
+-        id: `svtx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+-        customer_id: id,
+-        type: hadRecharged ? 'upgrade' : 'recharge',
+-        amount: addAmount,
+-        balance_after: newBalance,
+-        referral_portion: 0,
+-        note: hadRecharged ? `自助储值升级至 ${storedValueLevel}` : `自助开通 ${storedValueLevel}`,
+-        created_at: now,
+-        created_by: id,
+-        created_by_name: customer.name || '顾客',
+-      });
+-    }
+-
+-    res.json({ success: true, data: toCamelCase(updatedCustomer) });
+-  } catch (err: unknown) {
+-    const message = (err as Error).message || String(err);
+-    console.error('[customers] 自助储值异常:', message);
+-    res.status(500).json({ success: false, error: '服务器错误', details: message });
+-  }
++customersRouter.post('/:id/recharge', (_req: Request, res: Response) => {
++  res.status(403).json({ success: false, code: 'SELF_SERVICE_RECHARGE_DISABLED', error: '线上自助充值暂未开放，请联系门店办理，已有余额可正常使用' });
+ });
+ 
+ // 所有客户接口都需要登录
+ customersRouter.use(authMiddleware);
++customersRouter.post('/:id/login-credential', requirePermission('customer:credential'), requireCustomerScope, (req: Request, res: Response) => {
++  if (req.body?.identityVerified !== true) return res.status(400).json({ success: false, error: '请先核实顾客本人身份' });
++  res.setHeader('Cache-Control', 'no-store');
++  res.json({ success: true, data: { credential: signCustomerToken(req.params.id, req.employee!.shopId, 'customer-login'), expiresIn: 900 } });
++});
+ 
+ /**
+  * GET /api/customers
+  * 获取当前店铺的客户列表（含客户画像、到店记录）
+  */
+-customersRouter.get('/', async (req: Request, res: Response) => {
++customersRouter.get('/', requirePermission('customer:read'), async (req: Request, res: Response) => {
+   try {
+     const shopId = req.employee!.shopId;
+ 
+@@ -2618,10 +2506,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
+       return;
+     }
+ 
+-    const { data, error } = await supabase
+-      .from('customers')
+-      .select('*')
+-      .eq('shop_id', shopId)
++    const { data, error } = await scopeCustomerQuery(supabase.from('customers').select('*'), req)
+       .order('created_at', { ascending: false });
+ 
+     if (error) {
+@@ -2677,7 +2562,7 @@ customersRouter.get('/', async (req: Request, res: Response) => {
+  * POST /api/customers
+  * 创建新客户
+  */
+-customersRouter.post('/', async (req: Request, res: Response) => {
++customersRouter.post('/', requirePermission('customer:create'), async (req: Request, res: Response) => {
+   try {
+     const shopId = req.employee!.shopId;
+ 
+@@ -2687,7 +2572,7 @@ customersRouter.post('/', async (req: Request, res: Response) => {
+     }
+ 
+     const body = req.body || {};
+-    console.log('[customers] 收到请求体:', JSON.stringify(body));
++
+ 
+     const insertData = mapCustomerBodyToDB(body);
+     const validation = validateCustomerData(insertData);
+@@ -2726,7 +2611,7 @@ customersRouter.post('/', async (req: Request, res: Response) => {
+  * PUT /api/customers/:id
+  * 更新客户信息
+  */
+-customersRouter.put('/:id', async (req: Request, res: Response) => {
++customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -2755,7 +2640,7 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
+       }
+     }
+ 
+-    console.log('[customers] 准备更新:', id, JSON.stringify(updateData));
++
+ 
+     const { data, error } = await supabase
+       .from('customers')
+@@ -2788,7 +2673,7 @@ customersRouter.put('/:id', async (req: Request, res: Response) => {
+  * PUT /api/customers/:id/membership
+  * 更新客户会员状态（VIP/储值升级），同步创建权益和流水
+  */
+-customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
++customersRouter.put('/:id/membership', requirePermission('customer:edit'), requireCustomerScope, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -2996,7 +2881,7 @@ customersRouter.put('/:id/membership', async (req: Request, res: Response) => {
+  * GET /api/customers/:id/membership-enrollments
+  * 查询顾客的会员入会记录（入会时间 / 次数 / 状态）
+  */
+-customersRouter.get('/:id/membership-enrollments', async (req: Request, res: Response) => {
++customersRouter.get('/:id/membership-enrollments', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -3143,7 +3028,7 @@ customersRouter.post('/:id/membership/revoke', async (req: Request, res: Respons
+  * DELETE /api/customers/:id
+  * 删除客户
+  */
+-customersRouter.delete('/:id', async (req: Request, res: Response) => {
++customersRouter.delete('/:id', requirePermission('customer:delete'), async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -3172,7 +3057,7 @@ customersRouter.delete('/:id', async (req: Request, res: Response) => {
+  * GET /api/customers/:id
+  * 获取单个客户详情（含画像、到店记录）
+  */
+-customersRouter.get('/:id', async (req: Request, res: Response) => {
++customersRouter.get('/:id', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -3224,7 +3109,7 @@ customersRouter.get('/:id', async (req: Request, res: Response) => {
+  * GET /api/customers/:id/profile
+  * 获取客户画像
+  */
+-customersRouter.get('/:id/profile', async (req: Request, res: Response) => {
++customersRouter.get('/:id/profile', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -3265,7 +3150,7 @@ customersRouter.get('/:id/profile', async (req: Request, res: Response) => {
+  * POST /api/customers/:id/profile
+  * 创建客户画像
+  */
+-customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
++customersRouter.post('/:id/profile', requirePermission('customer:edit'), requireCustomerScope, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -3319,7 +3204,7 @@ customersRouter.post('/:id/profile', async (req: Request, res: Response) => {
+  * PUT /api/customers/:id/profile
+  * 更新客户画像（不存在则创建）
+  */
+-customersRouter.put('/:id/profile', async (req: Request, res: Response) => {
++customersRouter.put('/:id/profile', requirePermission('customer:edit'), requireCustomerScope, async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const shopId = req.employee!.shopId;
+@@ -4071,7 +3956,7 @@ shopsRouter.get('/:id', async (req: Request, res: Response) => {
+ });
+ 
+ // 更新店铺信息
+-shopsRouter.put('/:id', async (req: Request, res: Response) => {
++shopsRouter.put('/:id', authMiddleware, requirePermission('shop:edit'), requireOwnShop(), async (req: Request, res: Response) => {
+   try {
+     const { id } = req.params;
+     const {
+@@ -6506,7 +6391,7 @@ mainRouter.use('/settlements', settlementsRouter);
+ // ===================== financial =====================
+ const financialRouter = Router();
+ 
+-financialRouter.use(authMiddleware);
++financialRouter.use(authMiddleware, requirePermission('financial:read'));
+ 
+ financialRouter.get('/report', async (req: Request, res: Response) => {
+   try {
+diff --git a/api/services/paymentService.ts b/api/services/paymentService.ts
+index a51bd2a..c59f476 100644
+--- a/api/services/paymentService.ts
++++ b/api/services/paymentService.ts
+@@ -445,7 +445,7 @@ export async function handleWechatCallback(params: {
+ 
+     const decryptedRaw = decryptAesGcm(ciphertext, associatedData, nonce, apiv3Key);
+     const decrypted = JSON.parse(decryptedRaw) as Record<string, unknown>;
+-    console.log('[wechatpay-webhook] 回调解密结果:', decrypted);
++    console.log('[wechatpay-webhook] 回调解密完成');
+ 
+     if (decrypted.trade_state !== 'SUCCESS') {
+       return { success: true, message: `交易状态: ${decrypted.trade_state}` };
+diff --git a/mini-program/api/customer.js b/mini-program/api/customer.js
+index b826c9c..b7e5a16 100644
+--- a/mini-program/api/customer.js
++++ b/mini-program/api/customer.js
+@@ -1,3 +1,4 @@
++import { setToken } from '../utils/storage';
+ import { get, post } from '../utils/api';
+ 
+ /**
+@@ -11,8 +12,10 @@ export async function getCustomerPublic(id) {
+ /**
+  * 获取顾客登录信息（手机号登录/自动注册）
+  */
+-export async function loginCustomer(phone, name) {
+-  const result = await post('/customers/login', { phone, name });
++export async function loginCustomer(phone, name, credential) {
++  const result = await post('/customers/login', { phone, credential, client: 'mini' });
++  if (!result?.token) throw new Error('未获取有效登录凭证');
++  setToken(result.token);
+   return result?.data || null;
+ }
+ 
+diff --git a/mini-program/components/login-modal/login-modal.js b/mini-program/components/login-modal/login-modal.js
+index 155290b..fd4da11 100644
+--- a/mini-program/components/login-modal/login-modal.js
++++ b/mini-program/components/login-modal/login-modal.js
+@@ -10,6 +10,7 @@ Component({
+   },
+ 
+   data: {
++    credential: '',
+     phone: '',
+     name: '',
+     loggingIn: false,
+@@ -17,6 +18,8 @@ Component({
+   },
+ 
+   methods: {
++    onCredentialInput(e) { this.setData({ credential: e.detail.value, error: '' }); },
++
+     onPhoneInput(e) {
+       this.setData({ phone: e.detail.value, error: '' });
+     },
+@@ -26,7 +29,7 @@ Component({
+     },
+ 
+     onClose() {
+-      this.setData({ phone: '', name: '', error: '' });
++      this.setData({ phone: '', name: '', credential: '', error: '' });
+       this.triggerEvent('close');
+     },
+ 
+@@ -39,7 +42,7 @@ Component({
+     },
+ 
+     async onLogin() {
+-      const { phone, name } = this.data;
++      const { phone, name, credential } = this.data;
+       if (!phone || !/^1\d{10}$/.test(phone)) {
+         this.setData({ error: '请输入正确的手机号' });
+         return;
+@@ -47,10 +50,10 @@ Component({
+ 
+       this.setData({ loggingIn: true, error: '' });
+       try {
+-        const customer = await loginCustomer(phone, name);
++        const customer = await loginCustomer(phone, name, credential.trim());
+         if (customer && customer.id) {
+           setCustomerId(customer.id);
+-          this.setData({ phone: '', name: '', error: '' });
++          this.setData({ phone: '', name: '', credential: '', error: '' });
+           this.triggerEvent('success', { customer });
+         } else {
+           this.setData({ error: '登录失败，请检查手机号' });
+diff --git a/mini-program/components/login-modal/login-modal.wxml b/mini-program/components/login-modal/login-modal.wxml
+index 0d5043a..747fdf1 100644
+--- a/mini-program/components/login-modal/login-modal.wxml
++++ b/mini-program/components/login-modal/login-modal.wxml
+@@ -40,6 +40,7 @@
+       </view>
+     </view>
+ 
++    <view class="login-field"><textarea placeholder="粘贴门店核实身份后提供的登录凭证（15 分钟有效）" value="{{credential}}" bindinput="onCredentialInput" maxlength="2048" /></view>
+     <view class="login-error" wx:if="{{error}}">{{error}}</view>
+ 
+     <view class="login-submit-btn {{loggingIn ? 'login-submit-btn-disabled' : ''}}" catchtap="onLogin">
+diff --git a/mini-program/pages/login/login.js b/mini-program/pages/login/login.js
+index d4f63c9..ced9865 100644
+--- a/mini-program/pages/login/login.js
++++ b/mini-program/pages/login/login.js
+@@ -1,8 +1,9 @@
+ import { loginCustomer } from '../../api/customer';
+-import { getCustomerId, setCustomerId } from '../../utils/storage';
++import { getCustomerId, setCustomerId, getToken } from '../../utils/storage';
+ 
+ Page({
+   data: {
++    credential: '',
+     phone: '',
+     name: '',
+     loggingIn: false,
+@@ -11,11 +12,13 @@ Page({
+ 
+   onLoad() {
+     // 已登录直接进首页
+-    if (getCustomerId()) {
++    if (getCustomerId() && getToken()) {
+       wx.reLaunch({ url: '/pages/index/index' });
+     }
+   },
+ 
++  onCredentialInput(e) { this.setData({ credential: e.detail.value, error: '' }); },
++
+   onPhoneInput(e) {
+     this.setData({ phone: e.detail.value, error: '' });
+   },
+@@ -25,7 +28,7 @@ Page({
+   },
+ 
+   async onLogin() {
+-    const { phone, name } = this.data;
++    const { phone, name, credential } = this.data;
+     if (!phone || !/^1\d{10}$/.test(phone)) {
+       this.setData({ error: '请输入正确的手机号' });
+       return;
+@@ -33,7 +36,7 @@ Page({
+ 
+     this.setData({ loggingIn: true, error: '' });
+     try {
+-      const customer = await loginCustomer(phone.trim(), name.trim());
++      const customer = await loginCustomer(phone.trim(), name.trim(), credential.trim());
+       if (customer && customer.id) {
+         setCustomerId(customer.id);
+         wx.showToast({ title: '登录成功', icon: 'success' });
+diff --git a/mini-program/pages/login/login.wxml b/mini-program/pages/login/login.wxml
+index 804b134..df307d7 100644
+--- a/mini-program/pages/login/login.wxml
++++ b/mini-program/pages/login/login.wxml
+@@ -36,6 +36,7 @@
+       </view>
+     </view>
+ 
++    <view class="login-field"><textarea placeholder="粘贴门店核实身份后提供的登录凭证（15 分钟有效）" value="{{credential}}" bindinput="onCredentialInput" maxlength="2048" /></view>
+     <view class="login-error" wx:if="{{error}}">{{error}}</view>
+ 
+     <view
+diff --git a/mini-program/pages/recharge/recharge.js b/mini-program/pages/recharge/recharge.js
+index d1be474..70efc26 100644
+--- a/mini-program/pages/recharge/recharge.js
++++ b/mini-program/pages/recharge/recharge.js
+@@ -1,137 +1,21 @@
+-import { getCustomerPublic, rechargeCustomer } from '../../api/customer';
++import { getCustomerPublic } from '../../api/customer';
+ import { getCustomerId } from '../../utils/storage';
+ import { ensureLogin } from '../../utils/auth';
+ 
+-const PLANS = [
+-  { level: 'store_500', amount: 500, discount: '9' },
+-  { level: 'store_1000', amount: 1000, discount: '8.5' },
+-  { level: 'store_2000', amount: 2000, discount: '8' },
+-  { level: 'store_5000', amount: 5000, discount: '7' },
+-];
+-
+-const LEVEL_LABELS = {
+-  none: '非储值会员',
+-  store_500: '银卡储值会员',
+-  store_1000: '金卡储值会员',
+-  store_2000: '铂金储值会员',
+-  store_5000: '钻石储值会员',
+-};
+-
+-const PAY_METHODS = [
+-  { key: 'wechat', label: '微信支付', desc: '使用微信余额或银行卡', icon: 'wallet', color: '#22c55e' },
+-  { key: 'store', label: '到店支付', desc: '到店后现金/转账', icon: 'mapPin', color: '#3b82f6' },
+-];
+-
+ Page({
+-  data: {
+-    shopId: 'shop1',
+-    customerId: '',
+-    balance: 0,
+-    currentLevel: 'none',
+-    levelLabel: '',
+-    plans: PLANS,
+-    selectedLevel: 'store_500',
+-    selectedAmount: 500,
+-    payMethods: PAY_METHODS,
+-    payMethod: 'wechat',
+-    submitting: false,
+-  },
+-
+-  onLoad(options) {
+-    this.setData({ shopId: options.shopId || 'shop1' });
+-  },
+-
+-  onShow() {
++  data: { balanceText: '0.00' },
++  async onShow() {
+     const customerId = getCustomerId();
+     if (!customerId) {
+-      ensureLogin({ content: '登录后即可进行储值充值' });
++      ensureLogin({ content: '登录后即可查看储值余额' });
+       return;
+     }
+-    this.setData({ customerId });
+-    this.loadCustomer();
+-  },
+-
+-  async loadCustomer() {
+-    const { customerId } = this.data;
+     try {
+       const customer = await getCustomerPublic(customerId);
+-      if (!customer) return;
+-      const currentLevel = customer.storedValueLevel || 'none';
+-      this.setData({
+-        balance: Number(customer.storedValueBalance || 0),
+-        currentLevel,
+-        levelLabel: LEVEL_LABELS[currentLevel] || '',
+-      });
+-    } catch (err) {
+-      console.error('[recharge] 加载顾客信息失败:', err);
++      this.setData({ balanceText: Number(customer?.storedValueBalance || 0).toFixed(2) });
++    } catch (_err) {
++      wx.showToast({ title: '余额加载失败，请重试', icon: 'none' });
+     }
+   },
+-
+-  onSelectPlan(e) {
+-    const { level } = e.currentTarget.dataset;
+-    const plan = PLANS.find((p) => p.level === level);
+-    if (!plan) return;
+-    this.setData({ selectedLevel: level, selectedAmount: plan.amount });
+-  },
+-
+-  onSelectPayMethod(e) {
+-    const { key } = e.currentTarget.dataset;
+-    this.setData({ payMethod: key });
+-  },
+-
+-  // 预留微信支付：调用后端下单 -> 返回 prepay_id -> wx.requestPayment
+-  // 目前商户号/小程序绑定未就绪，使用 mock 支付
+-  async mockWechatPay(amount, customerId, storedValueLevel) {
+-    return new Promise((resolve) => {
+-      // 这里预留：真实环境需要调用后端下单接口，返回 prepay 参数
+-      // const prepay = await request('/api/pay/wechat', { amount, ... });
+-      // await wx.requestPayment({ timeStamp, nonceStr, package, signType, paySign });
+-      setTimeout(resolve, 800);
+-    });
+-  },
+-
+-  async onRecharge() {
+-    const { customerId, shopId, selectedLevel, selectedAmount, balance, payMethod } = this.data;
+-    if (!customerId) {
+-      ensureLogin({ content: '登录后即可进行储值充值' });
+-      return;
+-    }
+-
+-    const plan = PLANS.find((p) => p.level === selectedLevel);
+-    const needPay = Math.max(0, plan.amount - balance);
+-    const content = needPay < plan.amount
+-      ? `当前余额 ¥${balance.toFixed(2)}，充值至 ¥${plan.amount} 需支付 ¥${needPay.toFixed(2)}，确认充值？`
+-      : `确认充值 ¥${selectedAmount}？`;
+-
+-    const { confirm } = await wx.showModal({ title: '确认充值', content });
+-    if (!confirm) return;
+-
+-    this.setData({ submitting: true });
+-    try {
+-      // 1. 支付流程（预留微信支付接口，当前为 mock）
+-      if (payMethod === 'wechat') {
+-        await this.mockWechatPay(needPay, customerId, selectedLevel);
+-      } else if (payMethod === 'store') {
+-        // 到店支付：记录待确认状态，到店后完成充值
+-        await new Promise((resolve) => setTimeout(resolve, 400));
+-      }
+-
+-      // 2. 支付完成后调用后端写余额
+-      await rechargeCustomer(customerId, shopId, selectedLevel);
+-
+-      wx.showToast({ title: '充值成功', icon: 'success' });
+-      await this.loadCustomer();
+-      setTimeout(() => wx.navigateBack(), 800);
+-    } catch (err) {
+-      const message = err.response?.details || err.message || '充值失败';
+-      console.error('[recharge] 充值失败:', message, err);
+-      wx.showToast({ title: message.length > 20 ? message.slice(0, 20) + '...' : message, icon: 'none' });
+-    } finally {
+-      this.setData({ submitting: false });
+-    }
+-  },
+-
+-  goBack() {
+-    wx.navigateBack();
+-  },
++  goBack() { wx.navigateBack(); },
+ });
+diff --git a/mini-program/pages/recharge/recharge.wxml b/mini-program/pages/recharge/recharge.wxml
+index 6d536ef..5094dd2 100644
+--- a/mini-program/pages/recharge/recharge.wxml
++++ b/mini-program/pages/recharge/recharge.wxml
+@@ -1,76 +1,18 @@
+ <view class="recharge-page">
+-  <!-- 自定义头部 -->
+   <view class="recharge-header">
+-    <view class="recharge-header__back" bindtap="goBack">
+-      <mbs-icon name="arrowLeft" size="36" color="var(--gray-800)" />
+-    </view>
+-    <view class="recharge-header__title">储值充值</view>
++    <view class="recharge-header__back" bindtap="goBack"><mbs-icon name="arrowLeft" size="36" color="var(--gray-800)" /></view>
++    <view class="recharge-header__title">储值余额</view>
+     <view class="recharge-header__spacer"></view>
+   </view>
+-
+   <view class="recharge-body">
+-    <!-- 当前余额 -->
+     <view class="balance-card">
+       <view class="balance-label">当前储值余额</view>
+-      <view class="balance-value">¥{{balance.toFixed(2)}}</view>
+-      <view class="balance-level" wx:if="{{currentLevel !== 'none'}}">当前等级：{{levelLabel}}</view>
+-    </view>
+-
+-    <!-- 选择档位 -->
+-    <view class="section-title">选择充值档位</view>
+-    <view class="plan-list">
+-      <view
+-        wx:for="{{plans}}"
+-        wx:key="level"
+-        class="plan-card {{selectedLevel === item.level ? 'plan-card--active' : ''}}"
+-        data-level="{{item.level}}"
+-        bindtap="onSelectPlan"
+-      >
+-        <view class="plan-amount">¥{{item.amount}}</view>
+-        <view class="plan-discount">享{{item.discount}}折</view>
+-        <view class="plan-tag" wx:if="{{selectedLevel === item.level}}">已选</view>
+-      </view>
++      <view class="balance-value">¥{{balanceText}}</view>
+     </view>
+-
+-    <!-- 充值说明 -->
++    <view class="section-title">充值办理说明</view>
+     <view class="recharge-tips">
+-      <view class="tip-item">· 储值余额可用于商品订单余额支付</view>
+-      <view class="tip-item">· 充值后等级自动提升，享受对应折扣</view>
+-      <view class="tip-item">· 储值有效期为自充值日起 2 年</view>
+-    </view>
+-  </view>
+-
+-  <!-- 支付方式选择 -->
+-  <view class="pay-methods">
+-    <view class="pay-methods__title">选择支付方式</view>
+-    <view
+-      wx:for="{{payMethods}}"
+-      wx:key="key"
+-      class="pay-method {{payMethod === item.key ? 'pay-method--active' : ''}}"
+-      data-key="{{item.key}}"
+-      bindtap="onSelectPayMethod"
+-    >
+-      <view class="pay-method__icon">
+-        <mbs-icon name="{{item.icon}}" size="40" color="{{item.color}}" />
+-      </view>
+-      <view class="pay-method__info">
+-        <view class="pay-method__name">{{item.label}}</view>
+-        <view class="pay-method__desc">{{item.desc}}</view>
+-      </view>
+-      <view class="pay-method__radio">
+-        <view wx:if="{{payMethod === item.key}}" class="pay-method__radio-dot"></view>
+-      </view>
+-    </view>
+-  </view>
+-
+-  <!-- 底部按钮 -->
+-  <view class="recharge-footer">
+-    <view class="recharge-summary">
+-      <text class="recharge-summary__label">实付金额：</text>
+-      <text class="recharge-summary__price">¥{{selectedAmount}}</text>
++      <view class="tip-item">线上自助充值暂未开放，请联系门店办理。</view>
++      <view class="tip-item">已有储值余额可正常使用。</view>
+     </view>
+-    <button class="recharge-btn {{submitting ? 'recharge-btn--disabled' : ''}}" bindtap="onRecharge" disabled="{{submitting}}">
+-      {{submitting ? '充值中...' : '立即充值'}}
+-    </button>
+   </view>
+ </view>
+diff --git a/mini-program/utils/api.js b/mini-program/utils/api.js
+index 30a6b1f..1a276d2 100644
+--- a/mini-program/utils/api.js
++++ b/mini-program/utils/api.js
+@@ -1,3 +1,4 @@
++import { getToken, clearToken, clearCustomerId } from './storage';
+ /**
+  * 小程序专用请求封装
+  *
+@@ -33,6 +34,7 @@ export function request(url, options = {}) {
+       method: options.method || 'GET',
+       header: {
+         'Content-Type': 'application/json',
++        ...(getToken() && !url.startsWith('http') ? { Authorization: 'Bearer ' + getToken() } : {}),
+         ...(options.headers || {}),
+       },
+       data: options.body,
+@@ -52,6 +54,7 @@ export function request(url, options = {}) {
+           return;
+         }
+ 
++        if (res.statusCode === 401) { clearToken(); clearCustomerId(); }
+         const errMsg = res.data?.error || res.data?.message || `请求失败（${res.statusCode}）`;
+         if (res.statusCode !== 404) {
+           console.warn(`[mini-api] ${fullUrl} 返回 ${res.statusCode}: ${errMsg}`);
+diff --git a/mini-program/utils/auth.js b/mini-program/utils/auth.js
+index 5c2b48e..d41aa7e 100644
+--- a/mini-program/utils/auth.js
++++ b/mini-program/utils/auth.js
+@@ -2,7 +2,7 @@
+  * 小程序登录态守卫
+  * 统一处理"未登录"场景：弹出登录对话框，确认后跳转登录页
+  */
+-import { getCustomerId } from './storage';
++import { getCustomerId, getToken } from './storage';
+ 
+ const LOGIN_PAGE = '/pages/login/login';
+ 
+@@ -12,7 +12,7 @@ const LOGIN_PAGE = '/pages/login/login';
+  * @returns {boolean} 是否已登录
+  */
+ export function ensureLogin(options = {}) {
+-  if (getCustomerId()) return true;
++  if (getCustomerId() && getToken()) return true;
+ 
+   wx.showModal({
+     title: options.title || '未登录',
+diff --git a/mini-program/utils/storage.js b/mini-program/utils/storage.js
+index 77340e1..2f15767 100644
+--- a/mini-program/utils/storage.js
++++ b/mini-program/utils/storage.js
+@@ -28,6 +28,7 @@ export function getCustomerId() {
+ }
+ 
+ export function clearCustomerId() {
++  clearToken();
+   wx.removeStorageSync(CUSTOMER_ID_KEY);
+ }
+ 
+diff --git a/package.json b/package.json
+index 422c401..fbe14ec 100644
+--- a/package.json
++++ b/package.json
+@@ -6,6 +6,7 @@
+   "scripts": {
+     "client:dev": "vite",
+     "build": "tsc -b && vite build",
++    "test:security": "tsx --test tests/security-regression.test.ts",
+     "lint": "eslint .",
+     "preview": "vite preview",
+     "check": "tsc --noEmit",
+diff --git a/shared/permissions.ts b/shared/permissions.ts
+index 5d2df20..473ca16 100644
+--- a/shared/permissions.ts
++++ b/shared/permissions.ts
+@@ -31,9 +31,9 @@ export const canEditCustomer = (role?: UserRole | null): boolean =>
+ export const canExportCustomers = (role?: UserRole | null): boolean =>
+   role === UserRole.CEO;
+ 
+-/** 能否删除客户 */
++/** 能否删除客户：2026-10-21 按项目主人指令允许 CEO / 客服 */
+ export const canDeleteCustomer = (role?: UserRole | null): boolean =>
+-  role === UserRole.CEO;
++  !!role && [UserRole.CEO, UserRole.CUSTOMER_SERVICE].includes(role);
+ 
+ /** 客户数据可见范围 */
+ export type CustomerDataScope = 'all' | 'own';
+diff --git a/src/App.tsx b/src/App.tsx
+index bc683ee..5a25f48 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -110,11 +110,14 @@ const CustomerRouteGuard = () => {
+   const location = useLocation();
+ 
+   useEffect(() => {
+-    if (!checked && hasCustomerSession()) {
+-      restoreCustomerSession();
+-    }
+-    setChecked(true);
+-  }, [checked]);
++    let active = true;
++    const restore = async () => {
++      if (hasCustomerSession()) await restoreCustomerSession();
++      if (active) setChecked(true);
++    };
++    void restore();
++    return () => { active = false; };
++  }, []);
+ 
+   if (!hasHydrated || !checked) {
+     return (
+diff --git a/src/api.ts b/src/api.ts
+index f93e3b9..4350eef 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -25,6 +25,7 @@ const BOOKINGS_CACHE_KEY = 'mbs_bookings_cache';
+ const SETTLEMENTS_CACHE_KEY = 'mbs_settlements_cache';
+ const BENEFITS_CACHE_KEY = 'mbs_benefits_cache';
+ const SHOPS_CACHE_KEY = 'mbs_shops_cache';
++if (USE_REAL_API) { try { localStorage.removeItem(CUSTOMERS_CACHE_KEY); } catch (_e) { /* ignore */ } }
+ 
+ // 启动时从 localStorage 恢复客户数据（真实 API 模式下不要覆盖 mock fallback）
+ if (!USE_REAL_API) {
+@@ -454,6 +455,7 @@ export const shopApi = {
+         headers: { Authorization: `Bearer ${token}` },
+       });
+       if (result?.data) return result.data;
++      throw new Error('店铺设置保存失败或无权访问');
+     }
+     const idx = mockShops.findIndex((s) => s.id === id);
+     if (idx !== -1) {
+@@ -995,17 +997,24 @@ const normalizeCustomerDates = (customer: Customer): Customer => {
+ 
+ // 客户相关 API
+ export const customerApi = {
+-  // 按手机号登录（查询真实 API，失败返回 null 由上层 fallback 到 mock）
+-  login: async (phone: string, name?: string): Promise<Customer | null> => {
++  login: async (phone: string, name?: string, credential?: string): Promise<Customer | null> => {
+     if (!USE_REAL_API) return null;
+-    const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/login`, {
+-      method: 'POST',
+-      body: JSON.stringify({ phone, ...(name ? { name } : {}) }),
++    const response = await fetch(API_BASE + '/customers/login', {
++      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ phone, credential }),
+     });
+-    if (result?.success && result.data) {
+-      return normalizeCustomerDates(result.data);
+-    }
+-    return null;
++    const result = await response.json();
++    if (!response.ok || !result.success) throw new Error(result.error || '身份验证失败');
++    return normalizeCustomerDates(result.data);
++  },
++  issueLoginCredential: async (id: string): Promise<string> => {
++    const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/login-credential', {
++      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getAuthToken() },
++      body: JSON.stringify({ identityVerified: true }),
++    });
++    const result = await response.json();
++    if (!response.ok || !result.success) throw new Error(result.error || '签发失败');
++    return result.data.credential;
+   },
+ 
+   // 获取全部客户（带缓存回退）
+@@ -1018,10 +1027,11 @@ export const customerApi = {
+       );
+       if (result?.success && Array.isArray(result.data)) {
+         // 更新本地缓存
+-        try { localStorage.setItem(CUSTOMERS_CACHE_KEY, JSON.stringify(result.data)); } catch (_e) { /* ignore */ }
++        // 真实客户资料不写入跨角色共享缓存。
++        try { localStorage.removeItem(CUSTOMERS_CACHE_KEY); } catch (_e) { /* ignore */ }
+         return result.data.map(normalizeCustomerDates);
+       }
+-      console.warn('[api] 获取客户列表失败，回退到本地缓存');
++      throw new Error('客户列表加载失败或无权访问，请重新登录后重试');
+     }
+     // 回退：先读 localStorage 缓存，再读 mock
+     const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
+@@ -1043,6 +1053,7 @@ export const customerApi = {
+         headers: { Authorization: `Bearer ${token}` },
+       });
+       if (result?.success) return result.data;
++      throw new Error('操作失败或无权访问');
+     }
+     // Mock fallback
+     const newCustomer = { id: `cust${Date.now()}`, ...data, joinedAt: new Date() } as Customer;
+@@ -1060,6 +1071,7 @@ export const customerApi = {
+         headers: { Authorization: `Bearer ${token}` },
+       });
+       if (result?.success) return result.data;
++      throw new Error('操作失败或无权访问');
+     }
+     const idx = mockCustomers.findIndex((c) => c.id === id);
+     if (idx !== -1) {
+@@ -1078,6 +1090,7 @@ export const customerApi = {
+         headers: { Authorization: `Bearer ${token}` },
+       });
+       if (result?.success) return true;
++      throw new Error('删除失败或无权访问');
+     }
+     const idx = mockCustomers.findIndex((c) => c.id === id);
+     if (idx !== -1) {
+@@ -1091,10 +1104,11 @@ export const customerApi = {
+   getById: async (id: string): Promise<Customer | null> => {
+     if (USE_REAL_API) {
+       const token = getAuthToken();
+-      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}`, {
+-        headers: { Authorization: `Bearer ${token}` },
++      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}${token ? '' : '/public'}`, {
++        credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {},
+       });
+       if (result?.success && result.data) return result.data;
++      throw new Error('资料加载失败或无权访问，请重新登录');
+     }
+     const cached = localStorage.getItem(CUSTOMERS_CACHE_KEY);
+     if (cached) {
+@@ -1116,6 +1130,7 @@ export const customerApi = {
+         headers: { Authorization: `Bearer ${token}` },
+       });
+       if (result?.success && result.data) return result.data;
++      throw new Error('资料保存失败或无权修改，请重新登录');
+     }
+     const idx = mockCustomers.findIndex((c) => c.id === id);
+     if (idx !== -1) {
+diff --git a/src/pages/customer/Login.tsx b/src/pages/customer/Login.tsx
+index 85d6e80..89cb3e3 100644
+--- a/src/pages/customer/Login.tsx
++++ b/src/pages/customer/Login.tsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { ArrowLeft, Phone, User } from 'lucide-react';
+ import { loginAsCustomer } from '../../store';
+@@ -8,15 +8,14 @@ const DEFAULT_SHOP_ID = "shop1";
+ const CustomerLogin: React.FC = () => {
+   const [phone, setPhone] = useState('');
+   const [name, setName] = useState('');
++  const [credential, setCredential] = useState('');
+   const [error, setError] = useState('');
+-  const [warning, setWarning] = useState('');
+   const [loading, setLoading] = useState(false);
+   const navigate = useNavigate();
+ 
+   const handleLogin = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setError('');
+-    setWarning('');
+ 
+     const trimmedPhone = phone.trim();
+     if (!/^1[3-9]\d{9}$/.test(trimmedPhone)) {
+@@ -28,34 +27,19 @@ const CustomerLogin: React.FC = () => {
+ 
+     try {
+       const trimmedName = name.trim();
+-      const customer = await loginAsCustomer(trimmedPhone, trimmedName || undefined);
++      const customer = await loginAsCustomer(trimmedPhone, trimmedName || undefined, credential.trim());
+       if (customer) {
+         navigate(`/customer/shop/${DEFAULT_SHOP_ID}`);
+       } else {
+         setError('手机号不存在，请检查输入');
+       }
+-    } catch (_err) {
+-      setError('登录失败，请稍后重试');
++    } catch (err) {
++      setError(err instanceof Error ? err.message : '登录失败，请稍后重试');
+     } finally {
+       setLoading(false);
+     }
+   };
+ 
+-  // 监听真实 API 失败回退到 mock 的提示（由 api-base 打印 warn）
+-  useEffect(() => {
+-    const originalWarn = console.warn;
+-    console.warn = (...args: unknown[]) => {
+-      const msg = args.join(' ');
+-      if (msg.includes('/api/customers/login') && msg.includes('mock')) {
+-        setWarning('服务器响应较慢，当前使用本地演示数据登录');
+-      }
+-      originalWarn.apply(console, args);
+-    };
+-    return () => {
+-      console.warn = originalWarn;
+-    };
+-  }, []);
+-
+   return (
+     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-3 sm:p-4">
+       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-5 sm:p-8">
+@@ -87,7 +71,7 @@ const CustomerLogin: React.FC = () => {
+               />
+             </div>
+             <p className="mt-1.5 text-xs text-gray-400">
+-              称呼只需填写一次，之后登录仅需手机号即可
++              请联系门店核实身份并获取 15 分钟有效的登录凭证
+             </p>
+           </div>
+ 
+@@ -108,11 +92,10 @@ const CustomerLogin: React.FC = () => {
+             </div>
+           </div>
+           
+-          {warning && (
+-            <div className="bg-yellow-50 text-yellow-700 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
+-              {warning}
+-            </div>
+-          )}
++          <div>
++            <label className="block text-sm font-medium text-gray-700 mb-2">门店登录凭证</label>
++            <textarea value={credential} onChange={(e) => setCredential(e.target.value)} autoComplete="off" placeholder="粘贴门店核实身份后提供的登录凭证" className="w-full p-3 border rounded-xl" />
++          </div>
+ 
+           {error && (
+             <div className="bg-red-50 text-red-600 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
+diff --git a/src/pages/shop/CustomerManagement.tsx b/src/pages/shop/CustomerManagement.tsx
+index 6de7aca..731af95 100644
+--- a/src/pages/shop/CustomerManagement.tsx
++++ b/src/pages/shop/CustomerManagement.tsx
+@@ -814,6 +814,11 @@ const CustomerManagement: React.FC = () => {
+               </button>
+             </div>
+ 
++            {canEditCustomer(userRole) && <button className="mb-4 text-blue-600" onClick={async () => {
++              if (!window.confirm('已通过门店登记资料核实顾客本人身份？凭证仅交给本人，15 分钟内有效，请勿发到群里。')) return;
++              try { const value = await customerApi.issueLoginCredential(viewingCustomer.id); window.prompt('请仅将登录凭证交给顾客本人（15 分钟有效）', value); }
++              catch (err) { alert(err instanceof Error ? err.message : '签发失败'); }
++            }}>核实身份并生成顾客登录凭证</button>}
+             {/* 头部信息 */}
+             <div className="flex flex-col items-center mb-5 pb-5 border-b border-gray-100">
+               <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center mb-3">
+diff --git a/src/pages/shop/CustomerTableManagement.tsx b/src/pages/shop/CustomerTableManagement.tsx
+index 969277e..75d5c74 100644
+--- a/src/pages/shop/CustomerTableManagement.tsx
++++ b/src/pages/shop/CustomerTableManagement.tsx
+@@ -24,7 +24,7 @@ import { Customer, MembershipLevel, PurchaseVIPLevel, StoredValueLevel } from '.
+ import { getPurchaseVIPLabel, getStoredValueLabel } from '../../lib/membership';
+ import { customerApi } from '../../api';
+ import { useAppStore } from '../../store';
+-import { canExportCustomers } from '../../../shared/permissions';
++import { canExportCustomers, canDeleteCustomer, canEditCustomer, canCreateCustomer } from '../../../shared/permissions';
+ import ShopLayout from './ShopLayout';
+ 
+ // 根据双轨会员体系生成统一的会员级别显示文本
+@@ -376,7 +376,8 @@ const CustomerTableManagement: React.FC = () => {
+           {/* 按钮组 */}
+           <div className="flex gap-2 flex-wrap">
+             <button
+-              onClick={() => setShowAdd(true)}
++              disabled={!canCreateCustomer(userRole)}
++                        onClick={() => setShowAdd(true)}
+               className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+             >
+               <Plus size={16} />
+@@ -652,6 +653,7 @@ const CustomerTableManagement: React.FC = () => {
+                         <Eye size={14} />
+                       </button>
+                       <button
++                        disabled={!canEditCustomer(userRole)}
+                         onClick={() => setShowEdit(customer)}
+                         className="p-1.5 hover:bg-orange-50 rounded-lg transition-colors text-orange-500"
+                         title="编辑"
+@@ -659,6 +661,7 @@ const CustomerTableManagement: React.FC = () => {
+                         <Edit size={14} />
+                       </button>
+                       <button
++                        disabled={!canDeleteCustomer(userRole)}
+                         onClick={() => handleDeleteCustomer(customer.id)}
+                         className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-red-500"
+                         title="删除"
+diff --git a/src/store.ts b/src/store.ts
+index e4ed5a7..d513cb0 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -1,3 +1,4 @@
++import { isRealApi, getApiBase } from '../shared/api-base';
+ import { create } from 'zustand';
+ import { persist } from 'zustand/middleware';
+ import { AppState, UserRole, Customer, Shop, Employee, Product, CartItem } from '../shared/types';
+@@ -50,6 +51,9 @@ export const useAppStore = create<AppState>()(
+         });
+       },
+       logout: () => {
++        if (isRealApi()) void fetch(getApiBase() + '/customers/logout', { method: 'POST', credentials: 'include' }).catch(() => {
++          console.warn('[logout] 顾客会话注销请求未完成，请关闭共享设备上的浏览器');
++        });
+         saveCustomerSession(null);
+         saveEmployeeSession({ currentShop: null, currentEmployee: null, userRole: null });
+         set({ 
+@@ -188,35 +192,47 @@ export const restoreEmployeeSession = () => {
+ };
+ 
+ // 应用启动时恢复顾客会话
+-export const restoreCustomerSession = () => {
++export const restoreCustomerSession = async () => {
+   const customer = loadCustomerSession();
+-  if (customer) {
+-    useAppStore.setState({
+-      currentCustomer: customer,
+-      userRole: UserRole.CUSTOMER,
+-    });
++  if (!customer) return;
++  if (isRealApi()) {
++    try {
++      const response = await fetch(getApiBase() + '/customers/' + encodeURIComponent(customer.id) + '/public', { credentials: 'include' });
++      if (!response.ok) throw new Error('会话失效');
++      const result = await response.json();
++      if (!result.success || !result.data) throw new Error('会话失效');
++      useAppStore.getState().setCurrentCustomer(result.data);
++    } catch {
++      saveCustomerSession(null);
++      useAppStore.setState({ currentCustomer: null });
++    }
++    return;
+   }
++  useAppStore.setState({ currentCustomer: customer, userRole: UserRole.CUSTOMER });
+ };
+ 
+-// 顾客登录：优先调用真实 API，失败时回退到 mock 数据
++// 顾客登录：真实模式必须通过身份验证，失败不能回退演示数据
+ export const loginAsCustomer = async (
+   phone: string,
+-  name?: string
++  name?: string,
++  credential?: string
+ ): Promise<Customer | null> => {
+   const trimmedPhone = phone.trim();
+ 
+   // 1. 尝试真实 API 登录
+   try {
+-    const apiCustomer = await customerApi.login(trimmedPhone, name);
++    const apiCustomer = await customerApi.login(trimmedPhone, name, credential);
+     if (apiCustomer) {
+       useAppStore.getState().setCurrentCustomer(apiCustomer);
+       return apiCustomer;
+     }
+   } catch (err) {
+-    console.error('[loginAsCustomer] 真实 API 登录失败:', err);
++    if (isRealApi()) throw err;
++    console.error('[loginAsCustomer] 登录失败');
+   }
+ 
+-  // 2. 回退到 mock 数据
++  if (isRealApi()) return null;
++  // 2. 仅演示模式使用 mock 数据
+   const customer = mockCustomers.find(c => c.phone === trimmedPhone);
+   if (customer) {
+     useAppStore.getState().setCurrentCustomer(customer);
+diff --git a/api/lib/password.ts b/api/lib/password.ts
+new file mode 100644
+--- /dev/null
++++ b/api/lib/password.ts
+@@ -0,0 +1,27 @@
++import bcrypt from 'bcryptjs';
++import { createHash, timingSafeEqual } from 'node:crypto';
++
++const PREHASH_PREFIX = 'mbs-sha256:';
++const BCRYPT_PATTERN = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
++export const isPasswordHash = (value: string): boolean => BCRYPT_PATTERN.test(value) || (value.startsWith(PREHASH_PREFIX) && BCRYPT_PATTERN.test(value.slice(PREHASH_PREFIX.length)));
++export const passwordVersion = (value: string): string => createHash('sha256').update(value).digest('hex');
++
++export async function hashPassword(password: unknown, legacyMigration = false): Promise<string> {
++  if (typeof password !== 'string' || !password || (!legacyMigration && (password.length < 6 || Buffer.byteLength(password, 'utf8') > 72))) {
++    throw new Error('密码至少 6 位，且 UTF-8 长度不能超过 72 字节');
++  }
++  // 兼容历史超长密码，避免 bcrypt 截断 72 字节后不同密码被视为相同。
++  if (Buffer.byteLength(password, 'utf8') > 72) return PREHASH_PREFIX + await bcrypt.hash(passwordVersion(password), 12);
++  return bcrypt.hash(password, 12);
++}
++
++/** 旧明文只用于一次成功校验，调用方必须完成条件迁移后才签发会话。 */
++export async function verifyPassword(password: unknown, stored: unknown): Promise<boolean> {
++  if (typeof password !== 'string' || typeof stored !== 'string' || !password || !stored) return false;
++  if (isPasswordHash(stored)) {
++    if (stored.startsWith(PREHASH_PREFIX)) return bcrypt.compare(passwordVersion(password), stored.slice(PREHASH_PREFIX.length));
++    if (Buffer.byteLength(password, 'utf8') > 72) return false;
++    return bcrypt.compare(password, stored);
++  }
++  return timingSafeEqual(Buffer.from(passwordVersion(password)), Buffer.from(passwordVersion(stored)));
++}
+diff --git a/api/lib/tokens.ts b/api/lib/tokens.ts
+new file mode 100644
+--- /dev/null
++++ b/api/lib/tokens.ts
+@@ -0,0 +1,30 @@
++import jwt from 'jsonwebtoken';
++import { randomBytes } from 'node:crypto';
++
++// 本地缺配置使用进程级随机值；生产缺配置必须拒绝启动，禁止固定开发密钥。
++const localSecret = randomBytes(48).toString('hex');
++export function getJwtSecret(): string {
++  const configured = process.env.JWT_SECRET?.trim();
++  if (configured && configured.length >= 32 && configured !== 'mbs-dev-secret-2024') return configured;
++  if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
++    throw new Error('生产 JWT_SECRET 必须配置为至少 32 字符的独立随机密钥');
++  }
++  return localSecret;
++}
++
++export const CUSTOMER_COOKIE = 'mbs_customer_auth';
++export const CUSTOMER_SESSION_SECONDS = 2 * 60 * 60;
++export function signCustomerToken(id: string, shopId: string, purpose: 'customer' | 'customer-login' = 'customer'): string {
++  return jwt.sign({ id, shopId, kind: purpose }, getJwtSecret(), {
++    algorithm: 'HS256', audience: purpose, issuer: 'mbs',
++    expiresIn: purpose === 'customer-login' ? 15 * 60 : CUSTOMER_SESSION_SECONDS,
++  });
++}
++
++export function verifyCustomerToken(token: string, purpose: 'customer' | 'customer-login' = 'customer') {
++  const value = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'], audience: purpose, issuer: 'mbs' });
++  if (typeof value === 'string' || value.kind !== purpose || typeof value.id !== 'string' || typeof value.shopId !== 'string') {
++    throw new Error('无效顾客凭证');
++  }
++  return { id: value.id, shopId: value.shopId };
++}
+diff --git a/api/middleware/permissions.ts b/api/middleware/permissions.ts
+new file mode 100644
+--- /dev/null
++++ b/api/middleware/permissions.ts
+@@ -0,0 +1,77 @@
++import { Request, Response, NextFunction } from 'express';
++import { supabase } from '../db/index.js';
++import { UserRole } from '../../shared/types.js';
++import {
++  canViewCustomerManagement, canCreateCustomer, canEditCustomer, canDeleteCustomer,
++  canViewFinancialReport, canViewShopSettings, getCustomerDataScope,
++} from '../../shared/permissions.js';
++import { CUSTOMER_COOKIE, verifyCustomerToken } from '../lib/tokens.js';
++
++const policies = {
++  'customer:read': canViewCustomerManagement,
++  'customer:create': canCreateCustomer,
++  'customer:edit': canEditCustomer,
++  'customer:delete': canDeleteCustomer,
++  'customer:credential': canEditCustomer,
++  'financial:read': canViewFinancialReport,
++  'shop:edit': canViewShopSettings,
++};
++export type Permission = keyof typeof policies;
++export function requirePermission(permission: Permission) {
++  return (req: Request, res: Response, next: NextFunction): void => {
++    if (!req.employee) { res.status(401).json({ success: false, error: '请先登录' }); return; }
++    if (!policies[permission](req.employee.role as UserRole)) {
++      res.status(403).json({ success: false, error: '无权执行此操作' }); return;
++    }
++    next();
++  };
++}
++
++export function requireOwnShop(param = 'id') {
++  return (req: Request, res: Response, next: NextFunction): void => {
++    if (!req.employee?.shopId || req.params[param] !== req.employee.shopId) {
++      res.status(403).json({ success: false, error: '无权操作其他店铺' }); return;
++    }
++    next();
++  };
++}
++
++export function scopeCustomerQuery<T extends { eq: Function; contains: Function }>(query: T, req: Request): T {
++  let scoped = query.eq('shop_id', req.employee!.shopId);
++  if (getCustomerDataScope(req.employee!.role as UserRole) === 'own') {
++    scoped = scoped.contains('served_by_stylist_ids', [req.employee!.id]);
++  }
++  return scoped as T;
++}
++
++export const requireCustomerScope = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
++  try {
++    const { data, error } = await scopeCustomerQuery(supabase.from('customers').select('id').eq('id', req.params.id), req).maybeSingle();
++    if (error) { res.status(503).json({ success: false, error: '客户权限查询失败' }); return; }
++    if (!data) { res.status(404).json({ success: false, error: '客户不存在或无权访问' }); return; }
++    next();
++  } catch { res.status(503).json({ success: false, error: '客户权限查询失败' }); }
++};
++
++/** 顾客凭证和员工凭证完全分开；客户 ID 只用于归属比较，不作为身份。 */
++export async function customerIdentity(req: Request, res: Response, next: NextFunction): Promise<void> {
++  try {
++    const cookies = String(req.headers.cookie || '').split(';').map((part) => part.trim());
++    const cookie = cookies.find((part) => part.startsWith(`${CUSTOMER_COOKIE}=`))?.slice(CUSTOMER_COOKIE.length + 1);
++    const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
++    const token = bearer || cookie || '';
++    const identity = verifyCustomerToken(token);
++    if (req.params.id !== identity.id) { res.status(403).json({ success: false, error: '仅可访问本人资料' }); return; }
++    const { data, error } = await supabase.from('customers').select('id, shop_id').eq('id', identity.id).eq('shop_id', identity.shopId).maybeSingle();
++    if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
++    if (!data) { res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return; }
++    req.customer = identity;
++    res.setHeader('Cache-Control', 'no-store');
++    next();
++  } catch { res.status(401).json({ success: false, error: '请使用本人登录凭证重新登录' }); }
++}
++
++export function personalCustomerAccess(req: Request, res: Response, next: NextFunction): void {
++  // 本人查询接口不接受员工 token 代替本人凭证；员工走受限的管理接口。
++  void customerIdentity(req, res, next);
++}
+diff --git a/tests/security-regression.test.ts b/tests/security-regression.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/security-regression.test.ts
+@@ -0,0 +1,155 @@
++import assert from 'node:assert/strict';
++import { test } from 'node:test';
++// 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
++process.env.SUPABASE_URL = 'https://synthetic.invalid';
++process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
++process.env.JWT_SECRET = 'synthetic-test-secret-only-01234567890123456789';
++process.env.NODE_ENV = 'test';
++const { supabase } = await import('../api/db/index.js');
++const { hashPassword, verifyPassword, isPasswordHash } = await import('../api/lib/password.js');
++const { getJwtSecret, signCustomerToken, verifyCustomerToken } = await import('../api/lib/tokens.js');
++const { default: jwt } = await import('jsonwebtoken');
++const realFetch = globalThis.fetch;
++let base = '';
++globalThis.fetch = ((input: any, init: any) => {
++  if (!String(input).startsWith(base + '/api/') || !base) throw new Error('测试禁止外网访问');
++  return realFetch(input, init);
++}) as typeof fetch;
++type Row = Record<string, any>;
++const tables: Record<string, Row[]> = {
++ employees: [
++  {id:'ceo',shop_id:'s1',name:'Synthetic CEO',role:'ceo',phone:'synthetic-ceo',is_active:true,password_hash:'old-password'},
++  {id:'cs',shop_id:'s1',name:'Synthetic CS',role:'customer_service',phone:'synthetic-cs',is_active:true,password_hash:'old-password'},
++  {id:'stylist',shop_id:'s1',name:'Synthetic stylist',role:'stylist',phone:'synthetic-stylist',is_active:true,password_hash:'old-password'},
++  {id:'manager',shop_id:'s1',name:'Synthetic manager',role:'shop_manager',phone:'synthetic-manager',is_active:true,password_hash:'old-password'},
++ ],
++ customers: [
++  {id:'c1',shop_id:'s1',name:'Synthetic one',phone:'synthetic-one',served_by_stylist_ids:['stylist'],stored_value_balance:123,id_card_number:'PRIVATE',openid_mini:'PRIVATE'},
++  {id:'c2',shop_id:'s1',name:'Synthetic two',phone:'synthetic-two',served_by_stylist_ids:[],stored_value_balance:456},
++  {id:'c3',shop_id:'s2',name:'Synthetic other shop',phone:'synthetic-three',served_by_stylist_ids:['stylist']},
++ ],
++ customer_profiles: [], customer_visit_records: [], customer_packages: [], shops:[{id:'s1',name:'Synthetic shop'}], settlements:[],settlement_items:[],
++};
++let calls = 0;
++let failMigration = false;
++let failAuthentication = false;
++class Query {
++ filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
++ constructor(public table:string) { calls++; }
++ select(columns='*') {this.columns=columns;return this;}
++ eq(k:string,v:any) {this.filters.push(r=>r[k]===v);return this;}
++ contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
++ in(k:string,v:any[]) {this.filters.push(r=>v.includes(r[k]));return this;}
++ gte(){return this;} order(){return this;}
++ update(v:any){this.operation='update';this.payload=v;return this;}
++ insert(v:any){this.operation='insert';this.payload=v;return this;}
++ delete(){this.operation='delete';return this;}
++ single(){this.singleRow=true;return this;} maybeSingle(){this.singleRow=true;return this;}
++ then(resolve:any,reject:any){try{
++  if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
++  let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
++  if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
++  if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
++  if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
++  if(this.operation==='delete')tables[this.table]=(tables[this.table]||[]).filter(r=>!rows.includes(r));
++  const data=rows.map(r=>this.columns==='*'?structuredClone(r):Object.fromEntries(this.columns.split(',').map(k=>[k.trim(),r[k.trim()]])));
++  return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null}).then(resolve,reject);
++ }catch(e){return Promise.reject(e).then(resolve,reject);}}
++}
++(supabase as any).from=(table:string)=>new Query(table);
++const {default:app}=await import('../api/app.js');
++const server=app.listen(0,'127.0.0.1');
++await new Promise<void>(r=>server.once('listening',()=>r()));
++base='http://127.0.0.1:'+(server.address() as any).port;
++async function request(path:string, token='', method='GET', body?:unknown, cookie?:string){
++ const response=await fetch(base+'/api'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(cookie?{Cookie:cookie}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
++ return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')};
++}
++const login=async(id:string)=>{const r=await request('/auth/login','','POST',{phone:'synthetic-'+id,password:'old-password'});assert.equal(r.status,200);return r.body.data.token;};
++
++test('两批安全回归：隔离内存数据库与真实 HTTP 路由',async(t)=>{
++ try {
++  await t.test('旧明文首次登录迁移，之后哈希登录，错误密码不迁移',async()=>{
++   const before=tables.employees[0].password_hash;
++   assert.equal((await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'wrong'})).status,401);
++   assert.equal(tables.employees[0].password_hash,before);
++   await login('ceo');assert.ok(isPasswordHash(tables.employees[0].password_hash));
++   const migrated=tables.employees[0].password_hash;await login('ceo');assert.equal(tables.employees[0].password_hash,migrated);
++  });
++  const ceo=await login('ceo'),cs=await login('cs'),stylist=await login('stylist'),manager=await login('manager');
++  await t.test('无登录与低权限被拒；发型师列表仅返回本人服务且同店客户',async()=>{
++   assert.equal((await request('/customers')).status,401);
++   const own=await request('/customers',stylist);assert.equal(own.status,200);assert.deepEqual(own.body.data.map((r:any)=>r.id),['c1']);
++   assert.equal((await request('/customers/c2',stylist)).status,404);
++   assert.equal((await request('/customers/c2/profile',stylist)).status,404);
++   assert.equal((await request('/customers/c3',ceo)).status,404);
++   assert.equal((await request('/customers',ceo)).body.data.length,2);
++   for(const token of [stylist,manager]){
++    assert.equal((await request('/customers',token,'POST',{name:'Synthetic',phone:'13800000000'})).status,403);
++    assert.equal((await request('/customers/c2',token,'DELETE')).status,403);
++    assert.equal((await request('/financial/report',token)).status,403);
++   }
++   assert.equal((await request('/financial/report',cs)).status,403);
++   assert.equal((await request('/financial/report',ceo)).status,200);
++  });
++  await t.test('CEO/客服可新增删除；无权限修改和跨店设置被拒',async()=>{
++   for(const token of [ceo,cs]){
++    assert.equal((await request('/customers',token,'POST',{id:'new',name:'Synthetic',phone:'13800000000'})).status,200);
++    assert.equal((await request('/customers/new',token,'DELETE')).status,200);
++   }
++   assert.equal((await request('/shops/s1','','PUT',{name:'x'})).status,401);
++   assert.equal((await request('/shops/s1',stylist,'PUT',{name:'x'})).status,403);
++   assert.equal((await request('/shops/s2',manager,'PUT',{name:'x'})).status,403);
++   assert.equal((await request('/shops/s1',manager,'PUT',{name:'Synthetic updated'})).status,200);
++  });
++  await t.test('顾客必须持本人凭证；手机号与其他顾客/员工凭证均不能代替',async()=>{
++   const before=calls;
++   assert.equal((await request('/customers/login','','POST',{phone:'synthetic-one'})).status,401);
++   assert.equal(calls,before);
++   assert.equal((await request('/customers/c1/public')).status,401);
++   assert.equal((await request('/customers/c1/public',ceo)).status,401);
++   assert.equal((await request('/customers/c1/login-credential',stylist,'POST',{identityVerified:true})).status,403);
++   assert.equal((await request('/customers/c1/login-credential',cs,'POST',{})).status,400);
++   const issued=await request('/customers/c1/login-credential',cs,'POST',{identityVerified:true});assert.equal(issued.status,200);
++   assert.equal((await request('/customers/login','','POST',{phone:'synthetic-two',credential:issued.body.data.credential})).status,401);
++   const r=await request('/customers/login','','POST',{phone:'synthetic-one',credential:issued.body.data.credential,client:'mini'});assert.equal(r.status,200);assert.match(r.cookie!,/HttpOnly/);assert.match(r.cookie!,/SameSite=Strict/);
++   const h5=await request('/customers/login','','POST',{phone:'synthetic-one',credential:issued.body.data.credential});
++   assert.equal(h5.status,200);assert.equal(h5.body.token,undefined);assert.match(h5.cookie!,/HttpOnly/);
++   assert.equal(r.body.data.idCardNumber,undefined);assert.equal(r.body.data.openidMini,undefined);
++   assert.equal((await request('/customers/c1/public',r.body.token)).status,200);
++   assert.equal((await request('/customers/c1/public','','GET',undefined,r.cookie!.split(';')[0])).status,200);
++   assert.equal((await request('/customers/c2/public',r.body.token)).status,403);
++   assert.equal((await request('/customers/c1/packages',r.body.token)).status,200);
++   assert.equal((await request('/customers',r.body.token)).status,401);
++   assert.equal((await request('/customers/c1/public',issued.body.data.credential)).status,401);
++   assert.throws(()=>verifyCustomerToken(r.body.token,'customer-login'));
++  });
++  await t.test('伪造/过期 token、旧员工 token、数据库验证失败均不能放行',async()=>{
++   const expired=jwt.sign({id:'c1',shopId:'s1',kind:'customer'},getJwtSecret(),{algorithm:'HS256',audience:'customer',issuer:'mbs',expiresIn:-1});
++   assert.equal((await request('/customers/c1/public',expired)).status,401);
++   const forged=jwt.sign({id:'c1',shopId:'s1',kind:'customer'},'wrong-secret',{algorithm:'HS256',audience:'customer',issuer:'mbs'});
++   assert.equal((await request('/customers/c1/public',forged)).status,401);
++   assert.equal((await request('/customers',jwt.sign({id:'ceo',role:'ceo'},getJwtSecret()))).status,401);
++   failAuthentication=true;assert.equal((await request('/customers',ceo)).status,503);failAuthentication=false;
++   const employees=await request('/employees',ceo);assert.equal(employees.status,200);assert.ok(employees.body.data.every((r:any)=>r.password_hash===undefined));
++  });
++  await t.test('停用、降权、改密即时影响现有员工会话',async()=>{
++   tables.employees[0].role='stylist';assert.equal((await request('/financial/report',ceo)).status,403);tables.employees[0].role='ceo';
++   tables.employees[0].is_active=false;assert.equal((await request('/customers',ceo)).status,401);tables.employees[0].is_active=true;
++   tables.employees[0].password_hash=await hashPassword('changed-password');assert.equal((await request('/customers',ceo)).status,401);
++  });
++  await t.test('模拟充值接口无数据库访问，余额保持不变',async()=>{
++   const before=calls,balance=tables.customers[0].stored_value_balance;
++   const r=await request('/customers/c1/recharge','','POST',{shopId:'s1',storedValueLevel:'store_5000'});assert.equal(r.status,403);assert.equal(calls,before);assert.equal(tables.customers[0].stored_value_balance,balance);
++  });
++  await t.test('密码迁移失败不签发会话，旧值保持，恢复后可登录',async()=>{
++   tables.employees.push({id:'failure',shop_id:'s1',role:'stylist',phone:'synthetic-failure',is_active:true,password_hash:'old-password'});
++   failMigration=true;const r=await request('/auth/login','','POST',{phone:'synthetic-failure',password:'old-password'});assert.equal(r.status,503);assert.equal(r.body.data,undefined);assert.equal(tables.employees.at(-1)!.password_hash,'old-password');failMigration=false;await login('failure');
++  });
++  await t.test('哈希密码校验与生产缺密钥拒绝',async()=>{
++   for (const password of ['x', '长'.repeat(40), 'mbs-sha256:legacy', '$2b$12$legacy']) { const migrated = await hashPassword(password, true); assert.ok(await verifyPassword(password, migrated)); assert.equal(await verifyPassword(password + 'wrong', migrated), false); }
++   const hash=await hashPassword('test-password');assert.ok(await verifyPassword('test-password',hash));assert.equal(await verifyPassword('wrong',hash),false);
++   const secret=process.env.JWT_SECRET;process.env.NODE_ENV='production';delete process.env.JWT_SECRET;assert.throws(getJwtSecret);process.env.JWT_SECRET=secret;process.env.NODE_ENV='test';
++  });
++ }finally{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));globalThis.fetch=realFetch;}
++});

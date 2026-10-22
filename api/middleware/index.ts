@@ -1,42 +1,34 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { supabase } from '../db/index.js';
+import { getJwtSecret } from '../lib/tokens.js';
+import { passwordVersion } from '../lib/password.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mbs-dev-secret-2024';
-
-export interface AuthEmployee {
-  id: string;
-  shopId: string;
-  name: string;
-  role: string;
-  phone: string;
-}
-
-// 扩展 Express Request 类型
+export interface AuthEmployee { id: string; shopId: string; name: string; role: string; phone: string; }
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
-    interface Request {
-      employee?: AuthEmployee;
-    }
+    interface Request { employee?: AuthEmployee; customer?: { id: string; shopId: string; passwordVersion: string; mustChangePassword: boolean }; }
   }
 }
-
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, error: '未登录，请先登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) { res.status(401).json({ success: false, error: '未登录，请先登录' }); return; }
+  let decoded: jwt.JwtPayload;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthEmployee;
-    req.employee = decoded;
+    const value = jwt.verify(header.slice(7), getJwtSecret(), { algorithms: ['HS256'], audience: 'employee', issuer: 'mbs' });
+    if (typeof value === 'string' || value.kind !== 'employee' || typeof value.id !== 'string') throw new Error();
+    decoded = value;
+  } catch { res.status(401).json({ success: false, error: '登录已过期，请重新登录' }); return; }
+  try {
+    const { data: employee, error } = await supabase.from('employees')
+      .select('id, shop_id, name, role, phone, is_active, password_hash').eq('id', decoded.id).maybeSingle();
+    if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
+    if (!employee || employee.is_active !== true || !employee.shop_id ||
+      decoded.passwordVersion !== passwordVersion(String(employee.password_hash || ''))) {
+      res.status(401).json({ success: false, error: '账号或会话已失效，请重新登录' }); return;
+    }
+    req.employee = { id: employee.id, shopId: employee.shop_id, name: employee.name, role: employee.role, phone: employee.phone };
+    res.setHeader('Cache-Control', 'no-store');
     next();
-  } catch (err: unknown) {
-    console.error('[middleware] JWT 验证失败:', (err as Error).message);
-    res.status(401).json({ success: false, error: '登录已过期，请重新登录' });
-  }
+  } catch { res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
 }

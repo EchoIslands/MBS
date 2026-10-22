@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/login/login",
+    "pages/change-password/change-password",
     "pages/index/index",
     "pages/booking/booking",
     "pages/queue/queue",

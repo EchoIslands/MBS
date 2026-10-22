@@ -6,6 +6,7 @@
 export function toCamelCase<T = Record<string, unknown>>(obj: Record<string, unknown>): T {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
+    if (key === 'password_hash' || key === 'passwordHash') continue;
     const camelKey = key
       .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
       // 把 vip 统一转成 VIP，例如 purchase_vip_level -> purchaseVIPLevel

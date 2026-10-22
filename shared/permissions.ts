@@ -31,9 +31,9 @@ export const canEditCustomer = (role?: UserRole | null): boolean =>
 export const canExportCustomers = (role?: UserRole | null): boolean =>
   role === UserRole.CEO;
 
-/** 能否删除客户 */
+/** 能否删除客户：2026-10-21 按项目主人指令允许 CEO / 客服 */
 export const canDeleteCustomer = (role?: UserRole | null): boolean =>
-  role === UserRole.CEO;
+  !!role && [UserRole.CEO, UserRole.CUSTOMER_SERVICE].includes(role);
 
 /** 客户数据可见范围 */
 export type CustomerDataScope = 'all' | 'own';

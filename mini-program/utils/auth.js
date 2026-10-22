@@ -1,8 +1,9 @@
+import { enforcePasswordChange } from './password-gate';
 /**
  * 小程序登录态守卫
  * 统一处理"未登录"场景：弹出登录对话框，确认后跳转登录页
  */
-import { getCustomerId } from './storage';
+import { getCustomerId, getToken } from './storage';
 
 const LOGIN_PAGE = '/pages/login/login';
 
@@ -12,7 +13,8 @@ const LOGIN_PAGE = '/pages/login/login';
  * @returns {boolean} 是否已登录
  */
 export function ensureLogin(options = {}) {
-  if (getCustomerId()) return true;
+  if (enforcePasswordChange(getCurrentPages().slice(-1)[0]?.route)) return false;
+  if (getCustomerId() && getToken()) return true;
 
   wx.showModal({
     title: options.title || '未登录',

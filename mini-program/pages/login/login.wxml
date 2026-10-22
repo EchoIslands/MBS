@@ -10,20 +10,6 @@
 
     <view class="login-field">
       <view class="login-input-wrap">
-        <mbs-icon name="user" size="32" color="var(--text-tertiary)" />
-        <input
-          class="login-input"
-          type="text"
-          maxlength="20"
-          placeholder="怎么称呼您（选填）"
-          value="{{name}}"
-          bindinput="onNameInput"
-        />
-      </view>
-    </view>
-
-    <view class="login-field">
-      <view class="login-input-wrap">
         <mbs-icon name="phone" size="32" color="var(--text-tertiary)" />
         <input
           class="login-input"
@@ -36,13 +22,21 @@
       </view>
     </view>
 
+    <view class="login-hint" wx:if="{{setupRequired}}">首次使用，请设置六位数字密码。</view>
+    <view class="login-field">
+      <view class="login-input-wrap">
+        <input class="login-input" password="{{true}}" type="number" maxlength="6" placeholder="{{setupRequired ? '设置六位数字密码' : '六位数字密码'}}" value="{{password}}" bindinput="onPasswordInput" />
+      </view>
+    </view>
+    <view class="login-field" wx:if="{{setupRequired}}"><view class="login-input-wrap"><input class="login-input" password="{{true}}" type="number" maxlength="6" placeholder="确认密码" value="{{confirmPassword}}" bindinput="onConfirmPasswordInput" /></view></view>
+    <view class="login-hint">忘记密码？请联系门店重置，重置密码为手机号后六位。</view>
     <view class="login-error" wx:if="{{error}}">{{error}}</view>
 
     <view
       class="login-submit-btn {{loggingIn ? 'login-submit-btn-disabled' : ''}}"
       bindtap="onLogin"
     >
-      <text>{{loggingIn ? '登录中...' : '立即登录'}}</text>
+      <text>{{loggingIn ? '处理中...' : (setupRequired ? '设置密码并登录' : '立即登录')}}</text>
     </view>
   </view>
 </view>
