@@ -54,7 +54,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
     await connection.query('BEGIN');
     active = true;
     await connection.query("SET LOCAL statement_timeout = '10min'; SET LOCAL lock_timeout = '15s'; SET LOCAL search_path = public;");
-    const lock = await connection.query("SELECT pg_try_advisory_xact_lock(hashtext('mbs.setup.025-036')) AS locked");
+    const lock = await connection.query("SELECT pg_try_advisory_xact_lock(hashtext('mbs.setup.025-039')) AS locked");
     if (lock.rows[0]?.locked !== true) throw new Error('已有结构安装任务运行，请待其结束后重跑。');
     stage = '历史基础结构检查';
     const columns = await connection.query('SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema=$1 AND table_name=ANY($2::text[])', ['public', BASE_TABLES]);
