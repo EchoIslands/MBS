@@ -4692,6 +4692,7 @@ async function processSettlementAfterPayment(params: {
     paymentMethod,
     usedBenefitIds,
     processedByEmployee,
+    manualPaidAt,
     logStep,
   } = params;
 
@@ -4868,6 +4869,9 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
     if(settlement.payment_method==='alipay' && Number(settlement.total)>0) return res.status(409).json({success:false,error:'支付宝网关尚未接入，不能手动标记为已付款'});
     if(settlement.payment_status==='completed') return res.json({success:true,data:settlementFromDb(settlement)});
     if(settlement.payment_status!=='pending') return res.status(400).json({success:false,error:'该结算记录不在待支付状态'});
+    if (req.body?.manualPaidAt !== undefined && settlement.payment_method !== 'cash' && settlement.payment_method !== 'card') {
+      return res.status(400).json({success:false,error:'只有现金或银行卡收款可以登记付款发生时间'});
+    }
     const manualPaidAt = settlement.payment_method === 'cash' || settlement.payment_method === 'card' ? req.body?.manualPaidAt : undefined;
     if (manualPaidAt !== undefined) {
       const hasZone = typeof manualPaidAt === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(manualPaidAt);

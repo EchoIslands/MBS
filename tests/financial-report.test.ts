@@ -31,7 +31,7 @@ test('财务：跨年旧单新付按微信成功时间计入卡片、趋势、�
   assert.match(String(exported[4]), /2024/);
   assert.match(String(exported[6]), /2026\/10\/23/);
   assert.equal(exported[9], '未记录');
-  assert.equal(exported[10], '微信成功时间');
+  assert.equal(exported[11], '微信成功时间');
   assert.equal(financialGrowth(records, now).ticketMonthGrowth, null);
 });
 
@@ -44,7 +44,7 @@ test('财务：历史不可信时间、缺证据、金额不符、多笔异常�
   assert.equal(report.excluded?.count, 7);
   assert.equal(report.excluded?.amount, 235.48);
   assert.equal(report.topStylists.length, 0);
-  assert.ok(financialDetailRows(bad, now).every(r => r[6] === '未核实/未记录' && r[7] === '未计入日期统计'));
+  assert.ok(financialDetailRows(bad, now).every(r => r[6] === '未核实/未记录' && r[10] === '未计入日期统计'));
 });
 
 test('财务：北京时间跨日跨年、现金登记时间与零元订单，按分累加且不依赖系统时区', () => {
@@ -59,7 +59,7 @@ test('财务：北京时间跨日跨年、现金登记时间与零元订单，�
   assert.equal(report.revenue.today, 0.3);
   assert.equal(report.revenue.month, 0.3);
   assert.equal(report.revenue.year, 0.3);
-  assert.equal(report.averageTicket.today, 0.1);
+  assert.equal(report.averageTicket.today, 0.15);
   assert.match(financialTime(records[3], boundaryNow).label, /未登记/);
   assert.equal(financialTrend(records, 'year', boundaryNow)[0].revenue, 0.3);
 });

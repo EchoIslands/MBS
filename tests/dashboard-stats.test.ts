@@ -35,7 +35,7 @@ test('经营看板：各周期明细与排名同步切换，预约人数有结�
 });
 test('经营看板：无业绩、无评分和未来支付不造出经营结果；跨月周与非微信登记口径',()=>{
  const date=new Date('2026-10-02T12:00:00+08:00');
- const cash=row({paymentMethod:'cash',createdAt:new Date('2026-09-30T00:10:00+08:00')});
+ const cash=row({paymentMethod:'cash',createdAt:new Date('2026-09-30T00:10:00+08:00'),manualPaidAt:'2026-09-30T23:00:00+08:00',manualPaidRecordedAt:'2026-10-02T08:00:00+08:00',manualPaidRecordedBy:'cashier'});
  const future=row({paidAt:'2026-10-03T00:00:00+08:00'});
  const owner=buildOwnerDashboard([cash,future],[],{id:'s1',name:'店铺'},0,[],date);
  assert.equal(owner.totalRevenue.today,0);assert.equal(owner.totalRevenue.week,33.64);assert.equal(owner.totalRevenue.month,0);assert.equal(owner.periodDetails?.week.topStylists[0].revenue,33.64);assert.equal(owner.excluded?.count,1);

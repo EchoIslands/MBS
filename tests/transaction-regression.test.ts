@@ -7,11 +7,12 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
   const db = new PGlite();
   try {
     await db.exec('CREATE ROLE service_role; CREATE ROLE anon; CREATE ROLE authenticated;');
-    for (const file of ['001_baseline_schema.sql','007_create_product_tables.sql','009_create_product_inventory_logs.sql','011_create_product_order_refunds.sql','013_create_group_buy.sql','016_fix_coupon_schema.sql','019_create_customer_packages.sql','020_create_package_usage_logs.sql','025_add_customer_password_hash.sql','026_customer_identity_and_auth_limits.sql','027_atomic_settlement_and_package_redemption.sql','028_atomic_product_order_payments.sql','029_customer_password_change_required.sql']) {
+    for (const file of ['001_baseline_schema.sql','007_create_product_tables.sql','009_create_product_inventory_logs.sql','011_create_product_order_refunds.sql','013_create_group_buy.sql','016_fix_coupon_schema.sql','019_create_customer_packages.sql','020_create_package_usage_logs.sql','021_create_membership_enrollments.sql','025_add_customer_password_hash.sql','026_customer_identity_and_auth_limits.sql','027_atomic_settlement_and_package_redemption.sql','028_atomic_product_order_payments.sql','029_customer_password_change_required.sql']) {
       await db.exec((await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')).replace(/^\uFEFF/, ''));
     }
     await db.exec(await readFile(new URL('../migrations/031_booking_checkout_consistency.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../migrations/039_manual_payment_times.sql', import.meta.url), 'utf8'));
     await db.exec(`INSERT INTO shops(id,name) VALUES ('s','Synthetic shop');
       INSERT INTO customers(id,shop_id,name,phone,stored_value_balance,balance,withdrawable_referral_amount) VALUES('c','s','Synthetic customer','13800000001',100,100,20);
       INSERT INTO customer_packages(id,shop_id,customer_id,name,service_id,total_times,used_times,expires_at) VALUES('p','s','c','Synthetic package','svc',2,0,NOW()+INTERVAL '1 day');`);
@@ -167,6 +168,30 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
       assert.equal(Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'")),20);
       assert.equal(await scalar("SELECT stock FROM products WHERE id='product'"),2);
       assert.equal(await scalar("SELECT COUNT(*)::INTEGER FROM stored_value_transactions WHERE type='refund'"),1);
+    });
+    await t.test('现金/银行卡保存手选发生时间、数据库登记时间和员工，余额时间由数据库生成，完成后不可改', async () => {
+      const manualCreate = (id: string, method: string, paidAt: string | null) => db.query(
+        'SELECT * FROM create_settlement_with_manual_time_atomic($1::jsonb,$2,$3,TRUE,$4::timestamptz)',
+        [JSON.stringify({id,shop_id:'s',customer_id:'c',items:[{type:'service',id:'svc',name:'Service',quantity:1,originalPrice:10}],subtotal:10,discount:0,total:10,payment_method:method,used_benefit_ids:[]}), 'cashier-id','Synthetic cashier',paidAt]);
+      const selected = '2026-10-23T10:15:00+08:00';
+      await manualCreate('cash-time','cash',selected);
+      await manualCreate('card-time','card',null);
+      await manualCreate('balance-time','balance',null);
+      const cash = (await db.query<any>("SELECT * FROM settlements WHERE id='cash-time'")).rows[0];
+      assert.equal(new Date(cash.manual_paid_at).toISOString(), new Date(selected).toISOString());
+      assert.ok(cash.manual_paid_recorded_at);
+      assert.equal(cash.manual_paid_recorded_by, 'cashier-id');
+      const card = (await db.query<any>("SELECT * FROM settlements WHERE id='card-time'")).rows[0];
+      assert.ok(card.manual_paid_at);
+      assert.ok(card.manual_paid_recorded_at);
+      assert.equal(card.manual_paid_recorded_by, 'cashier-id');
+      const balance = (await db.query<any>("SELECT * FROM settlements WHERE id='balance-time'")).rows[0];
+      assert.ok(balance.manual_paid_at);
+      assert.ok(balance.manual_paid_recorded_at);
+      assert.equal(balance.manual_paid_recorded_by, 'cashier-id');
+      await assert.rejects(db.exec("UPDATE settlements SET manual_paid_at=NOW() WHERE id='cash-time'"), /COMPLETED_PAYMENT_TIME_IMMUTABLE/);
+      await assert.rejects(db.exec("UPDATE settlements SET payment_status='pending' WHERE id='cash-time'"), /COMPLETED_SETTLEMENT_IMMUTABLE/);
+      await assert.rejects(manualCreate('future-time','cash','2099-01-01T00:00:00Z'), /INVALID_MANUAL_PAYMENT_TIME/);
     });
   } finally { await db.close(); }
 

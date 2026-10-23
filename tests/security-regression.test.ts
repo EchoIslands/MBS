@@ -483,7 +483,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const saved=[tables.settlements,tables.shops,tables.reviews];
    const now=new Date().toISOString();
    tables.shops=[{id:'s1',name:'Own',is_active:true},{id:'s2',name:'Foreign',is_active:true}];
-   tables.settlements=[{id:'paid',shop_id:'s1',total:10,payment_method:'cash',payment_status:'completed',created_at:now,items:[{employeeId:'stylist',type:'service',total:10,quantity:1}]},{id:'draft',shop_id:'s1',total:999,payment_status:'pending',created_at:now},{id:'foreign',shop_id:'s2',total:888,payment_status:'completed',created_at:now}];tables.reviews=[];
+   tables.settlements=[{id:'paid',shop_id:'s1',total:10,payment_method:'cash',payment_status:'completed',created_at:now,manual_paid_at:now,manual_paid_recorded_at:now,manual_paid_recorded_by:'cashier',items:[{employeeId:'stylist',type:'service',total:10,quantity:1}]},{id:'draft',shop_id:'s1',total:999,payment_status:'pending',created_at:now},{id:'foreign',shop_id:'s2',total:888,payment_status:'completed',created_at:now}];tables.reviews=[];
    try {
     const owner=await request('/owner/dashboard',ceo);assert.equal(owner.status,200);assert.equal(owner.body.data.totalRevenue.today,10);assert.equal(owner.body.data.shopStats.length,1);
     const financial=await request('/financial/report',ceo);assert.equal(financial.body.data.revenue.today,10);
@@ -516,7 +516,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     failPaymentQuery=false;failDashboardTable='reviews';
     for(const path of ['/owner/dashboard','/stylists/performance'])assert.equal((await request(path,ceo)).status,503);
     failDashboardTable='';tables.payments=[];
-    tables.settlements=Array.from({length:1003},(_,i)=>({...settlement('page-'+i),total:0.01,payment_method:'cash',created_at:now}));
+    tables.settlements=Array.from({length:1003},(_,i)=>({...settlement('page-'+i),total:0.01,payment_method:'cash',created_at:now,manual_paid_at:now,manual_paid_recorded_at:now,manual_paid_recorded_by:'cashier'}));
     tables.settlement_items=tables.settlements.map(s=>({id:'i-'+s.id,settlement_id:s.id,employee_id:'stylist',total:0.01,quantity:1,type:'service'}));
     tables.bookings=Array.from({length:1003},(_,i)=>({id:'b-'+i,shop_id:'s1',customer_id:'c-'+i,scheduled_time:now,status:'confirmed'}));
     const paged=await request('/owner/dashboard',ceo);assert.equal(paged.body.data.totalRevenue.today,10.03);assert.equal(paged.body.data.totalCustomers.today,1003);
@@ -541,7 +541,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const failed=await request('/financial/report',ceo);assert.equal(failed.status,503);assert.equal(failed.body.data,undefined);
     failPaymentQuery=false;
     // 超过默认1000行；最后一页也必须计入。旧表明细同样超过1000条。
-    tables.settlements=Array.from({length:1003},(_,i)=>({...settlement('page-'+String(i).padStart(4,'0'),0.01),payment_method:'cash',created_at:now,items:[]}));
+    tables.settlements=Array.from({length:1003},(_,i)=>({...settlement('page-'+String(i).padStart(4,'0'),0.01),payment_method:'cash',created_at:now,manual_paid_at:now,manual_paid_recorded_at:now,manual_paid_recorded_by:'cashier',items:[]}));
     tables.payments=[];
     tables.settlement_items=tables.settlements.map(s=>({id:'item-'+s.id,settlement_id:s.id,quantity:1,type:'service',total:0.01,employee_id:'stylist'}));
     const paged=await request('/financial/report',ceo);assert.equal(paged.status,200);assert.equal(paged.body.data.records.length,1003);
