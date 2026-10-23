@@ -745,6 +745,8 @@ const Checkout: React.FC = () => {
     finally {submissionLock.current=false;setRecoveringPayment(false);}
   };
 
+  const legacyRecoveryNeedsReview = paymentRecoveryBlock.includes('旧版结算未经服务端核价');
+
   const handleSubmit = async () => {
     if (loadingBooking || error || paymentRecoveryBlock || submissionLock.current) return;
     if (!selectedCustomer) {
@@ -1074,8 +1076,8 @@ const Checkout: React.FC = () => {
               <div className="border-t pt-3 flex justify-between font-bold"><span>原单实付金额</span><span className="text-orange-600">¥{Number(lockedSettlement.total).toFixed(2)}</span></div>
               <p className="text-sm text-gray-500">已有支付单按原结算金额恢复，服务目录和顾客当前折扣不会重新套用。</p>
               <p className="text-sm text-amber-800" role="status">{paymentRecoveryBlock}</p>
-              <button type="button" onClick={handleRecoverPayment} disabled={recoveringPayment} className="w-full py-3 rounded-xl bg-purple-600 disabled:bg-gray-400 text-white font-bold">
-                {recoveringPayment?'正在核对微信原单…':'核对并恢复原支付'}
+              <button type="button" onClick={handleRecoverPayment} disabled={recoveringPayment || legacyRecoveryNeedsReview} className="w-full py-3 rounded-xl bg-purple-600 disabled:bg-gray-400 text-white font-bold">
+                {recoveringPayment?'正在核对微信原单…':legacyRecoveryNeedsReview?'旧版结算需先人工核对':'核对并恢复原支付'}
               </button>
             </div>
           )}
