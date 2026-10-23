@@ -29,8 +29,9 @@ export async function verifyRelease(connection: SetupConnection) {
     if (!recoveryColumn.rows.length) issues.push('缺少 032 支付认领时间字段');
     const checkoutTriggers = await connection.query("SELECT tgname FROM pg_trigger WHERE tgrelid='public.bookings'::regclass AND NOT tgisinternal AND tgenabled='O' AND tgname IN ('booking_slot_guard','booking_checkout_state_guard')");
     if (checkoutTriggers.rows.length !== 2) issues.push('缺少或禁用 031 预约档期/结算状态触发器');
-    const paymentColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='payments' AND column_name='code_url'");
-    if (!paymentColumns.rows.length) issues.push('缺少 031 原支付二维码恢复字段');
+    const paymentColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='payments' AND column_name IN ('code_url','paid_at_source')");
+    if (!paymentColumns.rows.some(row=>row.column_name==='code_url')) issues.push('缺少 031 原支付二维码恢复字段');
+    if (!paymentColumns.rows.some(row=>row.column_name==='paid_at_source')) issues.push('缺少 037 微信支付来源字段');
     for (const field of fields) if (!present.has(field)) issues.push('缺少 customers.' + field);
     const roles = await connection.query("SELECT rolname FROM pg_roles WHERE rolname=ANY($1::text[])", [['service_role', 'anon', 'authenticated']]);
     const roleNames = new Set(roles.rows.map(row => row.rolname));

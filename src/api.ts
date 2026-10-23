@@ -1528,11 +1528,10 @@ export const settlementApi = {
   getById: async (settlementId: string): Promise<Settlement | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Settlement }>(
+      return await httpThrowing<Settlement>(
         `${API_BASE}/settlements/${settlementId}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      if (result?.data) return result.data;
     }
     return mockSettlements.find((s) => s.id === settlementId) || null;
   },

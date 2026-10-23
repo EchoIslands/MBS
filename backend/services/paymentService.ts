@@ -7,6 +7,7 @@ import {
   randomBytes,
 } from 'crypto';
 import WxPay from 'wechatpay-node-v3';
+import { wechatSuccessReceipt } from '../lib/wechatReceipt.js';
 
 export type PaymentChannel = 'wechat_h5' | 'wechat_mini' | 'wechat_native' | 'alipay' | 'cash' | 'balance';
 
@@ -359,25 +360,43 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
  * 查询支付状态
  * mock 模式下直接返回 pending，真实环境调微信订单查询接口。
  */
-export async function queryPaymentStatus(paymentId: string): Promise<Pick<PaymentResult, 'status' | 'message'> & { amount?: number }> {
+export async function queryPaymentStatus(paymentId: string): Promise<Pick<PaymentResult, 'status' | 'message'> & { amount?: number; transactionId?: string; paidAt?: string }> {
   if (WECHAT_PAY_MOCK) {
     return { status: 'pending', message: 'mock 模式：请手动确认收款' };
   }
 
-  const wxpay = getWxPayInstance();
-  if (!wxpay) {
-    return { status: 'pending', message: '微信支付配置不完整' };
-  }
-
   try {
-    const result = await wxpay.query({ out_trade_no: paymentId });
-    console.log('[wechatpay] 查询订单状态:', paymentId, result);
-
+    if(!/^[A-Za-z0-9_-]{6,32}$/.test(paymentId)) throw new Error('商户支付单号无效');
+    const mchid=process.env.WECHAT_MCH_ID, appid=process.env.WECHAT_APP_ID;
+    const key=process.env.WECHAT_API_KEY,cert=process.env.WECHAT_API_CERT;
+    if(!mchid || !appid || !key || !cert) return {status:'pending',message:'微信查单配置不完整'};
+    const serial=getCertSerialNumber(cert);if(!serial) throw new Error('商户证书无效');
+    const urlPath='/v3/pay/transactions/out-trade-no/'+encodeURIComponent(paymentId)+'?mchid='+encodeURIComponent(mchid);
+    const timestamp=String(Math.floor(Date.now()/1000)),nonce=randomBytes(16).toString('hex');
+    const requestSignature=createSign('RSA-SHA256').update('GET\n'+urlPath+'\n'+timestamp+'\n'+nonce+'\n\n').sign(key,'base64');
+    const authorization='WECHATPAY2-SHA256-RSA2048 mchid="'+mchid+'",nonce_str="'+nonce+'",signature="'+requestSignature+'",timestamp="'+timestamp+'",serial_no="'+serial+'"';
+    const response=await fetch('https://api.mch.weixin.qq.com'+urlPath,{headers:{Authorization:authorization,Accept:'application/json'},signal:AbortSignal.timeout(10_000)});
+    const raw=await response.text();
+    if(!response.ok) return {status:'pending',message:'微信查单暂未成功（HTTP '+response.status+'），请稍后核对原单'};
+    const responseTimestamp=response.headers.get('wechatpay-timestamp') || '';
+    const responseNonce=response.headers.get('wechatpay-nonce') || '';
+    const responseSignature=response.headers.get('wechatpay-signature') || '';
+    const responseSerial=response.headers.get('wechatpay-serial') || '';
+    let publicKey=process.env.WECHAT_PAY_PUBLIC_KEY?.trim();
+    if(!publicKey) publicKey=(await fetchWechatPlatformCerts())?.[responseSerial];
+    if(!publicKey || !/^\d+$/.test(responseTimestamp) || Math.abs(Date.now()/1000-Number(responseTimestamp))>300 || !responseNonce || !responseSignature ||
+      !verifyWechatSignature({rawBody:raw,timestamp:responseTimestamp,nonce:responseNonce,signature:responseSignature,publicKey})) {
+      throw new Error('微信查单响应验签失败，不能登记为已核对收款');
+    }
+    const result={data:JSON.parse(raw) as Record<string,any>};
     const state = result?.data?.trade_state as string | undefined;
     if (state === 'SUCCESS') {
       const data = result.data;
       if (data.mchid !== process.env.WECHAT_MCH_ID || data.appid !== process.env.WECHAT_APP_ID || data.amount?.currency !== 'CNY' || !Number.isInteger(data.amount?.total)) return { status: 'failed', message: '支付金额或商户不匹配' };
-      return { status: 'paid', amount: Number(data.amount.total) / 100, message: '支付成功' };
+      const receipt = wechatSuccessReceipt(data as Record<string, any>, {
+        mchid: process.env.WECHAT_MCH_ID, appid: process.env.WECHAT_APP_ID, paymentId,
+      });
+      return { status: 'paid', amount: receipt.amount, transactionId: receipt.transactionId, paidAt: receipt.paidAt, message: '支付成功' };
     }
     if (state === 'NOTPAY') return { status: 'pending', message: '等待支付' };
     if (state === 'CLOSED') return { status: 'failed', message: '订单已关闭' };
@@ -385,8 +404,8 @@ export async function queryPaymentStatus(paymentId: string): Promise<Pick<Paymen
     return { status: 'pending', message: state || '未知状态' };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[wechatpay] 查询订单状态失败:', message);
-    return { status: 'pending', message: `查询失败: ${message}` };
+    console.error('[wechatpay] 查询订单状态失败（未输出请求或支付人信息）');
+    return { status: 'pending', message: message.startsWith('微信') ? message : '微信查单暂不可用，请稍后核对原单' };
   }
 }
 
@@ -401,7 +420,7 @@ export async function handleWechatCallback(params: {
   signature: string;
   timestamp: string;
   nonce: string;
-}): Promise<{ success: boolean; message: string; paymentId?: string; transactionId?: string; amount?: number }> {
+}): Promise<{ success: boolean; message: string; paymentId?: string; transactionId?: string; amount?: number; paidAt?: string }> {
   if (WECHAT_PAY_MOCK) {
     return { success: true, message: 'mock 回调已忽略' };
   }
@@ -460,18 +479,14 @@ export async function handleWechatCallback(params: {
       return { success: true, message: `交易状态: ${decrypted.trade_state}` };
     }
 
-    const paidAmount = decrypted.amount as Record<string, unknown> | undefined;
-    if (decrypted.mchid !== process.env.WECHAT_MCH_ID || decrypted.appid !== process.env.WECHAT_APP_ID ||
-      !paidAmount || paidAmount.currency !== 'CNY' || !Number.isInteger(paidAmount.total) || Number(paidAmount.total) < 0) {
-      return { success: false, message: '支付商户、应用或金额信息不匹配' };
-    }
+    const receipt = wechatSuccessReceipt(decrypted, {
+      mchid: process.env.WECHAT_MCH_ID, appid: process.env.WECHAT_APP_ID,
+    });
 
     return {
       success: true,
       message: 'OK',
-      paymentId: decrypted.out_trade_no as string,
-      transactionId: decrypted.transaction_id as string,
-      amount: Number(paidAmount.total) / 100,
+      ...receipt,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

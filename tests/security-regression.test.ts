@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
+import {generateKeyPairSync,createCipheriv,createSign} from 'node:crypto';
 // 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
 process.env.SUPABASE_URL = 'https://synthetic.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
@@ -37,13 +38,14 @@ let failAuthentication = false;
 let failPaymentQuery = false;
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
+ rowStart=0;rowEnd:number|undefined;
  constructor(public table:string) { calls++; }
  select(columns='*') {this.columns=columns;return this;}
  eq(k:string,v:any) {this.filters.push(r=>r[k]===v);return this;}
  is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
  contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
  in(k:string,v:any[]) {this.filters.push(r=>v.includes(r[k]));return this;}
- gte(){return this;} lt(){return this;} order(){return this;} range(){return this;} limit(n:number){this.maxRows=n;return this;} maxRows?:number;
+ gte(){return this;} lt(){return this;} order(){return this;} range(start:number,end:number){this.rowStart=start;this.rowEnd=end+1;return this;} limit(n:number){this.maxRows=n;return this;} maxRows?:number;
  update(v:any){this.operation='update';this.payload=v;return this;}
  insert(v:any){this.operation='insert';this.payload=v;return this;}
  delete(){this.operation='delete';return this;}
@@ -51,7 +53,7 @@ class Query {
  then(resolve:any,reject:any){try{
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
-  let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r))).slice(0,this.maxRows);
+  let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r))).slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
   if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
   if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
   if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
@@ -80,6 +82,14 @@ let checkoutRpcCalls = 0;
   if(!s.checkout_payment_started) return {data:true,error:null};
   if(s.checkout_payment_started_at || !s.created_at || Date.now()-new Date(s.created_at).getTime()<5*60_000) return {data:false,error:null};
   s.checkout_payment_started=false;s.checkout_request_key=null;return {data:true,error:null};
+ }
+ if(name==='finalize_verified_wechat_payment') {
+  if(failRpc) return {data:null,error:{code:'PGRST202'}};
+  const p=(tables.payments || []).find(p=>p.id===args.p_payment_id && p.shop_id===args.p_shop_id);
+  const s=(tables.settlements || []).find(s=>s.id===p?.settlement_id && s.shop_id===args.p_shop_id);
+  if(!p || !s || Number(s.total)!==args.p_amount || Number(p.amount)!==args.p_amount || s.customer_id!==p.customer_id) return {data:null,error:{code:'P0001'}};
+  Object.assign(p,{status:'paid',paid_at:args.p_paid_at,paid_at_source:'wechat_success_time',transaction_id:args.p_transaction_id});
+  s.payment_status='completed';return {data:[s],error:null};
  }
  if (name === 'create_settlement_atomic') checkoutRpcCalls++;
  if (name === 'create_settlement_atomic' && completeCheckout) {
@@ -537,6 +547,51 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   await t.test('密码迁移失败不签发会话，旧值保持，恢复后可登录',async()=>{
    tables.employees.push({id:'failure',shop_id:'s1',role:'stylist',phone:'synthetic-failure',is_active:true,password_hash:'old-password'});
    failMigration=true;const r=await request('/auth/login','','POST',{phone:'synthetic-failure',password:'old-password'});assert.equal(r.status,503);assert.equal(r.body.data,undefined);assert.equal(tables.employees.at(-1)!.password_hash,'old-password');failMigration=false;await login('failure');
+  });
+  await t.test('旧单新付列表分页、支付来源、金额和跨店隔离；支付查询故障不返回假成功',async()=>{
+   const token=(await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'changed-password'})).body.data.token;const previous=[tables.settlements,tables.payments];
+   try {
+    tables.settlements=Array.from({length:1002},(_,i)=>({id:'old-'+i,shop_id:'s1',customer_id:'c1',customer_name:'Synthetic',payment_method:'wechat',payment_status:'completed',created_at:'2026-10-01T00:00:00Z',total:58,items:[]}));
+    const target=tables.settlements[1001];target.total=33.64;target.created_at='2026-08-01T00:00:00Z';
+    tables.payments=[{id:'gateway1',shop_id:'s1',customer_id:'c1',settlement_id:target.id,status:'paid',amount:33.64,created_at:'2026-10-22T10:00:00Z',paid_at:'2026-10-22T11:12:34Z',paid_at_source:'wechat_success_time',transaction_id:'420000001'},
+      {id:'foreign',shop_id:'s2',customer_id:'c1',settlement_id:target.id,status:'paid',amount:33.64,paid_at:'2026-10-23T00:00:00Z',paid_at_source:'wechat_success_time'}];
+    const result=await request('/settlements?shopId=s2',token);
+    assert.equal(result.status,200);assert.equal(result.body.data.length,1002);assert.equal(result.body.data[0].id,target.id);
+    assert.equal(result.body.data[0].paidAt,'2026-10-22T11:12:34Z');assert.equal(result.body.data[0].paymentAmount,33.64);
+    assert.equal((await request('/settlements/'+target.id,token)).body.data.paymentId,'gateway1');
+    tables.payments[0].customer_id='wrong-customer';
+    assert.equal((await request('/settlements/'+target.id+'/confirm-payment',token,'POST',{})).status,409);
+    tables.payments[0].customer_id='c1';
+    delete tables.payments[0].paid_at_source;
+    const legacy=(await request('/settlements/'+target.id,token)).body.data;
+    assert.equal(legacy.paidAt,undefined);assert.equal(legacy.paymentRecordedAt,'2026-10-22T11:12:34Z');
+    failPaymentQuery=true;assert.notEqual((await request('/settlements',token)).status,200);
+   } finally {failPaymentQuery=false;[tables.settlements,tables.payments]=previous;}
+  });
+  await t.test('真实RSA验签/AES解密回调使用success_time；重复回调不改时间，失败要求微信重试',async()=>{
+   const previous=[tables.settlements,tables.payments];
+   const keys=generateKeyPairSync('rsa',{modulusLength:2048});
+   process.env.WECHAT_PAY_PUBLIC_KEY=keys.publicKey.export({type:'spki',format:'pem'}).toString();
+   process.env.WECHAT_API_V3_KEY='01234567890123456789012345678901';process.env.WECHAT_MCH_ID='synthetic-mch';process.env.WECHAT_APP_ID='synthetic-app';
+   const notify=async(overrides:Record<string,unknown>={},tamper=false)=>{
+    const receipt={mchid:'synthetic-mch',appid:'synthetic-app',out_trade_no:'gateway1',transaction_id:'420000001',trade_state:'SUCCESS',amount:{currency:'CNY',total:3364},success_time:'2026-10-22T19:12:34+08:00',...overrides};
+    const nonce='012345678901',aad='synthetic';const cipher=createCipheriv('aes-256-gcm',Buffer.from(process.env.WECHAT_API_V3_KEY!),Buffer.from(nonce));cipher.setAAD(Buffer.from(aad));
+    const encrypted=Buffer.concat([cipher.update(JSON.stringify(receipt)),cipher.final(),cipher.getAuthTag()]).toString('base64');
+    const raw=JSON.stringify({resource:{ciphertext:encrypted,nonce,associated_data:aad}});
+    const timestamp=String(Math.floor(Date.now()/1000));const signature=createSign('RSA-SHA256').update(timestamp+'\n'+'notify'+'\n'+raw+'\n').sign(keys.privateKey,'base64');
+    const response=await fetch(base+'/api/webhook/wechat-pay',{method:'POST',headers:{'Content-Type':'application/json','wechatpay-signature':tamper?'invalid':signature,'wechatpay-timestamp':timestamp,'wechatpay-nonce':'notify','wechatpay-serial':'synthetic'},body:raw});
+    return {status:response.status,body:await response.json()};
+   };
+   try {
+    tables.settlements=[{id:'receipt',shop_id:'s1',customer_id:'c1',total:33.64,payment_method:'wechat',payment_status:'pending'}];
+    tables.payments=[{id:'gateway1',shop_id:'s1',customer_id:'c1',settlement_id:'receipt',amount:33.64,status:'pending'}];
+    assert.equal((await notify({},true)).status,400);assert.equal((await notify({success_time:undefined})).status,400);
+    failRpc=true;assert.equal((await notify()).status,500);assert.equal(tables.payments[0].status,'pending');failRpc=false;
+    assert.equal((await notify()).status,200);assert.equal((await notify()).status,200);
+    assert.equal(tables.payments[0].paid_at,'2026-10-22T11:12:34.000Z');assert.equal(tables.payments[0].transaction_id,'420000001');
+    const token=(await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'changed-password'})).body.data.token;const confirmed=await request('/settlements/receipt/confirm-payment',token,'POST',{transactionId:'forged',paidAt:'2999-01-01'});
+    assert.equal(confirmed.status,200);assert.equal(confirmed.body.data.transactionId,'420000001');
+   } finally {failRpc=false;[tables.settlements,tables.payments]=previous;}
   });
   await t.test('哈希密码校验与生产缺密钥拒绝',async()=>{
    for (const password of ['x', '长'.repeat(40), 'mbs-sha256:legacy', '$2b$12$legacy']) { const migrated = await hashPassword(password, true); assert.ok(await verifyPassword(password, migrated)); assert.equal(await verifyPassword(password + 'wrong', migrated), false); }

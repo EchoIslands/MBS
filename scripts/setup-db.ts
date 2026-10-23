@@ -1,5 +1,6 @@
 import {checkOperationsSchema} from './lib/operations-schema.js';
-/** 仅补齐 025–036 结构，不初始化密码、不执行结算函数。 */
+import {checkPaymentSchema} from './lib/payment-schema.js';
+/** 仅补齐 025–037 结构，不初始化密码、不执行结算函数。 */
 import pg, { type ClientConfig } from 'pg';
 import dotenv from 'dotenv';
 import { readFile } from 'node:fs/promises';
@@ -19,6 +20,7 @@ export const SETUP_MIGRATIONS = [
   '034_restrict_business_table_access.sql',
   '035_membership_and_shipping_atomic.sql',
   '036_settlement_rewards_and_package_integrity.sql',
+  '037_verified_wechat_payment_receipts.sql',
 ] as const;
 
 const BASE_TABLES = [
@@ -60,6 +62,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
       stage = file;
       log(`[建库] 正在执行 ${file}…`);
       if(file.startsWith('035_')) await checkOperationsSchema(connection);
+      if(file.startsWith('037_')) await checkPaymentSchema(connection);
       await connection.query(sql);
       log(`[建库] ${file} 执行通过（等待统一提交）。`);
     }
@@ -72,7 +75,7 @@ export async function setupDatabase(connection: SetupConnection, log = console.l
     await connection.query("NOTIFY pgrst, 'reload schema'");
     await connection.query('COMMIT');
     active = false;
-    log('[完成] 025–036 已全部提交，已通知 API 重载结构；未初始化密码、未执行消费或扣款。');
+    log('[完成] 025–037 已全部提交，已通知 API 重载结构；未初始化密码、未执行消费或扣款。');
   } catch (error) {
     if (active) { try { await connection.query('ROLLBACK'); } catch { /* 断连时数据库自行回滚未提交事务 */ } }
     if (error instanceof Error && (error.message.startsWith('缺少 001–024') || error.message.startsWith('客户字段') || error.message.startsWith('已有结构安装'))) throw error;
@@ -107,7 +110,7 @@ export function databaseConfig(env: NodeJS.ProcessEnv): ClientConfig {
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：npx tsx scripts/setup-db.ts\n读取根目录 .env 的 SUPABASE_DB_URL，事务执行 025–036；不初始化密码。');
+    console.log('用法：npx tsx scripts/setup-db.ts\n读取根目录 .env 的 SUPABASE_DB_URL，事务执行 025–037；不初始化密码。');
     return;
   }
   if (process.argv.length > 2) throw new Error('未知参数；使用 --help 查看用法。');

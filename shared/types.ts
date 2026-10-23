@@ -424,6 +424,15 @@ export interface Settlement {
   paymentStatus: 'pending' | 'completed' | 'failed';
   usedBenefitIds?: string[];     // 本次核销的权益 ID
   createdAt: Date;
+  paymentId?: string;
+  paymentAmount?: number;
+  paymentCreatedAt?: Date | string;
+  paidAt?: Date | string;
+  paidAtSource?: 'wechat_success_time';
+  paymentRecordedAt?: Date | string;
+  paymentRecordStatus?: string;
+  paymentReviewRequired?: boolean;
+  transactionId?: string;
   processedBy?: string;          // 操作员
 }
 

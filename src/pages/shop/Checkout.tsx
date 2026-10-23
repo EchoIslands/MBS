@@ -107,6 +107,7 @@ const Checkout: React.FC = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [completedSettlementId,setCompletedSettlementId]=useState<string | null>(null);
   const [showWechatModal, setShowWechatModal] = useState(false);
   const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
   const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string>('');
@@ -695,7 +696,7 @@ const Checkout: React.FC = () => {
     setSelectedBenefits(s.usedBenefitIds || []);
       try {
         let state = await settlementApi.getPaymentStatus(s.id);
-        if (state.settlementStatus === 'completed') { setSuccess(true); return; }
+        if (state.settlementStatus === 'completed') { setCompletedSettlementId(s.id); setSuccess(true); return; }
         if (state.recoveryState === 'initialization_started') {
           const released = await settlementApi.releaseUnstartedPayment(s.id);
           if (released) state = await settlementApi.getPaymentStatus(s.id);
@@ -829,6 +830,7 @@ const Checkout: React.FC = () => {
         return;
       }
 
+      if ('id' in result) setCompletedSettlementId(result.id);
       // 本地同步更新客户余额，让 UI 立即反映
       if (paymentMethod === 'balance' && selectedCustomer) {
         const principal = selectedCustomer.storedValueBalance - selectedCustomer.withdrawableReferralAmount;
@@ -871,7 +873,8 @@ const Checkout: React.FC = () => {
     if (!pendingSettlementId) return;
     setConfirming(true);
     try {
-      await settlementApi.confirmPayment(pendingSettlementId);
+      const completed=await settlementApi.confirmPayment(pendingSettlementId);
+      setCompletedSettlementId(completed.id);
       // 核销已选次卡
       // 次卡由服务端与结算在同一事务核销。
       setShowWechatModal(false);
@@ -941,7 +944,7 @@ const Checkout: React.FC = () => {
 
             <div className="flex gap-3">
               <button
-                onClick={() => navigate('/shop/settlement')}
+                onClick={() => navigate('/shop/settlement'+(completedSettlementId ? '?settlementId='+encodeURIComponent(completedSettlementId) : ''))}
                 className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
               >
                 查看结算记录

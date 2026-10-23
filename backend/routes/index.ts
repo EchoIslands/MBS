@@ -19,6 +19,9 @@ import {
 } from '../../shared/lib/membership.js';
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
 import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
+import { recordWechatReceipt } from '../services/settlementReceipt.js';
+import { compareSettlements } from '../../shared/lib/settlementDisplay.js';
+import type { Settlement } from '../../shared/types.js';
 import QRCode from 'qrcode';
 import { priceSettlement } from '../lib/settlementPricing.js';
 import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
@@ -4569,25 +4572,49 @@ mainRouter.use('/product-orders', productOrdersRouter);
 // ===================== settlements =====================
 const settlementsRouter = Router();
 
-const settlementFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
-  id: s.id,
-  shopId: s.shop_id,
-  customerId: s.customer_id,
-  customerName: s.customer_name,
-  bookingId: s.booking_id,
-  items: s.items || [],
-  customerPackageId: s.customer_package_id || undefined,
-  subtotal: Number(s.subtotal) || 0,
-  discountDetail: s.discount_detail || {},
-  discount: Number(s.discount) || 0,
-  tax: Number(s.tax) || 0,
-  total: Number(s.total) || 0,
-  paymentMethod: s.payment_method,
-  paymentStatus: s.payment_status,
-  usedBenefitIds: s.used_benefit_ids || [],
-  processedBy: s.processed_by,
-  createdAt: s.created_at,
-});
+const settlementFromDb = (s: Record<string, unknown>, payment?: Record<string, unknown>): Record<string, unknown> => {
+  const verified = payment?.status === 'paid' && payment?.paid_at_source === 'wechat_success_time';
+  const matches = !payment || (payment.customer_id === s.customer_id && Number(payment.amount) === Number(s.total));
+  return {
+    id:s.id, shopId:s.shop_id, customerId:s.customer_id, customerName:s.customer_name || '', bookingId:s.booking_id,
+    items:s.items || [], customerPackageId:s.customer_package_id || undefined, subtotal:Number(s.subtotal) || 0,
+    discountDetail:s.discount_detail || {}, discount:Number(s.discount) || 0, tax:Number(s.tax) || 0, total:Number(s.total) || 0,
+    paymentMethod:s.payment_method, paymentStatus:s.payment_status, usedBenefitIds:s.used_benefit_ids || [],
+    processedBy:s.processed_by, createdAt:s.created_at,
+    paymentId:matches ? payment?.id : undefined, paymentAmount:matches && payment ? Number(payment.amount) : undefined,
+    paymentCreatedAt:matches ? payment?.created_at : undefined,
+    paidAt:matches && verified ? payment?.paid_at : undefined, paidAtSource:matches && verified ? 'wechat_success_time' : undefined,
+    paymentRecordedAt:matches && !verified ? payment?.paid_at : undefined,
+    transactionId:matches ? payment?.transaction_id : undefined, paymentRecordStatus:matches ? payment?.status : undefined,
+    paymentReviewRequired:!matches || Boolean(payment?.multiple) || (payment?.status==='paid' && s.payment_status!=='completed'),
+  };
+};
+
+const attachSettlementPayments = async (shopId:string, settlements:Record<string, unknown>[]) => {
+  const ids=settlements.map(s=>String(s.id));
+  const result=new Map<string,Record<string,unknown>>();
+  // Bound the URL size and page every query so Supabase's default row cap cannot hide old orders.
+  for(let offset=0;offset<ids.length;offset+=100) {
+    for(let page=0;;page++) {
+      const {data,error}=await supabase.from('payments')
+        .select('id,settlement_id,customer_id,amount,status,transaction_id,paid_at,paid_at_source,created_at')
+        .eq('shop_id',shopId).in('settlement_id',ids.slice(offset,offset+100))
+        .order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*500,page*500+499);
+      if(error) {console.error('[settlements] 支付明细查询失败 code=%s',error.code || 'UNKNOWN');throw new Error('支付明细暂无法读取，请刷新重试并检查037迁移');}
+      for(const payment of (data || []) as Record<string,unknown>[]) {
+        const key=String(payment.settlement_id); const current=result.get(key);
+        if(!current) result.set(key,payment);
+        else {
+          const score=(p:Record<string,unknown>)=>p.status==='paid' ? (p.paid_at_source==='wechat_success_time'?2:1):0;
+          const selected=score(payment)>score(current) ? payment : current;
+          result.set(key,{...selected,multiple:true});
+        }
+      }
+      if((data || []).length<500) break;
+    }
+  }
+  return result;
+};
 
 /**
  * 结算支付成功后的核心后续操作：更新客户消费统计、核销权益、创建到店记录。
@@ -4744,7 +4771,6 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
     const shopId = req.employee!.shopId;
     const employee = req.employee!;
     const { id } = req.params;
-    const { transactionId } = req.body || {};
 
     const { data: settlement, error: findError } = await supabase
       .from('settlements')
@@ -4757,29 +4783,29 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
       return res.status(404).json({ success: false, error: '结算记录不存在' });
     }
 
-    if (settlement.payment_status === 'completed') return res.json({ success: true, data: settlementFromDb(settlement) });
-    if (settlement.payment_status !== 'pending') {
-      return res.status(400).json({ success: false, error: '该结算记录不在待支付状态' });
+    if (Number(settlement.total)>0 && settlement.payment_method==='wechat') {
+      const {data:payment,error:paymentError}=await supabase.from('payments').select('*').eq('settlement_id',id).eq('shop_id',shopId).order('created_at',{ascending:false}).limit(1).maybeSingle();
+      if(paymentError) return res.status(503).json({success:false,error:'支付记录暂不可查询，请勿重新收款'});
+      if(!payment || payment.customer_id!==settlement.customer_id || Number(payment.amount)!==Number(settlement.total)) {
+        return res.status(409).json({success:false,error:'支付映射或金额不匹配，请核对原单，勿重新收款'});
+      }
+      if(settlement.payment_status==='completed' && payment.status==='paid' && payment.paid_at_source==='wechat_success_time') {
+        return res.json({success:true,data:settlementFromDb(settlement,payment)});
+      }
+      const gateway=await queryPaymentStatus(String(payment.id));
+      if(gateway.status!=='paid' || gateway.amount!==Number(settlement.total) || !gateway.transactionId || !gateway.paidAt) {
+        return res.status(409).json({success:false,error:'微信尚未返回可核对的成功订单及支付时间：'+(gateway.message || '请稍后重试')});
+      }
+      const completed=await recordWechatReceipt({paymentId:String(payment.id),amount:gateway.amount,transactionId:gateway.transactionId,paidAt:gateway.paidAt},shopId,employee.id,employee.name);
+      return res.json({success:true,data:settlementFromDb(completed,{...payment,status:'paid',paid_at:gateway.paidAt,paid_at_source:'wechat_success_time',transaction_id:gateway.transactionId})});
     }
-
-    if (Number(settlement.total) > 0 && ['wechat','alipay'].includes(String(settlement.payment_method)) && process.env.WECHAT_PAY_MOCK !== 'true') {
-      const { data: payment } = await supabase.from('payments').select('id').eq('settlement_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
-      const gateway = payment ? await queryPaymentStatus(payment.id) : null;
-      if (!gateway || gateway.status !== 'paid' || gateway.amount !== Number(settlement.total)) return res.status(409).json({ success: false, error: '支付平台尚未确认收款，请稍后重试' });
-    }
-    // 执行业务闭环
-    await processSettlementAfterPayment({
-      shopId,
-      customerId: settlement.customer_id as string,
-      settlementId: id,
-      bookingId: (settlement.booking_id as string) || null,
-      total: Number(settlement.total) || 0,
-      paymentMethod: settlement.payment_method as string,
-      usedBenefitIds: (settlement.used_benefit_ids as string[]) || [],
-      processedByEmployee: employee,
-    });
-
-    res.json({ success: true, data: settlementFromDb({ ...settlement, payment_status: 'completed' }) });
+    if(settlement.payment_method==='alipay' && Number(settlement.total)>0) return res.status(409).json({success:false,error:'支付宝网关尚未接入，不能手动标记为已付款'});
+    if(settlement.payment_status==='completed') return res.json({success:true,data:settlementFromDb(settlement)});
+    if(settlement.payment_status!=='pending') return res.status(400).json({success:false,error:'该结算记录不在待支付状态'});
+    await processSettlementAfterPayment({shopId,customerId:settlement.customer_id as string,settlementId:id,
+      bookingId:(settlement.booking_id as string)||null,total:Number(settlement.total)||0,paymentMethod:String(settlement.payment_method),
+      usedBenefitIds:(settlement.used_benefit_ids as string[])||[],processedByEmployee:employee});
+    return res.json({success:true,data:settlementFromDb({...settlement,payment_status:'completed'})});
   } catch (error) {
     console.error('[settlements] 确认收款异常:', error);
     res.status(500).json({ success: false, error: '确认收款失败' });
@@ -4934,18 +4960,18 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
 settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
-    const { data, error } = await supabase
-      .from('settlements')
-      .select('*')
-      .eq('shop_id', shopId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('[settlements] 查询结算列表失败:', error.message);
-      return res.status(500).json({ success: false, error: '查询结算列表失败' });
+    const rows:Record<string,unknown>[]=[];
+    for(let page=0;;page++) {
+      const {data,error}=await supabase.from('settlements').select('*').eq('shop_id',shopId)
+        .order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*500,page*500+499);
+      if(error) return res.status(503).json({success:false,error:'结算列表暂不可读取，请刷新重试'});
+      rows.push(...(data || []));
+      if((data || []).length<500) break;
     }
-
-    res.json({ success: true, data: (data || []).map(settlementFromDb) });
+    const payments=await attachSettlementPayments(shopId,rows);
+    const result=rows.map(s=>settlementFromDb(s,payments.get(String(s.id))));
+    result.sort((a,b)=>compareSettlements(a as unknown as Settlement,b as unknown as Settlement));
+    res.json({success:true,data:result});
   } catch (error) {
     console.error('[settlements] 获取结算列表异常:', error);
     res.status(500).json({ success: false, error: '获取结算列表失败' });
@@ -4969,7 +4995,8 @@ settlementsRouter.get('/:id', authMiddleware, async (req: Request, res: Response
       return res.status(404).json({ success: false, error: '结算记录不存在' });
     }
 
-    res.json({ success: true, data: settlementFromDb(data) });
+    const paymentBySettlement = await attachSettlementPayments(shopId, [data as Record<string, unknown>]);
+    res.json({ success: true, data: settlementFromDb(data, paymentBySettlement.get(String(data.id))) });
   } catch (error) {
     console.error('[settlements] 获取结算详情异常:', error);
     res.status(500).json({ success: false, error: '获取结算详情失败' });
@@ -6179,50 +6206,12 @@ mainRouter.post('/webhook/wechat-pay', async (req: Request, res: Response) => {
       return res.status(400).json({ code: 'FAIL', message: result.message });
     }
 
-    // 支付成功：更新 settlements 与 payments 状态，并执行业务闭环
-    if (result.paymentId && result.transactionId) {
-      const { data: paymentRow } = await supabase
-        .from('payments')
-        .select('settlement_id, amount, shop_id, customer_id')
-        .eq('id', result.paymentId)
-        .single();
-
-      if (!paymentRow || result.amount !== Number(paymentRow.amount)) return res.status(409).json({ code: 'FAIL', message: '支付映射或金额不匹配' });
-      const settlementId = paymentRow.settlement_id as string | undefined;
-
-      if (settlementId) {
-        // 幂等：只有 pending 才更新
-        const { data: settlement } = await supabase
-          .from('settlements')
-          .select('*')
-          .eq('id', settlementId)
-          .single();
-
-        if (!settlement || Number(settlement.total) !== result.amount || settlement.shop_id !== paymentRow.shop_id || settlement.customer_id !== paymentRow.customer_id) return res.status(409).json({ code: 'FAIL', message: '结算映射或金额不匹配' });
-        if (settlement.payment_status === 'pending') {
-          // 执行客户统计、权益核销、到店记录等业务闭环
-          const fallbackEmployee: AuthEmployee = {
-            id: 'system_wechat',
-            shopId: (settlement.shop_id as string) || '',
-            name: (settlement.processed_by as string) || '微信支付',
-            role: 'system',
-            phone: '',
-          };
-
-          await processSettlementAfterPayment({
-            shopId: (settlement.shop_id as string) || '',
-            customerId: (settlement.customer_id as string) || '',
-            settlementId,
-            bookingId: (settlement.booking_id as string) || null,
-            total: Number(settlement.total) || 0,
-            paymentMethod: (settlement.payment_method as string) || 'wechat',
-            usedBenefitIds: (settlement.used_benefit_ids as string[]) || [],
-            processedByEmployee: fallbackEmployee,
-          });
-
-          console.log('[wechatpay-webhook] 结算完成:', settlementId);
-        }
-      }
+    // Only the authenticated gateway receipt supplies transaction ID, amount and success_time.
+    if(result.paymentId && result.transactionId) {
+      if(!result.paidAt || result.amount===undefined) return res.status(400).json({code:'FAIL',message:'支付成功时间缺失'});
+      const {data:payment,error}=await supabase.from('payments').select('shop_id').eq('id',result.paymentId).single();
+      if(error || !payment?.shop_id) return res.status(503).json({code:'FAIL',message:'支付映射暂不可用'});
+      await recordWechatReceipt({paymentId:result.paymentId,transactionId:result.transactionId,amount:result.amount,paidAt:result.paidAt},String(payment.shop_id),'system_wechat','微信支付');
     }
 
     // 必须返回 200 和 {code: 'SUCCESS'}，否则微信会重试

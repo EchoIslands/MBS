@@ -93,8 +93,22 @@ let checkoutRpcCalls = 0;
 
 
 tables.shops[0]={id:'shop1',name:'本地合成测试门店',phone:'13800000000',services:[{id:'svc',name:'设计师洗剪吹',price:58,duration:30}],is_active:true};
-tables.customers[0]={...tables.customers[0],shop_id:'shop1',name:'合成顾客',is_weak_password:true,identity_verified:false,balance:100,stored_value_balance:100,purchase_vip_level:'regular',stored_value_level:'none',password_hash:await hashPassword('123456')};
+tables.customers[0]={...tables.customers[0],shop_id:'shop1',name:'合成顾客',tags:[],is_weak_password:true,identity_verified:false,balance:100,stored_value_balance:100,purchase_vip_level:'regular',stored_value_level:'none',password_hash:await hashPassword('123456')};
 tables.employees[0]={...tables.employees[0],shop_id:'shop1',phone:'13800000009'};
+// 本次支付追溯页面验收只使用合成订单；日期/金额用于覆盖旧单新付和历史缺失时间。
+tables.settlements=[
+ {id:'synthetic-old-paid',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',items:[{id:'svc',type:'service',name:'设计师洗剪吹',quantity:1,originalPrice:58,discountedPrice:33.64,total:33.64}],subtotal:58,discount:24.36,total:33.64,payment_method:'wechat',payment_status:'completed',created_at:'2026-08-01T08:00:00Z'},
+ {id:'synthetic-newer-created',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',items:[],subtotal:58,discount:0,total:58,payment_method:'wechat',payment_status:'completed',created_at:'2026-10-01T08:00:00Z'},
+ {id:'synthetic-legacy-unknown',shop_id:'shop1',customer_id:'c1',customer_name:'合成历史订单',items:[],subtotal:23.55,discount:0,total:23.55,payment_method:'wechat',payment_status:'completed',created_at:'2026-10-20T08:00:00Z'},
+];
+tables.payments=[
+ {id:'synthetic_old_payment',settlement_id:'synthetic-old-paid',shop_id:'shop1',customer_id:'c1',amount:33.64,status:'paid',transaction_id:'4200000000000000000000000001',paid_at:'2026-10-22T14:56:01+08:00',paid_at_source:'wechat_success_time',created_at:'2026-10-22T06:55:20Z'},
+ {id:'synthetic_new_payment',settlement_id:'synthetic-newer-created',shop_id:'shop1',customer_id:'c1',amount:58,status:'paid',transaction_id:'4200000000000000000000000002',paid_at:'2026-10-01T08:02:00Z',paid_at_source:'wechat_success_time',created_at:'2026-10-01T08:01:00Z'},
+ {id:'synthetic_legacy_payment',settlement_id:'synthetic-legacy-unknown',shop_id:'shop1',customer_id:'c1',amount:23.55,status:'paid',paid_at:'2026-10-20T08:01:00Z',created_at:'2026-10-20T08:00:30Z'},
+];
 const {default:handler}=await import('../../api/index.js');
-const server=createServer((req,res)=>{void handler(req as any,res as any);});
+const server=createServer((req,res)=>{
+ res.once('finish',()=>console.log('[合成HTTP]',req.method,req.url?.split('?')[0],res.statusCode));
+ void handler(req as any,res as any);
+});
 server.listen(31371,'127.0.0.1',()=>{base='http://127.0.0.1:31371';console.log('合成界面测试 API: '+base+'；禁止外网请求，无生产数据库连接');});
