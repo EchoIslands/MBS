@@ -17,11 +17,19 @@ import { Booking, Customer, UserRole, Settlement, Employee } from '../../../shar
 import { useAppStore } from '../../store';
 import { customerApi, bookingApi, settlementApi, employeeApi } from '../../api';
 import ShopLayout from './ShopLayout';
+import { businessDateKey } from '../../../shared/lib/dashboardStats';
+import { financialTime, FINANCIAL_BASIS_NOTE } from '../../../shared/lib/financialReport';
 
 const Dashboard: React.FC = () => {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
   const [todaySettlements, setTodaySettlements] = useState<Settlement[]>([]);
   const [recentCustomers, setRecentCustomers] = useState<Customer[]>([]);
+  const [refresh, setRefresh] = useState(0);
+  const [bookingState, setBookingState] = useState('加载中');
+  const [settlementState, setSettlementState] = useState('加载中');
+  const [customerError, setCustomerError] = useState(false);
+  const [excluded, setExcluded] = useState({count:0,amount:0});
+  const [generatedAt, setGeneratedAt] = useState('');
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -37,52 +45,31 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (!currentShop) return;
-
-    const fetchTodayBookings = async () => {
-      try {
-        const today = new Date().toISOString().split('T')[0];
-        const data = await bookingApi.getBookingsByShop(currentShop.id, today);
-        if (Array.isArray(data)) {
-          setTodayBookings(data);
-        }
-      } catch (err: unknown) {
-        console.error('[Dashboard] 获取预约列表失败:', err instanceof Error ? err.message : err);
-      }
-    };
-
-    const fetchRecentCustomers = async () => {
-      try {
-        const data = await customerApi.getAll();
-        if (Array.isArray(data)) {
-          setRecentCustomers(data.slice(0, 5));
-        }
-      } catch (err: unknown) {
-        console.error('[Dashboard] 获取最近客户失败:', err instanceof Error ? (err as Error).message : err);
-      }
-    };
-
-    const fetchTodaySettlements = async () => {
-      try {
-        const data = await settlementApi.getByShop(currentShop.id);
-        if (Array.isArray(data)) {
-          const today = new Date().toDateString();
-          setTodaySettlements(
-            data.filter(
-              (s) =>
-                s.paymentStatus === 'completed' &&
-                new Date(s.createdAt).toDateString() === today
-            )
-          );
-        }
-      } catch (err: unknown) {
-        console.error('[Dashboard] 获取结算记录失败:', err instanceof Error ? err.message : err);
-      }
-    };
-
-    fetchTodayBookings();
-    fetchRecentCustomers();
-    fetchTodaySettlements();
-  }, [currentShop]);
+    let cancelled = false;
+    const now = new Date(), today = businessDateKey(now);
+    setBookingState('加载中'); setSettlementState('加载中'); setCustomerError(false);
+    setTodayBookings([]); setTodaySettlements([]); setRecentCustomers([]); setExcluded({count:0,amount:0});
+    setGeneratedAt(now.toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}));
+    void bookingApi.getBookingsByShop(currentShop.id, today).then(data => {
+      if (cancelled) return;
+      if (!Array.isArray(data)) throw new Error('预约数据无效');
+      setTodayBookings(data.filter(b => businessDateKey(b.scheduledTime) === today)); setBookingState('');
+    }).catch(() => { if (!cancelled) setBookingState('预约加载失败，请刷新重试'); });
+    void customerApi.getAll().then(data => {
+      if (cancelled) return;
+      if (!Array.isArray(data)) throw new Error('客户数据无效');
+      setRecentCustomers(data.slice(0,5));
+    }).catch(() => { if (!cancelled) setCustomerError(true); });
+    void settlementApi.getByShop(currentShop.id).then(data => {
+      if (cancelled) return;
+      if (!Array.isArray(data)) throw new Error('结算数据无效');
+      const unknown = data.filter(s => s.paymentStatus === 'completed' && !financialTime(s,now).time);
+      setExcluded({count:unknown.length,amount:unknown.reduce((n,s) => n + (Number.isFinite(s.total)?Math.round(s.total*100):0),0)/100});
+      setTodaySettlements(data.filter(s => { const time = financialTime(s,now).time; return time > 0 && businessDateKey(time) === today; }));
+      setSettlementState('');
+    }).catch(() => { if (!cancelled) setSettlementState('结算加载失败，请刷新重试'); });
+    return () => { cancelled = true; };
+  }, [currentShop?.id, currentEmployee?.id, userRole, refresh]);
 
   if (!currentShop && !currentEmployee) return null;
 
@@ -152,13 +139,13 @@ const Dashboard: React.FC = () => {
   const pendingCount = todayBookings.filter(
     (b) => b.status === 'pending' || b.status === 'confirmed',
   ).length;
-  const totalRevenue = todaySettlements.reduce((sum, s) => sum + s.total, 0);
+  const totalRevenue = todaySettlements.reduce((sum, s) => sum + Math.round(s.total * 100), 0) / 100;
 
   const stats = [
-    { label: '今日预约', value: todayBookings.length, icon: Calendar, color: 'text-blue-500' },
-    { label: '待处理', value: pendingCount, icon: Clock, color: 'text-yellow-500' },
-    { label: '已完成', value: completedCount, icon: CheckCircle, color: 'text-green-500' },
-    { label: '今日营收', value: `¥${totalRevenue}`, icon: DollarSign, color: 'text-orange-500' },
+    { label: '今日预约', value: bookingState ? '—' : todayBookings.length, icon: Calendar, color: 'text-blue-500' },
+    { label: '待处理', value: bookingState ? '—' : pendingCount, icon: Clock, color: 'text-yellow-500' },
+    { label: '已完成', value: bookingState ? '—' : completedCount, icon: CheckCircle, color: 'text-green-500' },
+    { label: '今日结算金额', value: settlementState ? '—' : `¥${totalRevenue.toFixed(2)}`, icon: DollarSign, color: 'text-orange-500' },
   ];
 
   // 快捷操作（不同角色显示不同）
@@ -212,13 +199,19 @@ const Dashboard: React.FC = () => {
 
   return (
     <ShopLayout title="首页概览">
+      <div className="bg-blue-50 text-blue-900 text-sm p-4 rounded-xl mb-4 space-y-2">
+        <p>{FINANCIAL_BASIS_NOTE}</p>
+        <p>数据截止：{generatedAt}　<button onClick={() => setRefresh(n => n+1)} className="underline">刷新数据</button></p>
+        {bookingState && <p role="status">{bookingState}</p>}{settlementState && <p role="status">{settlementState}</p>}
+        {excluded.count > 0 && <p>历史已完成结算中有 {excluded.count} 笔（¥{excluded.amount.toFixed(2)}）待核对，未计入今日金额。</p>}
+      </div>
       {/* 欢迎区 */}
       <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl shadow text-white p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-bold mb-1">你好，{welcomeRole}</h2>
             <p className="text-orange-100 text-sm">
-              {currentShop?.name || '皓诗形象设计'} · {new Date().toLocaleDateString('zh-CN')}
+              {currentShop?.name || '皓诗形象设计'} · {new Date().toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})}
             </p>
           </div>
           <div className="flex items-start gap-3">
@@ -231,7 +224,7 @@ const Dashboard: React.FC = () => {
             </button>
             <div className="hidden md:block text-right text-sm">
               <div className="opacity-80">今日预约</div>
-              <div className="text-3xl font-bold">{todayBookings.length}</div>
+              <div className="text-3xl font-bold">{bookingState ? '—' : todayBookings.length}</div>
             </div>
           </div>
         </div>
@@ -266,7 +259,7 @@ const Dashboard: React.FC = () => {
             </h3>
           </div>
 
-          {recentBookings.length === 0 ? (
+          {bookingState ? <p className="text-gray-500 py-8 text-sm">{bookingState}</p> : recentBookings.length === 0 ? (
             <div className="text-center text-gray-400 py-8 text-sm">暂无预约</div>
           ) : (
             <div className="space-y-3">
@@ -345,6 +338,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {customerError && <p role="status" className="text-red-600 text-sm mt-4">最近客户加载失败，请刷新重试。</p>}
       {/* 最近客户 */}
       <div className="mt-6 bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
         <div className="flex items-center justify-between mb-4">

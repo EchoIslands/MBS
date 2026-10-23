@@ -162,6 +162,7 @@ async function fetchWechatPlatformCerts(): Promise<Record<string, string> | null
   try {
     console.log('[wechatpay] 正在拉取微信平台证书...');
     const res = await fetch('https://api.mch.weixin.qq.com/v3/certificates', {
+      signal: AbortSignal.timeout(5_000),
       method,
       headers: {
         Authorization: authorization,
@@ -277,48 +278,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
     console.log('[wechatpay] 创建支付订单:', { channel, paymentId, amount, notifyUrl });
 
     if (channel === 'wechat_native') {
-      // Native 支付：使用 fetch 直接调用，避免 wechatpay-node-v3 在 serverless 环境超时
-      const bodyString = JSON.stringify(requestBody);
-      const timestamp = Math.floor(Date.now() / 1000).toString();
-      const nonce = randomBytes(16).toString('hex');
-      const method = 'POST';
-      const urlPath = '/v3/pay/transactions/native';
-
-      const signStr = `${method}\n${urlPath}\n${timestamp}\n${nonce}\n${bodyString}\n`;
-      const signature = createSign('RSA-SHA256').update(signStr).sign(key, 'base64');
-      const serial = getCertSerialNumber(cert);
-      const authorization = `WECHATPAY2-SHA256-RSA2048 mchid="${mchid}",nonce_str="${nonce}",signature="${signature}",timestamp="${timestamp}",serial_no="${serial}"`;
-
-      const res = await fetch(`https://api.mch.weixin.qq.com${urlPath}`, {
-        method,
-        headers: {
-          Authorization: authorization,
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'Accept-Language': 'zh-CN',
-        },
-        body: bodyString,
-      });
-
-      const result = (await res.json()) as Record<string, unknown>;
-      console.log('[wechatpay] Native 支付结果:', { status: res.status, result });
-
-      if (!res.ok) {
-        throw new Error(`微信支付下单失败: ${JSON.stringify(result)}`);
-      }
-
-      const codeUrl = result.code_url as string | undefined;
-      if (!codeUrl) {
-        throw new Error(`微信支付未返回二维码链接: ${JSON.stringify(result)}`);
-      }
-
-      return {
-        paymentId,
-        status: 'pending',
-        amount,
-        codeUrl,
-        message: '请顾客使用微信扫描二维码完成支付',
-      };
+      return await createNativePayment(requestBody);
     }
 
     if (channel === 'wechat_h5') {
@@ -360,52 +320,80 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
  * 查询支付状态
  * mock 模式下直接返回 pending，真实环境调微信订单查询接口。
  */
-export async function queryPaymentStatus(paymentId: string): Promise<Pick<PaymentResult, 'status' | 'message'> & { amount?: number; transactionId?: string; paidAt?: string }> {
-  if (WECHAT_PAY_MOCK) {
-    return { status: 'pending', message: 'mock 模式：请手动确认收款' };
-  }
+export type GatewayStatus = Pick<PaymentResult, 'status' | 'message'> & {
+  amount?: number; transactionId?: string; paidAt?: string;
+  tradeState?: 'SUCCESS' | 'NOTPAY' | 'CLOSED' | 'NOT_FOUND';
+};
 
+/** Every state used to allow a new payment must come from a verified WeChat response. */
+async function signedWechatRequest(method: string, path: string, body?: unknown) {
+  const mchid=process.env.WECHAT_MCH_ID, key=process.env.WECHAT_API_KEY, cert=process.env.WECHAT_API_CERT;
+  if(!mchid || !key || !cert) throw new Error('微信支付配置不完整');
+  const serial=getCertSerialNumber(cert);
+  if(!serial) throw new Error('微信商户证书无效');
+  const rawBody=body===undefined?'':JSON.stringify(body);
+  const timestamp=String(Math.floor(Date.now()/1000)),nonce=randomBytes(16).toString('hex');
+  const signature=createSign('RSA-SHA256').update(method+'\n'+path+'\n'+timestamp+'\n'+nonce+'\n'+rawBody+'\n').sign(key,'base64');
+  const authorization='WECHATPAY2-SHA256-RSA2048 mchid="'+mchid+'",nonce_str="'+nonce+'",signature="'+signature+'",timestamp="'+timestamp+'",serial_no="'+serial+'"';
+  const response=await fetch('https://api.mch.weixin.qq.com'+path,{
+    method, headers:{Authorization:authorization,Accept:'application/json','Content-Type':'application/json'},
+    ...(body===undefined?{}:{body:rawBody}),signal:AbortSignal.timeout(5_000),
+  });
+  const raw=await response.text();
+  // A close response is not proof of closure: the caller must re-query and verify CLOSED.
+  if(response.status===204) return {status:204,data:{} as Record<string,any>};
+  const ts=response.headers.get('wechatpay-timestamp') || '', n=response.headers.get('wechatpay-nonce') || '';
+  const sig=response.headers.get('wechatpay-signature') || '', sn=response.headers.get('wechatpay-serial') || '';
+  const publicKey=process.env.WECHAT_PAY_PUBLIC_KEY?.trim() || (await fetchWechatPlatformCerts())?.[sn];
+  if(!publicKey || !/^\d+$/.test(ts) || Math.abs(Date.now()/1000-Number(ts))>300 || !n || !sig ||
+    !verifyWechatSignature({rawBody:raw,timestamp:ts,nonce:n,signature:sig,publicKey})) throw new Error('微信响应验签失败，请核对原单');
+  return {status:response.status,data:JSON.parse(raw) as Record<string,any>};
+}
+
+export function nativePaymentRequest(orderNo:string,amount:number,description:string) {
+  const appid=process.env.WECHAT_APP_ID,mchid=process.env.WECHAT_MCH_ID,notify_url=getNotifyUrl();
+  if(!appid || !mchid || !notify_url || !process.env.WECHAT_API_KEY || !process.env.WECHAT_API_CERT) throw new Error('微信支付配置不完整，请检查环境变量');
+  if(!/^[A-Za-z0-9_-]{6,32}$/.test(orderNo) || !Number.isFinite(amount) || amount<=0 || Math.abs(amount*100-Math.round(amount*100))>1e-8) throw new Error('微信订单金额或单号无效');
+  return {appid,mchid,description,out_trade_no:orderNo,notify_url,amount:{total:Math.round(amount*100),currency:'CNY'}};
+}
+
+export async function createNativePayment(body: ReturnType<typeof nativePaymentRequest>):Promise<PaymentResult> {
+  if(body.mchid!==process.env.WECHAT_MCH_ID || body.appid!==process.env.WECHAT_APP_ID) throw new Error('原单商户配置已变化，请人工核对');
+  const response=await signedWechatRequest('POST','/v3/pay/transactions/native',body);
+  if(response.status!==200 || typeof response.data.code_url!=='string' || !response.data.code_url.startsWith('weixin://wxpay/')) {
+    throw new Error('微信二维码生成未完成（'+String(response.data.code || response.status)+'），请核对原单后重试');
+  }
+  return {paymentId:body.out_trade_no,status:'pending',amount:body.amount.total/100,codeUrl:response.data.code_url};
+}
+
+export async function closeNativePayment(orderNo:string) {
+  if(!/^[A-Za-z0-9_-]{6,32}$/.test(orderNo)) throw new Error('微信商户单号无效');
+  const response=await signedWechatRequest('POST','/v3/pay/transactions/out-trade-no/'+encodeURIComponent(orderNo)+'/close',{mchid:process.env.WECHAT_MCH_ID});
+  if(response.status!==204) throw new Error('微信原单关闭未确认，请核对原单');
+}
+
+export async function queryPaymentStatus(paymentId:string):Promise<GatewayStatus> {
+  if(WECHAT_PAY_MOCK) return {status:'pending',message:'mock 模式不提供真实支付证明'};
   try {
-    if(!/^[A-Za-z0-9_-]{6,32}$/.test(paymentId)) throw new Error('商户支付单号无效');
-    const mchid=process.env.WECHAT_MCH_ID, appid=process.env.WECHAT_APP_ID;
-    const key=process.env.WECHAT_API_KEY,cert=process.env.WECHAT_API_CERT;
-    if(!mchid || !appid || !key || !cert) return {status:'pending',message:'微信查单配置不完整'};
-    const serial=getCertSerialNumber(cert);if(!serial) throw new Error('商户证书无效');
-    const urlPath='/v3/pay/transactions/out-trade-no/'+encodeURIComponent(paymentId)+'?mchid='+encodeURIComponent(mchid);
-    const timestamp=String(Math.floor(Date.now()/1000)),nonce=randomBytes(16).toString('hex');
-    const requestSignature=createSign('RSA-SHA256').update('GET\n'+urlPath+'\n'+timestamp+'\n'+nonce+'\n\n').sign(key,'base64');
-    const authorization='WECHATPAY2-SHA256-RSA2048 mchid="'+mchid+'",nonce_str="'+nonce+'",signature="'+requestSignature+'",timestamp="'+timestamp+'",serial_no="'+serial+'"';
-    const response=await fetch('https://api.mch.weixin.qq.com'+urlPath,{headers:{Authorization:authorization,Accept:'application/json'},signal:AbortSignal.timeout(10_000)});
-    const raw=await response.text();
-    if(!response.ok) return {status:'pending',message:'微信查单暂未成功（HTTP '+response.status+'），请稍后核对原单'};
-    const responseTimestamp=response.headers.get('wechatpay-timestamp') || '';
-    const responseNonce=response.headers.get('wechatpay-nonce') || '';
-    const responseSignature=response.headers.get('wechatpay-signature') || '';
-    const responseSerial=response.headers.get('wechatpay-serial') || '';
-    let publicKey=process.env.WECHAT_PAY_PUBLIC_KEY?.trim();
-    if(!publicKey) publicKey=(await fetchWechatPlatformCerts())?.[responseSerial];
-    if(!publicKey || !/^\d+$/.test(responseTimestamp) || Math.abs(Date.now()/1000-Number(responseTimestamp))>300 || !responseNonce || !responseSignature ||
-      !verifyWechatSignature({rawBody:raw,timestamp:responseTimestamp,nonce:responseNonce,signature:responseSignature,publicKey})) {
-      throw new Error('微信查单响应验签失败，不能登记为已核对收款');
+    if(!/^[A-Za-z0-9_-]{6,32}$/.test(paymentId)) throw new Error('微信商户单号无效');
+    const response=await signedWechatRequest('GET','/v3/pay/transactions/out-trade-no/'+encodeURIComponent(paymentId)+'?mchid='+encodeURIComponent(process.env.WECHAT_MCH_ID || ''));
+    const data=response.data;
+    if(response.status===404 && data.code==='ORDER_NOT_EXIST') return {status:'pending',tradeState:'NOT_FOUND',message:'微信尚无此商户单'};
+    if(response.status!==200) return {status:'pending',message:'微信查单暂未成功（HTTP '+response.status+'），请核对原单'};
+    if(data.mchid!==process.env.WECHAT_MCH_ID || data.appid!==process.env.WECHAT_APP_ID || data.out_trade_no!==paymentId ||
+       data.amount?.currency!=='CNY' || !Number.isInteger(data.amount?.total)) throw new Error('微信订单商户或金额不匹配');
+    if(data.trade_state==='SUCCESS') {
+      const receipt=wechatSuccessReceipt(data,{mchid:process.env.WECHAT_MCH_ID,appid:process.env.WECHAT_APP_ID,paymentId});
+      return {status:'paid',tradeState:'SUCCESS',amount:receipt.amount,transactionId:receipt.transactionId,paidAt:receipt.paidAt,message:'支付成功'};
     }
-    const result={data:JSON.parse(raw) as Record<string,any>};
-    const state = result?.data?.trade_state as string | undefined;
-    if (state === 'SUCCESS') {
-      const data = result.data;
-      if (data.mchid !== process.env.WECHAT_MCH_ID || data.appid !== process.env.WECHAT_APP_ID || data.amount?.currency !== 'CNY' || !Number.isInteger(data.amount?.total)) return { status: 'failed', message: '支付金额或商户不匹配' };
-      const receipt = wechatSuccessReceipt(data as Record<string, any>, {
-        mchid: process.env.WECHAT_MCH_ID, appid: process.env.WECHAT_APP_ID, paymentId,
-      });
-      return { status: 'paid', amount: receipt.amount, transactionId: receipt.transactionId, paidAt: receipt.paidAt, message: '支付成功' };
-    }
-    if (state === 'NOTPAY') return { status: 'pending', message: '等待支付' };
-    if (state === 'CLOSED') return { status: 'failed', message: '订单已关闭' };
-    if (state === 'REVOKED') return { status: 'failed', message: '订单已撤销' };
-    return { status: 'pending', message: state || '未知状态' };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[wechatpay] 查询订单状态失败（未输出请求或支付人信息）');
-    return { status: 'pending', message: message.startsWith('微信') ? message : '微信查单暂不可用，请稍后核对原单' };
+    if(data.trade_state==='NOTPAY' || data.trade_state==='CLOSED') return {
+      status:data.trade_state==='CLOSED'?'failed':'pending',tradeState:data.trade_state,amount:data.amount.total/100,
+      message:data.trade_state==='CLOSED'?'原单已关闭':'等待支付',
+    };
+    return {status:'pending',message:'原单尚不能安全恢复，请稍后核对'};
+  } catch {
+    console.error('[wechatpay] 查单未完成，原单保留');
+    return {status:'pending',message:'微信查单暂不可用或验签未通过，请稍后核对原单'};
   }
 }
 

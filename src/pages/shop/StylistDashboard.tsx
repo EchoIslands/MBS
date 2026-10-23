@@ -19,6 +19,9 @@ import { stylistApi, bookingApi, employeeApi } from '../../api';
 import { StylistPerformance, UserRole, Booking } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
 import ShopLayout from './ShopLayout';
+import { businessDateKey } from '../../../shared/lib/dashboardStats';
+import { FINANCIAL_BASIS_NOTE } from '../../../shared/lib/financialReport';
+import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const StylistDashboard: React.FC = () => {
   const { currentEmployee, currentShop, userRole } = useAppStore();
@@ -28,6 +31,7 @@ const StylistDashboard: React.FC = () => {
 
   const isManagerOrCEO =
     userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
+  const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +52,7 @@ const StylistDashboard: React.FC = () => {
         const shopId = currentShop.id;
         const [performanceList, bookings] = await Promise.all([
           stylistApi.getPerformance(shopId),
-          bookingApi.getBookingsByShop(shopId),
+          bookingApi.getBookingsByShop(shopId, businessDateKey(new Date())),
         ]);
         if (cancelled) return;
 
@@ -57,6 +61,7 @@ const StylistDashboard: React.FC = () => {
           .map((p: unknown) => {
             const item = p as Partial<StylistPerformance>;
             return {
+              timeBasis:item.timeBasis, generatedAt:item.generatedAt, excluded:item.excluded, commissionNote:item.commissionNote,
               stylistId: item.stylistId || '',
               stylistName: item.stylistName || '',
               title: item.title || '发型师',
@@ -77,6 +82,7 @@ const StylistDashboard: React.FC = () => {
           .sort((a, b) => b.revenue.month - a.revenue.month);
 
         setAllPerformances(allPerf);
+        setOwnPerformance(null);
 
         // 当前发型师自己的业绩
         if (currentEmployee) {
@@ -97,14 +103,14 @@ const StylistDashboard: React.FC = () => {
         }
 
         // 今日预约（按日期和服务对象筛选）
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = businessDateKey(new Date());
         const filtered = (bookings || []).filter((b) => {
           const scheduled = b.scheduledTime ? new Date(b.scheduledTime) : null;
           const isToday = scheduled
-            ? scheduled.toISOString().split('T')[0] === todayStr
+            ? businessDateKey(scheduled) === todayStr
             : false;
           const matchRole =
-            userRole === UserRole.STYLIST ? b.barberId === currentEmployee?.id : true;
+            userRole === UserRole.STYLIST ? (b.stylistId || b.barberId) === currentEmployee?.id : true;
           return isToday && matchRole;
         });
         setTodayBookings(filtered);
@@ -117,7 +123,7 @@ const StylistDashboard: React.FC = () => {
 
     loadData();
     return () => { cancelled = true; };
-  }, [currentEmployee, currentShop, userRole, isManagerOrCEO]);
+  }, [currentEmployee, currentShop, userRole, isManagerOrCEO, refresh]);
 
   // 保存头像
   const handleSaveAvatar = async () => {
@@ -144,6 +150,15 @@ const StylistDashboard: React.FC = () => {
     setEditingAvatar(false);
   };
 
+  const shownPerformances = isManagerOrCEO ? allPerformances : ownPerformance ? [ownPerformance] : [];
+  const excludedCount = shownPerformances.reduce((n,p) => n + (p.excluded?.count || 0),0);
+  const basisNotice = <div className="mb-5 rounded-xl bg-blue-50 text-blue-900 text-sm p-4 space-y-2">
+    <p>{FINANCIAL_BASIS_NOTE}</p>
+    <p>金额为当前在职设计师的归属项目产值，整单优惠尚未分摊，不代表全店实收；服务次数和类型仅统计本月。评分为历史评价均分，0表示暂无有效评价。</p>
+    <p>数据截止：{settlementDateLabel(shownPerformances[0]?.generatedAt)}　<button className="underline" onClick={() => setRefresh(n => n+1)}>刷新数据</button></p>
+    {excludedCount > 0 && <p>有 {excludedCount} 条设计师关联的已完成结算待核对，未计入业绩和服务次数；多人共同服务的订单可能重复计数。</p>}
+  </div>;
+
   // ========== 店长/CEO 视图：全员业绩看板 ==========
   if (loading) {
     return (
@@ -161,6 +176,7 @@ const StylistDashboard: React.FC = () => {
       <ShopLayout title="发型师看板">
         <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-600 text-sm">
           {error}
+          <button onClick={() => setRefresh(n => n+1)} className="ml-3 underline">重新加载</button>
         </div>
       </ShopLayout>
     );
@@ -172,9 +188,8 @@ const StylistDashboard: React.FC = () => {
     const totalWeek = allPerformances.reduce((sum, p) => sum + p.revenue.week, 0);
     const totalMonth = allPerformances.reduce((sum, p) => sum + p.revenue.month, 0);
     const totalOrders = allPerformances.reduce((sum, p) => sum + p.services.total, 0);
-    const avgRating = (
-      allPerformances.reduce((sum, p) => sum + p.averageRating, 0) / allPerformances.length
-    ).toFixed(1);
+    const rated = allPerformances.filter(p => p.averageRating > 0);
+    const avgRating = (rated.reduce((sum,p) => sum+p.averageRating,0) / (rated.length || 1)).toFixed(1);
 
     // 按本月产值排序
     const sorted = [...allPerformances].sort(
@@ -183,12 +198,13 @@ const StylistDashboard: React.FC = () => {
 
     return (
       <ShopLayout title="发型师看板">
+        {basisNotice}
         {/* 汇总数据卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-5 text-white shadow-md">
             <div className="flex items-center gap-2 text-orange-100 mb-1">
               <DollarSign size={14} />
-              <span className="text-xs">今日全店产值</span>
+              <span className="text-xs">今日设计师项目产值</span>
             </div>
             <div className="text-2xl font-bold">¥{totalToday.toLocaleString()}</div>
             <div className="text-xs text-orange-200 mt-1">本周 ¥{totalWeek.toLocaleString()}</div>
@@ -196,15 +212,15 @@ const StylistDashboard: React.FC = () => {
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <BarChart3 size={14} />
-              <span>本月总产值</span>
+              <span>本月设计师项目产值</span>
             </div>
             <div className="text-2xl font-bold text-gray-800">¥{totalMonth.toLocaleString()}</div>
-            <div className="text-xs text-gray-400 mt-1">年化 ¥{(totalMonth * 12).toLocaleString()}</div>
+            <div className="text-xs text-gray-400 mt-1">按本月归属项目汇总</div>
           </div>
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <Scissors size={14} />
-              <span>本月总接单</span>
+              <span>本月服务次数</span>
             </div>
             <div className="text-2xl font-bold text-gray-800">{totalOrders}</div>
             <div className="text-xs text-gray-400 mt-1">
@@ -214,11 +230,11 @@ const StylistDashboard: React.FC = () => {
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <Star size={14} />
-              <span>平均评分</span>
+              <span>设计师评分均值</span>
             </div>
             <div className="text-2xl font-bold text-yellow-500">{avgRating}</div>
             <div className="text-xs text-gray-400 mt-1">
-              {allPerformances.length} 位发型师
+              {rated.length} 位已获评价设计师
             </div>
           </div>
         </div>
@@ -322,7 +338,7 @@ const StylistDashboard: React.FC = () => {
                 {/* 服务统计 */}
                 <div className="col-span-2 text-center">
                   <div className="text-sm font-medium text-gray-700">
-                    {perf.services.total} 单
+                    {perf.services.total} 次
                   </div>
                   <div className="text-xs text-gray-400 flex justify-center gap-1 flex-wrap">
                     {Object.entries(perf.services.byType).map(([type, count]) => (
@@ -341,14 +357,14 @@ const StylistDashboard: React.FC = () => {
         <div className="mt-5 bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
             <Award size={18} className="text-orange-500" />
-            服务类型分布
+            本月服务类型分布
           </h2>
           <div className="space-y-4">
             {sorted.map((perf) => (
               <div key={perf.stylistId} className="border-b border-gray-100 last:border-0 pb-4 last:pb-0">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium text-gray-800 text-sm">{perf.stylistName}</span>
-                  <span className="text-xs text-gray-400">共 {perf.services.total} 单</span>
+                  <span className="text-xs text-gray-400">本月 {perf.services.total} 次</span>
                 </div>
                 <div className="flex gap-1 h-6 rounded-full overflow-hidden">
                   {Object.entries(perf.services.byType).map(([type, count]) => {
@@ -363,7 +379,7 @@ const StylistDashboard: React.FC = () => {
                         key={type}
                         className={`${colorMap[type] || 'bg-gray-300'} rounded-full flex items-center justify-center text-white text-xs font-medium`}
                         style={{ width: `${pct}%` }}
-                        title={`${type}: ${count}单 (${pct}%)`}
+                        title={`${type}: ${count}次 (${pct}%)`}
                       >
                         {pct >= 15 ? `${type}${count}` : pct >= 5 ? `${count}` : ''}
                       </div>
@@ -375,7 +391,7 @@ const StylistDashboard: React.FC = () => {
                     const pct = Math.round(((count as number) / perf.services.total) * 100);
                     return (
                       <span key={type}>
-                        {type} <span className="text-gray-600 font-medium">{count}单</span>{' '}
+                        {type} <span className="text-gray-600 font-medium">{count}次</span>{' '}
                         <span>({pct}%)</span>
                       </span>
                     );
@@ -393,13 +409,14 @@ const StylistDashboard: React.FC = () => {
   if (!ownPerformance) {
     return (
       <ShopLayout title="发型师看板">
-        <div className="text-gray-500 text-center py-12">加载中...</div>
+        <div className="text-gray-500 text-center py-12">暂无本人业绩记录。<button className="underline ml-3" onClick={() => setRefresh(n => n+1)}>刷新</button></div>
       </ShopLayout>
     );
   }
 
   return (
     <ShopLayout title="发型师看板">
+      {basisNotice}
       {/* 发型师个人信息卡片 */}
       <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
         <div className="flex items-center gap-4">
@@ -463,7 +480,7 @@ const StylistDashboard: React.FC = () => {
                   {currentEmployee?.name || '发型师'}
                 </h2>
                 <p className="text-sm text-gray-500">
-                  {currentEmployee?.title || '首席发型师'}
+                  {currentEmployee?.title || '发型师'}
                 </p>
               </>
             )}
@@ -482,7 +499,7 @@ const StylistDashboard: React.FC = () => {
             ¥{ownPerformance.revenue.today.toLocaleString()}
           </div>
           <div className="text-xs text-gray-400 mt-1">
-            预计提成: ¥{ownPerformance.estimatedCommission.toLocaleString()}
+            本月历史算法预估提成: ¥{ownPerformance.estimatedCommission.toLocaleString()}
           </div>
         </div>
 
@@ -500,6 +517,7 @@ const StylistDashboard: React.FC = () => {
         </div>
       </div>
 
+      <p className="text-xs text-amber-800 bg-amber-50 rounded-xl p-3 mb-5">{ownPerformance.commissionNote || '提成比例和计提基数尚需门店确认，不作为工资结算依据'}</p>
       {/* 评分和服务统计 */}
       <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -517,7 +535,7 @@ const StylistDashboard: React.FC = () => {
             <div className="text-2xl font-bold text-blue-500">
               {ownPerformance.services.total}
             </div>
-            <div className="text-xs text-gray-500 mt-1">总服务次数</div>
+            <div className="text-xs text-gray-500 mt-1">本月服务次数</div>
           </div>
           <div className="text-center p-3 bg-purple-50 rounded-xl">
             <div className="text-2xl font-bold text-purple-500">
@@ -568,6 +586,7 @@ const StylistDashboard: React.FC = () => {
                       {new Date(booking.scheduledTime).toLocaleTimeString('zh-CN', {
                         hour: '2-digit',
                         minute: '2-digit',
+                        timeZone: 'Asia/Shanghai',
                       })}
                     </div>
                   </div>

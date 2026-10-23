@@ -56,6 +56,7 @@ import QRCode from 'qrcode';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
 import GroupBuyScanner from '../../components/shop/GroupBuyScanner';
+import { manualPaymentTimeIso } from '../../../shared/lib/manualPaymentTime';
 
 interface CartItem {
   id: string;
@@ -104,6 +105,7 @@ const Checkout: React.FC = () => {
   const [selectedBenefits, setSelectedBenefits] = useState<string[]>([]);
   const [availableBenefits, setAvailableBenefits] = useState<MemberBenefitRecord[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wechat' | 'alipay' | 'card' | 'balance'>('cash');
+  const [manualPaidAtLocal, setManualPaidAtLocal] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -122,6 +124,8 @@ const Checkout: React.FC = () => {
   const [pendingSettlements, setPendingSettlements] = useState<Settlement[]>([]);
   const [loadingPendingSettlements, setLoadingPendingSettlements] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [lockedSettlement, setLockedSettlement] = useState<Settlement | null>(null);
+  const [recoveringPayment,setRecoveringPayment] = useState(false);
   const [paymentRecoveryBlock, setPaymentRecoveryBlock] = useState('');
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -300,7 +304,7 @@ const Checkout: React.FC = () => {
 
   // 选中客户后加载可用权益
   useEffect(() => {
-    if (!selectedCustomer) {
+    if (lockedSettlement || !selectedCustomer) {
       setAvailableBenefits([]);
       return;
     }
@@ -315,11 +319,11 @@ const Checkout: React.FC = () => {
     };
     loadBenefits();
     return () => { cancelled = true; };
-  }, [selectedCustomer]);
+  }, [selectedCustomer, lockedSettlement]);
 
   // 选中客户 + 购物车服务确定后，加载可用次卡（用于次卡抵扣选择）
   useEffect(() => {
-    if (!selectedCustomer || cartServiceIds.length === 0) {
+    if (lockedSettlement || !selectedCustomer || cartServiceIds.length === 0) {
       setAvailablePackages([]);
       setSelectedPackageId('');
       return;
@@ -338,7 +342,7 @@ const Checkout: React.FC = () => {
         if (!cancelled) setAvailablePackages([]);
       });
     return () => { cancelled = true; };
-  }, [selectedCustomer?.id, cartServiceKey]);
+  }, [selectedCustomer?.id, cartServiceKey, lockedSettlement]);
 
   // 加载未完成结算（草稿 / 待支付）
   const loadPendingSettlements = useCallback(async () => {
@@ -669,6 +673,7 @@ const Checkout: React.FC = () => {
   const handleContinueSettlement = async (s: Settlement) => {
     if (submissionLock.current) return;
     submissionLock.current = true;
+    setLockedSettlement(s);
     setPaymentRecoveryBlock('正在核对原单支付状态，请稍候');
     setWechatPayment(null);
     setShowWechatModal(false);
@@ -690,6 +695,7 @@ const Checkout: React.FC = () => {
     }));
     setCart(restoredCart);
     setPaymentMethod(s.paymentMethod || 'cash');
+    setManualPaidAtLocal('');
     // 重置与草稿无关的临时状态，避免上一单的状态串进来
     setPriceOverrides(Object.fromEntries((s.items || []).flatMap((item, index) => item.priceOverride === undefined ? [] : [[index, item.priceOverride]])));
     setSelectedPackageId(s.customerPackageId || '');
@@ -701,7 +707,9 @@ const Checkout: React.FC = () => {
           const released = await settlementApi.releaseUnstartedPayment(s.id);
           if (released) state = await settlementApi.getPaymentStatus(s.id);
         }
+        if (state.settlement) setLockedSettlement(state.settlement);
         if (state.recoveryState === 'editable') {
+          setLockedSettlement(null);
           setPaymentRecoveryBlock('');
         } else if (state.recoveryState === 'qr_available' && state.payment?.codeUrl) {
           setPaymentRecoveryBlock(`原单 ${s.id} 已有支付订单，请使用原二维码，勿再次生成收款单`);
@@ -711,7 +719,7 @@ const Checkout: React.FC = () => {
         } else {
           const reason = state.recoveryState === 'initialization_started'
             ? '支付认领尚未过期或状态不能安全释放，请稍后重试或联系管理员核对'
-            : state.payment ? '已有支付记录，但没有可安全恢复的待支付二维码，需核对原单收款状态'
+            : state.payment ? '已有支付记录，可点击下方按钮向微信核对并恢复原支付'
             : '无法确认原单是否已发起支付，请核对部署版本与支付状态';
           setPaymentRecoveryBlock(`原单 ${s.id}：${reason}。请勿重新开单收款。`);
         }
@@ -721,6 +729,20 @@ const Checkout: React.FC = () => {
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 50);
+  };
+
+  const handleRecoverPayment = async () => {
+    if(!lockedSettlement || submissionLock.current) return;
+    submissionLock.current=true;
+    setRecoveringPayment(true);
+    try {
+      const result=await settlementApi.retryPayment(lockedSettlement.id);
+      if(result.status==='paid') {setCompletedSettlementId(lockedSettlement.id);setSuccess(true);return;}
+      if(!result.codeUrl) throw new Error('微信暂未返回可用二维码，请稍后核对原单');
+      setWechatPayment(result);setPendingSettlementId(lockedSettlement.id);setShowWechatModal(true);
+      setPaymentRecoveryBlock('原单已核对，关闭窗口后可再次恢复；请勿另开同一笔收款。');
+    } catch(err) {setPaymentRecoveryBlock(err instanceof Error?err.message:'原支付核对未完成，请稍后重试');}
+    finally {submissionLock.current=false;setRecoveringPayment(false);}
   };
 
   const handleSubmit = async () => {
@@ -750,6 +772,10 @@ const Checkout: React.FC = () => {
 
   const doSubmit = async () => {
     if (submissionLock.current || paymentRecoveryBlock) return;
+    let manualPaidAt: string | undefined;
+    try {
+      if (paymentMethod === 'cash' || paymentMethod === 'card') manualPaidAt = manualPaymentTimeIso(manualPaidAtLocal);
+    } catch (error) { alert(error instanceof Error ? error.message : '付款时间无效'); return; }
     submissionLock.current = true;
     setSubmitting(true);
 
@@ -803,6 +829,7 @@ const Checkout: React.FC = () => {
       tax: 0,
       total,
       paymentMethod,
+      manualPaidAt,
       usedBenefitIds: selectedBenefits,
       customerPackageId: selectedPackageId || undefined,
       processedBy: currentEmployee?.name,
@@ -815,6 +842,8 @@ const Checkout: React.FC = () => {
 
       // 微信支付/支付宝：进入待支付流程，显示二维码
       if (result && typeof result === 'object' && 'payment' in result && 'settlement' in result) {
+        setLockedSettlement(result.settlement);
+        setPaymentRecoveryBlock('本单已有微信支付记录，请恢复原支付，勿另开收款单。');
         setWechatPayment(result.payment);
         setPendingSettlementId(result.settlement.id);
         setShowWechatModal(true);
@@ -861,6 +890,15 @@ const Checkout: React.FC = () => {
       setSubmitting(false);
       setSuccess(true);
     } catch (err: unknown) {
+      if(paymentMethod==='wechat' && total>0 && newSettlement.id) {
+        try {
+          const state=await settlementApi.getPaymentStatus(newSettlement.id);
+          if(state.payment && state.settlement) {
+            setLockedSettlement(state.settlement);
+            setPaymentRecoveryBlock('支付请求未完成，请从原单核对并恢复，勿重新收款。');
+          }
+        } catch { /* Keep the original submission ID; a failed lookup never authorizes a new charge. */ }
+      }
       alert((err as Error).message || '结算失败，请重试');
       setSubmitting(false);
     } finally {
@@ -952,6 +990,8 @@ const Checkout: React.FC = () => {
               <button
                 onClick={() => {
                   setSuccess(false);
+                  setLockedSettlement(null);
+                  setPaymentRecoveryBlock('');
                   setCurrentDraftId(null);
                   setActiveBookingId(null);
                   submissionId.current = `settle_${crypto.randomUUID()}`;
@@ -1024,7 +1064,22 @@ const Checkout: React.FC = () => {
             </div>
           )}
 
-          {!loadingShop && !loadingCustomers && (
+          {lockedSettlement && (
+            <div ref={formRef} className="bg-white rounded-2xl p-6 border border-amber-200 space-y-4" aria-label="原结算支付恢复">
+              <h2 className="text-lg font-bold">恢复原结算支付</h2>
+              <p className="text-sm text-gray-500 break-all">结算单号：{lockedSettlement.id}</p>
+              <p>顾客：{lockedSettlement.customerName}</p>
+              {lockedSettlement.items.map((item,index)=><div key={index} className="flex justify-between gap-4"><span>{item.name} ×{item.quantity}</span><span>¥{Number(item.total).toFixed(2)}</span></div>)}
+              <p className="text-sm text-gray-500">创建时间：{new Date(lockedSettlement.createdAt).toLocaleString('zh-CN')}</p>
+              <div className="border-t pt-3 flex justify-between font-bold"><span>原单实付金额</span><span className="text-orange-600">¥{Number(lockedSettlement.total).toFixed(2)}</span></div>
+              <p className="text-sm text-gray-500">已有支付单按原结算金额恢复，服务目录和顾客当前折扣不会重新套用。</p>
+              <p className="text-sm text-amber-800" role="status">{paymentRecoveryBlock}</p>
+              <button type="button" onClick={handleRecoverPayment} disabled={recoveringPayment} className="w-full py-3 rounded-xl bg-purple-600 disabled:bg-gray-400 text-white font-bold">
+                {recoveringPayment?'正在核对微信原单…':'核对并恢复原支付'}
+              </button>
+            </div>
+          )}
+          {!lockedSettlement && !loadingShop && !loadingCustomers && (
           <div ref={formRef} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* 左侧：客户 + 服务/商品 + 权益 */}
             <div className="lg:col-span-2 space-y-6">
@@ -1476,6 +1531,13 @@ const Checkout: React.FC = () => {
                   </div>
                 )}
 
+                {(paymentMethod === 'cash' || paymentMethod === 'card') && cart.length > 0 && !paymentRecoveryBlock && (
+                  <div className="mb-4">
+                    <label htmlFor="manual-paid-at" className="block text-sm font-medium text-gray-700 mb-2">付款发生时间（北京时间，可选）</label>
+                    <input id="manual-paid-at" type="datetime-local" value={manualPaidAtLocal} onChange={event => setManualPaidAtLocal(event.target.value)} disabled={submitting} className="w-full rounded-lg border border-gray-300 p-2" />
+                    <p className="mt-2 text-xs text-gray-500">确认已收到款项后再结算。补录时请选择实际发生时间；留空以本次确认时刻登记。系统另行保存录入时间和经办员工，完成后不可修改。</p>
+                  </div>
+                )}
                 {paymentRecoveryBlock && <p className="mb-3 text-sm text-amber-800 bg-amber-50 p-3 rounded-lg" role="status">{paymentRecoveryBlock}</p>}
                 <button
                   onClick={handleSubmit}
@@ -1574,7 +1636,7 @@ const Checkout: React.FC = () => {
                 disabled={confirming}
                 className="w-full py-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-xl font-bold transition-colors"
               >
-                {confirming ? '确认中...' : '确认已收款'}
+                {confirming ? '向微信核对中...' : '核对微信收款'}
               </button>
               <button
                 onClick={() => {
@@ -1585,14 +1647,12 @@ const Checkout: React.FC = () => {
                 disabled={confirming}
                 className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
               >
-                取消
+                关闭二维码（保留原单）
               </button>
             </div>
 
             <p className="text-xs text-gray-400 text-center mt-4">
-              当前为 mock 模式：顾客扫码动作由店员确认后完成收款。
-              <br />
-              配置微信商户号后将自动调起真实微信支付。
+              扫码后点击“核对微信收款”，系统以微信返回的支付结果为准。关闭窗口不会取消订单。
             </p>
           </div>
         </div>

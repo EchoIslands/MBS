@@ -7,14 +7,17 @@ export function settlementPaidTime(s: Pick<Settlement, 'paidAt' | 'paidAtSource'
 }
 
 export function compareSettlements(a: Settlement, b: Settlement): number {
-  return settlementPaidTime(b) - settlementPaidTime(a) ||
+  const timelineTime = (s: Settlement) => settlementPaidTime(s) ||
+    (s.paymentStatus === 'completed' && s.manualPaidAt && (s.paymentMethod === 'balance' || (s.manualPaidRecordedAt && s.manualPaidRecordedBy)) ?
+      (Number.isFinite(new Date(s.manualPaidAt).getTime()) ? new Date(s.manualPaidAt).getTime() : 0) : 0);
+  return timelineTime(b) - timelineTime(a) ||
     (Date.parse(String(b.createdAt)) || 0) - (Date.parse(String(a.createdAt)) || 0) || a.id.localeCompare(b.id);
 }
 
 export function matchesSettlement(s: Settlement, query: string): boolean {
   const term = query.trim().replace(/^[¥￥]\s*/, '').toLowerCase();
   if (!term) return true;
-  return [s.customerName, s.id, s.paymentId, s.transactionId, Number(s.total).toFixed(2),
+  return [s.customerName, s.id, s.paymentId, s.gatewayOrderNo, s.transactionId, Number(s.total).toFixed(2),
     s.paymentAmount === undefined ? '' : Number(s.paymentAmount).toFixed(2)]
     .some(value => String(value || '').toLowerCase().includes(term));
 }

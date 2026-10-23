@@ -36,6 +36,7 @@ let calls = 0;
 let failMigration = false;
 let failAuthentication = false;
 let failPaymentQuery = false;
+let failDashboardTable = '';
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
  rowStart=0;rowEnd:number|undefined;
@@ -51,6 +52,7 @@ class Query {
  delete(){this.operation='delete';return this;}
  single(){this.singleRow=true;return this;} maybeSingle(){this.singleRow=true;return this;}
  then(resolve:any,reject:any){try{
+  if(failDashboardTable === this.table) return Promise.resolve({data:null,error:{message:'synthetic dashboard unavailable'}}).then(resolve,reject);
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
   let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r))).slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
@@ -83,16 +85,16 @@ let checkoutRpcCalls = 0;
   if(s.checkout_payment_started_at || !s.created_at || Date.now()-new Date(s.created_at).getTime()<5*60_000) return {data:false,error:null};
   s.checkout_payment_started=false;s.checkout_request_key=null;return {data:true,error:null};
  }
- if(name==='finalize_verified_wechat_payment') {
+ if(name==='finalize_wechat_attempt') {
   if(failRpc) return {data:null,error:{code:'PGRST202'}};
-  const p=(tables.payments || []).find(p=>p.id===args.p_payment_id && p.shop_id===args.p_shop_id);
+  const p=(tables.payments || []).find(p=>p.id===args.p_order_no && p.shop_id===args.p_shop_id);
   const s=(tables.settlements || []).find(s=>s.id===p?.settlement_id && s.shop_id===args.p_shop_id);
   if(!p || !s || Number(s.total)!==args.p_amount || Number(p.amount)!==args.p_amount || s.customer_id!==p.customer_id) return {data:null,error:{code:'P0001'}};
   Object.assign(p,{status:'paid',paid_at:args.p_paid_at,paid_at_source:'wechat_success_time',transaction_id:args.p_transaction_id});
   s.payment_status='completed';return {data:[s],error:null};
  }
- if (name === 'create_settlement_atomic') checkoutRpcCalls++;
- if (name === 'create_settlement_atomic' && completeCheckout) {
+ if (name === 'create_settlement_with_manual_time_atomic') checkoutRpcCalls++;
+ if (name === 'create_settlement_with_manual_time_atomic' && completeCheckout) {
   const row={...args.p_settlement,payment_status:'completed'};
   tables.settlements.push(row);
   return {data:[row],error:null};
@@ -161,7 +163,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const protectedPayment=await request('/settlements/recover/release-unstarted-payment',token,'POST',{});
     assert.equal(protectedPayment.status,409);
     assert.equal(await state(),'payment_needs_review');
-    tables.payments[0].code_url='synthetic:original';assert.equal(await state(),'qr_available');
+    tables.payments[0].code_url='synthetic:original';assert.equal(await state(),'payment_needs_review');
     tables.payments[0].amount=59;assert.equal(await state(),'payment_needs_review');
     tables.payments[0].amount=58;tables.payments[0].status='paid';assert.equal(await state(),'payment_needs_review');
     row.payment_status='completed';assert.equal(await state(),'completed');
@@ -481,12 +483,74 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const saved=[tables.settlements,tables.shops,tables.reviews];
    const now=new Date().toISOString();
    tables.shops=[{id:'s1',name:'Own',is_active:true},{id:'s2',name:'Foreign',is_active:true}];
-   tables.settlements=[{id:'paid',shop_id:'s1',total:10,payment_status:'completed',created_at:now,items:[{employeeId:'stylist',type:'service',total:10,quantity:1}]},{id:'draft',shop_id:'s1',total:999,payment_status:'pending',created_at:now},{id:'foreign',shop_id:'s2',total:888,payment_status:'completed',created_at:now}];tables.reviews=[];
+   tables.settlements=[{id:'paid',shop_id:'s1',total:10,payment_method:'cash',payment_status:'completed',created_at:now,items:[{employeeId:'stylist',type:'service',total:10,quantity:1}]},{id:'draft',shop_id:'s1',total:999,payment_status:'pending',created_at:now},{id:'foreign',shop_id:'s2',total:888,payment_status:'completed',created_at:now}];tables.reviews=[];
    try {
     const owner=await request('/owner/dashboard',ceo);assert.equal(owner.status,200);assert.equal(owner.body.data.totalRevenue.today,10);assert.equal(owner.body.data.shopStats.length,1);
     const financial=await request('/financial/report',ceo);assert.equal(financial.body.data.revenue.today,10);
     const performance=await request('/stylists/performance',stylist);assert.equal(performance.status,200);assert.equal(performance.body.data.length,1);assert.equal(performance.body.data[0].revenue.today,10);
    }finally{[tables.settlements,tables.shops,tables.reviews]=saved;}
+  });
+  await t.test('经营看板HTTP：旧单新付、旧项目分页、本人隔离、员工数与失败不返回部分业绩',async()=>{
+   const keys=['settlements','payments','settlement_items','reviews','wechat_payment_attempts','shops','employees','bookings'];
+   const saved=Object.fromEntries(keys.map(k=>[k,tables[k]]));const now=new Date().toISOString();
+   const settlement=(id:string)=>({id,shop_id:'s1',customer_id:'c1',total:33.64,payment_method:'wechat',payment_status:'completed',created_at:'2024-01-01T00:00:00Z',items:[]});
+   tables.shops=[{id:'s1',name:'Own',is_active:true}]; tables.reviews=[{id:'review',shop_id:'s1',stylist_id:'stylist',overall_score:4}];
+   tables.employees=[...saved.employees,{id:'second',shop_id:'s1',role:'stylist',name:'Second',is_active:true}];
+   tables.bookings=[{id:'today',shop_id:'s1',customer_id:'c1',scheduled_time:now,status:'confirmed'},{id:'cancel',shop_id:'s1',customer_id:'c2',scheduled_time:now,status:'cancelled'},
+     {id:'future',shop_id:'s1',customer_id:'future',scheduled_time:'2099-12-01T00:00:00Z',status:'confirmed'}];
+   tables.settlements=[settlement('valid'),settlement('unknown')];
+   tables.payments=[{id:'p',shop_id:'s1',settlement_id:'valid',customer_id:'c1',amount:33.64,status:'paid',paid_at:now,paid_at_source:'wechat_success_time',transaction_id:'wx'}];
+   tables.settlement_items=[{id:'i',settlement_id:'valid',employee_id:'stylist',employee_name:'Stylist',total:33.64,quantity:2,type:'service'},
+    {id:'bad',settlement_id:'unknown',employee_id:'stylist',total:33.64,quantity:1,type:'service'}]; tables.wechat_payment_attempts=[];
+   try{
+    const owner=await request('/owner/dashboard',ceo);assert.equal(owner.status,200);
+    assert.equal(owner.body.data.totalRevenue.today,33.64);assert.equal(owner.body.data.excluded.count,1);
+    assert.equal(owner.body.data.shopStats[0].employees,5);assert.equal(owner.body.data.totalCustomers.today,1);
+    assert.equal(owner.body.data.periodDetails.today.topStylists[0].services,2);
+    const own=await request('/stylists/performance?shopId=s2',stylist);assert.equal(own.status,200);
+    assert.equal(own.body.data.length,1);assert.equal(own.body.data[0].services.total,2);assert.equal(own.body.data[0].averageRating,4);
+    assert.equal(own.body.data[0].revenue.today,33.64);assert.equal(own.body.data[0].excluded.count,1);assert.equal(own.body.data[0].records,undefined);
+    assert.equal((await request('/owner/dashboard',stylist)).status,403);
+    failPaymentQuery=true;
+    for(const path of ['/owner/dashboard','/stylists/performance']){const failed=await request(path,ceo);assert.equal(failed.status,503);assert.equal(failed.body.data,undefined);}
+    failPaymentQuery=false;failDashboardTable='reviews';
+    for(const path of ['/owner/dashboard','/stylists/performance'])assert.equal((await request(path,ceo)).status,503);
+    failDashboardTable='';tables.payments=[];
+    tables.settlements=Array.from({length:1003},(_,i)=>({...settlement('page-'+i),total:0.01,payment_method:'cash',created_at:now}));
+    tables.settlement_items=tables.settlements.map(s=>({id:'i-'+s.id,settlement_id:s.id,employee_id:'stylist',total:0.01,quantity:1,type:'service'}));
+    tables.bookings=Array.from({length:1003},(_,i)=>({id:'b-'+i,shop_id:'s1',customer_id:'c-'+i,scheduled_time:now,status:'confirmed'}));
+    const paged=await request('/owner/dashboard',ceo);assert.equal(paged.body.data.totalRevenue.today,10.03);assert.equal(paged.body.data.totalCustomers.today,1003);
+    const pagedOwn=await request('/stylists/performance',stylist);assert.equal(pagedOwn.body.data[0].services.total,1003);assert.equal(pagedOwn.body.data[0].revenue.today,10.03);
+   }finally{failPaymentQuery=false;failDashboardTable='';for(const k of keys)tables[k]=saved[k];}
+  });
+  await t.test('财务HTTP：跨年旧单新付、历史时间缺失与金额异常、分页及支付查询失败',async()=>{
+   const saved=[tables.settlements,tables.payments,tables.settlement_items,tables.reviews,tables.wechat_payment_attempts];
+   const now=new Date().toISOString();
+   const settlement=(id:string,total=33.64)=>({id,shop_id:'s1',customer_id:'c1',customer_name:'Synthetic',total,payment_method:'wechat',payment_status:'completed',created_at:'2024-01-01T00:00:00Z',items:[{id:'svc',type:'service',quantity:1,total,employeeId:'stylist'}]});
+   const payment=(sid:string)=>({id:'payment-'+sid,shop_id:'s1',settlement_id:sid,customer_id:'c1',amount:33.64,status:'paid',paid_at:now,paid_at_source:'wechat_success_time',transaction_id:'wx-'+sid,created_at:now});
+   tables.settlements=[settlement('old'),settlement('unknown'),settlement('mismatch'),settlement('multiple'),{...settlement('foreign'),shop_id:'s2'},{...settlement('draft'),payment_status:'pending'}];
+   tables.payments=[payment('old'),{...payment('unknown'),paid_at_source:null},{...payment('mismatch'),amount:58},payment('multiple'),{...payment('multiple'),id:'second-payment'}];
+   tables.wechat_payment_attempts=[{payment_id:'payment-old',gateway_order_no:'actual-active-wechat-order',state:'active'}];
+   tables.reviews=[];tables.settlement_items=[];
+   try {
+    const result=await request('/financial/report',ceo);assert.equal(result.status,200);
+    const r=result.body.data;assert.equal(r.revenue.today,33.64);assert.equal(r.records.length,4);assert.equal(r.excluded.count,3);assert.equal(r.excluded.amount,100.92);
+    assert.equal(r.records.find((s:Row)=>s.id==='old').gatewayOrderNo,'actual-active-wechat-order');
+    assert.equal(r.topStylists[0].revenue,33.64);
+    failPaymentQuery=true;
+    const failed=await request('/financial/report',ceo);assert.equal(failed.status,503);assert.equal(failed.body.data,undefined);
+    failPaymentQuery=false;
+    // 超过默认1000行；最后一页也必须计入。旧表明细同样超过1000条。
+    tables.settlements=Array.from({length:1003},(_,i)=>({...settlement('page-'+String(i).padStart(4,'0'),0.01),payment_method:'cash',created_at:now,items:[]}));
+    tables.payments=[];
+    tables.settlement_items=tables.settlements.map(s=>({id:'item-'+s.id,settlement_id:s.id,quantity:1,type:'service',total:0.01,employee_id:'stylist'}));
+    const paged=await request('/financial/report',ceo);assert.equal(paged.status,200);assert.equal(paged.body.data.records.length,1003);
+    assert.equal(paged.body.data.revenue.today,10.03);assert.equal(paged.body.data.services.today,1003);assert.equal(paged.body.data.topStylists[0].revenue,10.03);
+    // 单个旧单也可能有超过一页的项目，验证项目查询自身的range翻页。
+    tables.settlement_items.push(...Array.from({length:1003},(_,i)=>({id:'free-'+i,settlement_id:tables.settlements[0].id,quantity:1,type:'service',total:0,employee_id:'stylist'})));
+    const manyItems=await request('/financial/report',ceo);assert.equal(manyItems.status,200);
+    assert.equal(manyItems.body.data.services.today,2006);assert.equal(manyItems.body.data.revenue.today,10.03);
+   }finally{failPaymentQuery=false;[tables.settlements,tables.payments,tables.settlement_items,tables.reviews,tables.wechat_payment_attempts]=saved;}
   });
   await t.test('埋点不能伪造顾客身份或夹带凭证，上传拒绝SVG和伪装图片',async()=>{
    tables.customer_events=[];
@@ -555,9 +619,10 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const target=tables.settlements[1001];target.total=33.64;target.created_at='2026-08-01T00:00:00Z';
     tables.payments=[{id:'gateway1',shop_id:'s1',customer_id:'c1',settlement_id:target.id,status:'paid',amount:33.64,created_at:'2026-10-22T10:00:00Z',paid_at:'2026-10-22T11:12:34Z',paid_at_source:'wechat_success_time',transaction_id:'420000001'},
       {id:'foreign',shop_id:'s2',customer_id:'c1',settlement_id:target.id,status:'paid',amount:33.64,paid_at:'2026-10-23T00:00:00Z',paid_at_source:'wechat_success_time'}];
+    tables.wechat_payment_attempts=[{payment_id:'gateway1',gateway_order_no:'new-gateway',state:'active'}];
     const result=await request('/settlements?shopId=s2',token);
     assert.equal(result.status,200);assert.equal(result.body.data.length,1002);assert.equal(result.body.data[0].id,target.id);
-    assert.equal(result.body.data[0].paidAt,'2026-10-22T11:12:34Z');assert.equal(result.body.data[0].paymentAmount,33.64);
+    assert.equal(result.body.data[0].paidAt,'2026-10-22T11:12:34Z');assert.equal(result.body.data[0].paymentAmount,33.64);assert.equal(result.body.data[0].gatewayOrderNo,'new-gateway');
     assert.equal((await request('/settlements/'+target.id,token)).body.data.paymentId,'gateway1');
     tables.payments[0].customer_id='wrong-customer';
     assert.equal((await request('/settlements/'+target.id+'/confirm-payment',token,'POST',{})).status,409);
@@ -566,7 +631,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const legacy=(await request('/settlements/'+target.id,token)).body.data;
     assert.equal(legacy.paidAt,undefined);assert.equal(legacy.paymentRecordedAt,'2026-10-22T11:12:34Z');
     failPaymentQuery=true;assert.notEqual((await request('/settlements',token)).status,200);
-   } finally {failPaymentQuery=false;[tables.settlements,tables.payments]=previous;}
+   } finally {failPaymentQuery=false;tables.wechat_payment_attempts=[];[tables.settlements,tables.payments]=previous;}
   });
   await t.test('真实RSA验签/AES解密回调使用success_time；重复回调不改时间，失败要求微信重试',async()=>{
    const previous=[tables.settlements,tables.payments];
@@ -600,3 +665,4 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   });
  }finally{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));globalThis.fetch=realFetch;}
 });
+

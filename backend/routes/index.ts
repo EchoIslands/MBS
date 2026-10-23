@@ -1,3 +1,4 @@
+import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId } from '../services/paymentRecovery.js';
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { randomUUID, createHash } from 'crypto';
@@ -5,7 +6,7 @@ import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { operationError } from '../lib/rpcErrors.js';
-import {businessPeriods,businessDayRange,businessDate} from '../lib/businessTime.js';
+import {businessDayRange,businessDate} from '../lib/businessTime.js';
 import {imageReference,sendStoredImage,restoreImageReference} from '../lib/imageData.js';
 import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
 import { bookingAccess } from '../middleware/bookingAccess.js';
@@ -18,9 +19,11 @@ import {
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
-import { createPayment, queryPaymentStatus, handleWechatCallback, PaymentChannel } from '../services/paymentService.js';
+import { queryPaymentStatus, handleWechatCallback } from '../services/paymentService.js';
 import { recordWechatReceipt } from '../services/settlementReceipt.js';
 import { compareSettlements } from '../../shared/lib/settlementDisplay.js';
+import { buildFinancialReport } from '../../shared/lib/financialReport.js';
+import { buildOwnerDashboard, buildStylistPerformances } from '../../shared/lib/dashboardStats.js';
 import type { Settlement } from '../../shared/types.js';
 import QRCode from 'qrcode';
 import { priceSettlement } from '../lib/settlementPricing.js';
@@ -4581,10 +4584,13 @@ const settlementFromDb = (s: Record<string, unknown>, payment?: Record<string, u
     discountDetail:s.discount_detail || {}, discount:Number(s.discount) || 0, tax:Number(s.tax) || 0, total:Number(s.total) || 0,
     paymentMethod:s.payment_method, paymentStatus:s.payment_status, usedBenefitIds:s.used_benefit_ids || [],
     processedBy:s.processed_by, createdAt:s.created_at,
-    paymentId:matches ? payment?.id : undefined, paymentAmount:matches && payment ? Number(payment.amount) : undefined,
+    paymentId:matches ? payment?.id : undefined, gatewayOrderNo:matches ? (payment?.gateway_order_no || payment?.id) : undefined, paymentAmount:matches && payment ? Number(payment.amount) : undefined,
     paymentCreatedAt:matches ? payment?.created_at : undefined,
     paidAt:matches && verified ? payment?.paid_at : undefined, paidAtSource:matches && verified ? 'wechat_success_time' : undefined,
     paymentRecordedAt:matches && !verified ? payment?.paid_at : undefined,
+    manualPaidAt:s.manual_paid_at,
+    manualPaidRecordedAt:s.manual_paid_recorded_at,
+    manualPaidRecordedBy:s.manual_paid_recorded_by,
     transactionId:matches ? payment?.transaction_id : undefined, paymentRecordStatus:matches ? payment?.status : undefined,
     paymentReviewRequired:!matches || Boolean(payment?.multiple) || (payment?.status==='paid' && s.payment_status!=='completed'),
   };
@@ -4601,7 +4607,14 @@ const attachSettlementPayments = async (shopId:string, settlements:Record<string
         .eq('shop_id',shopId).in('settlement_id',ids.slice(offset,offset+100))
         .order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*500,page*500+499);
       if(error) {console.error('[settlements] 支付明细查询失败 code=%s',error.code || 'UNKNOWN');throw new Error('支付明细暂无法读取，请刷新重试并检查037迁移');}
+      const attempts=new Map<string,string>();
+      for(let offset=0;offset<(data || []).length;offset+=100) {
+        const {data:active,error:attemptError}=await supabase.from('wechat_payment_attempts').select('payment_id,gateway_order_no').eq('state','active').in('payment_id',(data || []).slice(offset,offset+100).map(p=>p.id));
+        if(attemptError) throw new Error('支付尝试记录暂不可读，请检查038迁移');
+        for(const a of active || []) attempts.set(a.payment_id,a.gateway_order_no);
+      }
       for(const payment of (data || []) as Record<string,unknown>[]) {
+        payment.gateway_order_no=attempts.get(String(payment.id)) || payment.id;
         const key=String(payment.settlement_id); const current=result.get(key);
         if(!current) result.set(key,payment);
         else {
@@ -4616,6 +4629,44 @@ const attachSettlementPayments = async (shopId:string, settlements:Record<string
   return result;
 };
 
+/** Shared, fully paginated settlement snapshot for financial and operational dashboards. */
+async function loadCompletedSettlementRecords(shopId: string): Promise<Settlement[]> {
+  const settlements: DbRecord[] = [];
+  for (let page = 0; ; page++) {
+    const { data, error } = await supabase.from('settlements').select('*')
+      .eq('shop_id', shopId).eq('payment_status', 'completed')
+      .order('id', { ascending: true }).range(page * 500, page * 500 + 499);
+    if (error) throw new Error('结算数据读取失败');
+    settlements.push(...(data || []));
+    if ((data || []).length < 500) break;
+  }
+  const legacy = settlements.filter(s => !Array.isArray(s.items) || !s.items.length);
+  const itemsBySettlement = new Map<string, DbRecord[]>();
+  for (let offset = 0; offset < legacy.length; offset += 100) {
+    for (let page = 0; ; page++) {
+      const { data, error } = await supabase.from('settlement_items').select('*')
+        .in('settlement_id', legacy.slice(offset, offset + 100).map(s => s.id))
+        .order('id', { ascending: true }).range(page * 500, page * 500 + 499);
+      if (error) throw new Error('结算项目读取失败');
+      for (const item of data || []) {
+        const items = itemsBySettlement.get(item.settlement_id) || [];
+        items.push(item); itemsBySettlement.set(item.settlement_id, items);
+      }
+      if ((data || []).length < 500) break;
+    }
+  }
+  const payments = await attachSettlementPayments(shopId, settlements);
+  return settlements.map(s => {
+    const dto = settlementFromDb(s, payments.get(String(s.id)));
+    dto.items = (Array.isArray(s.items) && s.items.length ? s.items : itemsBySettlement.get(String(s.id)) || []).map((i: DbRecord) => ({
+      ...i, id: i.id, type: i.type || 'service', name: i.name || i.service_name || '服务',
+      employeeId: i.employeeId || i.employee_id, employeeName: i.employeeName || i.employee_name,
+      quantity: Number(i.quantity ?? 1), total: Number(i.total ?? 0),
+    }));
+    return dto as unknown as Settlement;
+  });
+}
+
 /**
  * 结算支付成功后的核心后续操作：更新客户消费统计、核销权益、创建到店记录。
  * 微信/支付宝等异步支付在确认收款后调用；现金/余额支付在创建结算时直接调用。
@@ -4629,6 +4680,7 @@ async function processSettlementAfterPayment(params: {
   paymentMethod: string;
   usedBenefitIds: string[];
   processedByEmployee: AuthEmployee;
+  manualPaidAt?: string | null;
   logStep?: (step: string) => void;
 }): Promise<void> {
   const {
@@ -4645,10 +4697,11 @@ async function processSettlementAfterPayment(params: {
 
   const { data: latest, error: lookupError } = await supabase.from('settlements').select('customer_package_id').eq('id', settlementId).eq('shop_id', shopId).single();
   if (lookupError) throw new Error('请先执行 027 交易原子性迁移');
-  const { error } = await supabase.rpc('finalize_settlement_atomic', {
+  const { error } = await supabase.rpc('finalize_settlement_with_manual_time_atomic', {
     p_settlement_id: settlementId, p_shop_id: shopId,
     p_employee_id: processedByEmployee.id, p_employee_name: processedByEmployee.name,
     p_booking_id: bookingId, p_package_id: latest?.customer_package_id || null, p_package_note: '结算核销',
+    p_manual_paid_at: manualPaidAt || null,
   });
   if (error) throw new Error(error.code === 'PGRST202' ? '请先执行 027 交易原子性迁移' : '交易未完成：余额、次卡或权益状态已变化，请核对');
   if (logStep) logStep('数据库原子提交完成');
@@ -4690,6 +4743,20 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     const method = paymentMethod || 'cash';
     if (!['cash','balance','card','wechat','alipay'].includes(method)) return res.status(400).json({ success: false, error: '不支持的支付方式' });
     if (method === 'alipay') return res.status(400).json({ success: false, error: '支付宝网关尚未接入，请使用其他支付方式' });
+    let manualPaidAt: string | undefined;
+    if (method === 'cash' || method === 'card') {
+      if (req.body?.manualPaidAt !== undefined) {
+        const raw = req.body.manualPaidAt;
+        const hasZone = typeof raw === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
+        const parsed = hasZone ? new Date(raw) : new Date(NaN);
+        if (!Number.isFinite(parsed.getTime()) || parsed.getTime() > Date.now() + 5 * 60_000) {
+          return res.status(400).json({ success:false,error:'登记的付款发生时间无效或晚于当前时间' });
+        }
+        manualPaidAt = parsed.toISOString();
+      }
+    } else if (req.body?.manualPaidAt !== undefined) {
+      return res.status(400).json({ success:false,error:'只有现金或银行卡收款可以登记付款发生时间' });
+    }
     const settlementId = id || 'settle_' + randomUUID();
     const requestKey = createHash('sha256').update(canonicalJson(req.body)).digest('hex');
     if (id) {
@@ -4706,12 +4773,13 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     const isDraft = paymentStatus === 'pending';
     // 本入口仅接受已认证的本店员工：门店收银不以顾客核实/改密状态为前提。
     // 顾客自助资产支付的身份限制保留在独立顾客支付入口中。
-    const { data: created, error: insertError } = await supabase.rpc('create_settlement_atomic', {
+    const { data: created, error: insertError } = await supabase.rpc('create_settlement_with_manual_time_atomic', {
       p_settlement: { id: settlementId, checkout_request_key: requestKey, start_payment: !isDraft && isAsyncPayment, shop_id: shopId, customer_id: customerId, customer_name: priced.customerName,
         booking_id: bookingId || null, ...priced, items: priced.items, discount_detail: priced.discountDetail,
         payment_method: method, payment_status: 'pending', used_benefit_ids: usedBenefitIds || [], processed_by: employee.name,
-        customer_package_id: req.body.customerPackageId || null },
+        customer_package_id: req.body.customerPackageId || null, manual_paid_at: manualPaidAt || null },
       p_employee_id: employee.id, p_employee_name: employee.name, p_complete: !isDraft && !isAsyncPayment,
+      p_manual_paid_at: manualPaidAt || null,
     });
     if (insertError) {
       const reason = String(insertError.message || '');
@@ -4742,10 +4810,7 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
         settlement_id: settlementId, channel: 'wechat_native', amount, status: 'pending', created_at: new Date().toISOString(),
       });
       if (mappingError) return res.status(503).json({ success: false, error: '支付映射保存失败，尚未发起网关支付' });
-      const paymentResult = await createPayment({ paymentId, shopId, customerId, settlementId, amount,
-        channel: 'wechat_native', description: 'MBS 门店结算 ' + settlementId });
-      const { error: paymentDetailsError } = await supabase.from('payments').update({ prepay_id: paymentResult.prepayId || null, code_url: paymentResult.codeUrl || null }).eq('id',paymentId);
-      if (paymentDetailsError) console.error('[settlements] 支付二维码保存失败，需保留原支付订单核对');
+      const paymentResult = await recoverWechatPayment(settlementId,shopId,employee.id,employee.name,true);
       logStep('微信支付参数已生成');
       return res.status(201).json({
         success: true,
@@ -4792,20 +4857,29 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
       if(settlement.payment_status==='completed' && payment.status==='paid' && payment.paid_at_source==='wechat_success_time') {
         return res.json({success:true,data:settlementFromDb(settlement,payment)});
       }
-      const gateway=await queryPaymentStatus(String(payment.id));
+      const gatewayOrderNo=await activeWechatOrder(String(payment.id));
+      const gateway=await queryPaymentStatus(gatewayOrderNo);
       if(gateway.status!=='paid' || gateway.amount!==Number(settlement.total) || !gateway.transactionId || !gateway.paidAt) {
         return res.status(409).json({success:false,error:'微信尚未返回可核对的成功订单及支付时间：'+(gateway.message || '请稍后重试')});
       }
-      const completed=await recordWechatReceipt({paymentId:String(payment.id),amount:gateway.amount,transactionId:gateway.transactionId,paidAt:gateway.paidAt},shopId,employee.id,employee.name);
+      const completed=await recordWechatReceipt({paymentId:gatewayOrderNo,amount:gateway.amount,transactionId:gateway.transactionId,paidAt:gateway.paidAt},shopId,employee.id,employee.name);
       return res.json({success:true,data:settlementFromDb(completed,{...payment,status:'paid',paid_at:gateway.paidAt,paid_at_source:'wechat_success_time',transaction_id:gateway.transactionId})});
     }
     if(settlement.payment_method==='alipay' && Number(settlement.total)>0) return res.status(409).json({success:false,error:'支付宝网关尚未接入，不能手动标记为已付款'});
     if(settlement.payment_status==='completed') return res.json({success:true,data:settlementFromDb(settlement)});
     if(settlement.payment_status!=='pending') return res.status(400).json({success:false,error:'该结算记录不在待支付状态'});
+    const manualPaidAt = settlement.payment_method === 'cash' || settlement.payment_method === 'card' ? req.body?.manualPaidAt : undefined;
+    if (manualPaidAt !== undefined) {
+      const hasZone = typeof manualPaidAt === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(manualPaidAt);
+      const parsed = hasZone ? new Date(manualPaidAt) : new Date(NaN);
+      if (!Number.isFinite(parsed.getTime()) || parsed.getTime() > Date.now() + 5 * 60_000) return res.status(400).json({success:false,error:'登记的付款发生时间无效或晚于当前时间'});
+    }
     await processSettlementAfterPayment({shopId,customerId:settlement.customer_id as string,settlementId:id,
       bookingId:(settlement.booking_id as string)||null,total:Number(settlement.total)||0,paymentMethod:String(settlement.payment_method),
-      usedBenefitIds:(settlement.used_benefit_ids as string[])||[],processedByEmployee:employee});
-    return res.json({success:true,data:settlementFromDb({...settlement,payment_status:'completed'})});
+      usedBenefitIds:(settlement.used_benefit_ids as string[])||[],processedByEmployee:employee,manualPaidAt:manualPaidAt || null});
+    const {data:completed,error:completedError}=await supabase.from('settlements').select('*').eq('id',id).eq('shop_id',shopId).single();
+    if(completedError || !completed) return res.status(503).json({success:false,error:'已提交收款但暂时无法读取结算结果，请刷新并核对原单'});
+    return res.json({success:true,data:settlementFromDb(completed)});
   } catch (error) {
     console.error('[settlements] 确认收款异常:', error);
     res.status(500).json({ success: false, error: '确认收款失败' });
@@ -4813,38 +4887,13 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
 });
 
 // 重新生成支付二维码（顾客未扫码/二维码过期时继续使用）
-settlementsRouter.post('/:id/retry-payment', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.post('/:id/retry-payment', authMiddleware, async (req:Request,res:Response) => {
   try {
-    const shopId = req.employee!.shopId;
-    const { id } = req.params;
-
-    const { data: settlement, error: findError } = await supabase
-      .from('settlements')
-      .select('*')
-      .eq('id', id)
-      .eq('shop_id', shopId)
-      .single();
-
-    if (findError || !settlement) {
-      return res.status(404).json({ success: false, error: '结算记录不存在' });
-    }
-
-    if (settlement.payment_status !== 'pending') {
-      return res.status(400).json({ success: false, error: '该结算记录不在待支付状态' });
-    }
-
-    const method = settlement.payment_method as string;
-    if (method !== 'wechat' && method !== 'alipay') {
-      return res.status(400).json({ success: false, error: '仅支持重新生成微信/支付宝支付二维码' });
-    }
-
-    const { data: existingPayment } = await supabase.from('payments').select('id').eq('settlement_id',id).limit(1).maybeSingle();
-    if (existingPayment) return res.status(409).json({ success: false, error: '该结算已有支付订单，请使用原二维码或先由门店对账关闭，勿重复付款' });
-    return res.status(409).json({ success: false, error: '支付初始化未完成，请联系门店核对后处理' });
-
-  } catch (error) {
-    console.error('[settlements] 重新生成支付二维码异常:', error);
-    res.status(500).json({ success: false, error: '重新生成支付二维码失败' });
+    const e=req.employee!;
+    const result=await recoverWechatPayment(req.params.id,e.shopId,e.id,e.name);
+    res.json({success:true,data:result});
+  } catch(error) {
+    res.status(409).json({success:false,error:error instanceof Error?error.message:'原支付核对未完成，请稍后重试'});
   }
 });
 
@@ -4920,7 +4969,7 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
 
     const { data: settlement, error } = await supabase
       .from('settlements')
-      .select('payment_status, checkout_payment_started, total')
+      .select('*')
       .eq('id', id)
       .eq('shop_id', shopId)
       .single();
@@ -4938,18 +4987,15 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
       .maybeSingle();
 
     if (paymentError) return res.status(503).json({ success: false, error: '原支付记录暂无法查询，尚不能判断是否可继续结算，请稍后重试' });
+    // Stored URLs may be expired or of unknown age. Recover through the gateway before display.
     const recoveryState = settlement.payment_status === 'completed' ? 'completed'
-      : payment ? (payment.status === 'pending' && payment.code_url && Number(payment.amount) === Number(settlement.total) ? 'qr_available' : 'payment_needs_review')
+      : payment ? 'payment_needs_review'
       : settlement.checkout_payment_started ? 'initialization_started' : 'editable';
+    res.json({success:true,data:{
+      settlementStatus:settlement.payment_status,recoveryState,settlement:settlementFromDb(settlement),
+      payment:payment?{paymentId:payment.id,status:payment.status,amount:Number(payment.amount)}:null,
+    }});
 
-    res.json({
-      success: true,
-      data: {
-        settlementStatus: settlement.payment_status,
-        recoveryState,
-        payment: payment ? { ...payment, paymentId: payment.id, codeUrl: payment.code_url, amount: Number(payment.amount) } : null,
-      },
-    });
   } catch (error) {
     console.error('[settlements] 查询支付状态异常:', error);
     res.status(500).json({ success: false, error: '查询支付状态失败' });
@@ -5005,6 +5051,23 @@ settlementsRouter.get('/:id', authMiddleware, async (req: Request, res: Response
 
 mainRouter.use('/settlements', settlementsRouter);
 
+// Read scoped rows without the REST default row cap; never return a partial dashboard.
+async function loadDashboardRows(table: string, columns: string, shopId: string): Promise<DbRecord[]> {
+  const rows: DbRecord[] = [];
+  for (let page = 0; ; page++) {
+    const {data,error} = await supabase.from(table).select(columns).eq('shop_id', shopId)
+      .order('id', {ascending:true}).range(page * 500, page * 500 + 499);
+    if (error) throw new Error('经营数据读取失败');
+    rows.push(...(data || []));
+    if ((data || []).length < 500) return rows;
+  }
+}
+async function loadDashboardReviews(shopId: string) {
+  const rows = await loadDashboardRows('reviews', 'id,stylist_id,overall_score,rating', shopId);
+  return rows.filter(r => (r.overall_score != null || r.rating != null) && Number.isFinite(Number(r.overall_score ?? r.rating)))
+    .map(r => ({stylistId:r.stylist_id as string,score:Number(r.overall_score ?? r.rating)}));
+}
+
 // ===================== financial =====================
 const financialRouter = Router();
 
@@ -5013,159 +5076,29 @@ financialRouter.use(authMiddleware, requirePermission('financial:read'));
 financialRouter.get('/report', async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
-    const dateRange = (req.query.dateRange as string) || 'month';
-
-    const {today,weekStart,monthStart,yearStart,quarterStart}=businessPeriods();
-
-    let trendStart = monthStart;
-    if (dateRange === 'week') trendStart = weekStart;
-    if (dateRange === 'quarter') trendStart = quarterStart;
-    if (dateRange === 'year') trendStart = yearStart;
-
-    const { data: settlements, error } = await supabase
-      .from('settlements')
-      .select('*')
-      .eq('shop_id', shopId)
-      .eq('payment_status', 'completed')
-      .gte('created_at', new Date(Math.min(yearStart.getTime(),weekStart.getTime(),trendStart.getTime())).toISOString());
-
-    if (error) {
-      console.error('[financial] 查询结算失败:', error.message);
-      return res.status(500).json({ success: false, error: '查询财务数据失败' });
+    const records = await loadCompletedSettlementRecords(shopId);
+    const report=buildFinancialReport(records);
+    const ratings=new Map<string,{sum:number;count:number}>();
+    for (let page=0;;page++) {
+      const {data,error}=await supabase.from('reviews').select('id,stylist_id,overall_score,rating')
+        .eq('shop_id',shopId).order('id',{ascending:true}).range(page*500,page*500+499);
+      if(error) throw new Error('评价数据读取失败');
+      for(const r of data || []) {
+        if(r.overall_score == null && r.rating == null) continue;
+        const score=Number(r.overall_score ?? r.rating);
+        if(!Number.isFinite(score)) continue;
+        const rating=ratings.get(r.stylist_id) || {sum:0,count:0};
+        rating.sum+=score;rating.count++;ratings.set(r.stylist_id,rating);
+      }
+      if((data || []).length<500) break;
     }
-
-    // 关联结算明细（ Supabase 不会自动返回关联表）
-    const settlementIds = (settlements || []).map((s: Record<string, unknown>) => s.id).filter(Boolean) as string[];
-    const { data: itemsData } = await supabase
-      .from('settlement_items')
-      .select('*')
-      .in('settlement_id', settlementIds.length > 0 ? settlementIds : ['__none__']);
-    const itemsBySettlement = new Map<string, unknown[]>();
-    (itemsData || []).forEach((item: Record<string, unknown>) => {
-      const sid = item.settlement_id as string;
-      if (!itemsBySettlement.has(sid)) itemsBySettlement.set(sid, []);
-      itemsBySettlement.get(sid)!.push(item);
+    report.topStylists.forEach(s=>{
+      const r=ratings.get(s.id);
+      if(r?.count) s.rating=Math.round(r.sum/r.count*10)/10;
     });
-
-    const revenue = { today: 0, week: 0, month: 0, year: 0 };
-    const services = { today: 0, week: 0, month: 0, year: 0 };
-    const ticketSum = { today: 0, week: 0, month: 0, year: 0 };
-    const ticketCount = { today: 0, week: 0, month: 0, year: 0 };
-
-    const stylistMap: Record<
-      string,
-      { name: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
-    > = {};
-
-    (settlements || []).forEach((s: Record<string, unknown>) => {
-      const createdAt = new Date(s.created_at as string);
-      const isToday = createdAt >= today;
-      const isWeek = createdAt >= weekStart;
-      const isMonth = createdAt >= monthStart;
-      const isYear = createdAt >= yearStart;
-      const total = Number(s.total) || 0;
-
-      if (isToday) {
-        revenue.today += total;
-        ticketSum.today += total;
-        ticketCount.today += 1;
-      }
-      if (isWeek) {
-        revenue.week += total;
-        ticketSum.week += total;
-        ticketCount.week += 1;
-      }
-      if (isMonth) {
-        revenue.month += total;
-        ticketSum.month += total;
-        ticketCount.month += 1;
-      }
-      if (isYear) {
-        revenue.year += total;
-        ticketSum.year += total;
-        ticketCount.year += 1;
-      }
-
-      // 新交易以事务内 JSON 明细为准，兼容旧表明细，避免报表丢失服务/设计师业绩。
-      (Array.isArray(s.items) && s.items.length ? s.items : (itemsBySettlement.get(s.id as string) || [])).forEach((item: Record<string, unknown>) => {
-        const itemTotal = Number(item.total) || 0;
-        const qty = Number(item.quantity) || 1;
-        const empId = (item.employee_id || item.employeeId) as string;
-        const empName = (item.employee_name || item.employeeName || '发型师') as string;
-
-        if (empId) {
-          if (!stylistMap[empId]) {
-            stylistMap[empId] = { name: empName, revenue: 0, services: 0, ratingSum: 0, ratingCount: 0 };
-          }
-          if (isMonth) {
-            stylistMap[empId].revenue += itemTotal;
-            if (item.type === 'service' || item.type === undefined) {
-              stylistMap[empId].services += qty;
-            }
-          }
-        }
-
-        if (isMonth && (item.type === 'service' || item.type === undefined)) {
-          services.month += qty;
-        }
-        if (isYear && (item.type === 'service' || item.type === undefined)) {
-          services.year += qty;
-        }
-        if (isWeek && (item.type === 'service' || item.type === undefined)) {
-          services.week += qty;
-        }
-        if (isToday && (item.type === 'service' || item.type === undefined)) {
-          services.today += qty;
-        }
-      });
-    });
-
-    const { data: reviews } = await supabase.from('reviews').select('*').eq('shop_id', shopId);
-    (reviews || []).forEach((r: Record<string, unknown>) => {
-      const stylistId = r.stylist_id as string;
-      if (stylistId && stylistMap[stylistId]) {
-        stylistMap[stylistId].ratingSum += Number(r.overall_score || r.rating || 0);
-        stylistMap[stylistId].ratingCount += 1;
-      }
-    });
-
-    const topStylists = Object.entries(stylistMap)
-      .map(([id, info]) => ({
-        id,
-        name: info.name,
-        revenue: Math.round(info.revenue * 100) / 100,
-        services: info.services,
-        rating:
-          info.ratingCount > 0
-            ? Math.round((info.ratingSum / info.ratingCount) * 10) / 10
-            : 5,
-      }))
-      .sort((a, b) => b.revenue - a.revenue);
-
-    const averageTicket = {
-      today: ticketCount.today > 0 ? Math.round((ticketSum.today / ticketCount.today) * 100) / 100 : 0,
-      week: ticketCount.week > 0 ? Math.round((ticketSum.week / ticketCount.week) * 100) / 100 : 0,
-      month: ticketCount.month > 0 ? Math.round((ticketSum.month / ticketCount.month) * 100) / 100 : 0,
-      year: ticketCount.year > 0 ? Math.round((ticketSum.year / ticketCount.year) * 100) / 100 : 0,
-    };
-
-    res.json({
-      success: true,
-      data: {
-        revenue: {
-          today: Math.round(revenue.today * 100) / 100,
-          week: Math.round(revenue.week * 100) / 100,
-          month: Math.round(revenue.month * 100) / 100,
-          year: Math.round(revenue.year * 100) / 100,
-        },
-        services,
-        averageTicket,
-        topStylists,
-      },
-    });
-  } catch (error) {
-    console.error('[financial] 获取财务报表异常:', error);
-    res.status(500).json({ success: false, error: '获取财务报表失败' });
+    res.json({success:true,data:report});
+  } catch {
+    res.status(503).json({success:false,error:'财务报表数据读取不完整，请重试；持续失败请检查037迁移与数据库连接'});
   }
 });
 
@@ -5177,77 +5110,16 @@ const stylistsRouter = Router();
 stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
-
-    const {today,weekStart,monthStart,yearStart,quarterStart}=businessPeriods();
-
-    const [{ data: employees }, { data: settlements }, { data: reviews }] = await Promise.all([
-      supabase.from('employees').select('*').eq('shop_id', shopId).in('role', ['stylist','STYLIST']).eq('is_active', true),
-      supabase.from('settlements').select('*').eq('shop_id', shopId).eq('payment_status','completed'),
-      supabase.from('reviews').select('*').eq('shop_id', shopId),
+    const [employees, records, reviews] = await Promise.all([
+      loadDashboardRows('employees', 'id,name,title,role,is_active', shopId),
+      loadCompletedSettlementRecords(shopId), loadDashboardReviews(shopId),
     ]);
-
-    const performances = (employees || []).filter((emp: DbRecord)=>req.employee!.role!=='stylist' || emp.id===req.employee!.id).map((emp: Record<string, unknown>) => {
-      const stylistId = emp.id;
-
-      const revenue = { today: 0, week: 0, month: 0, year: 0 };
-      const services = { total: 0, byType: {} as Record<string, number> };
-
-      (settlements || []).forEach((s: Record<string, unknown>) => {
-        const createdAt = new Date(s.created_at as string);
-        const isToday = createdAt >= today;
-        const isWeek = createdAt >= weekStart;
-        const isMonth = createdAt >= monthStart;
-        const isYear = createdAt >= yearStart;
-
-        ((s.items as Record<string, unknown>[]) || []).forEach((item: Record<string, unknown>) => {
-          if (item.employeeId !== stylistId) return;
-          const itemTotal = Number(item.total) || 0;
-          const qty = Number(item.quantity) || 1;
-
-          if (isToday) revenue.today += itemTotal;
-          if (isWeek) revenue.week += itemTotal;
-          if (isMonth) revenue.month += itemTotal;
-          if (isYear) revenue.year += itemTotal;
-
-          if (item.type === 'service') {
-            services.total += qty;
-            const name = (item.name || '其他') as string;
-            services.byType[name] = (services.byType[name] || 0) + qty;
-          }
-        });
-      });
-
-      const stylistReviews = (reviews || []).filter((r: Record<string, unknown>) => r.stylist_id === stylistId);
-      const avgRating =
-        stylistReviews.length > 0
-          ? stylistReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / stylistReviews.length
-          : 0;
-
-      const estimatedCommission = Math.round(revenue.month * 0.15 * 100) / 100;
-
-      return {
-        stylistId,
-        stylistName: emp.name,
-        title: emp.title || '发型师',
-        averageRating: Math.round(avgRating * 10) / 10,
-        revenue: {
-          today: Math.round(revenue.today * 100) / 100,
-          week: Math.round(revenue.week * 100) / 100,
-          month: Math.round(revenue.month * 100) / 100,
-          year: Math.round(revenue.year * 100) / 100,
-        },
-        services: {
-          total: services.total,
-          byType: services.byType,
-        },
-        estimatedCommission,
-      };
-    });
-
-    res.json({ success: true, data: performances });
-  } catch (error) {
-    console.error('[stylists] 获取业绩异常:', error);
-    res.status(500).json({ success: false, error: '获取发型师业绩失败' });
+    const eligible = employees.filter(emp => ['stylist', 'STYLIST'].includes(emp.role) && emp.is_active === true &&
+      (req.employee!.role !== 'stylist' || emp.id === req.employee!.id));
+    // 只返回汇总，禁止向发型师返回全店原始交易。
+    res.json({ success: true, data: buildStylistPerformances(records, eligible.map(e => ({ id:e.id, name:e.name, title:e.title })), reviews) });
+  } catch {
+    res.status(503).json({ success: false, error: '发型师业绩数据读取不完整，请重试并检查支付迁移与数据库连接' });
   }
 });
 
@@ -5997,173 +5869,21 @@ const ownerRouter = Router();
 ownerRouter.use(authMiddleware);
 
 ownerRouter.get('/dashboard', async (req: Request, res: Response) => {
+  const employee = req.employee!;
+  if (!['ceo', 'shop_owner'].includes(employee.role)) return res.status(403).json({ success: false, error: '无权访问老板视图' });
   try {
-    const employee = req.employee!;
-    if (!['ceo', 'shop_owner'].includes(employee.role)) {
-      return res.status(403).json({ success: false, error: '无权访问老板视图' });
-    }
-
-    const {today,weekStart,monthStart,yearStart,quarterStart}=businessPeriods();
-
-    const [{ data: shops }, { data: settlements }, { data: bookings }, { data: reviews }] = await Promise.all([
-      supabase.from('shops').select('*').eq('is_active', true).eq('id',req.employee!.shopId),
-      supabase.from('settlements').select('*').eq('shop_id',req.employee!.shopId).eq('payment_status','completed'),
-      supabase.from('bookings').select('*').eq('shop_id',req.employee!.shopId),
-      supabase.from('reviews').select('*').eq('shop_id',req.employee!.shopId),
+    const shopId = employee.shopId;
+    const [shopResult, records, bookings, reviews, employees] = await Promise.all([
+      supabase.from('shops').select('id,name').eq('id', shopId).eq('is_active', true).single(),
+      loadCompletedSettlementRecords(shopId),
+      loadDashboardRows('bookings', 'id,shop_id,customer_id,scheduled_time,status', shopId),
+      loadDashboardReviews(shopId), loadDashboardRows('employees', 'id,is_active', shopId),
     ]);
-
-    const totalRevenue = { today: 0, week: 0, month: 0, year: 0 };
-    const totalServices = { today: 0, week: 0, month: 0, year: 0 };
-    const totalCustomers = { today: 0, week: 0, month: 0, year: 0 };
-
-    const shopStatsMap: Record<
-      string,
-      { shopName: string; revenue: number; services: number; customers: Set<string>; employees: number }
-    > = {};
-
-    (shops || []).forEach((s: Record<string, unknown>) => {
-      shopStatsMap[s.id as string] = {
-        shopName: s.name as string,
-        revenue: 0,
-        services: 0,
-        customers: new Set(),
-        employees: ((s.employees as Record<string, unknown>[]) || []).filter((e: Record<string, unknown>) => e.is_active !== false).length,
-      };
-    });
-
-    const customerPeriodSet = { today: new Set<string>(), week: new Set<string>(), month: new Set<string>(), year: new Set<string>() };
-
-    (settlements || []).forEach((s: Record<string, unknown>) => {
-      const createdAt = new Date(s.created_at as string);
-      const isToday = createdAt >= today;
-      const isWeek = createdAt >= weekStart;
-      const isMonth = createdAt >= monthStart;
-      const isYear = createdAt >= yearStart;
-      const total = Number(s.total) || 0;
-      const shopId = s.shop_id as string;
-
-      if (isToday) totalRevenue.today += total;
-      if (isWeek) totalRevenue.week += total;
-      if (isMonth) totalRevenue.month += total;
-      if (isYear) totalRevenue.year += total;
-
-      if (shopStatsMap[shopId]) {
-        if (isMonth) shopStatsMap[shopId].revenue += total;
-      }
-
-      ((s.items as Record<string, unknown>[]) || []).forEach((item: Record<string, unknown>) => {
-        const qty = Number(item.quantity) || 1;
-        if (isMonth && (item.type === 'service' || item.type === undefined)) {
-          totalServices.month += qty;
-          if (shopStatsMap[shopId]) shopStatsMap[shopId].services += qty;
-        }
-        if (isYear && (item.type === 'service' || item.type === undefined)) {
-          totalServices.year += qty;
-        }
-        if (isWeek && (item.type === 'service' || item.type === undefined)) {
-          totalServices.week += qty;
-        }
-        if (isToday && (item.type === 'service' || item.type === undefined)) {
-          totalServices.today += qty;
-        }
-      });
-    });
-
-    (bookings || []).forEach((b: Record<string, unknown>) => {
-      const scheduledAt = new Date(b.scheduled_time as string);
-      const customerId = b.customer_id as string;
-      if (!customerId) return;
-      if (scheduledAt >= today) customerPeriodSet.today.add(customerId);
-      if (scheduledAt >= weekStart) customerPeriodSet.week.add(customerId);
-      if (scheduledAt >= monthStart) {
-        customerPeriodSet.month.add(customerId);
-        if (shopStatsMap[b.shop_id as string]) shopStatsMap[b.shop_id as string].customers.add(customerId);
-      }
-      if (scheduledAt >= yearStart) customerPeriodSet.year.add(customerId);
-    });
-
-    totalCustomers.today = customerPeriodSet.today.size;
-    totalCustomers.week = customerPeriodSet.week.size;
-    totalCustomers.month = customerPeriodSet.month.size;
-    totalCustomers.year = customerPeriodSet.year.size;
-
-    const stylistMap: Record<
-      string,
-      { name: string; shopId: string; shopName: string; revenue: number; services: number; ratingSum: number; ratingCount: number }
-    > = {};
-
-    (settlements || []).forEach((s: Record<string, unknown>) => {
-      const createdAt = new Date(s.created_at as string);
-      if (createdAt < monthStart) return;
-      ((s.items as Record<string, unknown>[]) || []).forEach((item: Record<string, unknown>) => {
-        const empId = (item.employee_id || item.employeeId) as string;
-        const empName = (item.employee_name || item.employeeName || '发型师') as string;
-        const shopId = s.shop_id as string;
-        if (!empId) return;
-        if (!stylistMap[empId]) {
-          stylistMap[empId] = {
-            name: empName,
-            shopId,
-            shopName: shopStatsMap[shopId]?.shopName || '店铺',
-            revenue: 0,
-            services: 0,
-            ratingSum: 0,
-            ratingCount: 0,
-          };
-        }
-        stylistMap[empId].revenue += Number(item.total) || 0;
-        if (item.type === 'service' || item.type === undefined) {
-          stylistMap[empId].services += Number(item.quantity) || 1;
-        }
-      });
-    });
-
-    (reviews || []).forEach((r: Record<string, unknown>) => {
-      const stylistId = r.stylist_id as string;
-      if (stylistId && stylistMap[stylistId]) {
-        stylistMap[stylistId].ratingSum += Number(r.overall_score || r.rating || 0);
-        stylistMap[stylistId].ratingCount += 1;
-      }
-    });
-
-    const topStylists = Object.entries(stylistMap)
-      .map(([id, info]) => ({
-        id,
-        name: info.name,
-        shopId: info.shopId,
-        shopName: info.shopName,
-        revenue: Math.round(info.revenue * 100) / 100,
-        services: info.services,
-        rating: info.ratingCount > 0 ? Math.round((info.ratingSum / info.ratingCount) * 10) / 10 : 5,
-      }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10);
-
-    res.json({
-      success: true,
-      data: {
-        totalRevenue: {
-          today: Math.round(totalRevenue.today * 100) / 100,
-          week: Math.round(totalRevenue.week * 100) / 100,
-          month: Math.round(totalRevenue.month * 100) / 100,
-          year: Math.round(totalRevenue.year * 100) / 100,
-        },
-        totalServices,
-        totalCustomers,
-        shopStats: Object.entries(shopStatsMap).map(([shopId, info]) => ({
-          shopId,
-          shopName: info.shopName,
-          revenue: Math.round(info.revenue * 100) / 100,
-          services: info.services,
-          customers: info.customers.size,
-          employees: info.employees,
-        })),
-        topStylists,
-      },
-    });
-  } catch (error) {
-    console.error('[owner] 获取老板视图异常:', error);
-    res.status(500).json({ success: false, error: '获取老板视图失败' });
+    if (shopResult.error || !shopResult.data) throw new Error('店铺不可读');
+    res.json({ success: true, data: buildOwnerDashboard(records, bookings.map(b => ({ shopId:b.shop_id, customerId:b.customer_id,
+      scheduledTime:b.scheduled_time, status:b.status })), shopResult.data, employees.filter(e => e.is_active === true).length, reviews) });
+  } catch {
+    res.status(503).json({ success: false, error: '经营概览数据读取不完整，请重试并检查支付迁移与数据库连接' });
   }
 });
 
@@ -6209,7 +5929,7 @@ mainRouter.post('/webhook/wechat-pay', async (req: Request, res: Response) => {
     // Only the authenticated gateway receipt supplies transaction ID, amount and success_time.
     if(result.paymentId && result.transactionId) {
       if(!result.paidAt || result.amount===undefined) return res.status(400).json({code:'FAIL',message:'支付成功时间缺失'});
-      const {data:payment,error}=await supabase.from('payments').select('shop_id').eq('id',result.paymentId).single();
+      const {data:payment,error}=await supabase.from('payments').select('shop_id').eq('id',await ledgerPaymentId(result.paymentId)).single();
       if(error || !payment?.shop_id) return res.status(503).json({code:'FAIL',message:'支付映射暂不可用'});
       await recordWechatReceipt({paymentId:result.paymentId,transactionId:result.transactionId,amount:result.amount,paidAt:result.paidAt},String(payment.shop_id),'system_wechat','微信支付');
     }

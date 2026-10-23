@@ -10,7 +10,7 @@ import { databaseErrorDiagnostic } from './init-legacy-passwords.js';
 export async function verifyRelease(connection: SetupConnection) {
   const issues: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
-  const protectedTables = ['customer_auth_limits', 'settlement_package_reservations', 'customer_password_initialization_runs'];
+  const protectedTables = ['customer_auth_limits', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
   const signatures = new Set<string>();
   for (const file of SETUP_MIGRATIONS) {
     const sql = await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8');
@@ -29,9 +29,31 @@ export async function verifyRelease(connection: SetupConnection) {
     if (!recoveryColumn.rows.length) issues.push('缺少 032 支付认领时间字段');
     const checkoutTriggers = await connection.query("SELECT tgname FROM pg_trigger WHERE tgrelid='public.bookings'::regclass AND NOT tgisinternal AND tgenabled='O' AND tgname IN ('booking_slot_guard','booking_checkout_state_guard')");
     if (checkoutTriggers.rows.length !== 2) issues.push('缺少或禁用 031 预约档期/结算状态触发器');
+    const manualPaymentColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='settlements' AND column_name IN ('manual_paid_at','manual_paid_recorded_at','manual_paid_recorded_by')");
+    if (manualPaymentColumns.rows.length !== 3) issues.push('缺少039非微信收款时间字段');
+    const manualPaymentTypes = await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='settlements' AND column_name IN ('manual_paid_at','manual_paid_recorded_at','manual_paid_recorded_by')");
+    const expectedManualTypes={manual_paid_at:'timestamp with time zone',manual_paid_recorded_at:'timestamp with time zone',manual_paid_recorded_by:'text'};
+    for(const [name,type] of Object.entries(expectedManualTypes)) if(!manualPaymentTypes.rows.some(row=>row.column_name===name && row.data_type===type)) issues.push('039非微信收款时间字段类型不兼容：'+name);
+    const manualPaymentTrigger = await connection.query("SELECT tgname FROM pg_trigger WHERE tgrelid='public.settlements'::regclass AND NOT tgisinternal AND tgenabled='O' AND tgname='capture_manual_settlement_payment_time'");
+    if (!manualPaymentTrigger.rows.length) issues.push('缺少039收款时间不可变/记录触发器');
+    const manualFunctions = [
+      'public.create_settlement_with_manual_time_atomic(jsonb,text,text,boolean,timestamp with time zone)',
+      'public.finalize_settlement_with_manual_time_atomic(text,text,text,text,text,text,text,timestamp with time zone)',
+    ];
+    for(const signature of manualFunctions) {
+      const found=await connection.query('SELECT to_regprocedure($1)::text AS name',[signature]);
+      if(!found.rows[0]?.name) {issues.push('缺少039安全结算函数 '+signature);continue;}
+      for(const role of ['service_role','anon','authenticated']) {
+        const result=await connection.query("SELECT has_function_privilege($1,$2,'EXECUTE') AS allowed",[role,signature]);
+        if(result.rows[0]?.allowed !== (role==='service_role')) issues.push('039函数权限不合格 '+signature+' / '+role);
+      }
+    }
     const paymentColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='payments' AND column_name IN ('code_url','paid_at_source')");
     if (!paymentColumns.rows.some(row=>row.column_name==='code_url')) issues.push('缺少 031 原支付二维码恢复字段');
     if (!paymentColumns.rows.some(row=>row.column_name==='paid_at_source')) issues.push('缺少 037 微信支付来源字段');
+    const attempts=await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='wechat_payment_attempts'");
+    const attemptTypes={gateway_order_no:'text',payment_id:'text',state:'text',request_body:'jsonb',qr_updated_at:'timestamp with time zone',closed_at:'timestamp with time zone',recovery_token:'text',recovery_started_at:'timestamp with time zone',created_at:'timestamp with time zone'};
+    for(const [name,type] of Object.entries(attemptTypes)) if(!attempts.rows.some(r=>r.column_name===name && r.data_type===type)) issues.push('缺少或不兼容038支付尝试字段：'+name);
     for (const field of fields) if (!present.has(field)) issues.push('缺少 customers.' + field);
     const roles = await connection.query("SELECT rolname FROM pg_roles WHERE rolname=ANY($1::text[])", [['service_role', 'anon', 'authenticated']]);
     const roleNames = new Set(roles.rows.map(row => row.rolname));
@@ -58,7 +80,7 @@ export async function verifyRelease(connection: SetupConnection) {
       'member_benefits','membership_enrollments','package_usage_logs','payments','product_inventory_logs','product_order_items','product_order_refunds',
       'product_orders','products','purchase_vip_configs','queues','referral_records','refund_requests','reviews','satisfaction_surveys','services',
       'settlement_items','settlement_package_reservations','settlements','shipment_tracking','shop_vip_configs','shops','special_vip_configs',
-      'stockholder_benefit_records','stored_value_configs','stored_value_transactions','withdrawal_requests'
+      'stockholder_benefit_records','stored_value_configs','stored_value_transactions','withdrawal_requests','wechat_payment_attempts'
     ]]);
     for(const table of tableAccess.rows) {
       if(!table.rls) issues.push('业务表未启用RLS：'+table.table_name);

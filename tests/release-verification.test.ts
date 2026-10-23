@@ -35,7 +35,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     assert.deepEqual(report.issues, []);
     assert.equal(report.passed, true);
     assert.equal(report.counts?.must_change_password, '1');
-    assert.equal(report.checkedFunctions, 27);
+    assert.equal(report.checkedFunctions, 31);
     assert.equal(queries[0], 'BEGIN READ ONLY');
     assert.equal(queries.at(-1), 'ROLLBACK');
     assert.ok(queries.every(sql => /^(SELECT|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
@@ -43,16 +43,17 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     // 复现旧迁移只撤 PUBLIC 后仍遗留的 20 条有效授权。
     await db.exec('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;');
     const exposed = await verifyRelease(connection);
-    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 54);
+    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 60);
     await fixRpcPermissions(connection);
     const after030=await verifyRelease(connection);
     assert.equal(after030.passed,false);
-    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,34);
+    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,40);
     await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/033_atomic_customer_operations.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/035_membership_and_shipping_atomic.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/036_settlement_rewards_and_package_integrity.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/037_verified_wechat_payment_receipts.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../migrations/038_wechat_payment_recovery.sql',import.meta.url),'utf8'));\n    await db.exec(await readFile(new URL('../migrations/039_manual_payment_times.sql',import.meta.url),'utf8'));
     assert.equal((await verifyRelease(connection)).passed, true);
     await db.exec('GRANT SELECT(phone) ON customers TO anon;');
     assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('customers') && issue.includes('anon')));
@@ -92,3 +93,5 @@ test('生产启动缺密钥时不向客户端泄露堆栈、路径或底层配�
   assert.equal(report.status, 500);
   assert.deepEqual(report.body, { error: 'FUNCTION_INVOCATION_FAILED', message: '服务暂不可用，请联系门店或管理员' });
 });
+
+

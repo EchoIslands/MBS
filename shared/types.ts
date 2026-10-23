@@ -425,11 +425,15 @@ export interface Settlement {
   usedBenefitIds?: string[];     // 本次核销的权益 ID
   createdAt: Date;
   paymentId?: string;
+  gatewayOrderNo?: string;
   paymentAmount?: number;
   paymentCreatedAt?: Date | string;
   paidAt?: Date | string;
   paidAtSource?: 'wechat_success_time';
   paymentRecordedAt?: Date | string;
+  manualPaidAt?: Date | string;
+  manualPaidRecordedAt?: Date | string;
+  manualPaidRecordedBy?: string;
   paymentRecordStatus?: string;
   paymentReviewRequired?: boolean;
   transactionId?: string;
@@ -757,6 +761,10 @@ export interface Employee {
 
 // 业绩统计 - 发型师个人
 export interface StylistPerformance {
+  timeBasis?: string;
+  generatedAt?: string;
+  excluded?: { count: number; amount: number };
+  commissionNote?: string;
   stylistId: string;
   stylistName: string;
   title?: string;
@@ -781,6 +789,11 @@ export interface StylistPerformance {
 
 // 财务报表
 export interface FinancialReport {
+  // 同一查询快照供卡片、图表、明细和导出使用。
+  records?: Settlement[];
+  generatedAt?: string;
+  timeBasis?: string;
+  excluded?: { count: number; amount: number };
   // 营收数据
   revenue: {
     today: number;
@@ -821,6 +834,13 @@ export interface DateRange {
 
 // 老板视角 - 多店铺概览
 export interface OwnerDashboard {
+  timeBasis?: string;
+  generatedAt?: string;
+  excluded?: { count: number; amount: number };
+  periodDetails?: Record<'today' | 'week' | 'month', {
+    shopStats: OwnerDashboard['shopStats'];
+    topStylists: OwnerDashboard['topStylists'];
+  }>;
   // 总体数据
   totalRevenue: {
     today: number;

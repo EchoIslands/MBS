@@ -15,10 +15,13 @@ import { getAvatarUrl } from '../../lib/avatar';
 import { ownerApi } from '../../api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import ShopLayout from './ShopLayout';
+import { FINANCIAL_BASIS_NOTE } from '../../../shared/lib/financialReport';
+import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const OwnerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { userRole } = useAppStore();
+  const { userRole, currentShop } = useAppStore();
+  const requestVersion = useRef(0);
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -30,21 +33,24 @@ const OwnerDashboardPage: React.FC = () => {
 
   // 加载老板视图数据
   const fetchDashboard = async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError('');
     try {
       const data = await ownerApi.getDashboard();
+      if (version !== requestVersion.current) return;
       if (data) {
         setDashboard(data);
       } else {
         setError('获取经营概览失败，请稍后重试');
       }
     } catch (err: unknown) {
+      if (version !== requestVersion.current) return;
       const message = err instanceof Error ? (err as Error).message : String(err);
       console.error('[OwnerDashboard] 获取经营概览失败:', message);
       setError('获取经营概览失败：' + message);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
@@ -56,7 +62,8 @@ const OwnerDashboardPage: React.FC = () => {
     }
 
     fetchDashboard();
-  }, [userRole, navigate]);
+    return () => { requestVersion.current++; };
+  }, [userRole, navigate, currentShop?.id]);
 
   // 等待布局稳定后再渲染图表，避免 ResponsiveContainer 读取到 0/-1 尺寸
   // ref 必须绑定到固定高度的图表容器上，而不是外层 grid
@@ -116,7 +123,10 @@ const OwnerDashboardPage: React.FC = () => {
     month: '本月'
   };
 
-  const chartData = dashboard.shopStats.map(shop => ({
+  const detail = dashboard.periodDetails?.[selectedPeriod];
+  const shopStats = detail?.shopStats || dashboard.shopStats;
+  const topStylists = detail?.topStylists || dashboard.topStylists;
+  const chartData = shopStats.map(shop => ({
     name: shop.shopName.length > 6 ? shop.shopName.substring(0, 6) + '...' : shop.shopName,
     revenue: shop.revenue,
     services: shop.services,
@@ -129,9 +139,14 @@ const OwnerDashboardPage: React.FC = () => {
     <ShopLayout title="老板视图">
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-900 space-y-2">
+          <p>{FINANCIAL_BASIS_NOTE}</p>
+          <p>仅当前店铺；设计师排名按归属项目金额，整单优惠尚未分摊，可能与结算金额不同。预约客户数按预约日期去重，排除取消预约，包含周期内未来预约，不代表已消费人数。评分为历史评价均分，0表示暂无有效评价。</p>
+          <p>数据截止：{settlementDateLabel(dashboard.generatedAt)}{dashboard.excluded?.count ? '；有 '+dashboard.excluded.count+' 笔已完成结算（¥'+dashboard.excluded.amount.toFixed(2)+'）待核对，未计入金额、次数及排名。' : ''}</p>
+        </div>
         {/* 时间范围选择 */}
         <div className="bg-white rounded-2xl shadow-sm p-4">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {(['today', 'week', 'month'] as const).map((period) => (
               <button
                 key={period}
@@ -145,6 +160,7 @@ const OwnerDashboardPage: React.FC = () => {
                 {periodLabels[period]}
               </button>
             ))}
+            <button onClick={fetchDashboard} className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700">刷新数据</button>
           </div>
         </div>
 
@@ -155,14 +171,13 @@ const OwnerDashboardPage: React.FC = () => {
               <div className="p-3 bg-white/20 rounded-xl">
                 <DollarSign size={24} />
               </div>
-              <div className="text-sm opacity-80">总营收</div>
+              <div className="text-sm opacity-80">已完成结算金额</div>
             </div>
             <div className="text-3xl font-bold mb-1">
               ¥{dashboard.totalRevenue[selectedPeriod].toLocaleString()}
             </div>
             <div className="text-sm opacity-80 flex items-center gap-1">
-              <TrendingUp size={14} />
-              较上期 +{Math.floor(Math.random() * 20 + 5)}%
+              {periodLabels[selectedPeriod]}，按上方时间口径统计
             </div>
           </div>
 
@@ -171,12 +186,12 @@ const OwnerDashboardPage: React.FC = () => {
               <div className="p-3 bg-white/20 rounded-xl">
                 <Users size={24} />
               </div>
-              <div className="text-sm opacity-80">服务客户</div>
+              <div className="text-sm opacity-80">服务次数</div>
             </div>
             <div className="text-3xl font-bold mb-1">
               {dashboard.totalServices[selectedPeriod]}
             </div>
-            <div className="text-sm opacity-80">总服务次数</div>
+            <div className="text-sm opacity-80">已核实日期的服务项目次数</div>
           </div>
 
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white">
@@ -184,12 +199,12 @@ const OwnerDashboardPage: React.FC = () => {
               <div className="p-3 bg-white/20 rounded-xl">
                 <BarChart3 size={24} />
               </div>
-              <div className="text-sm opacity-80">客户数</div>
+              <div className="text-sm opacity-80">预约客户数</div>
             </div>
             <div className="text-3xl font-bold mb-1">
               {dashboard.totalCustomers[selectedPeriod]}
             </div>
-            <div className="text-sm opacity-80">独立客户数</div>
+            <div className="text-sm opacity-80">按所选周期去重，排除已取消预约</div>
           </div>
         </div>
 
@@ -198,7 +213,7 @@ const OwnerDashboardPage: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
               <TrendingUp size={20} className="text-purple-600" />
-              各店铺营收对比
+              店铺结算金额
             </h2>
             <div ref={barChartRef} style={{ height: 320, position: 'relative' }}>
               {barReady ? (
@@ -213,9 +228,9 @@ const OwnerDashboardPage: React.FC = () => {
                         border: '1px solid #e5e7eb',
                         borderRadius: '8px'
                       }}
-                      formatter={(value: number) => [`¥${value.toLocaleString()}`, '营收']}
+                      formatter={(value: number) => [`¥${value.toLocaleString()}`, '结算金额']}
                     />
-                    <Bar dataKey="revenue" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                    <Bar isAnimationActive={false} dataKey="revenue" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -231,22 +246,23 @@ const OwnerDashboardPage: React.FC = () => {
               <Store size={20} className="text-blue-600" />
               店铺服务占比
             </h2>
+            <p className="text-sm text-gray-500 break-words">{shopStats.map(s=>s.shopName).join('、')}</p>
             <div ref={pieChartRef} style={{ height: 320, position: 'relative' }}>
               {pieReady ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie
-                      data={dashboard.shopStats}
+                    <Pie isAnimationActive={false}
+                      data={shopStats}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
+                      label={({ percent }: { percent?: number }) => `${((percent || 0) * 100).toFixed(0)}%`}
                       outerRadius={100}
                       fill="#8884d8"
                       dataKey="services"
                       nameKey="shopName"
                     >
-                      {dashboard.shopStats.map((entry, index) => (
+                      {shopStats.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -269,7 +285,7 @@ const OwnerDashboardPage: React.FC = () => {
             店铺详情
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {dashboard.shopStats.map((shop) => (
+            {shopStats.map((shop) => (
               <div
                 key={shop.shopId}
                 className="border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all hover:border-purple-300"
@@ -282,7 +298,7 @@ const OwnerDashboardPage: React.FC = () => {
                     <div className="text-xl font-bold text-purple-600">
                       ¥{shop.revenue.toLocaleString()}
                     </div>
-                    <div className="text-xs text-gray-500">本月营收</div>
+                    <div className="text-xs text-gray-500">{periodLabels[selectedPeriod]}结算金额</div>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100">
@@ -292,7 +308,7 @@ const OwnerDashboardPage: React.FC = () => {
                   </div>
                   <div className="text-center">
                     <div className="text-lg font-bold text-green-600">{shop.customers}</div>
-                    <div className="text-xs text-gray-500">客户数</div>
+                    <div className="text-xs text-gray-500">预约客户</div>
                   </div>
                   <div className="text-center">
                     <div className="text-lg font-bold text-orange-600">{shop.employees}</div>
@@ -304,14 +320,15 @@ const OwnerDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 跨店铺发型师排名 */}
+        {/* 本店设计师项目排名 */}
         <div className="bg-white rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
             <Trophy size={20} className="text-yellow-500" />
-            跨店铺发型师排名
+            本店设计师项目排名
           </h2>
           <div className="space-y-3">
-            {dashboard.topStylists.map((stylist, index) => (
+            {!topStylists.length && <p className="text-gray-500 text-sm">所选周期暂无可计入的归属项目</p>}
+            {topStylists.map((stylist, index) => (
               <div
                 key={stylist.id}
                 className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-purple-300 transition-colors"
@@ -348,7 +365,7 @@ const OwnerDashboardPage: React.FC = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm text-gray-500">本月业绩</div>
+                    <div className="text-sm text-gray-500">{periodLabels[selectedPeriod]}项目金额</div>
                     <div className="text-xl font-bold text-purple-600">
                       ¥{stylist.revenue.toLocaleString()}
                     </div>

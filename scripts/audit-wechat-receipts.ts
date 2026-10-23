@@ -13,10 +13,13 @@ export async function readReceiptCandidates(connection:SetupConnection, amount:n
   try {
     await connection.query("SET LOCAL statement_timeout='20s'");
     await checkPaymentSchema(connection);
+    const attempts=await connection.query("SELECT to_regclass('public.wechat_payment_attempts') AS name");
+    const hasAttempts=Boolean(attempts.rows[0]?.name);
     const result=await connection.query(`SELECT s.id AS settlement_id,s.shop_id,s.total,s.payment_status,s.created_at AS settlement_created_at,
-      p.id AS payment_id,p.amount AS payment_amount,p.status AS payment_status_record,p.created_at AS payment_created_at,
+      ${hasAttempts?"COALESCE(a.gateway_order_no,p.id)":"p.id"} AS gateway_order_no,p.id AS payment_id,p.amount AS payment_amount,p.status AS payment_status_record,p.created_at AS payment_created_at,
       p.paid_at AS recorded_paid_at,to_jsonb(p)->>'paid_at_source' AS paid_at_source,p.transaction_id
       FROM public.settlements s LEFT JOIN public.payments p ON p.settlement_id=s.id AND p.shop_id=s.shop_id AND p.customer_id=s.customer_id
+      ${hasAttempts?"LEFT JOIN public.wechat_payment_attempts a ON a.payment_id=p.id AND a.state='active'":""}
       WHERE s.total=$1 AND s.payment_method='wechat' AND ($2::text IS NULL OR s.shop_id=$2) AND ($3::text IS NULL OR s.id=$3)
       ORDER BY p.created_at DESC NULLS LAST,s.created_at DESC,s.id LIMIT 51`,[amount,shopId || null,settlementId || null]);
     if(result.rows.length>50) throw new Error('候选超过50条，请加 --shop-id 或 --settlement-id 缩小范围');
@@ -44,7 +47,7 @@ async function main() {
   const query=queryWechat ? (await import('../backend/services/paymentService.js')).queryPaymentStatus : null;
   const results=[];
   for(const row of candidates) {
-    const gateway=query && row.payment_id ? await query(String(row.payment_id)) : null;
+    const gateway=query && row.payment_id ? await query(String(row.gateway_order_no || row.payment_id)) : null;
     results.push({...row,...(gateway ? {gateway_status:gateway.status,gateway_amount:gateway.amount,gateway_transaction_id:gateway.transactionId,gateway_success_time:gateway.paidAt,
       matched:gateway.status==='paid' && gateway.amount===Number(row.total) && gateway.amount===Number(row.payment_amount),query_message:gateway.message} : {})});
   }

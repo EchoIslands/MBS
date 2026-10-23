@@ -25,6 +25,7 @@ import ShopLayout from './ShopLayout';
 import QRCode from 'qrcode';
 import { useSearchParams } from 'react-router-dom';
 import { compareSettlements, matchesSettlement, settlementDateLabel, isPaidOnBusinessDay } from '../../../shared/lib/settlementDisplay';
+import { manualPaymentTimeIso } from '../../../shared/lib/manualPaymentTime';
 
 const SettlementManagement: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -38,6 +39,7 @@ const SettlementManagement: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [viewingSettlement, setViewingSettlement] = useState<Settlement | null>(null);
+  const [manualPaidAtLocal, setManualPaidAtLocal] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
   // 新建结算弹窗状态
@@ -105,11 +107,12 @@ const SettlementManagement: React.FC = () => {
     }
   };
 
-  const handleConfirmPayment = async (settlementId: string) => {
+  const handleConfirmPayment = async (settlementId: string, selectedTime?: string) => {
     if (checkingPayment) return;
     setCheckingPayment(settlementId);
     try {
-      const saved = await settlementApi.confirmPayment(settlementId);
+      const manualPaidAt = selectedTime ? manualPaymentTimeIso(selectedTime) : undefined;
+      const saved = await settlementApi.confirmPayment(settlementId, undefined, manualPaidAt);
       if (viewingSettlement?.id === settlementId) setViewingSettlement(saved);
       await loadSettlements();
     } catch (err: unknown) {
@@ -122,6 +125,7 @@ const SettlementManagement: React.FC = () => {
   const handleRetryPayment = async (settlement: Settlement) => {
     try {
       const payment = await settlementApi.retryPayment(settlement.id);
+      if(payment.status==='paid') {await loadSettlements();alert('微信已收款，原结算已同步');return;}
       if (payment?.codeUrl) {
         setQrSettlementId(settlement.id);
         const qr = await QRCode.toDataURL(payment.codeUrl);
@@ -270,7 +274,7 @@ const SettlementManagement: React.FC = () => {
 
         {!loading && (
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-          <p className="text-sm text-gray-500 mb-4">默认按实际支付时间从新到旧排列（北京时间）；未记录支付时间的历史单排在后方，可按姓名、金额或单号查找。今日核对金额仅计入已核对微信成功时间且结算完成的记录。</p>
+          <p className="text-sm text-gray-500 mb-4">默认按已核对的微信成功时间或店员登记的付款发生时间从新到旧排列；没有时间记录的历史单排在后方。可按姓名、金额或单号查找。今日核对金额仅计入已核对微信成功时间且结算完成的记录。</p>
           <div className="flex flex-col md:flex-row gap-4 mb-4">
             <div className="flex-1 relative">
               <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -359,7 +363,7 @@ const SettlementManagement: React.FC = () => {
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">支付方式</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">状态</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">结算创建时间</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">实际支付时间</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">付款发生时间</th>
                   <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">操作</th>
                 </tr>
               </thead>
@@ -421,8 +425,9 @@ const SettlementManagement: React.FC = () => {
                         {settlement.paymentCreatedAt && <div className="text-xs text-gray-400 mt-1">支付单创建：{settlementDateLabel(settlement.paymentCreatedAt)}</div>}
                       </td>
                       <td className="py-4 px-4 text-sm whitespace-nowrap">
-                        <div className={settlement.paidAt ? 'text-green-700' : 'text-gray-500'}>{settlementDateLabel(settlement.paidAt)}</div>
-                        {!settlement.paidAt && settlement.paymentStatus === 'completed' && <div className="text-xs text-amber-700 mt-1">历史时间待核对</div>}
+                        <div className={(settlement.paidAt || settlement.manualPaidAt) ? 'text-green-700' : 'text-gray-500'}>{settlementDateLabel(settlement.paymentMethod === 'wechat' ? settlement.paidAt : settlement.manualPaidAt)}</div>
+                        {settlement.manualPaidAt && <div className="text-xs text-gray-500 mt-1">店员登记</div>}
+                        {!settlement.paidAt && !settlement.manualPaidAt && settlement.paymentStatus === 'completed' && <div className="text-xs text-amber-700 mt-1">历史未登记</div>}
                         {settlement.transactionId && <div className="text-xs text-gray-400 mt-1 max-w-[180px] truncate" title={settlement.transactionId}>微信交易号：{settlement.transactionId}</div>}
                       </td>
                       <td className="py-4 px-4">
@@ -445,10 +450,10 @@ const SettlementManagement: React.FC = () => {
                           )}
                           {(settlement.paymentStatus === 'pending' || (settlement.paymentMethod === 'wechat' && settlement.paymentId)) && (
                             <button
-                              onClick={() => handleConfirmPayment(settlement.id)}
+                              onClick={() => ['cash','card'].includes(settlement.paymentMethod) ? setViewingSettlement(settlement) : handleConfirmPayment(settlement.id)}
                               disabled={checkingPayment !== null}
                               className="p-2 hover:bg-green-50 rounded-lg transition-colors"
-                              title={settlement.paymentMethod === 'wechat' ? '向微信核对收款及实际支付时间' : '确认收款'}
+                              title={settlement.paymentMethod === 'wechat' ? '向微信核对收款及实际支付时间' : ['cash','card'].includes(settlement.paymentMethod) ? '登记收款并确认' : '确认收款'}
                             >
                               <CheckCircle size={18} className="text-green-600" />
                             </button>
@@ -496,6 +501,16 @@ const SettlementManagement: React.FC = () => {
                 <span className="text-gray-500">结算单号</span>
                 <span className="font-medium">{viewingSettlement.id}</span>
               </div>
+              {viewingSettlement.paymentStatus !== 'completed' && ['cash','card'].includes(viewingSettlement.paymentMethod) && (
+                <div className="py-3 border-b border-gray-100">
+                  <label htmlFor="settlement-manual-paid-at" className="block text-sm text-gray-600 mb-2">付款发生时间（北京时间，可选）</label>
+                  <input id="settlement-manual-paid-at" type="datetime-local" value={manualPaidAtLocal} onChange={event=>setManualPaidAtLocal(event.target.value)} className="w-full rounded-lg border border-gray-300 p-2" />
+                  <p className="mt-1 text-xs text-gray-500">留空将按本次确认时刻登记；系统会另存录入时间和经办员工。</p>
+                </div>
+              )}
+              {viewingSettlement.manualPaidAt && <div className="text-sm">登记的付款发生时间（北京时间）：{settlementDateLabel(viewingSettlement.manualPaidAt)}</div>}
+              {viewingSettlement.manualPaidRecordedAt && <div className="text-sm text-gray-500">系统录入时间：{settlementDateLabel(viewingSettlement.manualPaidRecordedAt)}</div>}
+              {viewingSettlement.manualPaidRecordedBy && <div className="text-sm text-gray-500">录入员工编号：{viewingSettlement.manualPaidRecordedBy}</div>}
               <div className="flex items-center justify-between py-3 border-b border-gray-100">
                 <span className="text-gray-500 flex items-center gap-2">
                   <User size={16} />
@@ -567,10 +582,10 @@ const SettlementManagement: React.FC = () => {
                 <span className="font-medium">{settlementDateLabel(viewingSettlement.createdAt)}</span>
               </div>
               <div className="flex justify-between gap-4 py-3 border-b border-gray-100"><span className="text-gray-500">支付单创建时间</span><span>{settlementDateLabel(viewingSettlement.paymentCreatedAt)}</span></div>
-              <div className="flex justify-between gap-4 py-3 border-b border-gray-100"><span className="text-gray-500">实际支付时间（北京时间）</span><span>{settlementDateLabel(viewingSettlement.paidAt)}</span></div>
-              {!viewingSettlement.paidAt && <p className="text-sm text-amber-700">未记录经微信核对的成功时间。旧系统处理时间不能代替实际支付时间。</p>}
+              <div className="flex justify-between gap-4 py-3 border-b border-gray-100"><span className="text-gray-500">{viewingSettlement.paymentMethod === 'wechat' ? '微信核实成功时间（北京时间）' : '付款发生时间（北京时间）'}</span><span>{settlementDateLabel(viewingSettlement.paymentMethod === 'wechat' ? viewingSettlement.paidAt : viewingSettlement.manualPaidAt)}</span></div>
+              {!viewingSettlement.paidAt && !viewingSettlement.manualPaidAt && <p className="text-sm text-amber-700">此单没有保存付款发生时间；结算创建时间或旧系统处理时间不能代替实际支付时间。</p>}
               {viewingSettlement.paymentRecordedAt && <div className="text-sm text-gray-500">旧系统处理时间（非支付时间）：{settlementDateLabel(viewingSettlement.paymentRecordedAt)}</div>}
-              {viewingSettlement.paymentId && <div className="text-sm break-all">商户支付单号：{viewingSettlement.paymentId}</div>}
+              {viewingSettlement.paymentId && <div className="text-sm break-all">商户支付单号：{viewingSettlement.gatewayOrderNo || viewingSettlement.paymentId}</div>}
               {viewingSettlement.transactionId && <div className="text-sm break-all">微信交易号：{viewingSettlement.transactionId}</div>}
               {viewingSettlement.paymentRecordStatus === 'paid' && viewingSettlement.paymentAmount !== undefined && <div>登记收款金额：¥{viewingSettlement.paymentAmount.toFixed(2)}（未扣手续费）</div>}
               {viewingSettlement.paymentReviewRequired && <p className="text-sm text-red-600">支付记录与结算状态需核对，请勿重新收款。</p>}
@@ -597,10 +612,10 @@ const SettlementManagement: React.FC = () => {
                   删除
                 </button>
               )}
-              {viewingSettlement.paymentStatus === 'pending' && (
+              {viewingSettlement.paymentStatus === 'pending' && !['wechat','alipay'].includes(viewingSettlement.paymentMethod) && (
                 <button
                   onClick={() => {
-                    handleConfirmPayment(viewingSettlement.id);
+                    handleConfirmPayment(viewingSettlement.id, manualPaidAtLocal);
                     setViewingSettlement(null);
                   }}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors"

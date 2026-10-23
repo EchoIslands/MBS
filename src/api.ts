@@ -1,3 +1,4 @@
+import { buildFinancialReport, FINANCIAL_TIME_BASIS } from '../shared/lib/financialReport';
 import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
@@ -1357,7 +1358,8 @@ export const stylistApi = {
         `${API_BASE}/stylists/performance?shopId=${shopId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      if (result?.data) return result.data;
+      if (Array.isArray(result?.data)) return result.data;
+      throw new Error('发型师业绩返回格式异常，请重试');
     }
     // Mock fallback
     return [];
@@ -1536,12 +1538,12 @@ export const settlementApi = {
     return mockSettlements.find((s) => s.id === settlementId) || null;
   },
 
-  confirmPayment: async (settlementId: string, transactionId?: string): Promise<Settlement> => {
+  confirmPayment: async (settlementId: string, transactionId?: string, manualPaidAt?: string): Promise<Settlement> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
       return await httpThrowing<Settlement>(`${API_BASE}/settlements/${settlementId}/confirm-payment`, {
         method: 'POST',
-        body: JSON.stringify({ transactionId }),
+        body: JSON.stringify({ transactionId, manualPaidAt }),
         headers: { Authorization: `Bearer ${token}` },
       });
     }
@@ -1554,10 +1556,10 @@ export const settlementApi = {
     return mockSettlements[idx];
   },
 
-  getPaymentStatus: async (settlementId: string): Promise<{ settlementStatus: string; recoveryState?: string; payment: WechatPaymentResult | null }> => {
+  getPaymentStatus: async (settlementId: string): Promise<{ settlementStatus: string; recoveryState?: string; settlement?: Settlement; payment: WechatPaymentResult | null }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      return await httpThrowing<{ settlementStatus: string; recoveryState?: string; payment: WechatPaymentResult | null }>(
+      return await httpThrowing<{ settlementStatus: string; recoveryState?: string; settlement?: Settlement; payment: WechatPaymentResult | null }>(
         `${API_BASE}/settlements/${settlementId}/payment-status`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -1582,12 +1584,10 @@ export const settlementApi = {
   retryPayment: async (settlementId: string): Promise<WechatPaymentResult> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: WechatPaymentResult }>(
+      return await httpThrowing<WechatPaymentResult>(
         `${API_BASE}/settlements/${settlementId}/retry-payment`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }, 55000
       );
-      if (!result || !result.success) throw new Error('重新生成支付二维码失败');
-      return result.data;
     }
     // Mock fallback
     const settlement = mockSettlements.find((s) => s.id === settlementId);
@@ -1641,92 +1641,15 @@ export const memberBenefitApi = {
 export const financialApi = {
   getReport: async (shopId: string): Promise<FinancialReport | null> => {
     if (USE_REAL_API) {
-      const token = getAuthToken();
-      const result = await http<{ success: boolean; data: FinancialReport }>(
-        `${API_BASE}/financial/report?shopId=${shopId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (result?.data) return result.data;
-    }
-    // Mock fallback：基于 mockSettlements 动态生成财务报表
-    const shopSettlements = mockSettlements.filter(
-      (s) => s.shopId === shopId && s.paymentStatus === 'completed'
-    );
-    if (shopSettlements.length === 0) return null;
-
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(startOfDay);
-    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-
-    const isInRange = (createdAt: Date | string | number, start: Date) =>
-      new Date(createdAt).getTime() >= start.getTime();
-
-    const todaySettlements = shopSettlements.filter((s) => isInRange(s.createdAt, startOfDay));
-    const weekSettlements = shopSettlements.filter((s) => isInRange(s.createdAt, startOfWeek));
-    const monthSettlements = shopSettlements.filter((s) => isInRange(s.createdAt, startOfMonth));
-    const yearSettlements = shopSettlements.filter((s) => isInRange(s.createdAt, startOfYear));
-
-    const sum = (list: Settlement[]) => list.reduce((acc, s) => acc + s.total, 0);
-    const countServices = (list: Settlement[]) =>
-      list.reduce((acc, s) => acc + s.items.reduce((iacc, i) => iacc + i.quantity, 0), 0);
-    const avgTicket = (list: Settlement[]) => {
-      const total = sum(list);
-      const count = countServices(list);
-      return count > 0 ? Math.round((total / count) * 100) / 100 : 0;
-    };
-
-    // 发型师业绩汇总
-    const stylistMap = new Map<
-      string,
-      { id: string; name: string; avatar?: string; revenue: number; services: number; rating: number }
-    >();
-    shopSettlements.forEach((s) => {
-      s.items.forEach((item) => {
-        if (item.type === 'service' && item.employeeId) {
-          const existing = stylistMap.get(item.employeeId);
-          if (existing) {
-            existing.revenue += item.total;
-            existing.services += item.quantity;
-          } else {
-            stylistMap.set(item.employeeId, {
-              id: item.employeeId,
-              name: item.employeeName || '未知发型师',
-              avatar: undefined,
-              revenue: item.total,
-              services: item.quantity,
-              rating: 4.8,
-            });
-          }
-        }
+      const result=await httpThrowing<FinancialReport>(API_BASE+'/financial/report', {
+        headers: { Authorization: 'Bearer '+getAuthToken() },
       });
-    });
-
-    return {
-      revenue: {
-        today: sum(todaySettlements),
-        week: sum(weekSettlements),
-        month: sum(monthSettlements),
-        year: sum(yearSettlements),
-      },
-      services: {
-        today: countServices(todaySettlements),
-        week: countServices(weekSettlements),
-        month: countServices(monthSettlements),
-        year: countServices(yearSettlements),
-      },
-      averageTicket: {
-        today: avgTicket(todaySettlements),
-        week: avgTicket(weekSettlements),
-        month: avgTicket(monthSettlements),
-        year: avgTicket(yearSettlements),
-      },
-      topStylists: Array.from(stylistMap.values())
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5),
-    };
+      if(result.timeBasis!==FINANCIAL_TIME_BASIS || !Array.isArray(result.records) || !result.generatedAt) {
+        throw new Error('财务接口版本不一致，请确认前后端已发布同一版本');
+      }
+      return result;
+    }
+    return buildFinancialReport(mockSettlements.filter(s=>s.shopId===shopId && s.paymentStatus==='completed'));
   },
 };
 

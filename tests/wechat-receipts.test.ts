@@ -19,11 +19,11 @@ test('微信成功时间只取带时区的success_time，校验商户、订单�
 });
 
 test('旧单刚支付排第一，未知时间不猜，姓名金额和三种单号可搜，北京时间跨日正确',()=>{
-  const oldPaid={id:'old',customerName:'顾客甲',total:33.64,paymentMethod:'wechat',paymentStatus:'completed',createdAt:new Date('2026-08-01T00:00:00Z'),paidAt:'2026-10-22T16:02:00Z',paidAtSource:'wechat_success_time',paymentId:'gateway1',transactionId:'420000001'} as Settlement;
+  const oldPaid={id:'old',customerName:'顾客甲',total:33.64,paymentMethod:'wechat',paymentStatus:'completed',createdAt:new Date('2026-08-01T00:00:00Z'),paidAt:'2026-10-22T16:02:00Z',paidAtSource:'wechat_success_time',paymentId:'gateway1',gatewayOrderNo:'rotated-gateway',transactionId:'420000001'} as Settlement;
   const newer={...oldPaid,id:'newer',createdAt:new Date('2026-10-21T00:00:00Z'),paidAt:'2026-10-21T01:00:00Z'};
   const unknown={...oldPaid,id:'unknown',createdAt:new Date('2026-10-23T00:00:00Z'),paidAt:undefined,paidAtSource:undefined};
   assert.deepEqual([unknown,newer,oldPaid].sort(compareSettlements).map(s=>s.id),['old','newer','unknown']);
-  for(const term of ['顾客甲','33.64','¥33.64','old','gateway1','420000001']) assert.equal(matchesSettlement(oldPaid,term),true);
+  for(const term of ['顾客甲','33.64','¥33.64','old','gateway1','rotated-gateway','420000001']) assert.equal(matchesSettlement(oldPaid,term),true);
   assert.equal(matchesSettlement(oldPaid,'33.51'),false);
   assert.equal(settlementDateLabel(undefined),'未记录');
   assert.match(settlementDateLabel(oldPaid.paidAt),/2026\/10\/23 00:02:00/);
