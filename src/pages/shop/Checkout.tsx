@@ -109,7 +109,8 @@ const Checkout: React.FC = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [completedSettlementId,setCompletedSettlementId]=useState<string | null>(null);
+  const [completedSettlement,setCompletedSettlement]=useState<Settlement | null>(null);
+  const [customerRefreshFailed,setCustomerRefreshFailed]=useState(false);
   const [showWechatModal, setShowWechatModal] = useState(false);
   const [wechatPayment, setWechatPayment] = useState<WechatPaymentResult | null>(null);
   const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string>('');
@@ -702,7 +703,7 @@ const Checkout: React.FC = () => {
     setSelectedBenefits(s.usedBenefitIds || []);
       try {
         let state = await settlementApi.getPaymentStatus(s.id);
-        if (state.settlementStatus === 'completed') { setCompletedSettlementId(s.id); setSuccess(true); return; }
+        if (state.settlementStatus === 'completed') { showCompletedSettlement(state.settlement || await settlementApi.getById(s.id)); return; }
         if (state.recoveryState === 'initialization_started') {
           const released = await settlementApi.releaseUnstartedPayment(s.id);
           if (released) state = await settlementApi.getPaymentStatus(s.id);
@@ -737,7 +738,7 @@ const Checkout: React.FC = () => {
     setRecoveringPayment(true);
     try {
       const result=await settlementApi.retryPayment(lockedSettlement.id);
-      if(result.status==='paid') {setCompletedSettlementId(lockedSettlement.id);setSuccess(true);return;}
+      if(result.status==='paid') {showCompletedSettlement(await settlementApi.getById(lockedSettlement.id));return;}
       if(!result.codeUrl) throw new Error('微信暂未返回可用二维码，请稍后核对原单');
       setWechatPayment(result);setPendingSettlementId(lockedSettlement.id);setShowWechatModal(true);
       setPaymentRecoveryBlock('原单已核对，关闭窗口后可再次恢复；请勿另开同一笔收款。');
@@ -746,6 +747,24 @@ const Checkout: React.FC = () => {
   };
 
   const legacyRecoveryNeedsReview = paymentRecoveryBlock.includes('旧版结算未经服务端核价');
+
+  // Receipts are rendered from the committed server snapshot, never today's cart
+  // or a locally guessed balance. A refresh failure cannot undo a paid receipt.
+  const showCompletedSettlement = (settlement: Settlement | null) => {
+    if (!settlement || settlement.paymentStatus !== 'completed') throw new Error('原单完成状态暂未确认，请刷新核对，勿重新收款');
+    setCompletedSettlement(settlement);
+    setSuccess(true);
+    setCustomerRefreshFailed(false);
+    void customerApi.getById(settlement.customerId).then(customer => {
+      if (!customer) throw new Error('Customer unavailable');
+      setCustomers(previous => previous.map(row => row.id === customer.id ? customer : row));
+      setSelectedCustomer(previous => previous?.id === customer.id ? customer : previous);
+    }).catch(() => {
+      setCustomerRefreshFailed(true);
+      setCustomers(previous => previous.filter(row => row.id !== settlement.customerId));
+      setSelectedCustomer(previous => previous?.id === settlement.customerId ? null : previous);
+    });
+  };
 
   const handleSubmit = async () => {
     if (loadingBooking || error || paymentRecoveryBlock || submissionLock.current) return;
@@ -861,28 +880,8 @@ const Checkout: React.FC = () => {
         return;
       }
 
-      if ('id' in result) setCompletedSettlementId(result.id);
-      // 本地同步更新客户余额，让 UI 立即反映
-      if (paymentMethod === 'balance' && selectedCustomer) {
-        const principal = selectedCustomer.storedValueBalance - selectedCustomer.withdrawableReferralAmount;
-        const usedPrincipal = Math.min(total, principal);
-        const usedReferral = total - usedPrincipal;
-        const newBalance = Math.round((selectedCustomer.storedValueBalance - total) * 100) / 100;
-        const newReferral = usedReferral > 0
-          ? Math.round((selectedCustomer.withdrawableReferralAmount - usedReferral) * 100) / 100
-          : selectedCustomer.withdrawableReferralAmount;
-
-        const updatedCustomer = {
-          ...selectedCustomer,
-          storedValueBalance: newBalance,
-          balance: newBalance,
-          withdrawableReferralAmount: newReferral,
-        };
-        setSelectedCustomer(updatedCustomer);
-        setCustomers((prev) =>
-          prev.map((c) => (c.id === updatedCustomer.id ? updatedCustomer : c))
-        );
-      }
+      if (!('paymentStatus' in result)) throw new Error('结算结果暂无法确认，请核对原单');
+      showCompletedSettlement(result);
 
       // 清空已核销权益
       setAvailableBenefits((prev) => prev.filter((b) => !selectedBenefits.includes(b.id)));
@@ -890,7 +889,6 @@ const Checkout: React.FC = () => {
       // 核销已选次卡
       // 次卡由服务端与结算在同一事务核销。
       setSubmitting(false);
-      setSuccess(true);
     } catch (err: unknown) {
       if(paymentMethod==='wechat' && total>0 && newSettlement.id) {
         try {
@@ -914,13 +912,12 @@ const Checkout: React.FC = () => {
     setConfirming(true);
     try {
       const completed=await settlementApi.confirmPayment(pendingSettlementId);
-      setCompletedSettlementId(completed.id);
+      showCompletedSettlement(completed);
       // 核销已选次卡
       // 次卡由服务端与结算在同一事务核销。
       setShowWechatModal(false);
       setWechatPayment(null);
       setPendingSettlementId(null);
-      setSuccess(true);
     } catch (err: unknown) {
       alert((err as Error).message || '确认收款失败');
     } finally {
@@ -928,7 +925,7 @@ const Checkout: React.FC = () => {
     }
   };
 
-  if (success) {
+  if (success && completedSettlement) {
     return (
       <ShopLayout title="开单结算">
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -939,7 +936,7 @@ const Checkout: React.FC = () => {
               </div>
               <h2 className="text-xl font-bold text-gray-800 mb-2">结算成功</h2>
               <p className="text-gray-500 mb-6">
-                {selectedCustomer?.name} 消费 ¥{total.toFixed(2)}，已计入结算记录
+                {completedSettlement.customerName} 消费 ¥{completedSettlement.total.toFixed(2)}，已计入结算记录
               </p>
             </div>
 
@@ -947,7 +944,7 @@ const Checkout: React.FC = () => {
             <div className="border-t border-gray-100 pt-4 mb-6">
               <h3 className="text-sm font-medium text-gray-700 mb-3">结算明细</h3>
               <div className="space-y-2">
-                {cartWithAdjustedPrices.map((item, index) => (
+                {completedSettlement.items.map((item, index) => (
                   <div key={index} className="flex justify-between items-center text-sm">
                     <div className="flex items-center gap-2">
                       <span className="text-gray-500">{item.type === 'service' ? '服务' : '商品'}</span>
@@ -959,32 +956,33 @@ const Checkout: React.FC = () => {
                     <span className="font-medium text-gray-800">¥{(item.originalPrice * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
-                {discountAmount > 0 && (
+                {completedSettlement.discount > 0 && (
                   <div className="flex justify-between items-center text-sm text-orange-500">
                     <span>优惠</span>
-                    <span>-¥{discountAmount.toFixed(2)}</span>
+                    <span>-¥{completedSettlement.discount.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center text-sm font-medium pt-2 border-t border-gray-100">
                   <span>实付</span>
-                  <span>¥{total.toFixed(2)}</span>
+                  <span>¥{completedSettlement.total.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm text-gray-500">
                   <span>支付方式</span>
                   <span>
-                    {paymentMethod === 'cash' && '现金'}
-                    {paymentMethod === 'wechat' && '微信支付'}
-                    {paymentMethod === 'alipay' && '支付宝'}
-                    {paymentMethod === 'card' && '刷卡'}
-                    {paymentMethod === 'balance' && '储值余额'}
+                    {completedSettlement.paymentMethod === 'cash' && '现金'}
+                    {completedSettlement.paymentMethod === 'wechat' && '微信支付'}
+                    {completedSettlement.paymentMethod === 'alipay' && '支付宝'}
+                    {completedSettlement.paymentMethod === 'card' && '刷卡'}
+                    {completedSettlement.paymentMethod === 'balance' && '储值余额'}
                   </span>
                 </div>
               </div>
             </div>
 
+            {customerRefreshFailed && <p className="text-sm text-amber-700 mb-4">本单已完成，客户最新余额未能刷新；继续为该客户开单前请刷新页面。</p>}
             <div className="flex gap-3">
               <button
-                onClick={() => navigate('/shop/settlement'+(completedSettlementId ? '?settlementId='+encodeURIComponent(completedSettlementId) : ''))}
+                onClick={() => navigate('/shop/settlement?settlementId='+encodeURIComponent(completedSettlement.id))}
                 className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
               >
                 查看结算记录
@@ -992,6 +990,13 @@ const Checkout: React.FC = () => {
               <button
                 onClick={() => {
                   setSuccess(false);
+                  setCompletedSettlement(null);
+                  setSelectedCustomer(null);
+                  setCustomerSearch('');
+                  setManualPaidAtLocal('');
+                  setShowWechatModal(false);
+                  setWechatPayment(null);
+                  setPendingSettlementId(null);
                   setLockedSettlement(null);
                   setPaymentRecoveryBlock('');
                   setCurrentDraftId(null);

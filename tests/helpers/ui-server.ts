@@ -65,7 +65,22 @@ let failRpc = false;
 let draftDeleteError: any = null;
 let completeCheckout = false;
 let checkoutRpcCalls = 0;
+const newCheckoutMode=process.env.MBS_UI_NEW_CHECKOUT==='1';
 (supabase as any).rpc = async (name: string, args: any) => {
+ if(newCheckoutMode && name==='create_wechat_settlement_atomic') {
+  const row={...args.p_settlement,checkout_payment_started:true,server_priced:true,payment_status:'pending',created_at:new Date().toISOString()};
+  tables.settlements.push(row);
+  tables.payments.push({id:args.p_payment_id,shop_id:row.shop_id,customer_id:row.customer_id,settlement_id:row.id,channel:'wechat_native',amount:row.total,status:'pending',created_at:new Date().toISOString()});
+  tables.wechat_payment_attempts.push({gateway_order_no:args.p_payment_id,payment_id:args.p_payment_id,state:'active'});
+  return {data:{settlement:row,paymentCreated:true},error:null};
+ }
+ if(newCheckoutMode && name==='finalize_wechat_attempt') {
+  const p=tables.payments.find(p=>p.id===args.p_order_no);
+  const s=tables.settlements.find(s=>s.id===p?.settlement_id);
+  if(!p || !s)return {data:null,error:{message:'synthetic missing'}};
+  Object.assign(p,{status:'paid',paid_at:args.p_paid_at,paid_at_source:'wechat_success_time',transaction_id:args.p_transaction_id});
+  s.payment_status='completed';return {data:[s],error:null};
+ }
  if(name==='claim_wechat_recovery') {
   const s=tables.settlements.find(s=>s.id===args.p_settlement_id&&s.shop_id===args.p_shop_id);
   const p=tables.payments?.find(p=>p.settlement_id===s?.id);
@@ -102,7 +117,7 @@ let checkoutRpcCalls = 0;
  }
  if (name === 'create_settlement_with_manual_time_atomic') checkoutRpcCalls++;
  if (name === 'create_settlement_with_manual_time_atomic' && completeCheckout) {
-  const row={...args.p_settlement,payment_status:'completed'};
+  const row={...args.p_settlement,payment_status:'completed',created_at:new Date().toISOString(),manual_paid_at:args.p_manual_paid_at || new Date().toISOString(),manual_paid_recorded_at:new Date().toISOString(),manual_paid_recorded_by:'ceo'};
   tables.settlements.push(row);
   return {data:[row],error:null};
  }
@@ -136,6 +151,13 @@ tables.payments.push({id:'synthetic_recovery_payment',settlement_id:'synthetic-r
 tables.wechat_payment_attempts=[{gateway_order_no:'synthetic_recovery_payment',payment_id:'synthetic_recovery_payment',state:'active',request_body:{appid:'synthetic',mchid:'synthetic',description:'Synthetic',out_trade_no:'synthetic_recovery_payment',notify_url:'https://synthetic.invalid/notify',amount:{total:6728,currency:'CNY'}}}];
 const {recoveryDependencies}=await import('../../backend/services/paymentRecovery.js');
 recoveryDependencies.query=async()=>({status:'pending',tradeState:'NOTPAY',amount:67.28});
+if(newCheckoutMode) {
+ completeCheckout=true;
+ recoveryDependencies.request=(id,amount,description)=>({appid:'synthetic',mchid:'synthetic',description,out_trade_no:id,notify_url:'https://synthetic.invalid/notify',amount:{total:Math.round(amount*100),currency:'CNY'}});
+ recoveryDependencies.query=async(id)=>id==='synthetic_recovery_payment'
+   ? {status:'paid',tradeState:'SUCCESS',amount:67.28,transactionId:'4200000000000000000000000003',paidAt:new Date().toISOString()}
+   : {status:'pending',tradeState:'NOT_FOUND'};
+}
 recoveryDependencies.create=async(body)=>({paymentId:body.out_trade_no,status:'pending',amount:body.amount.total/100,codeUrl:'weixin://wxpay/synthetic-ui-only'});
 const {default:handler}=await import('../../api/index.js');
 const server=createServer((req,res)=>{

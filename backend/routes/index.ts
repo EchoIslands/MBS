@@ -4767,6 +4767,20 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
         if (existing.customer_id !== customerId || existing.checkout_request_key !== requestKey) return res.status(409).json({ success: false, error: '此结算单已完成，请勿更改后重复收款' });
         return res.json({ success: true, data: settlementFromDb(existing) });
       }
+      // A response may have been lost after the atomic mapping committed. Resume
+      // the exact original request before consulting today's catalogue/discounts.
+      if (existing?.checkout_payment_started && existing.payment_method === 'wechat') {
+        if (existing.customer_id !== customerId || existing.checkout_request_key !== requestKey) {
+          return res.status(409).json({ success:false,error:'原单已发起支付，请恢复原支付，不能修改后重新收款' });
+        }
+        const payment = await recoverWechatPayment(id,shopId,employee.id,employee.name);
+        if (payment.status === 'paid') {
+          const {data:completed,error:readError}=await supabase.from('settlements').select('*').eq('id',id).eq('shop_id',shopId).single();
+          if(readError || !completed || completed.payment_status !== 'completed') return res.status(503).json({success:false,error:'微信已收款，原单暂不可读取，请刷新核对，勿重新收款'});
+          return res.json({success:true,data:settlementFromDb(completed)});
+        }
+        return res.json({success:true,data:{settlement:settlementFromDb(existing),payment}});
+      }
     }
     const priced = await priceSettlement(shopId, req.body);
     const amount = priced.total;
@@ -4774,13 +4788,14 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     const isDraft = paymentStatus === 'pending';
     // 本入口仅接受已认证的本店员工：门店收银不以顾客核实/改密状态为前提。
     // 顾客自助资产支付的身份限制保留在独立顾客支付入口中。
-    const { data: created, error: insertError } = await supabase.rpc('create_settlement_with_manual_time_atomic', {
+    const atomicWechat = !isDraft && isAsyncPayment;
+    const { data: created, error: insertError } = await supabase.rpc(atomicWechat ? 'create_wechat_settlement_atomic' : 'create_settlement_with_manual_time_atomic', {
       p_settlement: { id: settlementId, checkout_request_key: requestKey, start_payment: !isDraft && isAsyncPayment, shop_id: shopId, customer_id: customerId, customer_name: priced.customerName,
         booking_id: bookingId || null, ...priced, items: priced.items, discount_detail: priced.discountDetail,
         payment_method: method, payment_status: 'pending', used_benefit_ids: usedBenefitIds || [], processed_by: employee.name,
         customer_package_id: req.body.customerPackageId || null, manual_paid_at: manualPaidAt || null },
-      p_employee_id: employee.id, p_employee_name: employee.name, p_complete: !isDraft && !isAsyncPayment,
-      p_manual_paid_at: manualPaidAt || null,
+      p_employee_id: employee.id, p_employee_name: employee.name,
+      ...(atomicWechat ? {p_payment_id:randomUUID().replace(/-/g,'')} : {p_complete:!isDraft && !isAsyncPayment,p_manual_paid_at:manualPaidAt || null}),
     });
     if (insertError) {
       const reason = String(insertError.message || '');
@@ -4788,12 +4803,12 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
         : reason.includes('BOOKING_ALREADY_SETTLED') ? '此预约已结算，请刷新预约列表'
         : reason.includes('BOOKING_CANCELLED') ? '此预约已取消，不能结算'
         : reason.includes('OWNER_MISMATCH') ? '预约、顾客或门店不匹配，请重新打开正确订单'
-        : insertError.code === 'PGRST202' ? '结算函数不可用，请先核对数据库迁移'
+        : insertError.code === 'PGRST202' ? '结算函数不可用，请先核对039、040数据库迁移'
         : '结算未完成：余额、次卡或权益状态已变化；原草稿已保留';
       console.error('[settlements] 原子提交失败', insertError.code || 'UNKNOWN');
       return res.status(insertError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: message });
     }
-    const settlement = created?.[0];
+    const settlement = atomicWechat ? created?.settlement : created?.[0];
     if (!settlement) return res.status(503).json({ success: false, error: '结算结果暂不可用' });
     logStep('结算记录创建成功');
 
@@ -4804,14 +4819,14 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
 
     // 微信支付：金额大于 0 时创建 payment 记录并返回支付参数；金额为 0（纯核销）直接走后续完成
     if (isAsyncPayment) {
-      const paymentId = randomUUID().replace(/-/g, '');
-      // 必须先持久化映射，再创建网关订单；网关异常不删除映射，以便迟到回调和对账。
-      const { error: mappingError } = await supabase.from('payments').insert({
-        id: paymentId, shop_id: shopId, customer_id: customerId, booking_id: bookingId || null,
-        settlement_id: settlementId, channel: 'wechat_native', amount, status: 'pending', created_at: new Date().toISOString(),
-      });
-      if (mappingError) return res.status(503).json({ success: false, error: '支付映射保存失败，尚未发起网关支付' });
-      const paymentResult = await recoverWechatPayment(settlementId,shopId,employee.id,employee.name,true);
+      // 040 has already committed both the settlement and its only mapping.
+      // A gateway timeout retains that mapping for reconciliation/retry.
+      const paymentResult = await recoverWechatPayment(settlementId,shopId,employee.id,employee.name,created.paymentCreated === true);
+      if (paymentResult.status === 'paid') {
+        const {data:completed,error:readError}=await supabase.from('settlements').select('*').eq('id',settlementId).eq('shop_id',shopId).single();
+        if(readError || !completed || completed.payment_status !== 'completed') return res.status(503).json({success:false,error:'微信已收款，原单暂不可读取，请刷新核对，勿重新收款'});
+        return res.json({success:true,data:settlementFromDb(completed)});
+      }
       logStep('微信支付参数已生成');
       return res.status(201).json({
         success: true,

@@ -93,7 +93,7 @@ let checkoutRpcCalls = 0;
   Object.assign(p,{status:'paid',paid_at:args.p_paid_at,paid_at_source:'wechat_success_time',transaction_id:args.p_transaction_id});
   s.payment_status='completed';return {data:[s],error:null};
  }
- if (name === 'create_settlement_with_manual_time_atomic') checkoutRpcCalls++;
+ if (name === 'create_settlement_with_manual_time_atomic' || name === 'create_wechat_settlement_atomic') checkoutRpcCalls++;
  if (name === 'create_settlement_with_manual_time_atomic' && completeCheckout) {
   const row={...args.p_settlement,payment_status:'completed'};
   tables.settlements.push(row);
@@ -143,7 +143,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   });
   await t.test('历史支付恢复区分草稿、原二维码、缺二维码及初始化认领，跨店拒绝',async()=>{
    const token=await login('ceo');
-   const row={id:'recover',shop_id:'s1',payment_status:'pending',total:58,checkout_payment_started:false,created_at:new Date(Date.now()-24*3600_000).toISOString()};
+   const row:Row={id:'recover',shop_id:'s1',payment_status:'pending',total:58,checkout_payment_started:false,created_at:new Date(Date.now()-24*3600_000).toISOString()};
    tables.settlements.push(row);tables.payments=[];
    const state=async()=> (await request('/settlements/recover/payment-status',token)).body.data.recoveryState;
    try {
@@ -355,6 +355,42 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal((await request('/settlements',ceo,'POST',{...body,total:1})).status,409);
     assert.equal(checkoutRpcCalls,1);
    } finally {completeCheckout=false;tables.settlements=[];}
+  });
+  await t.test('新版微信HTTP：网关超时后原号恢复，不按新目录重算；已付重试返回完成快照',async()=>{
+   const {recoveryDependencies:deps}=await import('../backend/services/paymentRecovery.js');
+   const savedDeps={...deps},savedRpc=supabase.rpc,savedTables=[tables.settlements,tables.payments,tables.shops[0].services];
+   let rpcCount=0,gatewayCalls=0,failGateway=true,paid=false,attempt:any;
+   tables.settlements=[];tables.payments=[];tables.shops[0].services=[{id:'svc',name:'Synthetic',price:58}];
+   const body={id:'http_atomic',customerId:'c1',items:[{type:'service',id:'svc',quantity:1}],paymentMethod:'wechat',total:58};
+   (supabase as any).rpc=async(name:string,args:any)=>{
+    if(name!=='create_wechat_settlement_atomic') return savedRpc(name,args);
+    rpcCount++;
+    const s={...args.p_settlement,checkout_payment_started:true,server_priced:true,payment_status:'pending'};tables.settlements.push(s);
+    tables.payments.push({id:args.p_payment_id,settlement_id:s.id,shop_id:s.shop_id,customer_id:s.customer_id,amount:s.total,status:'pending',channel:'wechat_native'});
+    attempt={gateway_order_no:args.p_payment_id,payment_id:args.p_payment_id,state:'active'};
+    return {data:{settlement:s,paymentCreated:true},error:null};
+   };
+   deps.rpc=(async(name:string,args:any)=>{
+    if(name==='claim_wechat_recovery')return {data:{settlement:tables.settlements[0],payment:tables.payments[0],attempt},error:null};
+    if(args.p_action==='request')attempt.request_body=args.p_data;
+    if(args.p_action==='qr'){attempt.qr_updated_at=new Date().toISOString();tables.payments[0].code_url=args.p_data.code_url;}
+    return {data:attempt,error:null};
+   }) as any;
+   deps.request=(id,amount,description)=>({appid:'synthetic',mchid:'synthetic',description,out_trade_no:id,notify_url:'https://synthetic.invalid',amount:{total:Math.round(amount*100),currency:'CNY'}});
+   deps.query=async()=>paid?{status:'paid',amount:58,tradeState:'SUCCESS',transactionId:'420000001',paidAt:'2026-10-23T01:02:03Z'}:{status:'pending',tradeState:'NOT_FOUND'};
+   deps.create=async(request)=>{gatewayCalls++;assert.equal(request.amount.total,5800);if(failGateway)throw new Error('Synthetic gateway timeout');return {paymentId:request.out_trade_no,status:'pending',amount:58,codeUrl:'weixin://wxpay/synthetic'};};
+   try {
+    assert.equal((await request('/settlements',ceo,'POST',body)).status,400);
+    assert.equal(tables.payments.length,1);assert.equal(rpcCount,1);
+    failGateway=false;tables.shops[0].services[0].price=999;
+    const retry=await request('/settlements',ceo,'POST',body);
+    assert.equal(retry.status,200);assert.equal(retry.body.data.payment.amount,58);assert.equal(rpcCount,1);
+    assert.equal((await request('/settlements',ceo,'POST',{...body,total:999})).status,409);assert.equal(gatewayCalls,2);
+    paid=true;const completed=await request('/settlements',ceo,'POST',body);
+    assert.equal(completed.status,200);assert.equal(completed.body.data.paymentStatus,'completed');assert.equal(completed.body.data.total,58);assert.equal(completed.body.data.payment,undefined);
+    assert.equal((await request('/settlements',ceo,'POST',body)).body.data.paymentStatus,'completed');
+    assert.equal(rpcCount,1);assert.equal(gatewayCalls,2);
+   }finally{Object.assign(deps,savedDeps);(supabase as any).rpc=savedRpc;[tables.settlements,tables.payments,tables.shops[0].services]=savedTables;}
   });
   await t.test('伪造/过期 token、旧员工 token、数据库验证失败均不能放行',async()=>{
    const expired=jwt.sign({id:'c1',shopId:'s1',kind:'customer'},getJwtSecret(),{algorithm:'HS256',audience:'customer',issuer:'mbs',expiresIn:-1});
