@@ -54,6 +54,7 @@ const SettlementManagement: React.FC = () => {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
   const [checkingPayment, setCheckingPayment] = useState<string | null>(null);
+  const [paymentFeedback, setPaymentFeedback] = useState<{ id: string; status: 'success' | 'error'; message: string } | null>(null);
   const [qrSettlementId, setQrSettlementId] = useState<string | null>(null);
   const { currentShop, currentEmployee } = useAppStore();
 
@@ -107,16 +108,21 @@ const SettlementManagement: React.FC = () => {
     }
   };
 
-  const handleConfirmPayment = async (settlementId: string, selectedTime?: string) => {
+  const handleConfirmPayment = async (settlementId: string, selectedTime?: string, recheckWechat = false) => {
     if (checkingPayment) return;
     setCheckingPayment(settlementId);
+    setPaymentFeedback(null);
     try {
       const manualPaidAt = selectedTime ? manualPaymentTimeIso(selectedTime) : undefined;
-      const saved = await settlementApi.confirmPayment(settlementId, undefined, manualPaidAt);
-      if (viewingSettlement?.id === settlementId) setViewingSettlement(saved);
+      const saved = await settlementApi.confirmPayment(settlementId, undefined, manualPaidAt, recheckWechat);
+      setViewingSettlement(current => current?.id === settlementId ? saved : current);
+      setSettlements(current => current.map(item => item.id === settlementId ? saved : item));
+      setPaymentFeedback({ id: settlementId, status: 'success', message: recheckWechat
+        ? `微信核对完成：实收 ¥${(saved.paymentAmount ?? saved.total).toFixed(2)}；微信支付成功时间（北京时间）：${settlementDateLabel(saved.paidAt)}。`
+        : '收款确认完成，结算记录已更新。' });
       await loadSettlements();
     } catch (err: unknown) {
-      alert((err as Error).message || '确认收款失败');
+      setPaymentFeedback({ id: settlementId, status: 'error', message: ((err as Error).message || '确认收款失败') + '。本次未确认新的收款结果，请勿重复收款；可稍后重试核对。' });
     } finally {
       setCheckingPayment(null);
     }
@@ -271,6 +277,8 @@ const SettlementManagement: React.FC = () => {
             {error}
           </div>
         )}
+        {checkingPayment && !viewingSettlement && <p role="status" className="mb-4 text-sm text-gray-600">正在核对收款，请稍候。</p>}
+        {paymentFeedback && !viewingSettlement && <p role={paymentFeedback.status === 'error' ? 'alert' : 'status'} className={`mb-4 rounded-xl p-3 text-sm ${paymentFeedback.status === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{paymentFeedback.message}</p>}
 
         {!loading && (
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
@@ -450,7 +458,7 @@ const SettlementManagement: React.FC = () => {
                           )}
                           {(settlement.paymentStatus === 'pending' || (settlement.paymentMethod === 'wechat' && settlement.paymentId)) && (
                             <button
-                              onClick={() => ['cash','card'].includes(settlement.paymentMethod) ? setViewingSettlement(settlement) : handleConfirmPayment(settlement.id)}
+                              onClick={() => ['cash','card'].includes(settlement.paymentMethod) ? setViewingSettlement(settlement) : handleConfirmPayment(settlement.id, undefined, settlement.paymentMethod === 'wechat')}
                               disabled={checkingPayment !== null}
                               className="p-2 hover:bg-green-50 rounded-lg transition-colors"
                               title={settlement.paymentMethod === 'wechat' ? '向微信核对收款及实际支付时间' : ['cash','card'].includes(settlement.paymentMethod) ? '登记收款并确认' : '确认收款'}
@@ -589,7 +597,10 @@ const SettlementManagement: React.FC = () => {
               {viewingSettlement.transactionId && <div className="text-sm break-all">微信交易号：{viewingSettlement.transactionId}</div>}
               {viewingSettlement.paymentRecordStatus === 'paid' && viewingSettlement.paymentAmount !== undefined && <div>登记收款金额：¥{viewingSettlement.paymentAmount.toFixed(2)}（未扣手续费）</div>}
               {viewingSettlement.paymentReviewRequired && <p className="text-sm text-red-600">支付记录与结算状态需核对，请勿重新收款。</p>}
-              {viewingSettlement.paymentMethod === 'wechat' && viewingSettlement.paymentId && <button disabled={checkingPayment !== null} onClick={()=>handleConfirmPayment(viewingSettlement.id)} className="w-full py-2 bg-green-600 text-white rounded-xl disabled:opacity-50">{checkingPayment ? '向微信核对中...' : '核对微信收款与支付时间'}</button>}
+              {viewingSettlement.paymentMethod === 'wechat' && viewingSettlement.paymentId && <button disabled={checkingPayment !== null} aria-busy={checkingPayment === viewingSettlement.id} onClick={()=>handleConfirmPayment(viewingSettlement.id, undefined, true)} className="w-full py-2 bg-green-600 text-white rounded-xl disabled:opacity-50">{checkingPayment === viewingSettlement.id ? '向微信核对中...' : '核对微信收款与支付时间'}</button>}
+              {checkingPayment === viewingSettlement.id && <p role="status" className="text-sm text-gray-600">正在查询微信原订单，请稍候；不会再次发起扣款。</p>}
+              {paymentFeedback?.id === viewingSettlement.id && <p role={paymentFeedback.status === 'error' ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${paymentFeedback.status === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{paymentFeedback.message}</p>}
+              {error && <p role="alert" className="text-sm text-amber-700">结算列表刷新未完成：{error}。上方核对结果已保留，可关闭详情后刷新列表。</p>}
               {viewingSettlement.processedBy && (
                 <div className="flex items-center justify-between py-3">
                   <span className="text-gray-500">操作员</span>

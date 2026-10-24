@@ -141,7 +141,7 @@ tables.settlements=[
 tables.bookings=[{id:'synthetic-today-booking',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',stylist_id:'stylist',barber_id:'stylist',scheduled_time:new Date().toISOString(),status:'confirmed',service_name:'洗剪吹'}];
 tables.reviews=[{id:'synthetic-rating',shop_id:'shop1',stylist_id:'stylist',overall_score:4.5}];
 tables.payments=[
- {id:'synthetic_old_payment',settlement_id:'synthetic-old-paid',shop_id:'shop1',customer_id:'c1',amount:33.64,status:'paid',transaction_id:'4200000000000000000000000001',paid_at:new Date().toISOString(),paid_at_source:'wechat_success_time',created_at:'2026-10-22T06:55:20Z'},
+ {id:'synthetic_old_payment',settlement_id:'synthetic-old-paid',shop_id:'shop1',customer_id:'c1',amount:33.64,status:'paid',transaction_id:'4200000000000000000000000001',paid_at:'2026-10-24T07:34:31.000Z',paid_at_source:'wechat_success_time',created_at:'2026-10-22T06:55:20Z'},
  {id:'synthetic_new_payment',settlement_id:'synthetic-newer-created',shop_id:'shop1',customer_id:'c1',amount:58,status:'paid',transaction_id:'4200000000000000000000000002',paid_at:'2026-10-01T08:02:00Z',paid_at_source:'wechat_success_time',created_at:'2026-10-01T08:01:00Z'},
  {id:'synthetic_legacy_payment',settlement_id:'synthetic-legacy-unknown',shop_id:'shop1',customer_id:'c1',amount:23.55,status:'paid',paid_at:'2026-10-20T08:01:00Z',created_at:'2026-10-20T08:00:30Z'},
 ];
@@ -151,6 +151,12 @@ tables.payments.push({id:'synthetic_recovery_payment',settlement_id:'synthetic-r
 tables.wechat_payment_attempts=[{gateway_order_no:'synthetic_recovery_payment',payment_id:'synthetic_recovery_payment',state:'active',request_body:{appid:'synthetic',mchid:'synthetic',description:'Synthetic',out_trade_no:'synthetic_recovery_payment',notify_url:'https://synthetic.invalid/notify',amount:{total:6728,currency:'CNY'}}}];
 const {recoveryDependencies}=await import('../../backend/services/paymentRecovery.js');
 recoveryDependencies.query=async()=>({status:'pending',tradeState:'NOTPAY',amount:67.28});
+if(process.env.MBS_UI_RECHECK==='1') {
+  tables.wechat_payment_attempts.push({gateway_order_no:'synthetic_old_payment',payment_id:'synthetic_old_payment',state:'active',request_body:{appid:'synthetic',mchid:'synthetic',description:'Synthetic',out_trade_no:'synthetic_old_payment',notify_url:'https://synthetic.invalid/notify',amount:{total:3364,currency:'CNY'}}});
+  recoveryDependencies.query=async(id)=>id==='synthetic_old_payment'
+    ? {status:'paid',tradeState:'SUCCESS',amount:33.64,transactionId:'4200000000000000000000000001',paidAt:'2026-10-24T15:34:31+08:00'}
+    : {status:'pending',tradeState:'NOTPAY',amount:67.28};
+}
 if(newCheckoutMode) {
  completeCheckout=true;
  recoveryDependencies.request=(id,amount,description)=>({appid:'synthetic',mchid:'synthetic',description,out_trade_no:id,notify_url:'https://synthetic.invalid/notify',amount:{total:Math.round(amount*100),currency:'CNY'}});

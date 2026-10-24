@@ -694,6 +694,40 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(confirmed.status,200);assert.equal(confirmed.body.data.transactionId,'420000001');
    } finally {failRpc=false;[tables.settlements,tables.payments]=previous;}
   });
+  await t.test('主动微信核对必须查询原单；成功、重复和失败均保留已登记凭据',async()=>{
+   const {recoveryDependencies}=await import('../backend/services/paymentRecovery.js');
+   const previous=[tables.settlements,tables.payments,tables.wechat_payment_attempts];
+   const originalQuery=recoveryDependencies.query;
+   const paidAt='2026-10-24T07:34:31.000Z';
+   let queries=0;
+   let gateway:any={status:'paid',tradeState:'SUCCESS',amount:33.64,transactionId:'420000001',paidAt:'2026-10-24T15:34:31+08:00'};
+   try {
+    tables.settlements=[{id:'recheck',shop_id:'s1',customer_id:'c1',total:33.64,payment_method:'wechat',payment_status:'completed'}];
+    tables.payments=[{id:'ledger1',shop_id:'s1',customer_id:'c1',settlement_id:'recheck',amount:33.64,status:'paid',paid_at:paidAt,paid_at_source:'wechat_success_time',transaction_id:'420000001'}];
+    tables.wechat_payment_attempts=[{payment_id:'ledger1',gateway_order_no:'gateway1',state:'active'}];
+    recoveryDependencies.query=async id=>{queries++;assert.equal(id,'gateway1');if(gateway instanceof Error)throw gateway;return gateway;};
+    const token=(await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'changed-password'})).body.data.token;
+    const endpoint='/settlements/recheck/confirm-payment';
+    assert.equal((await request(endpoint,token,'POST',{})).status,200);assert.equal(queries,0);
+    assert.equal((await request(endpoint,'','POST',{recheckWechat:true})).status,401);assert.equal(queries,0);
+    const before=structuredClone([tables.settlements,tables.payments,tables.wechat_payment_attempts]);
+    for(let i=0;i<2;i++) {
+     const result=await request(endpoint,token,'POST',{recheckWechat:true,paidAt:'2999-01-01',transactionId:'forged'});
+     assert.equal(result.status,200);assert.equal(result.body.data.paidAt,paidAt);assert.equal(result.body.data.paymentAmount,33.64);assert.equal(result.body.data.transactionId,'420000001');
+    }
+    assert.equal(queries,2);
+    for(const change of [
+      {status:'pending',message:'微信查单暂不可用或验签未通过'},
+      {...gateway,amount:0.01}, {...gateway,transactionId:'different'}, {...gateway,paidAt:'2026-10-24T15:35:00+08:00'},
+      {...gateway,paidAt:undefined}, new Error('synthetic unavailable'),
+    ]) {
+     gateway=change;
+     const result=await request(endpoint,token,'POST',{recheckWechat:true});
+     assert.notEqual(result.status,200);
+     assert.deepEqual([tables.settlements,tables.payments,tables.wechat_payment_attempts],before);
+    }
+   } finally {recoveryDependencies.query=originalQuery;[tables.settlements,tables.payments,tables.wechat_payment_attempts]=previous;}
+  });
   await t.test('哈希密码校验与生产缺密钥拒绝',async()=>{
    for (const password of ['x', '长'.repeat(40), 'mbs-sha256:legacy', '$2b$12$legacy']) { const migrated = await hashPassword(password, true); assert.ok(await verifyPassword(password, migrated)); assert.equal(await verifyPassword(password + 'wrong', migrated), false); }
    const hash=await hashPassword('test-password');assert.ok(await verifyPassword('test-password',hash));assert.equal(await verifyPassword('wrong',hash),false);

@@ -1538,12 +1538,12 @@ export const settlementApi = {
     return mockSettlements.find((s) => s.id === settlementId) || null;
   },
 
-  confirmPayment: async (settlementId: string, transactionId?: string, manualPaidAt?: string): Promise<Settlement> => {
+  confirmPayment: async (settlementId: string, transactionId?: string, manualPaidAt?: string, recheckWechat = false): Promise<Settlement> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
       return await httpThrowing<Settlement>(`${API_BASE}/settlements/${settlementId}/confirm-payment`, {
         method: 'POST',
-        body: JSON.stringify({ transactionId, manualPaidAt }),
+        body: JSON.stringify({ transactionId, manualPaidAt, recheckWechat }),
         headers: { Authorization: `Bearer ${token}` },
       });
     }

@@ -1,4 +1,4 @@
-import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId } from '../services/paymentRecovery.js';
+import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { randomUUID, createHash } from 'crypto';
@@ -19,7 +19,7 @@ import {
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
 import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
-import { queryPaymentStatus, handleWechatCallback } from '../services/paymentService.js';
+import { handleWechatCallback } from '../services/paymentService.js';
 import { recordWechatReceipt } from '../services/settlementReceipt.js';
 import { compareSettlements } from '../../shared/lib/settlementDisplay.js';
 import { buildFinancialReport } from '../../shared/lib/financialReport.js';
@@ -4846,7 +4846,7 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
   }
 });
 
-// 手动确认收款（mock 阶段或顾客已扫码付款后，店铺端确认收款）
+// 微信收款仅信任已验签的网关凭据；现金/银行卡由授权员工登记。
 settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
@@ -4870,13 +4870,21 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
       if(!payment || payment.customer_id!==settlement.customer_id || Number(payment.amount)!==Number(settlement.total)) {
         return res.status(409).json({success:false,error:'支付映射或金额不匹配，请核对原单，勿重新收款'});
       }
-      if(settlement.payment_status==='completed' && payment.status==='paid' && payment.paid_at_source==='wechat_success_time') {
+      const hasVerifiedReceipt=settlement.payment_status==='completed' && payment.status==='paid' && payment.paid_at_source==='wechat_success_time';
+      if(hasVerifiedReceipt && req.body?.recheckWechat !== true) {
         return res.json({success:true,data:settlementFromDb(settlement,payment)});
       }
       const gatewayOrderNo=await activeWechatOrder(String(payment.id));
-      const gateway=await queryPaymentStatus(gatewayOrderNo);
+      const gateway=await recoveryDependencies.query(gatewayOrderNo);
       if(gateway.status!=='paid' || gateway.amount!==Number(settlement.total) || !gateway.transactionId || !gateway.paidAt) {
         return res.status(409).json({success:false,error:'微信尚未返回可核对的成功订单及支付时间：'+(gateway.message || '请稍后重试')});
+      }
+      // 已有可信凭据只复核，不重复登记；不一致时保留原记录并要求人工核对。
+      if(hasVerifiedReceipt) {
+        if(payment.transaction_id!==gateway.transactionId || Date.parse(payment.paid_at)!==Date.parse(gateway.paidAt)) {
+          return res.status(409).json({success:false,error:'微信返回的交易号或支付时间与已登记凭据不一致，请核对原单；原记录已保留'});
+        }
+        return res.json({success:true,data:settlementFromDb(settlement,payment)});
       }
       const completed=await recordWechatReceipt({paymentId:gatewayOrderNo,amount:gateway.amount,transactionId:gateway.transactionId,paidAt:gateway.paidAt},shopId,employee.id,employee.name);
       return res.json({success:true,data:settlementFromDb(completed,{...payment,status:'paid',paid_at:gateway.paidAt,paid_at_source:'wechat_success_time',transaction_id:gateway.transactionId})});
