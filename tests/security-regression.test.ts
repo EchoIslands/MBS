@@ -37,6 +37,7 @@ let failMigration = false;
 let failAuthentication = false;
 let failPaymentQuery = false;
 let failDashboardTable = '';
+let failCustomerRead = false;
 let syntheticRowCap: number | undefined;
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
@@ -54,6 +55,7 @@ class Query {
  single(){this.singleRow=true;return this;} maybeSingle(){this.singleRow=true;return this;}
  then(resolve:any,reject:any){try{
   if(failDashboardTable === this.table) return Promise.resolve({data:null,error:{message:'synthetic dashboard unavailable'}}).then(resolve,reject);
+  if(failCustomerRead && this.table==='customers') return Promise.resolve({data:null,error:{message:'synthetic customer unavailable'}}).then(resolve,reject);
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
   const matched=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
@@ -68,6 +70,9 @@ class Query {
 }
 (supabase as any).from=(table:string)=>new Query(table);
 let rpcFailures = 0;
+let authDecisionOverride: any;
+let rejectAuthFinish = false;
+const authOutcomes: string[] = [];
 let failRpc = false;
 let draftDeleteError: any = null;
 let completeCheckout = false;
@@ -120,8 +125,8 @@ let checkoutRpcCalls = 0;
   return {data:[structuredClone(row)],error:null};
  }
  if (failRpc) return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
- if (name === 'begin_customer_auth_attempt') return { data: [{allowed: rpcFailures < 5}], error: null };
- if (name === 'finish_customer_auth_attempt') { rpcFailures = args.p_succeeded ? 0 : rpcFailures+1; return {data:null,error:null}; }
+ if (name === 'begin_customer_auth_attempt_v2') return { data: [authDecisionOverride ?? (rpcFailures < 5 ? {allowed:true,attempt_id:'00000000-0000-4000-8000-000000000001'} : {allowed:false,reason:'temporary_lock',retry_after_seconds:900})], error: null };
+ if (name === 'finish_customer_auth_attempt_v2') { authOutcomes.push(args.p_outcome); if(rejectAuthFinish)return {data:false,error:null}; if(args.p_outcome!=='cancelled') rpcFailures = args.p_outcome==='success' ? 0 : rpcFailures+1; return {data:true,error:null}; }
  return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
 };
 
@@ -133,7 +138,7 @@ await new Promise<void>(r=>server.once('listening',()=>r()));
 base='http://127.0.0.1:'+(server.address() as any).port;
 async function request(path:string, token='', method='GET', body?:unknown, cookie?:string){
  const response=await fetch(base+'/api'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(cookie?{Cookie:cookie}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
- return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')};
+ return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie'),retryAfter:response.headers.get('retry-after')};
 }
 const login=async(id:string)=>{const r=await request('/auth/login','','POST',{phone:'synthetic-'+id,password:'old-password'});assert.equal(r.status,200);return r.body.data.token;};
 
@@ -298,6 +303,38 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal((await request('/customers/login','','POST',{phone:'13800000002',password:'123456',setupPassword:true})).status,200);
     for (let i=0;i<5;i++) assert.equal((await request('/customers/login','','POST',{phone:'13800000002',password:'999999'})).status,401);
    assert.equal((await request('/customers/login','','POST',{phone:'13800000002',password:'999999'})).status,429);
+  });
+
+  await t.test('登录限流HTTP：区分原因和Retry-After；故障/首次设密探测取消占位；完成失败不签发凭证',async()=>{
+   rpcFailures=0;
+   const added={id:'auth-probe',shop_id:'s1',phone:'13800000008',password_hash:null};
+   tables.customers.push(added);
+   try {
+    for(const reason of ['daily_limit','temporary_lock','verification_busy']) {
+     authDecisionOverride={allowed:false,reason,retry_after_seconds:120};
+     const before=calls;
+     const r=await request('/customers/login','','POST',{phone:'13800000001',password:'000001',client:'mini'});
+     assert.equal(r.status,429); assert.equal(r.retryAfter,'120');
+     assert.equal(r.body.code,'CUSTOMER_AUTH_'+reason.toUpperCase());
+     assert.equal(r.body.retryAfterSeconds,120); assert.ok(Number.isFinite(Date.parse(r.body.retryAt)));
+     assert.match(r.body.error,/北京时间.*尚未验证密码/); assert.equal(r.body.token,undefined);
+     assert.equal(calls,before,'限流后不得读取客户或验证密码');
+    }
+    for(const invalid of [{allowed:true},{allowed:false,reason:'bad',retry_after_seconds:10},{allowed:false,reason:'daily_limit',retry_after_seconds:-1}]) {
+     authDecisionOverride=invalid;
+     const r=await request('/customers/login','','POST',{phone:'13800000001',password:'000001'});
+     assert.equal(r.status,503); assert.match(r.body.error,/043/);
+    }
+    authDecisionOverride=undefined; authOutcomes.length=0;
+    assert.equal((await request('/customers/login','','POST',{phone:added.phone})).body.setupRequired,true);
+    assert.deepEqual(authOutcomes,['cancelled']); assert.equal(rpcFailures,0);
+    failCustomerRead=true; authOutcomes.length=0;
+    assert.equal((await request('/customers/login','','POST',{phone:added.phone,password:'246810'})).status,503);
+    assert.deepEqual(authOutcomes,['cancelled']); assert.equal(rpcFailures,0); failCustomerRead=false;
+    rejectAuthFinish=true;
+    const refused=await request('/customers/login','','POST',{phone:'13800000001',password:'000001',client:'mini'});
+    assert.equal(refused.status,503); assert.equal(refused.body.token,undefined); assert.equal(refused.cookie,null);
+   } finally {authDecisionOverride=undefined; rejectAuthFinish=false; failCustomerRead=false; tables.customers=tables.customers.filter(c=>c!==added); rpcFailures=0;}
   });
 
   await t.test('未迁移受控拒绝、员工核实必须同店与归属、匿名商城付款被拒',async()=>{

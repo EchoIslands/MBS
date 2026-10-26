@@ -69,6 +69,7 @@ let checkoutRpcCalls = 0;
 const newCheckoutMode=process.env.MBS_UI_NEW_CHECKOUT==='1';
 const customerSaveMode=process.env.MBS_UI_CUSTOMER_SAVE==='1';
 const productListMode=process.env.MBS_UI_PRODUCT_LIST==='1';
+const authLimitMode=process.env.MBS_UI_AUTH_LIMIT;
 (supabase as any).rpc = async (name: string, args: any) => {
  if(customerSaveMode && name==='adjust_customer_balance_atomic') {
   const row=tables.customers.find(r=>r.id===args.p_customer_id&&r.shop_id===args.p_shop_id);
@@ -154,8 +155,11 @@ const productListMode=process.env.MBS_UI_PRODUCT_LIST==='1';
   return {data:[row],error:null};
  }
  if (failRpc) return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
- if (name === 'begin_customer_auth_attempt') return { data: [{allowed: rpcFailures < 5}], error: null };
- if (name === 'finish_customer_auth_attempt') { rpcFailures = args.p_succeeded ? 0 : rpcFailures+1; return {data:null,error:null}; }
+ if (name === 'begin_customer_auth_attempt_v2') return { data: [
+  authLimitMode==='daily_limit' ? {allowed:false,reason:'daily_limit',retry_after_seconds:3600} :
+  rpcFailures < 5 ? {allowed:true,attempt_id:'00000000-0000-4000-8000-000000000001'} : {allowed:false,reason:'temporary_lock',retry_after_seconds:900}
+ ], error: null };
+ if (name === 'finish_customer_auth_attempt_v2') { if(args.p_outcome!=='cancelled') rpcFailures = args.p_outcome==='success' ? 0 : rpcFailures+1; return {data:true,error:null}; }
  return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
 };
 

@@ -36,6 +36,22 @@ async function harness(route = 'pages/index/index') {
   return { context, storage, requests, redirects, setSession };
 }
 
+test('登录按钮并发点击仅发一次请求；429原因原样展示且不自动重试', async () => {
+  const h = await harness('pages/login/login');
+  await load(h.context, 'api/customer.js');
+  await load(h.context, 'pages/login/login.js');
+  const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
+  Object.assign(page.data,{phone:'13900000001',password:'246810'});
+  const first=page.onLogin(); const second=page.onLogin();
+  assert.equal(h.requests.length,1);
+  assert.equal(h.requests[0].method,'POST');
+  const message='当前网络今日密码错误次数已达上限，请于北京时间明日00:00后重试。本次尚未验证密码。';
+  h.requests[0].success({statusCode:429,data:{success:false,error:message,code:'CUSTOMER_AUTH_DAILY_LIMIT',retryAfterSeconds:60}});
+  await Promise.all([first,second]);
+  assert.equal(page.data.error,message); assert.equal(page.data.loggingIn,false);
+  assert.equal(h.requests.length,1); assert.equal(h.redirects.length,0);
+});
+
 test('当前会话并发401：清缓存及改密标记，仅跳转一次', async () => {
   const h = await harness(); h.setSession(); h.context.setPasswordChangeRequired(true);
   const first = assert.rejects(h.context.get('/customers/synthetic-customer/public'), { statusCode: 401 });

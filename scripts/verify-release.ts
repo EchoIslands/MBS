@@ -31,7 +31,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
   const issues: string[] = [];
   const warnings: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
-  const protectedTables = ['customer_auth_limits', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
+  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
   const signatures = new Set<string>();
   for (const file of SETUP_MIGRATIONS) {
     const sql = await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8');
@@ -44,6 +44,14 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
     await connection.query("SET LOCAL statement_timeout = '30s'");
     const actual = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='customers'");
     const present = new Set(actual.rows.map(row => row.column_name));
+    const authFields = await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_auth_limits'");
+    for (const [name, type] of Object.entries({failure_day:'date', daily_failures:'integer'})) {
+      if (!authFields.rows.some(row=>row.column_name===name && row.data_type===type)) issues.push('缺少或不兼容043登录失败计数字段：'+name);
+    }
+    const authReservations = await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_auth_reservations'");
+    for (const [name, type] of Object.entries({id:'uuid', ip_hash:'text', expires_at:'timestamp with time zone'})) {
+      if (!authReservations.rows.some(row=>row.column_name===name && row.data_type===type)) issues.push('缺少或不兼容043登录并发占位字段：'+name);
+    }
     const checkoutColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='settlements' AND column_name IN ('checkout_request_key','checkout_payment_started')");
     if (checkoutColumns.rows.length !== 2) issues.push('缺少 031 预约结算闭环迁移字段');
     const recoveryColumn = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='settlements' AND column_name='checkout_payment_started_at'");
@@ -115,7 +123,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
       (has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') OR has_any_column_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE')) AS authenticated_access
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='public' AND c.relkind='r' AND c.relname=ANY($1::text[])`, [[
-      'bookings','coupons','customer_auth_limits','customer_coupons','customer_events','customer_packages','customer_password_initialization_runs',
+      'bookings','coupons','customer_auth_limits','customer_auth_reservations','customer_coupons','customer_events','customer_packages','customer_password_initialization_runs',
       'customer_profiles','customer_visit_records','customers','employees','group_buy_batches','group_buy_vouchers','member_benefit_records',
       'member_benefits','membership_enrollments','package_usage_logs','payments','product_inventory_logs','product_order_items','product_order_refunds',
       'product_orders','products','purchase_vip_configs','queues','referral_records','refund_requests','reviews','satisfaction_surveys','services',

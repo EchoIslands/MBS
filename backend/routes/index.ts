@@ -3,7 +3,7 @@ import customerPaymentOrdersRouter from './customerPaymentOrders.js';
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { randomUUID, createHash } from 'crypto';
-import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified, FIRST_USE_MESSAGE } from '../lib/customerSecurity.js';
+import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified, FIRST_USE_MESSAGE, CUSTOMER_AUTH_UNAVAILABLE, type CustomerAuthAttempt } from '../lib/customerSecurity.js';
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { operationError } from '../lib/rpcErrors.js';
@@ -1816,13 +1816,19 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
   // Vercel overwrites its own forwarding header; do not trust arbitrary X-Forwarded-For.
   const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
   const loginIp = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
+  let attempt: CustomerAuthAttempt | undefined;
   try {
-    if (!(await beginCustomerAuthAttempt(loginIp))) return res.status(429).json({ success: false, error: '尝试次数过多，请稍后再试或联系门店' });
+    const decision = await beginCustomerAuthAttempt(loginIp);
+    if (decision.allowed === false) {
+      res.setHeader('Retry-After', decision.retryAfterSeconds);
+      return res.status(429).json({ success: false, ...decision });
+    }
+    attempt = decision.attempt;
     const { data: customers, error } = await supabase.from('customers')
       .select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('phone', normalizedPhone).limit(2);
     if (error) return res.status(503).json({ success: false, error: '身份验证暂不可用' });
     if (!customers?.length) {
-      await finishCustomerAuthAttempt(loginIp, false);
+      await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       return res.status(401).json({ success: false, error: '手机号或密码错误；如首次使用，请联系门店核实手机号' });
     }
     if (customers.length !== 1) return res.status(409).json({ success: false, error: '该手机号关联多个客户档案，请联系门店处理' });
@@ -1839,18 +1845,22 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
     } else {
       if (!isCustomerPassword(password)) return res.status(400).json({ success: false, error: '请输入六位数字密码' });
       if (!(await verifyCustomerPassword(password, passwordHash))) {
-        await finishCustomerAuthAttempt(loginIp, false);
+        await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
         return res.status(401).json({ success: false, error: '手机号或密码错误' });
       }
     }
-    await finishCustomerAuthAttempt(loginIp, true);
+    await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
     const { password_hash: _passwordHash, is_weak_password: weakPassword, ...safeCustomer } = customer;
     const mustChangePassword = weakPassword === true;
     const verifiedCustomer = mustChangePassword ? { id: customer.id, shop_id: customer.shop_id, must_change_password: true, identity_verified: false } : { ...safeCustomer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) };
     const token = signCustomerToken(customer.id, customer.shop_id, passwordHash, mustChangePassword);
     res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
     return res.json({ success: true, data: toCamelCase(verifiedCustomer), ...(req.body?.client === 'mini' ? { token } : {}) });
-  } catch { return res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
+  } catch (error) {
+    return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '身份验证暂不可用' });
+  } finally {
+    if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
+  }
 });
 // 受限会话仅能恢复状态、改密和退出；所有业务路径仍走默认本人中间件。
 customersRouter.post('/:id/password/change', (req, res, next) => { void customerIdentity(req, res, next, 'id', true); }, async (req: Request, res: Response) => {
@@ -1860,18 +1870,24 @@ customersRouter.post('/:id/password/change', (req, res, next) => { void customer
   }
   const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
   const ip = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
+  let attempt: CustomerAuthAttempt | undefined;
   try {
-    if (!(await beginCustomerAuthAttempt(ip))) return res.status(429).json({ success: false, error: '尝试次数过多，请稍后再试或联系门店' });
+    const decision = await beginCustomerAuthAttempt(ip);
+    if (decision.allowed === false) {
+      res.setHeader('Retry-After', decision.retryAfterSeconds);
+      return res.status(429).json({ success: false, ...decision });
+    }
+    attempt = decision.attempt;
     const { data: customer, error } = await supabase.from('customers').select('id, shop_id, password_hash')
       .eq('id', req.customer!.id).eq('shop_id', req.customer!.shopId).maybeSingle();
     if (error) return res.status(503).json({ success: false, error: '改密服务暂不可用' });
     if (!customer || passwordVersion(customer.password_hash) !== req.customer!.passwordVersion) return res.status(401).json({ success: false, error: '会话已失效，请重新登录' });
     if (!(await verifyCustomerPassword(currentPassword, customer.password_hash))) {
-      await finishCustomerAuthAttempt(ip, false);
+      await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       return res.status(400).json({ success: false, error: '原密码错误' });
     }
     const hash = await hashCustomerPassword(newPassword);
-    await finishCustomerAuthAttempt(ip, true);
+    await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
     // 比较旧哈希，防止并发改密覆盖员工重置；不修改任何身份核实字段。
     const { data: saved, error: saveError } = await supabase.from('customers').update({ password_hash: hash, is_weak_password: false })
       .eq('id', customer.id).eq('shop_id', customer.shop_id).eq('password_hash', customer.password_hash).select('id').maybeSingle();
@@ -1880,7 +1896,11 @@ customersRouter.post('/:id/password/change', (req, res, next) => { void customer
     const token = signCustomerToken(customer.id, customer.shop_id, hash);
     res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
     return res.json({ success: true, data: { id: customer.id, shopId: customer.shop_id, mustChangePassword: false }, ...(req.body?.client === 'mini' ? { token } : {}) });
-  } catch { return res.status(503).json({ success: false, error: '改密服务暂不可用' }); }
+  } catch (error) {
+    return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '改密服务暂不可用' });
+  } finally {
+    if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
+  }
 });
 customersRouter.post('/logout', (_req: Request, res: Response) => {
   res.clearCookie(CUSTOMER_COOKIE, { httpOnly: true, sameSite: 'strict', path: '/api' });
