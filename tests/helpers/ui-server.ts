@@ -35,9 +35,9 @@ let failAuthentication = false;
 let failPaymentQuery = false;
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
- rowStart=0;rowEnd:number|undefined;
+ rowStart=0;rowEnd:number|undefined;exactCount=false;
  constructor(public table:string) { calls++; }
- select(columns='*') {this.columns=columns;return this;}
+ select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
  eq(k:string,v:any) {this.filters.push(r=>r[k]===v);return this;}
  is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
  contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
@@ -50,13 +50,14 @@ class Query {
  then(resolve:any,reject:any){try{
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
-  let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r))).slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
+  const matched=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
+  let rows=matched.slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
   if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
   if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
   if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
   if(this.operation==='delete')tables[this.table]=(tables[this.table]||[]).filter(r=>!rows.includes(r));
   const data=rows.map(r=>this.columns==='*'?structuredClone(r):Object.fromEntries(this.columns.split(',').map(k=>[k.trim(),r[k.trim()]])));
-  return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null}).then(resolve,reject);
+  return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null,count:this.exactCount?matched.length:null}).then(resolve,reject);
  }catch(e){return Promise.reject(e).then(resolve,reject);}}
 }
 (supabase as any).from=(table:string)=>new Query(table);
@@ -67,6 +68,7 @@ let completeCheckout = false;
 let checkoutRpcCalls = 0;
 const newCheckoutMode=process.env.MBS_UI_NEW_CHECKOUT==='1';
 const customerSaveMode=process.env.MBS_UI_CUSTOMER_SAVE==='1';
+const productListMode=process.env.MBS_UI_PRODUCT_LIST==='1';
 (supabase as any).rpc = async (name: string, args: any) => {
  if(customerSaveMode && name==='adjust_customer_balance_atomic') {
   const row=tables.customers.find(r=>r.id===args.p_customer_id&&r.shop_id===args.p_shop_id);
@@ -150,6 +152,13 @@ tables.customers[0]={...tables.customers[0],shop_id:'shop1',name:'合成顾客',
 tables.employees[0]={...tables.employees[0],shop_id:'shop1',phone:'13800000009'};
 tables.employees[2]={...tables.employees[2],shop_id:'shop1',phone:'13800000008'};
 if(customerSaveMode) Object.assign(tables.customers[0],{age:null,birthday:null,gender:'other',source:'',is_stockholder:false,stockholder_since:null,points:0,total_spent:0,visit_count:0,membership_level:'regular',balance:10,stored_value_balance:10});
+if(productListMode) {
+ tables.product_orders=[
+  {id:'synthetic-product-order',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',order_no:'SYNTHETIC-PRODUCT-001',status:'paid',payment_method:'balance',payment_status:'paid',total_amount:12,discount_amount:0,payable_amount:12,created_at:'2026-10-26T04:00:00Z'},
+  {id:'synthetic-product-pending',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',order_no:'SYNTHETIC-PRODUCT-002',status:'pending',payment_method:'balance',payment_status:'pending',total_amount:8,discount_amount:0,payable_amount:8,created_at:'2026-10-26T03:00:00Z'},
+ ];
+ tables.product_order_items=[{id:'synthetic-product-item',order_id:'synthetic-product-order',product_id:'synthetic-product',name:'隔离测试商品',image:'',price:12,quantity:1,total_amount:12}];
+}
 if(process.env.MBS_UI_REFUND==='1') tables.refund_requests=[{id:'synthetic-refund',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',booking_id:'synthetic-today-booking',amount:33.64,status:'approved',refund_method:'original',reason:'仅隔离界面验收',created_at:new Date().toISOString()}];
 // 本次支付追溯页面验收只使用合成订单；日期/金额用于覆盖旧单新付和历史缺失时间。
 tables.settlements=[

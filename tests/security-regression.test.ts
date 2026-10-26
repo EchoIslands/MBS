@@ -39,9 +39,9 @@ let failPaymentQuery = false;
 let failDashboardTable = '';
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
- rowStart=0;rowEnd:number|undefined;
+ rowStart=0;rowEnd:number|undefined;exactCount=false;
  constructor(public table:string) { calls++; }
- select(columns='*') {this.columns=columns;return this;}
+ select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
  eq(k:string,v:any) {this.filters.push(r=>r[k]===v);return this;}
  is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
  contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
@@ -55,13 +55,14 @@ class Query {
   if(failDashboardTable === this.table) return Promise.resolve({data:null,error:{message:'synthetic dashboard unavailable'}}).then(resolve,reject);
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
-  let rows=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r))).slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
+  const matched=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
+  let rows=matched.slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
   if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
   if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
   if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
   if(this.operation==='delete')tables[this.table]=(tables[this.table]||[]).filter(r=>!rows.includes(r));
   const data=rows.map(r=>this.columns.includes('group_buy_batches(*)')?{...structuredClone(r),group_buy_batches:tables.group_buy_batches.find(b=>b.id===r.batch_id)}:this.columns==='*'?structuredClone(r):Object.fromEntries(this.columns.split(',').map(k=>[k.trim(),r[k.trim()]])));
-  return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null}).then(resolve,reject);
+  return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null,count:this.exactCount?matched.length:null}).then(resolve,reject);
  }catch(e){return Promise.reject(e).then(resolve,reject);}}
 }
 (supabase as any).from=(table:string)=>new Query(table);
@@ -525,6 +526,51 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:-1,_expected:{storedValueBalance:222}})).status,400);
     assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:333,_expected:{storedValueBalance:before.stored_value_balance}})).status,409);
    } finally {Object.assign(c,before);}
+  });
+  await t.test('商品订单列表：员工上下文、同店与角色、分页和明细失败',async()=>{
+   const beforeOrders=tables.product_orders,beforeItems=tables.product_order_items;
+   try {
+    tables.product_orders=[
+     {id:'list-order-1',shop_id:'s1',customer_id:'c1',order_no:'SYNTHETIC-1',status:'paid',payable_amount:12},
+     {id:'list-order-2',shop_id:'s1',customer_id:'c2',order_no:'SYNTHETIC-2',status:'pending',payable_amount:8},
+     {id:'list-order-foreign',shop_id:'s2',customer_id:'c3',order_no:'FOREIGN',status:'paid'},
+    ];
+    tables.product_order_items=[{id:'list-item',order_id:'list-order-1',product_id:'p',name:'Synthetic product',image:'data:image/png;base64,AA==',price:12,quantity:1,total_amount:12}];
+    const response=await request('/product-orders/shop/s1',ceo);
+    assert.equal(response.status,200);assert.equal(response.body.data.total,2);
+    assert.equal(response.body.data.list.length,2);
+    assert.equal(response.body.data.list[0].items[0].image,'/api/shops/s1/products/p/images/0');
+    assert.equal(response.body.data.list[0].items[0].name,'Synthetic product');
+    assert.deepEqual(response.body.data.list[1].items,[]);
+    const second=await request('/product-orders/shop/s1?page=2&pageSize=1',manager);
+    assert.equal(second.status,200);assert.equal(second.body.data.total,2);
+    assert.equal(second.body.data.list[0].id,'list-order-2');
+    const filtered=await request('/product-orders/shop/s1?status=paid',ceo);
+    assert.equal(filtered.status,200);assert.equal(filtered.body.data.list.length,1);
+    assert.equal((await request('/product-orders/shop/s1',cs)).status,200);
+    assert.equal((await request('/product-orders/shop/s1',stylist)).status,403);
+    assert.equal((await request('/product-orders/shop/s1')).status,401);
+    assert.equal((await request('/product-orders/shop/s2',ceo)).status,403);
+    const {signCustomerToken}=await import('../backend/lib/tokens.js');
+    const own=signCustomerToken('c2','s1',tables.customers[1].password_hash);
+    tables.product_orders[0].customer_id='c2';
+    const personal=await request('/product-orders/customer/c2',own);
+    assert.equal(personal.status,200);assert.equal(personal.body.data.length,2);
+    assert.equal(personal.body.data[0].items[0].image,'/api/shops/s1/products/p/images/0');
+    assert.equal((await request('/product-orders/shop/s1',own)).status,401);
+    assert.equal((await request('/product-orders/customer/c2?shopId=s2',own)).status,403);
+    failDashboardTable='product_order_items';
+    const failed=await request('/product-orders/shop/s1',ceo);
+    assert.equal(failed.status,503);assert.equal(failed.body.data,undefined);
+    assert.equal((await request('/product-orders/customer/c2',own)).status,503);
+    failDashboardTable='product_orders';
+    assert.equal((await request('/product-orders/shop/s1',ceo)).status,500);
+    failDashboardTable='';
+    tables.product_orders=[];
+    assert.deepEqual((await request('/product-orders/shop/s1',ceo)).body.data.list,[]);
+   } finally {
+    failDashboardTable='';tables.product_orders=beforeOrders;tables.product_order_items=beforeItems;
+   }
   });
   await t.test('退款终态防反转、拒绝需原因、重复请求不产生二次处理',async()=>{
    tables.refund_requests=[{id:'refund-cas',shop_id:'s1',status:'pending',amount:10}];

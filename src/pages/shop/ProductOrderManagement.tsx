@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Package, Loader2, CheckCircle, Clock, Truck, Search, X, ChevronLeft, ChevronRight, MapPin, Package as PackageIcon } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { ProductOrder, ProductOrderRefund } from '../../../shared/types';
@@ -62,6 +62,8 @@ const ProductOrderManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [keyword, setKeyword] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -78,11 +80,15 @@ const ProductOrderManagement: React.FC = () => {
   const shopId = currentShop?.id || '';
 
   const fetchOrders = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     if (!shopId) {
+      setOrders([]);
+      setTotal(0);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
       let statusParam: string | undefined;
       if (activeTab === 'all') {
@@ -100,18 +106,22 @@ const ProductOrderManagement: React.FC = () => {
         page,
         pageSize,
       });
+      if (sequence !== requestSequence.current) return;
       setOrders(data.list || []);
       setTotal(data.total || 0);
     } catch (err) {
-      console.error('[ProductOrderManagement] 获取订单失败:', err);
-      alert('获取订单失败：' + (err as Error).message);
+      if (sequence !== requestSequence.current) return;
+      setOrders([]);
+      setTotal(0);
+      setLoadError(err instanceof Error ? err.message : '查询订单失败，请重试');
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
   }, [shopId, activeTab, keyword, page, pageSize]);
 
   useEffect(() => {
-    fetchOrders();
+    void fetchOrders();
+    return () => { requestSequence.current++; };
   }, [fetchOrders]);
 
   const totalPages = useMemo(() => Math.ceil(total / pageSize) || 1, [total, pageSize]);
@@ -396,7 +406,10 @@ const ProductOrderManagement: React.FC = () => {
   return (
     <ShopLayout title="商品订单管理">
       <div className="min-h-screen bg-gray-50">
-        {/* 统计 */}
+        {/* 以下状态数量仅统计当前页，加载失败时不显示假零值。 */}
+        <p className="mb-3 text-xs text-gray-500">
+          {loading ? '正在读取订单…' : loadError ? '订单数量暂不可用' : '共匹配 ' + total + ' 笔订单；下方状态数量统计当前页。'}
+        </p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-2xl shadow-sm p-5">
             <div className="flex items-center gap-3">
@@ -404,8 +417,8 @@ const ProductOrderManagement: React.FC = () => {
                 <Package className="text-orange-500" size={20} />
               </div>
               <div>
-                <p className="text-gray-500 text-xs">全部订单</p>
-                <p className="text-xl font-bold text-gray-800">{orders.length}</p>
+                <p className="text-gray-500 text-xs">本页订单</p>
+                <p className="text-xl font-bold text-gray-800">{loading || loadError ? '—' : orders.length}</p>
               </div>
             </div>
           </div>
@@ -416,7 +429,7 @@ const ProductOrderManagement: React.FC = () => {
               </div>
               <div>
                 <p className="text-gray-500 text-xs">待处理</p>
-                <p className="text-xl font-bold text-gray-800">{orders.filter((o) => ['pending', 'paid', 'preparing'].includes(o.status)).length}</p>
+                <p className="text-xl font-bold text-gray-800">{loading || loadError ? '—' : orders.filter((o) => ['pending', 'paid', 'preparing'].includes(o.status)).length}</p>
               </div>
             </div>
           </div>
@@ -427,7 +440,7 @@ const ProductOrderManagement: React.FC = () => {
               </div>
               <div>
                 <p className="text-gray-500 text-xs">待提货</p>
-                <p className="text-xl font-bold text-gray-800">{orders.filter((o) => o.status === 'ready').length}</p>
+                <p className="text-xl font-bold text-gray-800">{loading || loadError ? '—' : orders.filter((o) => o.status === 'ready').length}</p>
               </div>
             </div>
           </div>
@@ -438,7 +451,7 @@ const ProductOrderManagement: React.FC = () => {
               </div>
               <div>
                 <p className="text-gray-500 text-xs">已发货</p>
-                <p className="text-xl font-bold text-gray-800">{orders.filter((o) => o.status === 'shipped').length}</p>
+                <p className="text-xl font-bold text-gray-800">{loading || loadError ? '—' : orders.filter((o) => o.status === 'shipped').length}</p>
               </div>
             </div>
           </div>
@@ -449,7 +462,7 @@ const ProductOrderManagement: React.FC = () => {
               </div>
               <div>
                 <p className="text-gray-500 text-xs">已完成</p>
-                <p className="text-xl font-bold text-gray-800">{orders.filter((o) => o.status === 'completed').length}</p>
+                <p className="text-xl font-bold text-gray-800">{loading || loadError ? '—' : orders.filter((o) => o.status === 'completed').length}</p>
               </div>
             </div>
           </div>
@@ -523,7 +536,16 @@ const ProductOrderManagement: React.FC = () => {
           </div>
         )}
 
-        {!loading && (
+        {!loading && loadError && (
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
+            <p className="font-medium">商品订单加载失败：{loadError}</p>
+            <button onClick={() => void fetchOrders()} className="mt-3 rounded-lg bg-white px-4 py-2 text-sm font-medium">
+              重新加载
+            </button>
+          </div>
+        )}
+
+        {!loading && !loadError && (
           <div className="space-y-4">
             {orders.map((order) => (
               <div

@@ -4196,23 +4196,25 @@ productOrdersRouter.get('/customer/:customerId', (req, res, next) => personalCus
   try {
     const { customerId } = req.params;
     const { shopId } = req.query;
-    let query = supabase.from('product_orders').select('*').eq('customer_id', customerId);
-    if (shopId) {
-      query = query.eq('shop_id', shopId);
-    }
+    const ownShopId = req.customer!.shopId;
+    if (shopId && shopId !== ownShopId) return res.status(403).json({success:false,error:'无权访问其他店铺数据'});
+    const query = supabase.from('product_orders').select('*').eq('customer_id', customerId).eq('shop_id', ownShopId);
     const { data: orders, error } = await query.order('created_at', { ascending: false });
     if (error) {
       return res.status(500).json({ success: false, error: '查询订单失败' });
     }
 
     const orderIds = (orders || []).map((o: Record<string, unknown>) => o.id);
-    const { data: items } = await supabase.from('product_order_items').select('*').in('order_id', orderIds);
     const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
-    (items || []).forEach((i: Record<string, unknown>) => {
-      const list = itemsByOrderId.get(i.order_id as string) || [];
-      list.push(productOrderItemFromDb(i,String(shopId)));
-      itemsByOrderId.set(i.order_id as string, list);
-    });
+    if (orderIds.length) {
+      const { data: items, error: itemsError } = await supabase.from('product_order_items').select('*').in('order_id', orderIds);
+      if (itemsError) return res.status(503).json({success:false,error:'订单明细暂不可用，请重试'});
+      (items || []).forEach((i: Record<string, unknown>) => {
+        const list = itemsByOrderId.get(i.order_id as string) || [];
+        list.push(productOrderItemFromDb(i,ownShopId));
+        itemsByOrderId.set(i.order_id as string, list);
+      });
+    }
 
     res.json({
       success: true,
@@ -4228,7 +4230,7 @@ productOrdersRouter.get('/customer/:customerId', (req, res, next) => personalCus
 });
 
 // 店铺查看商品订单列表（支持状态筛选、订单号/手机号搜索、分页）
-productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, res: Response) => {
+productOrdersRouter.get('/shop/:shopId', authMiddleware, requirePermission('product:fulfill'), requireOwnShop('shopId'), async (req: Request, res: Response) => {
   try {
     const { shopId } = req.params;
     const { status, keyword, page = '1', pageSize = '10' } = req.query;
@@ -4270,13 +4272,14 @@ productOrdersRouter.get('/shop/:shopId', authMiddleware, async (req: Request, re
     const orderIds = (orders || []).map((o: Record<string, unknown>) => o.id);
     const itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
     if (orderIds.length > 0) {
-      const { data: items } = await supabase
+      const { data: items, error: itemsError } = await supabase
         .from('product_order_items')
         .select('*')
         .in('order_id', orderIds);
+      if (itemsError) return res.status(503).json({success:false,error:'订单明细暂不可用，请重试'});
       (items || []).forEach((i: Record<string, unknown>) => {
         const list = itemsByOrderId.get(i.order_id as string) || [];
-        list.push(productOrderItemFromDb(i,req.customer!.shopId));
+        list.push(productOrderItemFromDb(i,req.employee!.shopId));
         itemsByOrderId.set(i.order_id as string, list);
       });
     }
