@@ -1,4 +1,5 @@
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
+import customerPaymentOrdersRouter from './customerPaymentOrders.js';
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { randomUUID, createHash } from 'crypto';
@@ -33,6 +34,7 @@ import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
 const mainRouter = Router();
+mainRouter.use('/customer-payment-orders', customerPaymentOrdersRouter);
 const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);

@@ -1,6 +1,6 @@
 import { getShop, getShopReviews } from '../../api/shop';
 import { getCustomerPublic } from '../../api/customer';
-import { getCustomerId, setRouteParams, clearCustomerId } from '../../utils/storage';
+import { getCustomerId, getToken, setRouteParams, clearCustomerId } from '../../utils/storage';
 import { trackPageView, trackServiceDetailView } from '../../utils/tracking';
 import {
   PurchaseVIPLevel,
@@ -67,20 +67,24 @@ Page({
   },
 
   async onLoad() {
-    if (!getCustomerId()) {
-      wx.reLaunch({ url: '/pages/login/login' });
-      return;
-    }
-    await this.loadShop();
-    this.loadCustomer();
+    if (!this.checkSession()) return;
+    await Promise.all([this.loadShop(), this.loadCustomer()]);
   },
 
   onShow() {
-    if (!getCustomerId()) {
-      wx.reLaunch({ url: '/pages/login/login' });
-      return;
-    }
+    if (!this.checkSession()) return;
     trackPageView('pages/index/index', { shop_id: 'shop1' });
+  },
+
+  checkSession() {
+    if (getCustomerId() && getToken()) return true;
+    this.setData({ customer: null, loading: false });
+    clearCustomerId();
+    if (!this.loginRedirecting) {
+      this.loginRedirecting = true;
+      wx.reLaunch({ url: '/pages/login/login' });
+    }
+    return false;
   },
 
   isStylist(e) {
@@ -90,6 +94,7 @@ Page({
   },
 
   async loadShop() {
+    const startTime = Date.now();
     this.setData({ loading: true, error: '' });
     try {
       const rawShop = await getShop('shop1');
@@ -284,7 +289,9 @@ Page({
         memberHeaderClass: this.computeMemberHeaderClass(purchaseLevel),
       });
     } catch (err) {
-      if (err.statusCode === 401) wx.reLaunch({ url: '/pages/login/login' });
+      this.setData({ customer: null });
+      if (err.statusCode === 401) this.setData({ loading: false });
+      else wx.showToast({ title: err.message || '顾客资料加载失败，请重试', icon: 'none' });
     }
   },
 

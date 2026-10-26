@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { supabase } from '../db/index.js';
 import { nativePaymentRequest, createNativePayment, closeNativePayment, queryPaymentStatus, type PaymentResult } from './paymentService.js';
 import { recordWechatReceipt } from './settlementReceipt.js';
+import { wechatPaymentDescription } from '../lib/wechatDescription.js';
 
 export const recoveryDependencies = {
   rpc: (name:string,args:Record<string,unknown>) => supabase.rpc(name,args),
@@ -61,7 +62,7 @@ export async function recoverWechatPayment(
         attempt=await mutate('rotate',{closed_order_no:attempt.gateway_order_no,gateway_state:'CLOSED',gateway_order_no:deps.orderNo()});
       }
     }
-    const request=attempt.request_body || deps.request(attempt.gateway_order_no,Number(payment.amount),'MBS 门店结算 '+settlement.id);
+    const request=attempt.request_body || deps.request(attempt.gateway_order_no,Number(payment.amount),wechatPaymentDescription(settlement.items));
     if(request.out_trade_no!==attempt.gateway_order_no || request.amount?.total!==Math.round(Number(payment.amount)*100)) throw new Error('原支付请求快照与金额不一致');
     attempt=await mutate('request',request);
     const result=await deps.create(request);

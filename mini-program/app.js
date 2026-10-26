@@ -6,7 +6,7 @@ Page = function(config) {
   ['onLoad', 'onShow'].forEach((lifecycle) => {
     const original = config[lifecycle];
     guarded[lifecycle] = function(...args) {
-      if (enforcePasswordChange(this.route)) return;
+      if (enforcePasswordChange(this.route, lifecycle === 'onLoad' ? args[0] : this.options)) return;
       return original && original.apply(this, args);
     };
   });

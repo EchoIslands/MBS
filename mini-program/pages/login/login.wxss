@@ -51,9 +51,9 @@
 }
 
 .login-input-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 16rpx;
   width: 100%;
   height: 96rpx;
   padding: 0 24rpx;
@@ -65,10 +65,44 @@
 
 .login-input {
   flex: 1;
-  height: 100%;
+  width: 0;
+  min-width: 0;
+  height: 92rpx;
+  padding: 0 80rpx 0 0;
+  box-sizing: border-box;
   font-size: 30rpx;
   color: var(--text-primary);
   background: transparent;
+}
+
+.login-input-wrap .password-toggle {
+  position: absolute;
+  top: 6rpx;
+  right: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 80rpx;
+  height: 80rpx;
+  min-height: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  border: none;
+  border-radius: 16rpx;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.login-input-wrap .password-toggle::after { border: none; }
+.login-input-wrap .password-toggle-active { background: var(--gray-200); }
+
+.password-visibility-icon {
+  display: block;
+  width: 40rpx;
+  height: 40rpx;
 }
 
 .login-error {

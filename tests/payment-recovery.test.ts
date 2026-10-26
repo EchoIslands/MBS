@@ -36,7 +36,7 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
   };
   async function seed() {
     current='case_'+(++sequence);events=[];states=[];createFailure=false;closeFailure=false;
-    await db.query("INSERT INTO settlements(id,shop_id,customer_id,payment_method,payment_status,total,server_priced) VALUES($1,'s','c','wechat','pending',67.28,true)",[current]);
+    await db.query("INSERT INTO settlements(id,shop_id,customer_id,payment_method,payment_status,total,server_priced,items) VALUES($1,'s','c','wechat','pending',67.28,true,$2)",[current,JSON.stringify([{name:'合成洗剪吹',quantity:2}])]);
     await db.query("INSERT INTO payments(id,shop_id,customer_id,settlement_id,channel,status,amount) VALUES($1,'s','c',$2,'wechat_native','pending',67.28)",[current+'_pay',current]);
   }
   const recover=(initial=false,shop='s')=>recoverWechatPayment(current,shop,'staff','Synthetic',initial,deps);
@@ -52,11 +52,16 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
       await seed();createFailure=true;
       await assert.rejects(recover(true),/POST timeout/);
       assert.deepEqual(events,['create:'+current+'_pay']);
+      const originalBody = (await db.query<any>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[current+'_pay'])).rows[0].request_body;
+      assert.equal(originalBody.description,'合成洗剪吹×2');
+      // 恢复请求只读已提交快照，即使原结算后来变化也不能悄悄换描述。
+      await db.query('UPDATE settlements SET items=$1 WHERE id=$2',[JSON.stringify([{name:'后来变更的合成项目',quantity:1}]),current]);
       createFailure=false;events=[];states=[{status:'pending',tradeState:'NOT_FOUND'}];
       const first=await recover();assert.equal(first.paymentId,current+'_pay');
       events=[];states=[pending];await recover();assert.deepEqual(events,['query:'+current+'_pay']);
       await db.exec("UPDATE wechat_payment_attempts SET qr_updated_at=NOW()-INTERVAL '3 hours'");
       events=[];states=[pending];await recover();assert.deepEqual(events,['query:'+current+'_pay','create:'+current+'_pay']);
+      assert.deepEqual((await db.query<any>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[current+'_pay'])).rows[0].request_body,originalBody);
       assert.equal(Number(await scalar('SELECT COUNT(*) FROM payments')),1);
     });
     await t.test('老单缺快照：查未付、关闭、再查CLOSED才换号；保留原结算和所有尝试，旧回调不串新单',async()=>{

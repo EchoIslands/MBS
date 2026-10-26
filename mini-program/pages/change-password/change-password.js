@@ -1,8 +1,12 @@
 import { changeCustomerPassword } from '../../api/customer';
 import { getCustomerId, getToken, clearCustomerId } from '../../utils/storage';
+import { paymentOrderNumber, paymentOrderPath } from '../../utils/payment-order-link';
 Page({
   data: { currentPassword: '', newPassword: '', confirmPassword: '', saving: false, error: '' },
-  onLoad() { if (!getCustomerId() || !getToken()) wx.reLaunch({ url: '/pages/login/login' }); },
+  onLoad(options = {}) {
+    this.returnOrderNo = paymentOrderNumber(options);
+    if (!getCustomerId() || !getToken()) wx.reLaunch({ url: '/pages/login/login' + (this.returnOrderNo ? '?returnOrderNo=' + this.returnOrderNo : '') });
+  },
   onShow() { if (wx.hideHomeButton) wx.hideHomeButton(); },
   onInput(e) { this.setData({ [e.currentTarget.dataset.field]: String(e.detail.value || '').replace(/[^0-9]/g, '').slice(0, 6), error: '' }); },
   async onSubmit() {
@@ -15,7 +19,7 @@ Page({
     try {
       await changeCustomerPassword(currentPassword, newPassword, confirmPassword);
       this.setData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      wx.reLaunch({ url: '/pages/index/index' });
+      wx.reLaunch({ url: paymentOrderPath(this.returnOrderNo) || '/pages/index/index' });
     } catch (err) { this.setData({ error: err.message || '修改失败，请重试' }); }
     finally { this.setData({ saving: false }); }
   },

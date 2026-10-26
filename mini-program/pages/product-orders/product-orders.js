@@ -18,6 +18,7 @@ const statusLabels = {
 Page({
   data: {
     shopId: 'shop1',
+    hasPreviousPage: true,
     customer: null,
     orders: [],
     filteredOrders: [],
@@ -42,8 +43,8 @@ Page({
     canRequestRefund: false,
   },
 
-  onLoad(options) {
-    this.setData({ shopId: options.shopId || 'shop1' });
+  onLoad(options = {}) {
+    this.setData({ shopId: options.shopId || 'shop1', hasPreviousPage: getCurrentPages().length > 1 });
   },
 
   async onShow() {
@@ -116,7 +117,12 @@ Page({
   },
 
   goBack() {
-    wx.navigateBack();
+    const returnToProfile = () => wx.reLaunch({ url: '/pages/profile/profile' });
+    if (getCurrentPages().length > 1) {
+      wx.navigateBack({ delta: 1, fail: returnToProfile });
+    } else {
+      returnToProfile();
+    }
   },
 
   onRefresh() {

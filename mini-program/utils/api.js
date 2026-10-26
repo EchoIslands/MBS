@@ -1,5 +1,6 @@
 import { enforcePasswordChange } from './password-gate';
-import { getToken, clearToken, clearCustomerId, setPasswordChangeRequired } from './storage';
+import { handleExpiredCustomerSession } from './auth';
+import { getToken, getCustomerId, setPasswordChangeRequired } from './storage';
 /**
  * 小程序专用请求封装
  *
@@ -33,6 +34,15 @@ export function request(url, options = {}) {
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
   const timeout = options.timeout || DEFAULT_TIMEOUT;
+  const requestToken = getToken();
+  const requestCustomerId = getCustomerId();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(requestToken && !url.startsWith('http') ? { Authorization: 'Bearer ' + requestToken } : {}),
+    ...(options.headers || {}),
+  };
+  const usesCustomerSession = !url.startsWith('http') && url !== '/customers/login'
+    && (requestToken || requestCustomerId) && (!requestToken || headers.Authorization === 'Bearer ' + requestToken);
 
   return new Promise((resolve, reject) => {
     let timeoutId = null;
@@ -41,11 +51,7 @@ export function request(url, options = {}) {
     const requestTask = wx.request({
       url: fullUrl,
       method: options.method || 'GET',
-      header: {
-        'Content-Type': 'application/json',
-        ...(getToken() && !url.startsWith('http') ? { Authorization: 'Bearer ' + getToken() } : {}),
-        ...(options.headers || {}),
-      },
+      header: headers,
       data: options.body,
       timeout,
       success: (res) => {
@@ -64,8 +70,11 @@ export function request(url, options = {}) {
           return;
         }
 
-        if (res.statusCode === 401) { clearToken(); clearCustomerId(); }
-        if (res.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+        const isCurrentSession = getToken() === requestToken && getCustomerId() === requestCustomerId;
+        if (res.statusCode === 401 && usesCustomerSession) {
+          handleExpiredCustomerSession(requestToken, requestCustomerId);
+        }
+        if (res.data?.code === 'PASSWORD_CHANGE_REQUIRED' && isCurrentSession) {
           setPasswordChangeRequired(true);
           const pages = getCurrentPages();
           enforcePasswordChange(pages[pages.length - 1]?.route);

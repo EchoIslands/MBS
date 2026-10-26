@@ -5,37 +5,12 @@
   background: var(--bg);
 }
 
-/* ===== 自定义头部 ===== */
-.sticky-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
+/* 直接打开且无上一页时，仍可回到个人中心。 */
+.orders-root-back {
+  padding: 24rpx 32rpx;
+  font-size: 28rpx;
+  color: var(--text-primary);
   background: #fff;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
-}
-
-.sticky-header-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(16rpx + var(--status-bar-height, 0)) 32rpx 16rpx;
-}
-
-.order-header-btn {
-  width: 72rpx;
-  height: 72rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16rpx;
-}
-
-.order-header-btn:active {
-  background: var(--gray-100);
-}
-
-.order-header-placeholder {
-  width: 72rpx;
 }
 
 /* ===== 状态筛选 Tabs ===== */

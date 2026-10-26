@@ -2,7 +2,12 @@
   "description": "MBS 小程序",
   "packOptions": {
     "ignore": [],
-    "include": []
+    "include": [
+      {
+        "type": "folder",
+        "value": "pages/payment-order"
+      }
+    ]
   },
   "setting": {
     "urlCheck": false,

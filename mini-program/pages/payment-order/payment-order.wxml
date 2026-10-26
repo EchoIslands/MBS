@@ -1,0 +1,32 @@
+<view class="order-page">
+  <view wx:if="{{loading}}" class="state">正在读取订单…</view>
+  <view wx:elif="{{error}}" class="card state">
+    <view class="error">{{error}}</view>
+    <button class="secondary" bindtap="loadOrder">重新读取</button>
+  </view>
+  <block wx:elif="{{order}}">
+    <view class="card">
+      <view class="status">{{order.statusText}}</view>
+      <view class="amount">¥{{order.amountText}}</view>
+      <view class="note">订单金额（元）；收款结果以微信核实记录为准</view>
+    </view>
+    <view class="card">
+      <view class="heading">商品／服务明细</view>
+      <view wx:for="{{order.items}}" wx:key="rowKey" class="item">
+        <text class="item-name">{{item.name}} ×{{item.quantity}}</text><text>¥{{item.totalText}}</text>
+      </view>
+      <view wx:if="{{!order.items.length}}" class="note">历史明细未记录，请联系门店核对</view>
+    </view>
+    <view class="card details">
+      <view class="row"><text>结算单号</text><text>{{order.settlementId}}</text></view>
+      <view class="row"><text>商户支付单号</text><text>{{order.outTradeNo}}</text></view>
+      <view wx:if="{{order.transactionId}}" class="row"><text>微信交易号</text><text>{{order.transactionId}}</text></view>
+      <view class="row"><text>订单创建时间</text><text>{{order.createdAtText}}</text></view>
+      <view class="row"><text>支付单创建时间</text><text>{{order.paymentCreatedAtText}}</text></view>
+      <view class="row"><text>微信支付成功时间</text><text>{{order.paidAtText}}</text></view>
+      <view class="note">以上时间均为北京时间。退款申请及进度请查看退款管理。</view>
+    </view>
+    <button class="primary" bindtap="goRefund">退款管理</button>
+  </block>
+  <button wx:if="{{!hasPreviousPage}}" class="secondary" bindtap="goBack">返回个人中心</button>
+</view>

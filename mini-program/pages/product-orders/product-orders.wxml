@@ -1,15 +1,6 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="orders-page page">
-  <!-- 1. 自定义头部 -->
-  <view class="sticky-header">
-    <view class="sticky-header-inner">
-      <view class="order-header-btn" bindtap="goBack">
-        <mbs-icon name="arrowLeft" size="36" color="var(--gray-800)" />
-      </view>
-      <view class="sticky-header-title">我的订单</view>
-      <view class="order-header-placeholder"></view>
-    </view>
-  </view>
+  <view wx:if="{{!hasPreviousPage}}" class="orders-root-back" role="button" aria-label="返回个人中心" bindtap="goBack">‹ 返回个人中心</view>
 
   <!-- 2. 状态筛选 Tabs (chips) -->
   <view class="filter-bar order-filter">

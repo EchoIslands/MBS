@@ -354,6 +354,7 @@ export function nativePaymentRequest(orderNo:string,amount:number,description:st
   const appid=process.env.WECHAT_APP_ID,mchid=process.env.WECHAT_MCH_ID,notify_url=getNotifyUrl();
   if(!appid || !mchid || !notify_url || !process.env.WECHAT_API_KEY || !process.env.WECHAT_API_CERT) throw new Error('微信支付配置不完整，请检查环境变量');
   if(!/^[A-Za-z0-9_-]{6,32}$/.test(orderNo) || !Number.isFinite(amount) || amount<=0 || Math.abs(amount*100-Math.round(amount*100))>1e-8) throw new Error('微信订单金额或单号无效');
+  if(typeof description!=='string' || !description.trim() || Array.from(description).length>127) throw new Error('微信商品描述无效');
   return {appid,mchid,description,out_trade_no:orderNo,notify_url,amount:{total:Math.round(amount*100),currency:'CNY'}};
 }
 

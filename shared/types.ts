@@ -1333,6 +1333,20 @@ export interface CustomerInsights {
   }>;
 }
 
+/** 顾客本人可见的微信结算入口 DTO；不包含身份资料或网关请求。 */
+export interface CustomerWechatPaymentOrder {
+  settlementId: string;
+  shopId: string;
+  outTradeNo: string;
+  amount: number;
+  status: 'closed' | 'paid' | 'review' | 'pending';
+  createdAt: string;
+  paymentCreatedAt: string;
+  paidAt: string | null;
+  transactionId: string | null;
+  items: Array<{ name: string; quantity: number; total: number }>;
+}
+
 export interface AppState {
   userRole: UserRole;
   currentCustomer: Customer | null;
