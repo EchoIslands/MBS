@@ -2146,7 +2146,30 @@ customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Requ
       }
       accountChanges.push(field);
     }
-    if(!Object.keys(updateData).length) return res.json({success:true,data:toCamelCase(current)});
+    const balanceCandidate = Object.prototype.hasOwnProperty.call(updateData,'stored_value_balance') ? updateData.stored_value_balance : updateData.balance;
+    if (Object.prototype.hasOwnProperty.call(updateData,'stored_value_balance') && Object.prototype.hasOwnProperty.call(updateData,'balance') &&
+      canonicalJson(updateData.stored_value_balance ?? null) !== canonicalJson(updateData.balance ?? null)) {
+      return res.status(400).json({success:false,error:'储值余额字段不一致，请只提交一个余额值或保持两者相同'});
+    }
+    const balanceChanged = (Object.prototype.hasOwnProperty.call(updateData,'stored_value_balance') || Object.prototype.hasOwnProperty.call(updateData,'balance')) &&
+      canonicalJson(balanceCandidate ?? null) !== canonicalJson(current.stored_value_balance ?? null);
+    if (balanceChanged) {
+      const expectedBalance = Number(current.stored_value_balance ?? 0);
+      const newBalance = Number(balanceCandidate);
+      if (!Number.isFinite(expectedBalance) || !Number.isFinite(newBalance) || newBalance < 0) {
+        return res.status(400).json({success:false,error:'储值余额必须是非负数字'});
+      }
+      const {data:adjusted,error:adjustError}=await supabase.rpc('adjust_customer_balance_atomic',{
+        p_customer_id:id,p_shop_id:shopId,p_expected_balance:expectedBalance,p_new_balance:newBalance,
+        p_employee_id:req.employee!.id,p_employee_name:req.employee!.name,
+        p_note:typeof body.balanceAdjustmentNote==='string' && body.balanceAdjustmentNote.trim() ? body.balanceAdjustmentNote.trim() : '店铺端人工余额调整',
+      });
+      if(adjustError || !adjusted?.[0]) return operationError(res,adjustError || {},'储值余额调整失败，请刷新后重试');
+      delete updateData.stored_value_balance; delete updateData.balance;
+      const balanceFields = new Set(['stored_value_balance','balance']);
+      for (let i=accountChanges.length-1;i>=0;i--) if (balanceFields.has(accountChanges[i])) accountChanges.splice(i,1);
+    }
+    if(!Object.keys(updateData).length) return res.json({success:true,data:toCamelCase(balanceChanged ? (await supabase.from('customers').select('*').eq('id',id).eq('shop_id',shopId).single()).data || current : current)});
     let update=supabase.from('customers').update(updateData).eq('id',id).eq('shop_id',shopId);
     for(const field of accountChanges) update=current[field]==null ? update.is(field,null) : update.eq(field,current[field]);
     const {data,error}=await update.select().maybeSingle();
@@ -5800,6 +5823,11 @@ const refundFromDb = (r: Record<string, unknown>): unknown => ({
   processedByName: r.processed_by_name,
   processedAt: r.processed_at,
   rejectReason: r.reject_reason,
+  refundReceiptRef: r.refund_receipt_ref,
+  refundReceiptAmount: r.refund_receipt_amount == null ? undefined : Number(r.refund_receipt_amount),
+  refundReceiptAt: r.refund_receipt_at,
+  refundReceiptRecordedBy: r.refund_receipt_recorded_by,
+  refundReceiptRecordedByName: r.refund_receipt_recorded_by_name,
   createdAt: r.created_at,
 });
 
@@ -5840,7 +5868,7 @@ refundsRouter.post('/', async (req: Request, res: Response) => {
 refundsRouter.put('/:id/status', ownRecord('refund_requests'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, rejectReason, refundMethod } = req.body || {};
+    const { status, rejectReason, refundMethod, receiptRef, receiptAmount, receiptAt } = req.body || {};
 
     if (!status || !['approved', 'rejected', 'completed', 'cancelled'].includes(status)) {
       return res.status(400).json({ success: false, error: '无效的状态值' });
@@ -5854,6 +5882,21 @@ refundsRouter.put('/:id/status', ownRecord('refund_requests'), async (req: Reque
     const allowed:Record<string,string[]>={pending:['approved','rejected','cancelled'],approved:['completed','cancelled']};
     if(!allowed[String(current.status)]?.includes(status)) return res.status(409).json({success:false,error:'退款状态已变化，请刷新后核对'});
     if(status==='rejected' && (typeof rejectReason!=='string' || !rejectReason.trim())) return res.status(400).json({success:false,error:'请填写拒绝原因'});
+
+    if (status === 'completed') {
+      const method = refundMethod || current.refund_method;
+      const amount = Number(receiptAmount);
+      if (!['original','balance','bank'].includes(method)) return res.status(400).json({success:false,error:'请先确认退款方式'});
+      if (typeof receiptRef !== 'string' || !receiptRef.trim()) return res.status(400).json({success:false,error:'请填写实际退款回执编号'});
+      if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({success:false,error:'请填写有效的实际退款金额'});
+      if (typeof receiptAt !== 'string' || !Number.isFinite(new Date(receiptAt).getTime())) return res.status(400).json({success:false,error:'请填写实际退款时间'});
+      const {data,error}=await supabase.rpc('complete_service_refund_atomic',{
+        p_refund_id:id,p_shop_id:req.employee!.shopId,p_employee_id:req.employee!.id,p_employee_name:req.employee!.name,
+        p_refund_method:method,p_receipt_ref:receiptRef.trim(),p_receipt_amount:amount,p_receipt_at:new Date(receiptAt).toISOString(),
+      });
+      if(error || !data?.[0]) return operationError(res,error || {},'退款回执登记失败，请核对金额、编号和时间');
+      return res.json({success:true,data:refundFromDb(data[0])});
+    }
 
     const updatePayload: Record<string, unknown> = { status };
     if (status === 'rejected' && rejectReason) {

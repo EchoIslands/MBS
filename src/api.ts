@@ -1728,7 +1728,7 @@ export const refundApi = {
     }
     return null;
   },
-  updateStatus: async (id: string, status: string, payload?: { rejectReason?: string; refundMethod?: string }): Promise<RefundRequest | null> => {
+  updateStatus: async (id: string, status: string, payload?: { rejectReason?: string; refundMethod?: string; receiptRef?: string; receiptAmount?: number; receiptAt?: string }): Promise<RefundRequest | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
       const result = await http<{ success: boolean; data: RefundRequest }>(

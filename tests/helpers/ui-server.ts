@@ -67,6 +67,12 @@ let completeCheckout = false;
 let checkoutRpcCalls = 0;
 const newCheckoutMode=process.env.MBS_UI_NEW_CHECKOUT==='1';
 (supabase as any).rpc = async (name: string, args: any) => {
+ if(process.env.MBS_UI_REFUND==='1' && name==='complete_service_refund_atomic') {
+  const row=tables.refund_requests.find(r=>r.id===args.p_refund_id&&r.shop_id===args.p_shop_id);
+  if(!row||row.status!=='approved'||Number(args.p_receipt_amount)!==row.amount) return {data:null,error:{message:'REFUND_RECEIPT_AMOUNT_MISMATCH'}};
+  Object.assign(row,{status:'completed',refund_method:args.p_refund_method,refund_receipt_ref:args.p_receipt_ref,refund_receipt_amount:args.p_receipt_amount,refund_receipt_at:args.p_receipt_at,refund_receipt_recorded_by:args.p_employee_id,refund_receipt_recorded_by_name:args.p_employee_name,processed_by:args.p_employee_id,processed_at:new Date().toISOString()});
+  return {data:[structuredClone(row)],error:null};
+ }
  if(newCheckoutMode && name==='create_wechat_settlement_atomic') {
   const row={...args.p_settlement,checkout_payment_started:true,server_priced:true,payment_status:'pending',created_at:new Date().toISOString()};
   tables.settlements.push(row);
@@ -132,6 +138,7 @@ tables.shops[0]={id:'shop1',name:'本地合成测试门店',phone:'13800000000',
 tables.customers[0]={...tables.customers[0],shop_id:'shop1',name:'合成顾客',tags:[],is_weak_password:true,identity_verified:false,balance:100,stored_value_balance:100,purchase_vip_level:'regular',stored_value_level:'none',password_hash:await hashPassword('123456')};
 tables.employees[0]={...tables.employees[0],shop_id:'shop1',phone:'13800000009'};
 tables.employees[2]={...tables.employees[2],shop_id:'shop1',phone:'13800000008'};
+if(process.env.MBS_UI_REFUND==='1') tables.refund_requests=[{id:'synthetic-refund',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',booking_id:'synthetic-today-booking',amount:33.64,status:'approved',refund_method:'original',reason:'仅隔离界面验收',created_at:new Date().toISOString()}];
 // 本次支付追溯页面验收只使用合成订单；日期/金额用于覆盖旧单新付和历史缺失时间。
 tables.settlements=[
  {id:'synthetic-old-paid',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',items:[{id:'svc',type:'service',name:'设计师洗剪吹',quantity:1,originalPrice:58,discountedPrice:33.64,total:33.64,employeeId:'stylist',employeeName:'合成设计师'}],subtotal:58,discount:24.36,total:33.64,payment_method:'wechat',payment_status:'completed',created_at:'2026-08-01T08:00:00Z'},

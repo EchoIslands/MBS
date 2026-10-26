@@ -907,6 +907,11 @@ export interface RefundRequest {
   processedBy?: string;
   rejectReason?: string;
   refundMethod?: 'original' | 'balance' | 'bank';  // 退款方式
+  refundReceiptRef?: string;
+  refundReceiptAmount?: number;
+  refundReceiptAt?: Date;
+  refundReceiptRecordedBy?: string;
+  refundReceiptRecordedByName?: string;
 }
 
 // 商品订单退款申请

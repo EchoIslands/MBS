@@ -4,6 +4,8 @@ import { useAppStore } from '../../store';
 import { RefundStatus, RefundRequest } from '../../../shared/types';
 import { refundApi } from '../../api';
 import ShopLayout from './ShopLayout';
+import { beijingDateTimeInput, manualPaymentTimeIso } from '../../../shared/lib/manualPaymentTime';
+import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const RefundManagement: React.FC = () => {
   const { currentShop } = useAppStore();
@@ -12,9 +14,12 @@ const RefundManagement: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [selectedRefund, setSelectedRefund] = useState<RefundRequest | null>(null);
   const [showProcessModal, setShowProcessModal] = useState(false);
-  const [processAction, setProcessAction] = useState<'approve' | 'reject'>('approve');
+  const [processAction, setProcessAction] = useState<'approve' | 'reject' | 'complete'>('approve');
   const [rejectReason, setRejectReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'original' | 'balance' | 'bank'>('original');
+  const [receiptRef, setReceiptRef] = useState('');
+  const [receiptAmount, setReceiptAmount] = useState('');
+  const [receiptAt, setReceiptAt] = useState('');
 
   // 加载店铺退款申请
   const fetchRefunds = async () => {
@@ -50,11 +55,14 @@ const RefundManagement: React.FC = () => {
   const pendingRefunds = shopRefunds.filter((r) => r.status === RefundStatus.PENDING);
   const processedRefunds = shopRefunds.filter((r) => r.status !== RefundStatus.PENDING);
 
-  const handleProcess = (refund: RefundRequest, action: 'approve' | 'reject') => {
+  const handleProcess = (refund: RefundRequest, action: 'approve' | 'reject' | 'complete') => {
     setSelectedRefund(refund);
     setProcessAction(action);
     setRefundMethod('original');
     setRejectReason('');
+    setReceiptRef('');
+    setReceiptAmount(action === 'complete' ? String(refund.amount) : '');
+    setReceiptAt(action === 'complete' ? beijingDateTimeInput() : '');
     setShowProcessModal(true);
   };
 
@@ -62,12 +70,19 @@ const RefundManagement: React.FC = () => {
     if (!selectedRefund) return;
     setProcessing(true);
     try {
-      const status = processAction === 'approve' ? RefundStatus.APPROVED : RefundStatus.REJECTED;
-      const payload: { rejectReason?: string; refundMethod?: string } = {};
+      const status = processAction === 'approve' ? RefundStatus.APPROVED : processAction === 'reject' ? RefundStatus.REJECTED : RefundStatus.COMPLETED;
+      const payload: { rejectReason?: string; refundMethod?: string; receiptRef?: string; receiptAmount?: number; receiptAt?: string } = {};
       if (processAction === 'approve') {
         payload.refundMethod = refundMethod;
-      } else {
+      } else if (processAction === 'reject') {
         payload.rejectReason = rejectReason;
+      } else {
+        payload.refundMethod = selectedRefund.refundMethod || refundMethod;
+        payload.receiptRef = receiptRef.trim();
+        payload.receiptAmount = Number(receiptAmount);
+        const actualReceiptTime = manualPaymentTimeIso(receiptAt, Date.now(), '退款发生时间');
+        if (!actualReceiptTime) throw new Error('请选择实际退款时间（北京时间）');
+        payload.receiptAt = actualReceiptTime;
       }
 
       const result = await refundApi.updateStatus(selectedRefund.id, status, payload);
@@ -82,6 +97,11 @@ const RefundManagement: React.FC = () => {
                   rejectReason: result.rejectReason || rejectReason,
                   processedBy: result.processedBy,
                   processedAt: result.processedAt ? new Date(result.processedAt) : new Date(),
+                  refundReceiptRef: result.refundReceiptRef,
+                  refundReceiptAmount: result.refundReceiptAmount,
+                  refundReceiptAt: result.refundReceiptAt ? new Date(result.refundReceiptAt) : undefined,
+                  refundReceiptRecordedBy: result.refundReceiptRecordedBy,
+                  refundReceiptRecordedByName: result.refundReceiptRecordedByName,
                 }
               : r
           )
@@ -97,6 +117,7 @@ const RefundManagement: React.FC = () => {
       setShowProcessModal(false);
       setSelectedRefund(null);
       setRejectReason('');
+      setReceiptRef(''); setReceiptAmount(''); setReceiptAt('');
     }
   };
 
@@ -257,6 +278,10 @@ const RefundManagement: React.FC = () => {
                             <span className="text-gray-500">退款金额：</span>
                             <span className="font-bold text-orange-500">¥{refund.amount}</span>
                           </div>
+
+                          {refund.status === RefundStatus.APPROVED && (
+                            <button onClick={() => handleProcess(refund, 'complete')} className="mt-3 w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium">登记实际退款回执并完成</button>
+                          )}
                           <div>
                             <span className="text-gray-500">处理人：</span>
                             <span className="text-gray-800">{refund.processedBy}</span>
@@ -266,6 +291,15 @@ const RefundManagement: React.FC = () => {
                         {refund.rejectReason && (
                           <div className="mt-2 text-sm text-red-600">
                             拒绝原因：{refund.rejectReason}
+                          </div>
+                        )}
+                        {refund.refundReceiptRef && (
+                          <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-900 space-y-1 break-words">
+                            <div>退款回执编号：{refund.refundReceiptRef}</div>
+                            <div>实际退款金额：{refund.refundReceiptAmount == null ? '未记录' : `¥${Number(refund.refundReceiptAmount).toFixed(2)}`}</div>
+                            <div>实际退款时间（北京时间）：{settlementDateLabel(refund.refundReceiptAt)}</div>
+                            <div>回执登记人：{refund.refundReceiptRecordedByName || refund.refundReceiptRecordedBy || '未记录'}</div>
+                            <div className="text-xs">门店人工登记回执，请以实际渠道到账为准。</div>
                           </div>
                         )}
                       </div>
@@ -288,7 +322,7 @@ const RefundManagement: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">
-              {processAction === 'approve' ? '批准退款' : '拒绝退款'}
+              {processAction === 'approve' ? '批准退款' : processAction === 'reject' ? '拒绝退款' : '登记实际退款回执'}
             </h3>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
@@ -317,7 +351,7 @@ const RefundManagement: React.FC = () => {
                   <option value="bank">银行转账</option>
                 </select>
               </div>
-            ) : (
+            ) : processAction === 'reject' ? (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   拒绝原因
@@ -329,6 +363,14 @@ const RefundManagement: React.FC = () => {
                   placeholder="请说明拒绝原因..."
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none"
                 />
+              </div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                <div className="text-sm text-amber-700 bg-amber-50 rounded-lg p-3">完成退款必须记录实际渠道回执；金额必须与申请金额一致。</div>
+                <input value={receiptRef} onChange={e => setReceiptRef(e.target.value)} placeholder="实际退款回执编号" className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                <input type="number" min="0" step="0.01" value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)} placeholder="实际退款金额" className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                <label htmlFor="refund-receipt-at" className="block text-sm text-gray-700">实际退款时间（北京时间，请按渠道回执核对）</label>
+                <input id="refund-receipt-at" type="datetime-local" value={receiptAt} onChange={e => setReceiptAt(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
               </div>
             )}
 
@@ -342,7 +384,7 @@ const RefundManagement: React.FC = () => {
               </button>
               <button
                 onClick={confirmProcess}
-                disabled={processing || (processAction === 'reject' && !rejectReason)}
+                disabled={processing || (processAction === 'reject' && !rejectReason) || (processAction === 'complete' && (!receiptRef.trim() || !receiptAt || !receiptAmount))}
                 className={`flex-1 py-3 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${
                   processAction === 'approve'
                     ? 'bg-green-500 hover:bg-green-600'
@@ -350,7 +392,7 @@ const RefundManagement: React.FC = () => {
                 } disabled:opacity-50`}
               >
                 {processing && <Loader2 size={18} className="animate-spin" />}
-                确认{processAction === 'approve' ? '批准' : '拒绝'}
+                {processAction === 'approve' ? '确认批准' : processAction === 'reject' ? '确认拒绝' : '保存回执并完成'}
               </button>
             </div>
           </div>

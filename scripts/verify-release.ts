@@ -7,8 +7,29 @@ import { resolve } from 'node:path';
 import { databaseConfig, SETUP_MIGRATIONS, type SetupConnection } from './setup-db.js';
 import { databaseErrorDiagnostic } from './init-legacy-passwords.js';
 
-export async function verifyRelease(connection: SetupConnection) {
+export type ReleaseCheckOptions = { expectedPendingPasswords?: number };
+
+function validateExpectedPendingPasswords(value: number | undefined) {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('待首次设密确认数量必须为非负安全整数');
+  }
+}
+
+export function parseReleaseArgs(args: string[]): ReleaseCheckOptions & { help?: boolean } {
+  if (args.length === 0) return {};
+  if (args.length === 1 && args[0] === '--help') return { help: true };
+  if (args.length !== 2 || args[0] !== '--expected-pending-passwords' || !/^(0|[1-9]\d*)$/.test(args[1])) {
+    throw new Error('请使用 --help；--expected-pending-passwords 后须填写非负安全整数');
+  }
+  const expectedPendingPasswords = Number(args[1]);
+  validateExpectedPendingPasswords(expectedPendingPasswords);
+  return { expectedPendingPasswords };
+}
+
+export async function verifyRelease(connection: SetupConnection, options: ReleaseCheckOptions = {}) {
+  validateExpectedPendingPasswords(options.expectedPendingPasswords);
   const issues: string[] = [];
+  const warnings: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
   const protectedTables = ['customer_auth_limits', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
   const signatures = new Set<string>();
@@ -51,6 +72,19 @@ export async function verifyRelease(connection: SetupConnection) {
     const paymentColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='payments' AND column_name IN ('code_url','paid_at_source')");
     if (!paymentColumns.rows.some(row=>row.column_name==='code_url')) issues.push('缺少 031 原支付二维码恢复字段');
     if (!paymentColumns.rows.some(row=>row.column_name==='paid_at_source')) issues.push('缺少 037 微信支付来源字段');
+    const refundColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='refund_requests' AND column_name IN ('refund_receipt_ref','refund_receipt_amount','refund_receipt_at','refund_receipt_recorded_by','refund_receipt_recorded_by_name')");
+    if (refundColumns.rows.length !== 5) issues.push('缺少041退款回执字段');
+    for (const signature of [
+      'public.adjust_customer_balance_atomic(text,text,numeric,numeric,text,text,text)',
+      'public.complete_service_refund_atomic(text,text,text,text,text,text,numeric,timestamp with time zone)',
+    ]) {
+      const found=await connection.query('SELECT to_regprocedure($1)::text AS name',[signature]);
+      if(!found.rows[0]?.name) {issues.push('缺少041安全函数 '+signature);continue;}
+      for(const role of ['service_role','anon','authenticated']) {
+        const result=await connection.query("SELECT has_function_privilege($1,$2,'EXECUTE') AS allowed",[role,signature]);
+        if(result.rows[0]?.allowed !== (role==='service_role')) issues.push('041函数权限不合格 '+signature+' / '+role);
+      }
+    }
     const attempts=await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='wechat_payment_attempts'");
     const attemptTypes={gateway_order_no:'text',payment_id:'text',state:'text',request_body:'jsonb',qr_updated_at:'timestamp with time zone',closed_at:'timestamp with time zone',recovery_token:'text',recovery_started_at:'timestamp with time zone',created_at:'timestamp with time zone'};
     for(const [name,type] of Object.entries(attemptTypes)) if(!attempts.rows.some(r=>r.column_name===name && r.data_type===type)) issues.push('缺少或不兼容038支付尝试字段：'+name);
@@ -88,27 +122,51 @@ export async function verifyRelease(connection: SetupConnection) {
     }
     let counts: Record<string, string> | null = null;
     if (fields.every(field => present.has(field))) {
-      const result = await connection.query(`SELECT COUNT(*)::text AS total,
+      const result = await connection.query(`WITH password_states AS (
+        SELECT password_hash,is_weak_password,identity_verified,
+          (password_hash IS NULL AND is_weak_password IS NOT TRUE
+            AND password_reset_at IS NULL AND identity_verified IS NOT TRUE
+            AND identity_verified_at IS NULL AND identity_verified_by IS NULL) AS pending_setup
+        FROM public.customers
+      ) SELECT COUNT(*)::text AS total,
         COUNT(*) FILTER (WHERE password_hash IS NULL OR password_hash='')::text AS empty_password,
+        COUNT(*) FILTER (WHERE pending_setup)::text AS pending_password_setup,
+        COUNT(*) FILTER (WHERE (password_hash IS NULL OR password_hash='') AND NOT pending_setup)::text AS empty_password_requires_review,
         COUNT(*) FILTER (WHERE password_hash IS NOT NULL AND password_hash<>'' AND btrim(password_hash)='')::text AS whitespace_password,
         COUNT(*) FILTER (WHERE is_weak_password IS TRUE)::text AS must_change_password,
         COUNT(*) FILTER (WHERE identity_verified IS NOT TRUE)::text AS unverified
-        FROM public.customers`);
+        FROM password_states`);
       counts = result.rows[0];
-      if (counts.empty_password !== '0') issues.push('仍有空密码记录；仅报告，不自动初始化');
+      if (counts.empty_password !== '0' && options.expectedPendingPasswords === undefined) {
+        issues.push('仍有空密码记录；须核对新增来源，确认待首次设密数量后使用 --expected-pending-passwords；不自动初始化');
+      }
+      if (counts.empty_password_requires_review !== '0') {
+        issues.push('空密码记录存在空字符串、弱密码、重置或身份核实痕迹；不能按待首次设密放行，须单独核对');
+      }
+      if (options.expectedPendingPasswords !== undefined && counts.pending_password_setup !== String(options.expectedPendingPasswords)) {
+        issues.push('待首次设密数量不符：本次确认 ' + options.expectedPendingPasswords + ' 条，数据库为 ' + counts.pending_password_setup + ' 条；不自动调整确认数量');
+      }
+      if (counts.pending_password_setup !== '0') {
+        warnings.push('待首次设密候选 ' + counts.pending_password_setup + ' 条；状态符合未设密档案，具体新建来源须由项目主人确认；不证明这些记录的身份或首次设密安全性');
+      }
       if (counts.whitespace_password !== '0') issues.push('存在空白字符密码；须单独核对，不自动覆盖');
     }
-    return { passed: issues.length === 0, issues, counts, checkedFunctions: signatures.size, checkedTables: tableAccess.rows.length,
+    return { passed: issues.length === 0, issues, warnings, counts, expectedPendingPasswords: options.expectedPendingPasswords ?? null, checkedFunctions: signatures.size, checkedTables: tableAccess.rows.length,
       scope: '仅字段存在性、函数签名/执行权限、业务表及列授权、RLS与客户数量汇总；不证明函数定义版本、密码正确性或交易验收通过' };
   } finally { await connection.query('ROLLBACK'); }
 }
 
 async function main() {
-  if (process.argv.includes('--help')) {
-    console.log('用法：npx tsx scripts/verify-release.ts\n读取 .env SUPABASE_DB_URL，READ ONLY 事务核查结构/权限/密码数量汇总；不修改客户，不执行业务函数。检查不通过退出码 2。');
+  let options: ReturnType<typeof parseReleaseArgs>;
+  try { options = parseReleaseArgs(process.argv.slice(2)); } catch {
+    console.error('[参数错误] 请使用 --help；--expected-pending-passwords 后须填写非负安全整数。未连接数据库。');
+    process.exitCode = 1;
     return;
   }
-  if (process.argv.length > 2) throw new Error('未知参数，请使用 --help');
+  if (options.help) {
+    console.log('用法：npx tsx scripts/verify-release.ts [--expected-pending-passwords 数量]\n读取 .env SUPABASE_DB_URL，READ ONLY 事务核查结构/权限/密码数量汇总；不修改客户，不执行业务函数。检查不通过退出码 2。\n默认空密码阻断；仅在项目主人已确认待首次设密档案的来源和数量后，提供本次预期数量。异常空密码和数量不符仍阻断，告警保留；不能证明新老客户身份或替代交易验收。');
+    return;
+  }
   dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)), quiet: true });
   const config = databaseConfig(process.env);
   config.application_name = 'mbs-readonly-release-check';
@@ -117,7 +175,7 @@ async function main() {
   client.on('error', () => {});
   try {
     await client.connect();
-    const report = await verifyRelease(client);
+    const report = await verifyRelease(client, options);
     console.log(JSON.stringify(report, null, 2));
     if (!report.passed) process.exitCode = 2;
   } catch (error) {

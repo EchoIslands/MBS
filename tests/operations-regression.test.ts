@@ -5,7 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {setupDatabase} from '../scripts/setup-db.js';
 import {upgradeOperations} from '../scripts/upgrade-operations.js';
 
-test('033–036真实SQL：领券、退款、会员、库存、奖励、团购与防重',async(t)=>{
+test('033–041真实SQL：领券、退款、会员、库存、奖励、团购与新结算账本防重',async(t)=>{
   const db=new PGlite();
   const query=async(sql:string,values?:unknown[])=>values?db.query(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []};
   const scalar=async(sql:string)=>Object.values((await db.query(sql)).rows[0] as object)[0];
@@ -72,6 +72,7 @@ test('033–036真实SQL：领券、退款、会员、库存、奖励、团购�
       await db.exec("INSERT INTO bookings(id,shop_id,customer_id,scheduled_time) VALUES('b','s','c',NOW())");
       const review=(id:string)=>db.query("INSERT INTO reviews(id,shop_id,customer_id,booking_id,type) VALUES($1,'s','c','b','shop')",[id]);
       const results=await Promise.allSettled([review('r1'),review('r2')]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+      await db.exec('DROP TRIGGER reject_log ON product_inventory_logs');
     });
     await t.test('会员办理与流水权益同事务；并发余额变化拒绝旧快照覆盖',async()=>{
       const apply=(expected:any,patch:any,tx:any,benefits:any[]=[])=>db.query("SELECT * FROM apply_membership_atomic('c','s',$1,$2,NULL,$3,$4,NULL)",[expected,patch,tx,benefits]);
@@ -84,6 +85,24 @@ test('033–036真实SQL：领券、退款、会员、库存、奖励、团购�
       assert.equal(Number(await scalar("SELECT balance FROM customers WHERE id='c'")),100);
       assert.equal(await scalar("SELECT COUNT(*)::integer FROM stored_value_transactions WHERE id='sv2'"),0);
       await db.exec('DROP TRIGGER reject_benefit ON member_benefit_records');
+    });
+    await t.test('手工余额调整只记实际差额，过期快照拒绝覆盖',async()=>{
+      const before=Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'"));
+      await db.query("SELECT * FROM adjust_customer_balance_atomic('c','s',$1,$2,'staff','Staff','Synthetic manual correction')",[before,before+25]);
+      assert.equal(Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'")),before+25);
+      assert.equal(Number(await scalar("SELECT amount FROM stored_value_transactions WHERE customer_id='c' AND type='manual_adjust' ORDER BY created_at DESC LIMIT 1")),25);
+      await assert.rejects(db.query("SELECT * FROM adjust_customer_balance_atomic('c','s',$1,$2,'staff','Staff','Stale snapshot')",[before,before+30]),/BALANCE_CONFLICT/);
+    });
+    await t.test('商品余额退款按原消费本金与推荐金来源回退，并只写一笔退款流水',async()=>{
+      await db.exec("UPDATE customers SET stored_value_balance=100,balance=100,withdrawable_referral_amount=3 WHERE id='c'; INSERT INTO product_orders(id,shop_id,customer_id,order_no,status,payment_method,payment_status,payable_amount,total_amount) VALUES('refund-source-order','s','c','REFUND-SOURCE','paid','balance','paid',10,10); INSERT INTO product_order_items(order_id,product_id,name,price,original_price,quantity,total_amount,category) VALUES('refund-source-order','p','Synthetic product',10,10,1,10,'care'); INSERT INTO stored_value_transactions(id,customer_id,type,amount,balance_after,principal_portion,referral_portion,order_id,note,created_by,created_by_name) VALUES('consume-refund-source','c','consume',-10,100,-7,-3,'refund-source-order','Synthetic source','c','Synthetic'); INSERT INTO product_order_refunds(id,order_id,shop_id,customer_id,customer_name,amount,reason) VALUES('refund-source-request','refund-source-order','s','c','Synthetic one',10,'Synthetic refund');");
+      await db.query("SELECT * FROM handle_product_refund_atomic('refund-source-request','s','approved','staff','Staff','Synthetic')");
+      assert.equal(Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'")),110);
+      assert.equal(Number(await scalar("SELECT withdrawable_referral_amount FROM customers WHERE id='c'")),6);
+      assert.equal(Number(await scalar("SELECT principal_portion FROM stored_value_transactions WHERE id='refund_refund-source-order'")),7);
+      assert.equal(Number(await scalar("SELECT referral_portion FROM stored_value_transactions WHERE id='refund_refund-source-order'")),3);
+      assert.equal(await scalar("SELECT COUNT(*)::integer FROM stored_value_transactions WHERE order_id='refund-source-order' AND type='refund'"),1);
+      await db.query("SELECT * FROM handle_product_refund_atomic('refund-source-request','s','approved','staff','Staff','Synthetic')");
+      assert.equal(await scalar("SELECT COUNT(*)::integer FROM stored_value_transactions WHERE order_id='refund-source-order' AND type='refund'"),1);
     });
     await t.test('发货和物流一起提交；重复发货不重复轨迹，未付款拒绝',async()=>{
       await db.exec("INSERT INTO product_orders(id,shop_id,customer_id,order_no,status,payment_status) VALUES('ship1','s','c','SHIP1','ready','paid'),('ship2','s','c','SHIP2','ready','pending')");
@@ -120,6 +139,17 @@ test('033–036真实SQL：领券、退款、会员、库存、奖励、团购�
       const [a,b]=await Promise.all([request(),request()]);assert.equal(a.rows[0].id,b.rows[0].id);assert.equal(Number(a.rows[0].amount),33.64);
       await assert.rejects(db.query("SELECT * FROM request_service_refund_atomic('d','s','refund-booking','Synthetic')"),/ORDER_NOT_FOUND/);
       await assert.rejects(db.query("SELECT * FROM request_service_refund_atomic('c','s','unpaid-booking','Synthetic')"),/ORDER_NOT_REFUNDABLE/);
+    });
+    await t.test('服务退款完成必须登记回执，金额和时间写入退款记录',async()=>{
+      await db.exec("INSERT INTO refund_requests(id,shop_id,customer_id,customer_name,amount,status,reason) VALUES('service-refund-receipt','s','c','Synthetic one',12,'approved','Synthetic');");
+      await assert.rejects(db.query("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original',NULL,12,NOW())"),/REFUND_RECEIPT_REQUIRED/);
+      const result=await db.query<any>("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original','receipt-001',12,NOW())");
+      assert.equal(result.rows[0].status,'completed');
+      assert.equal(result.rows[0].refund_receipt_ref,'receipt-001');
+      assert.equal(Number(result.rows[0].refund_receipt_amount),12);
+      assert.equal(await scalar("SELECT COUNT(*)::integer FROM refund_requests WHERE id='service-refund-receipt' AND status='completed'"),1);
+      const again=await db.query<any>("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original','receipt-001',12,NOW())");
+      assert.equal(again.rows[0].refund_receipt_ref,'receipt-001');
     });
     await t.test('结算奖励原子、按单幂等，推荐转化一次；奖励失败结算也回滚',async()=>{
       await db.exec("INSERT INTO customers(id,shop_id,name,phone) VALUES('e','s','Reward one','13800000003'),('f','s','Reward two','13800000004'); INSERT INTO referral_records(id,shop_id,referrer_id,referred_id,status) VALUES('reward-ref','s','f','e','pending'); UPDATE shops SET stockholder_config=jsonb_build_object('enabled',true,'cashbackRate',0.05) WHERE id='s'; UPDATE customers SET is_stockholder=true WHERE id='e'; INSERT INTO settlements(id,shop_id,customer_id,total,payment_method,payment_status) VALUES('reward','s','e',100,'cash','pending');");

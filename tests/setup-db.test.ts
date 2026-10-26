@@ -25,7 +25,7 @@ test('真实引擎：无 025–029 时完整安装、重复执行、已有数据
   const logs: string[] = [];
   try {
     await setupDatabase(connection, line => logs.push(line));
-    assert.equal(logs.filter(line => line.includes('等待统一提交')).length, 16);
+    assert.equal(logs.filter(line => line.includes('等待统一提交')).length, 17);
     const row = (await db.query<any>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
     assert.equal(row.password_hash, null); assert.equal(row.is_weak_password, false); assert.equal(row.identity_verified, false); assert.equal(Number(row.balance), 100);
     await db.exec("UPDATE customers SET password_hash='synthetic-preserved',is_weak_password=true,identity_verified=true WHERE id='c';");
@@ -94,4 +94,22 @@ test('本地连接配置：SSL 跳过证书验证、剥离冲突参数、项目�
   }
   assert.throws(() => databaseConfig({ SUPABASE_DB_URL: 'postgresql://postgres.other:secret@aws-0-test.pooler.supabase.com:5432/postgres', SUPABASE_URL: 'https://fake.supabase.co' }), /项目不一致/);
   assert.throws(() => databaseConfig({ SUPABASE_DB_URL: 'postgresql://postgres.fake:secret@aws-0-test.pooler.supabase.com:6543/postgres' }), /5432/);
+});
+
+test('已有安装器持锁时拒绝DDL并回滚，保留039互斥key兼容040', async () => {
+  const queries: string[] = [];
+  const connection: SetupConnection = { query: async sql => {
+    queries.push(sql);
+    if (sql.includes('pg_try_advisory_xact_lock')) {
+      assert.match(sql, /hashtext\('mbs\.setup\.025-039'\)/);
+      return { rows: [{ locked: false }] };
+    }
+    return { rows: [] };
+  } };
+  await assert.rejects(setupDatabase(connection, () => {}), /已有结构安装任务/);
+  assert.equal(queries[0], 'BEGIN');
+  assert.equal(queries.at(-1), 'ROLLBACK');
+  assert.ok(queries.every(sql => !/^(ALTER|CREATE|INSERT|UPDATE|DELETE|COMMIT)/i.test(sql)));
+  const olderInstaller = await readFile(new URL('../scripts/upgrade-atomic-checkout.ts', import.meta.url), 'utf8');
+  assert.match(olderInstaller, /hashtext\('mbs\.setup\.025-039'\)/);
 });

@@ -99,6 +99,24 @@ let checkoutRpcCalls = 0;
   tables.settlements.push(row);
   return {data:[row],error:null};
  }
+ if (name === 'adjust_customer_balance_atomic') {
+  const row=(tables.customers||[]).find(r=>r.id===args.p_customer_id&&r.shop_id===args.p_shop_id);
+  if (!row) return {data:null,error:{message:'CUSTOMER_NOT_FOUND'}};
+  if (Number(row.stored_value_balance)!==Number(args.p_expected_balance)) return {data:null,error:{message:'BALANCE_CONFLICT'}};
+  const next=Number(args.p_new_balance);
+  if (!Number.isFinite(next) || next<0 || !String(args.p_note||'').trim()) return {data:null,error:{message:'INVALID_BALANCE_ADJUSTMENT'}};
+  row.stored_value_balance=next; row.balance=next;
+  return {data:[structuredClone(row)],error:null};
+ }
+ if (name === 'complete_service_refund_atomic') {
+  const row=(tables.refund_requests||[]).find(r=>r.id===args.p_refund_id&&r.shop_id===args.p_shop_id);
+  if (!row) return {data:null,error:{message:'REFUND_NOT_FOUND'}};
+  if (row.status==='completed') return {data:[structuredClone(row)],error:null};
+  if (row.status!=='approved') return {data:null,error:{message:'REFUND_NOT_APPROVED'}};
+  if (!args.p_receipt_ref || Number(args.p_receipt_amount)!==Number(row.amount)) return {data:null,error:{message:'REFUND_RECEIPT_AMOUNT_MISMATCH'}};
+  Object.assign(row,{status:'completed',refund_method:args.p_refund_method,refund_receipt_ref:args.p_receipt_ref,refund_receipt_amount:args.p_receipt_amount,refund_receipt_at:args.p_receipt_at});
+  return {data:[structuredClone(row)],error:null};
+ }
  if (failRpc) return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
  if (name === 'begin_customer_auth_attempt') return { data: [{allowed: rpcFailures < 5}], error: null };
  if (name === 'finish_customer_auth_attempt') { rpcFailures = args.p_succeeded ? 0 : rpcFailures+1; return {data:null,error:null}; }
@@ -511,7 +529,8 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved',refundMethod:'forged'})).status,400);
    assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved'})).status,200);
    assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved'})).status,200);
-   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'completed'})).status,200);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'completed',refundMethod:'original'})).status,400);
+   assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'completed',refundMethod:'original',receiptRef:'synthetic-refund-001',receiptAmount:10,receiptAt:'2026-10-24T10:00:00+08:00'})).status,200);
    assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'approved'})).status,409);
    tables.refund_requests=[];
   });

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { PGlite } from '@electric-sql/pglite';
 import { setupDatabase, type SetupConnection } from '../scripts/setup-db.js';
-import { verifyRelease } from '../scripts/verify-release.js';
+import { parseReleaseArgs, verifyRelease } from '../scripts/verify-release.js';
 import { fixRpcPermissions } from '../scripts/fix-rpc-permissions.js';
 
 test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段缺失均能识别，禁止写入', async () => {
@@ -29,25 +29,70 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     const incomplete = await verifyRelease(connection);
     assert.equal(incomplete.counts?.empty_password, '1');
     assert.ok(incomplete.issues.some(issue => issue.includes('仍有空密码')));
+    // 门店新增档案可等待本人首次设密；数量须由项目主人逐次确认，不能推断来源。
+    await db.exec("INSERT INTO customers(id,shop_id,name,phone) SELECT 'pending-'||n,'s','Synthetic pending','1380000000'||n FROM generate_series(1,7) n;");
+    const beforePending = (await db.query('SELECT * FROM customers ORDER BY id')).rows;
+    queries.length = 0;
+    const confirmedPending = await verifyRelease(connection, { expectedPendingPasswords: 8 });
+    assert.equal(confirmedPending.passed, true);
+    assert.equal(confirmedPending.counts?.empty_password, '8');
+    assert.equal(confirmedPending.counts?.pending_password_setup, '8');
+    assert.equal(confirmedPending.counts?.empty_password_requires_review, '0');
+    assert.equal(confirmedPending.expectedPendingPasswords, 8);
+    assert.equal(confirmedPending.warnings.length, 1);
+    assert.ok(queries.every(sql => /^(SELECT|WITH password_states AS|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
+    assert.equal(queries[0], 'BEGIN READ ONLY');
+    assert.equal(queries.at(-1), 'ROLLBACK');
+    assert.deepEqual((await db.query('SELECT * FROM customers ORDER BY id')).rows, beforePending);
+    await db.exec('GRANT SELECT(phone) ON customers TO anon;');
+    const confirmedButExposed = await verifyRelease(connection, { expectedPendingPasswords: 8 });
+    assert.equal(confirmedButExposed.passed, false);
+    assert.ok(confirmedButExposed.issues.some(issue => issue.includes('直接客户端授权')));
+    await db.exec('REVOKE SELECT(phone) ON customers FROM anon;');
+    for (const expectedPendingPasswords of [0, 7, 9]) {
+      const mismatch = await verifyRelease(connection, { expectedPendingPasswords });
+      assert.equal(mismatch.passed, false);
+      assert.ok(mismatch.issues.some(issue => issue.includes('待首次设密数量不符')));
+    }
+    assert.equal((await verifyRelease(connection)).passed, false); // 确认不持久化，下次默认继续拦截。
+    for (const change of [
+      'is_weak_password=true', "password_reset_at='2026-10-24T00:00:00Z'",
+      'identity_verified=true', "identity_verified_at='2026-10-24T00:00:00Z'",
+      "identity_verified_by='synthetic-employee'", "password_hash=''",
+    ]) {
+      await db.exec("UPDATE customers SET " + change + " WHERE id='pending-1';");
+      const suspicious = await verifyRelease(connection, { expectedPendingPasswords: 7 });
+      assert.equal(suspicious.passed, false);
+      assert.equal(suspicious.counts?.empty_password_requires_review, '1');
+      assert.ok(suspicious.issues.some(issue => issue.includes('不能按待首次设密放行')));
+      await db.exec("UPDATE customers SET password_hash=NULL,is_weak_password=false,password_reset_at=NULL,identity_verified=false,identity_verified_at=NULL,identity_verified_by=NULL WHERE id='pending-1';");
+    }
+    await db.exec("UPDATE customers SET password_hash='   ' WHERE id='pending-1';");
+    const whitespace = await verifyRelease(connection, { expectedPendingPasswords: 7 });
+    assert.equal(whitespace.passed, false);
+    assert.ok(whitespace.issues.some(issue => issue.includes('空白字符密码')));
+    await db.exec("DELETE FROM customers WHERE id LIKE 'pending-%';");
     await db.exec("UPDATE customers SET password_hash='synthetic',is_weak_password=true;");
     queries.length = 0;
     const report = await verifyRelease(connection);
     assert.deepEqual(report.issues, []);
     assert.equal(report.passed, true);
     assert.equal(report.counts?.must_change_password, '1');
-    assert.equal(report.checkedFunctions, 34);
+    assert.equal(report.checkedFunctions, 36);
     assert.equal(queries[0], 'BEGIN READ ONLY');
     assert.equal(queries.at(-1), 'ROLLBACK');
-    assert.ok(queries.every(sql => /^(SELECT|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
+    assert.ok(queries.every(sql => /^(SELECT|WITH password_states AS|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
+    assert.equal((await verifyRelease(connection, { expectedPendingPasswords: 0 })).passed, true);
+    assert.equal((await verifyRelease(connection, { expectedPendingPasswords: 8 })).passed, false);
     assert.equal((await db.query<any>('SELECT password_hash FROM customers')).rows[0].password_hash, 'synthetic');
     // 复现旧迁移只撤 PUBLIC 后仍遗留的 20 条有效授权。
     await db.exec('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;');
     const exposed = await verifyRelease(connection);
-    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 72);
+    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 80);
     await fixRpcPermissions(connection);
     const after030=await verifyRelease(connection);
     assert.equal(after030.passed,false);
-    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,52);
+    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,60);
     await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/033_atomic_customer_operations.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/035_membership_and_shipping_atomic.sql', import.meta.url), 'utf8'));
@@ -56,6 +101,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     await db.exec(await readFile(new URL('../migrations/038_wechat_payment_recovery.sql',import.meta.url),'utf8'));
     await db.exec(await readFile(new URL('../migrations/039_manual_payment_times.sql',import.meta.url),'utf8'));
     await db.exec(await readFile(new URL('../migrations/040_atomic_wechat_checkout.sql',import.meta.url),'utf8'));
+    await db.exec(await readFile(new URL('../migrations/041_balance_adjustment_and_refund_receipts.sql',import.meta.url),'utf8'));
     assert.equal((await verifyRelease(connection)).passed, true);
     await db.exec('GRANT SELECT(phone) ON customers TO anon;');
     assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('customers') && issue.includes('anon')));
@@ -82,6 +128,24 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     await assert.rejects(db.exec("UPDATE customers SET name='forbidden'"));
     await db.exec('ROLLBACK');
   } finally { await db.close(); }
+});
+
+test('待首次设密参数严格校验且非法调用不连接数据库', async () => {
+  assert.deepEqual(parseReleaseArgs([]), {});
+  assert.deepEqual(parseReleaseArgs(['--help']), { help: true });
+  assert.deepEqual(parseReleaseArgs(['--expected-pending-passwords', '8']), { expectedPendingPasswords: 8 });
+  assert.deepEqual(parseReleaseArgs(['--expected-pending-passwords', '0']), { expectedPendingPasswords: 0 });
+  for (const args of [
+    ['--expected-pending-passwords'], ['--unknown'], ['--help', '--unknown'],
+    ...['-1', '1.5', 'NaN', 'Infinity', '8e0', '08', ' 8', '9007199254740992'].map(value => ['--expected-pending-passwords', value]),
+    ['--expected-pending-passwords', '8', '--expected-pending-passwords', '8'],
+  ]) assert.throws(() => parseReleaseArgs(args));
+  let calls = 0;
+  const connection: SetupConnection = { query: async () => { calls++; return { rows: [] }; } };
+  for (const value of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '8' as unknown as number]) {
+    await assert.rejects(verifyRelease(connection, { expectedPendingPasswords: value }), /非负安全整数/);
+  }
+  assert.equal(calls, 0);
 });
 
 test('生产启动缺密钥时不向客户端泄露堆栈、路径或底层配置错误', () => {
