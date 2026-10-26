@@ -92,6 +92,12 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
       assert.equal(Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'")),before+25);
       assert.equal(Number(await scalar("SELECT amount FROM stored_value_transactions WHERE customer_id='c' AND type='manual_adjust' ORDER BY created_at DESC LIMIT 1")),25);
       await assert.rejects(db.query("SELECT * FROM adjust_customer_balance_atomic('c','s',$1,$2,'staff','Staff','Stale snapshot')",[before,before+30]),/BALANCE_CONFLICT/);
+      const count=Number(await scalar("SELECT count(*) FROM stored_value_transactions WHERE customer_id='c' AND type='manual_adjust'"));
+      await db.query("SELECT * FROM adjust_customer_balance_atomic('c','s',$1,$1,'staff','Staff','Unchanged balance')",[before+25]);
+      assert.equal(Number(await scalar("SELECT count(*) FROM stored_value_transactions WHERE customer_id='c' AND type='manual_adjust'")),count);
+      await db.query("SELECT * FROM adjust_customer_balance_atomic('c','s',$1,$2,'staff','Staff','Restore test balance')",[before+25,before]);
+      assert.equal(Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'")),before);
+      assert.equal(Number(await scalar("SELECT count(*) FROM stored_value_transactions WHERE customer_id='c' AND type='manual_adjust' AND amount=-25")),1);
     });
     await t.test('商品余额退款按原消费本金与推荐金来源回退，并只写一笔退款流水',async()=>{
       await db.exec("UPDATE customers SET stored_value_balance=100,balance=100,withdrawable_referral_amount=3 WHERE id='c'; INSERT INTO product_orders(id,shop_id,customer_id,order_no,status,payment_method,payment_status,payable_amount,total_amount) VALUES('refund-source-order','s','c','REFUND-SOURCE','paid','balance','paid',10,10); INSERT INTO product_order_items(order_id,product_id,name,price,original_price,quantity,total_amount,category) VALUES('refund-source-order','p','Synthetic product',10,10,1,10,'care'); INSERT INTO stored_value_transactions(id,customer_id,type,amount,balance_after,principal_portion,referral_portion,order_id,note,created_by,created_by_name) VALUES('consume-refund-source','c','consume',-10,100,-7,-3,'refund-source-order','Synthetic source','c','Synthetic'); INSERT INTO product_order_refunds(id,order_id,shop_id,customer_id,customer_name,amount,reason) VALUES('refund-source-request','refund-source-order','s','c','Synthetic one',10,'Synthetic refund');");

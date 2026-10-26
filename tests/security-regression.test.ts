@@ -513,6 +513,9 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   await t.test('客户资料只改姓名不改余额，经营字段需旧值且拒绝过期覆盖',async()=>{
    const c=tables.customers[0],before=structuredClone(c);
    try {
+    assert.equal((await request('/customers/c1',ceo,'PUT',{})).status,400);
+    assert.equal((await request('/customers/c1',ceo,'PUT',{_expected:{age:null}})).status,400);
+    assert.equal((await request('/customers/c1',ceo,'PUT',{unknownField:'ignored'})).status,400);
     assert.equal((await request('/customers/c1',ceo,'PUT',{name:'Edited'})).status,200);
     assert.equal(c.stored_value_balance,before.stored_value_balance);
     assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:999})).status,409);

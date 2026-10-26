@@ -53,6 +53,7 @@ import {
 import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import ShopLayout from './ShopLayout';
+import { useCustomerFormSave } from '../../hooks/useCustomerFormSave';
 
 const CustomerManagement: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -65,6 +66,7 @@ const CustomerManagement: React.FC = () => {
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState<Customer | null>(null);
+  const { saveCustomer, saving, saveError } = useCustomerFormSave(showEdit?.id || (showAdd ? 'add' : undefined));
   const navigate = useNavigate();
   const { currentEmployee, userRole } = useAppStore();
 
@@ -1227,6 +1229,7 @@ const CustomerManagement: React.FC = () => {
                 {showAdd ? '添加新客户' : '编辑客户信息'}
               </h3>
               <button
+                disabled={saving}
                 onClick={() => { if (showEdit) setShowEdit(null); else setShowAdd(false); }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
@@ -1306,8 +1309,10 @@ const CustomerManagement: React.FC = () => {
               </div>
             </div>
 
+            {saveError && <div role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{saveError}</div>}
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
               <button
+                disabled={saving}
                 onClick={() => { if (showEdit) setShowEdit(null); else setShowAdd(false); }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors text-sm font-medium"
               >
@@ -1333,16 +1338,16 @@ const CustomerManagement: React.FC = () => {
                     isStockholder,
                     stockholderSince: isStockholder && !showEdit?.isStockholder ? new Date() : showEdit?.stockholderSince,
                   };
-                  if (showEdit) {
-                    await handleUpdateCustomer({ ...showEdit, ...data });
-                  } else {
-                    await handleAddCustomer(data);
-                  }
+                  await saveCustomer(async () => {
+                    if (showEdit) await handleUpdateCustomer({ ...showEdit, ...data });
+                    else await handleAddCustomer(data);
+                  });
                 }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md disabled:opacity-50"
               >
                 <Plus size={16} />
-                保存
+                {saving ? '保存中…' : '保存'}
               </button>
             </div>
           </div>

@@ -66,7 +66,18 @@ let draftDeleteError: any = null;
 let completeCheckout = false;
 let checkoutRpcCalls = 0;
 const newCheckoutMode=process.env.MBS_UI_NEW_CHECKOUT==='1';
+const customerSaveMode=process.env.MBS_UI_CUSTOMER_SAVE==='1';
 (supabase as any).rpc = async (name: string, args: any) => {
+ if(customerSaveMode && name==='adjust_customer_balance_atomic') {
+  const row=tables.customers.find(r=>r.id===args.p_customer_id&&r.shop_id===args.p_shop_id);
+  if(!row || row.stored_value_balance!==args.p_expected_balance)return {data:null,error:{message:'BALANCE_CONFLICT'}};
+  const delta=args.p_new_balance-row.stored_value_balance;
+  if(delta) {
+   row.stored_value_balance=args.p_new_balance;row.balance=args.p_new_balance;
+   (tables.stored_value_transactions??=[]).push({type:'manual_adjust',amount:delta,balance_after:row.stored_value_balance});
+  }
+  return {data:[structuredClone(row)],error:null};
+ }
  if(process.env.MBS_UI_REFUND==='1' && name==='complete_service_refund_atomic') {
   const row=tables.refund_requests.find(r=>r.id===args.p_refund_id&&r.shop_id===args.p_shop_id);
   if(!row||row.status!=='approved'||Number(args.p_receipt_amount)!==row.amount) return {data:null,error:{message:'REFUND_RECEIPT_AMOUNT_MISMATCH'}};
@@ -138,6 +149,7 @@ tables.shops[0]={id:'shop1',name:'本地合成测试门店',phone:'13800000000',
 tables.customers[0]={...tables.customers[0],shop_id:'shop1',name:'合成顾客',tags:[],is_weak_password:true,identity_verified:false,balance:100,stored_value_balance:100,purchase_vip_level:'regular',stored_value_level:'none',password_hash:await hashPassword('123456')};
 tables.employees[0]={...tables.employees[0],shop_id:'shop1',phone:'13800000009'};
 tables.employees[2]={...tables.employees[2],shop_id:'shop1',phone:'13800000008'};
+if(customerSaveMode) Object.assign(tables.customers[0],{age:null,birthday:null,gender:'other',source:'',is_stockholder:false,stockholder_since:null,points:0,total_spent:0,visit_count:0,membership_level:'regular',balance:10,stored_value_balance:10});
 if(process.env.MBS_UI_REFUND==='1') tables.refund_requests=[{id:'synthetic-refund',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',booking_id:'synthetic-today-booking',amount:33.64,status:'approved',refund_method:'original',reason:'仅隔离界面验收',created_at:new Date().toISOString()}];
 // 本次支付追溯页面验收只使用合成订单；日期/金额用于覆盖旧单新付和历史缺失时间。
 tables.settlements=[
@@ -174,6 +186,10 @@ if(newCheckoutMode) {
 recoveryDependencies.create=async(body)=>({paymentId:body.out_trade_no,status:'pending',amount:body.amount.total/100,codeUrl:'weixin://wxpay/synthetic-ui-only'});
 const {default:handler}=await import('../../api/index.js');
 const server=createServer((req,res)=>{
+ if(customerSaveMode && req.method==='GET' && req.url==='/api/__fixture/customer-save') {
+  res.setHeader('Content-Type','application/json');
+  res.end(JSON.stringify({balance:tables.customers[0].stored_value_balance,adjustments:tables.stored_value_transactions||[]}));return;
+ }
  res.once('finish',()=>console.log('[合成HTTP]',req.method,req.url?.split('?')[0],res.statusCode));
  void handler(req as any,res as any);
 });

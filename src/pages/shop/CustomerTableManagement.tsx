@@ -26,6 +26,7 @@ import { customerApi } from '../../api';
 import { useAppStore } from '../../store';
 import { canExportCustomers, canDeleteCustomer, canEditCustomer, canCreateCustomer } from '../../../shared/permissions';
 import ShopLayout from './ShopLayout';
+import { useCustomerFormSave } from '../../hooks/useCustomerFormSave';
 
 // 根据双轨会员体系生成统一的会员级别显示文本
 const getMembershipLevelLabel = (customer: Customer): string => {
@@ -47,6 +48,7 @@ const CustomerTableManagement: React.FC = () => {
   const [showDetail, setShowDetail] = useState<Customer | null>(null);
   const [showEdit, setShowEdit] = useState<Customer | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const { saveCustomer, saving, saveError } = useCustomerFormSave(showEdit?.id || (showAdd ? 'add' : undefined));
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [filterMember, setFilterMember] = useState<string>('all');
   const [filterBooking, setFilterBooking] = useState<string>('all');
@@ -987,6 +989,7 @@ const CustomerTableManagement: React.FC = () => {
                 {showAdd ? '添加新客户' : '编辑客户信息'}
               </h3>
               <button
+                disabled={saving}
                 onClick={() => {
                   if (showEdit) setShowEdit(null);
                   else setShowAdd(false);
@@ -1300,8 +1303,10 @@ const CustomerTableManagement: React.FC = () => {
             </div>
 
             {/* 表单按钮 */}
+            {saveError && <div role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{saveError}</div>}
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
               <button
+                disabled={saving}
                 onClick={() => {
                   if (showEdit) setShowEdit(null);
                   else setShowAdd(false);
@@ -1311,7 +1316,7 @@ const CustomerTableManagement: React.FC = () => {
                 取消
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   // 获取表单数据
                   const nameInput = document.getElementById('edit-name') as HTMLInputElement;
                   const phoneInput = document.getElementById('edit-phone') as HTMLInputElement;
@@ -1395,10 +1400,10 @@ const CustomerTableManagement: React.FC = () => {
                       totalSharedFund: parseFloat(totalSharedFundInput.value) || 0,
                       withdrawableAmount: parseFloat(withdrawableInput.value) || 0,
                     };
-                    handleUpdateCustomer(updated);
+                    await saveCustomer(() => handleUpdateCustomer(updated));
                   } else {
                     // 添加新客户
-                    handleAddCustomer({
+                    await saveCustomer(() => handleAddCustomer({
                       name: nameInput.value,
                       phone: phoneInput.value,
                       wechat: wechatInput.value,
@@ -1428,13 +1433,14 @@ const CustomerTableManagement: React.FC = () => {
                       sharedFund: parseFloat(sharedFundInput.value) || 0,
                       totalSharedFund: parseFloat(totalSharedFundInput.value) || 0,
                       withdrawableAmount: parseFloat(withdrawableInput.value) || 0,
-                    });
+                    }));
                   }
                 }}
-                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md"
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-xl transition-all text-sm font-medium shadow-md disabled:opacity-50"
               >
                 <Check size={16} />
-                保存
+                {saving ? '保存中…' : '保存'}
               </button>
             </div>
           </div>

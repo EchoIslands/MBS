@@ -1075,8 +1075,10 @@ export const customerApi = {
   update: async (id: string, data: Partial<Customer>, previous?: Customer): Promise<Customer | null> => {
     if (USE_REAL_API) {
       // 资料表单保留打开时的快照，只发送实际修改字段，避免覆盖并发结算后的余额。
-      const patch = previous ? Object.fromEntries(Object.entries(data).filter(([key, value]) =>
-        JSON.stringify(value) !== JSON.stringify(previous[key as keyof Customer]))) : data;
+      // 先按实际请求的JSON内容取值：undefined不会发送，不能把NULL年龄等空表单误判为有效修改。
+      const serializable = JSON.parse(JSON.stringify(data)) as Partial<Customer>;
+      const patch = previous ? Object.fromEntries(Object.entries(serializable).filter(([key, value]) =>
+        JSON.stringify(value) !== JSON.stringify(previous[key as keyof Customer]))) : serializable;
       if (previous && Object.keys(patch).length === 0) return previous;
       const expected = previous ? Object.fromEntries(Object.keys(patch).map(key => [key, previous[key as keyof Customer] ?? null])) : {};
       const token = getAuthToken();
