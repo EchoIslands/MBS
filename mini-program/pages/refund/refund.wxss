@@ -1,0 +1,32 @@
+.refund-page { min-height: 100vh; background: var(--bg, #f7f8fa); color: var(--text, #1f2937); }
+.refund-header { position: sticky; top: 0; z-index: 10; height: 96rpx; padding: 0 28rpx; background: #fff; border-bottom: 1rpx solid #eee; display: flex; align-items: center; justify-content: space-between; }
+.refund-title { font-size: 34rpx; font-weight: 700; }
+.refund-back { width: 64rpx; height: 64rpx; line-height: 58rpx; text-align: center; font-size: 60rpx; color: #374151; }
+.refund-header-placeholder { width: 64rpx; }
+.refund-content { padding: 24rpx 28rpx 60rpx; }
+.refund-note, .refund-policy { margin-bottom: 24rpx; padding: 24rpx; border-radius: 20rpx; color: #52627a; background: #fff8e8; font-size: 25rpx; line-height: 1.6; }
+.refund-policy { margin-top: 24rpx; margin-bottom: 0; color: #2563eb; background: #eff6ff; }
+.refund-card { margin-bottom: 24rpx; padding: 30rpx; border-radius: 24rpx; background: #fff; box-shadow: 0 4rpx 18rpx rgba(15, 23, 42, .05); }
+.section-title { margin-bottom: 28rpx; font-size: 31rpx; font-weight: 700; }
+.field-label { margin: 22rpx 0 12rpx; font-size: 26rpx; font-weight: 600; }
+.picker-field { min-height: 82rpx; padding: 0 22rpx; border: 1rpx solid #d6dbe5; border-radius: 14rpx; display: flex; align-items: center; justify-content: space-between; font-size: 25rpx; line-height: 1.4; }
+.picker-placeholder { color: #9aa3b2; }
+.picker-arrow { margin-left: 14rpx; font-size: 34rpx; color: #778195; }
+.settlement-id { margin-top: 12rpx; color: #6b7280; font-size: 23rpx; word-break: break-all; }
+.reason-input { width: 100%; min-height: 180rpx; box-sizing: border-box; padding: 20rpx; border: 1rpx solid #d6dbe5; border-radius: 14rpx; font-size: 26rpx; }
+.submit-button { margin-top: 28rpx; border-radius: 14rpx; color: #fff; background: #f97316; font-size: 29rpx; }
+.submit-button[disabled] { opacity: .6; }
+.empty-text, .refund-state { padding: 70rpx 20rpx; text-align: center; color: #8a93a3; font-size: 26rpx; }
+.refund-state--error { color: #dc2626; }
+.refund-retry { display: inline-block; margin-top: 22rpx; padding: 14rpx 26rpx; border: 1rpx solid #f97316; border-radius: 12rpx; color: #f97316; }
+.record-card { margin-bottom: 20rpx; padding: 24rpx; border: 1rpx solid #edf0f4; border-radius: 18rpx; }
+.record-card:last-child { margin-bottom: 0; }
+.record-top { display: flex; justify-content: space-between; align-items: center; }
+.record-customer { font-size: 27rpx; font-weight: 600; }
+.record-status { padding: 8rpx 16rpx; border-radius: 24rpx; color: #8a5a00; background: #fff4bf; font-size: 23rpx; }
+.record-amount { margin: 18rpx 0; color: #f97316; font-size: 40rpx; font-weight: 700; }
+.record-line { margin-top: 10rpx; color: #657084; font-size: 24rpx; line-height: 1.5; }
+.record-break { word-break: break-all; }
+.record-reject { margin-top: 12rpx; color: #dc2626; font-size: 24rpx; line-height: 1.5; }
+.receipt-box { margin-top: 18rpx; padding: 18rpx; border-radius: 14rpx; color: #166534; background: #ecfdf3; font-size: 23rpx; line-height: 1.7; word-break: break-all; }
+.receipt-note { margin-top: 8rpx; color: #4b5563; }

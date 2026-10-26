@@ -1,0 +1,68 @@
+<view class="refund-page">
+  <view class="refund-header">
+    <view class="refund-back" bindtap="goBack">‹</view>
+    <view class="refund-title">退款管理</view>
+    <view class="refund-header-placeholder"></view>
+  </view>
+
+  <view wx:if="{{loading}}" class="refund-state">加载中...</view>
+  <view wx:elif="{{error}}" class="refund-state refund-state--error">
+    <view>{{error}}</view>
+    <view class="refund-retry" bindtap="onShow">重新加载</view>
+  </view>
+
+  <view wx:else class="refund-content">
+    <view class="refund-note">仅已付款的服务可申请退款，金额按实际付款核定。申请由门店审核，批准不代表款项已经到账。</view>
+
+    <view class="refund-card">
+      <view class="section-title">提交退款申请</view>
+      <view wx:if="{{candidates.length === 0}}" class="empty-text">暂无可申请的已付款服务</view>
+      <block wx:else>
+        <view class="field-label">选择已付款服务</view>
+        <picker mode="selector" range="{{candidates}}" range-key="displayLabel" value="{{selectedIndex}}" bindchange="onSettlementChange">
+          <view class="picker-field {{selectedSettlement ? '' : 'picker-placeholder'}}">
+            <block wx:if="{{selectedSettlement}}">
+              <block wx:for="{{candidates}}" wx:key="settlementId">
+                <text wx:if="{{item.settlementId === selectedSettlement}}">{{item.serviceName}} · ¥{{item.amountText}} · {{item.createdAtText}}</text>
+              </block>
+            </block>
+            <text wx:else>请选择要退款的结算单</text>
+            <text class="picker-arrow">⌄</text>
+          </view>
+        </picker>
+        <view wx:if="{{selectedSettlement}}" class="settlement-id">原结算单号：{{selectedSettlement}}</view>
+
+        <view class="field-label">退款原因</view>
+        <textarea class="reason-input" maxlength="2000" value="{{reason}}" placeholder="请详细描述退款原因" bindinput="onReasonInput" />
+        <button class="submit-button" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submitRefund">提交申请</button>
+      </block>
+    </view>
+
+    <view class="refund-card">
+      <view class="section-title">退款记录</view>
+      <view wx:if="{{records.length === 0}}" class="empty-text">暂无退款记录</view>
+      <view wx:else>
+        <view wx:for="{{records}}" wx:key="id" class="record-card">
+          <view class="record-top">
+            <text class="record-customer">退款申请</text>
+            <text class="record-status">{{item.statusText}}</text>
+          </view>
+          <view class="record-amount">¥{{item.amountText}}</view>
+          <view class="record-line">申请时间：{{item.createdAtText}}</view>
+          <view wx:if="{{item.settlementId}}" class="record-line record-break">原结算单号：{{item.settlementId}}</view>
+          <view class="record-line record-break">退款原因：{{item.reason}}</view>
+          <view wx:if="{{item.rejectReason}}" class="record-reject">拒绝原因：{{item.rejectReason}}</view>
+          <view wx:if="{{item.processedAtText}}" class="record-line">处理时间：{{item.processedAtText}}</view>
+          <view wx:if="{{item.refundReceiptRef}}" class="receipt-box">
+            <view>退款回执编号：{{item.refundReceiptRef}}</view>
+            <view>实际退款金额：¥{{item.receiptAmountText}}</view>
+            <view>实际退款时间：{{item.refundReceiptAtText}}</view>
+            <view class="receipt-note">请以实际退款渠道到账记录为准。</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="refund-policy">退款条件、办理方式及到账时间请联系门店确认。申请获批不代表退款已到账。</view>
+  </view>
+</view>

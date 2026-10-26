@@ -39,6 +39,40 @@ export async function getCustomerBookings(customerId) {
 }
 
 /**
+ * 获取顾客的服务退款记录。
+ * 退款数据由服务端按当前顾客会话校验，和网页端使用同一数据源。
+ */
+export async function getCustomerRefunds(customerId) {
+  const result = await get(`/refunds/customer/${encodeURIComponent(customerId)}`);
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '退款记录加载失败');
+  }
+  return result?.data || [];
+}
+
+/**
+ * 获取顾客已付款且尚未申请退款的服务结算。
+ */
+export async function getCustomerRefundCandidates(customerId) {
+  const result = await get(`/refunds/customer/${encodeURIComponent(customerId)}/candidates`);
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '可退款服务加载失败');
+  }
+  return result?.data || [];
+}
+
+/**
+ * 按原服务结算单提交退款申请。
+ */
+export async function requestCustomerSettlementRefund(customerId, settlementId, reason) {
+  const result = await post(`/refunds/customer/${encodeURIComponent(customerId)}`, { settlementId, reason });
+  if (!result || result.success === false) {
+    throw new Error(result?.error || '退款申请提交失败');
+  }
+  return result?.data || null;
+}
+
+/**
  * 顾客自助储值充值
  */
 export async function rechargeCustomer(customerId, shopId, storedValueLevel) {

@@ -412,7 +412,12 @@ Page({
   },
 
   goToRefund() {
-    wx.showToast({ title: '功能开发中', icon: 'none' });
+    const { customer } = this.data;
+    if (!customer) {
+      ensureLogin({ content: '登录后即可申请退款和查看退款进度' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/refund/refund?shopId=${encodeURIComponent(customer.shopId || 'shop1')}` });
   },
 
   goToProductOrders() {

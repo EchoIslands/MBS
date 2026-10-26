@@ -11,6 +11,7 @@
     "pages/product-detail/product-detail",
     "pages/cart/cart",
     "pages/product-orders/product-orders",
+    "pages/refund/refund",
     "pages/my-coupons/my-coupons",
     "pages/packages/packages",
     "pages/recharge/recharge",
