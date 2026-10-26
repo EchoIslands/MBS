@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Clock, CheckCircle, XCircle, DollarSign, MessageSquare, AlertTriangle, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { RefundStatus, RefundRequest } from '../../../shared/types';
@@ -8,7 +8,7 @@ import { beijingDateTimeInput, manualPaymentTimeIso } from '../../../shared/lib/
 import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const RefundManagement: React.FC = () => {
-  const { currentShop } = useAppStore();
+  const { currentShop, currentEmployee } = useAppStore();
   const [refunds, setRefunds] = useState<RefundRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -20,42 +20,65 @@ const RefundManagement: React.FC = () => {
   const [receiptRef, setReceiptRef] = useState('');
   const [receiptAmount, setReceiptAmount] = useState('');
   const [receiptAt, setReceiptAt] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [processError, setProcessError] = useState('');
+  const [loadedScope, setLoadedScope] = useState('');
+  const scope = `${currentEmployee?.id || ''}:${currentShop?.id || ''}`;
+  const activeScope = useRef(scope);
+  activeScope.current = scope;
+  const requestSequence = useRef(0);
+  const processingRef = useRef(false);
 
   // 加载店铺退款申请
-  const fetchRefunds = async () => {
-    if (!currentShop?.id) return;
+  const fetchRefunds = useCallback(async () => {
+    const request = ++requestSequence.current;
+    if (!currentShop?.id) {
+      setLoadError('门店信息未加载，请重新登录');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setLoadError('');
     try {
       const data = await refundApi.getByShop(currentShop.id);
-      if (Array.isArray(data)) {
+      if (request !== requestSequence.current || activeScope.current !== scope) return;
+      if (!Array.isArray(data)) throw new Error('退款记录返回格式异常，请重新加载');
         setRefunds(
           data.map((r: unknown) => {
             const item = r as Partial<RefundRequest>;
             return {
               ...item,
-              createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+              createdAt: item.createdAt ? new Date(item.createdAt) : undefined,
               processedAt: item.processedAt ? new Date(item.processedAt) : undefined,
             } as RefundRequest;
           })
         );
-      }
+        setLoadedScope(scope);
     } catch (err: unknown) {
+      if (request !== requestSequence.current || activeScope.current !== scope) return;
       console.error('[RefundManagement] 获取退款申请失败:', (err as Error).message);
+      setLoadError((err as Error).message || '退款记录加载失败，请重新加载');
     } finally {
-      setLoading(false);
+      if (request === requestSequence.current && activeScope.current === scope) setLoading(false);
     }
-  };
+  }, [currentShop?.id, scope]);
 
   useEffect(() => {
-    fetchRefunds();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentShop?.id]);
+    const requests = requestSequence;
+    setShowProcessModal(false);
+    setSelectedRefund(null);
+    setProcessError('');
+    void fetchRefunds();
+    return () => { requests.current++; };
+  }, [fetchRefunds]);
 
+  const dataReady = loadedScope === scope && !loading && !loadError;
   const shopRefunds = refunds.filter((r) => r.shopId === currentShop?.id);
   const pendingRefunds = shopRefunds.filter((r) => r.status === RefundStatus.PENDING);
   const processedRefunds = shopRefunds.filter((r) => r.status !== RefundStatus.PENDING);
 
   const handleProcess = (refund: RefundRequest, action: 'approve' | 'reject' | 'complete') => {
+    if (!dataReady || processingRef.current) return;
     setSelectedRefund(refund);
     setProcessAction(action);
     setRefundMethod('original');
@@ -63,12 +86,16 @@ const RefundManagement: React.FC = () => {
     setReceiptRef('');
     setReceiptAmount(action === 'complete' ? String(refund.amount) : '');
     setReceiptAt(action === 'complete' ? beijingDateTimeInput() : '');
+    setProcessError('');
     setShowProcessModal(true);
   };
 
   const confirmProcess = async () => {
-    if (!selectedRefund) return;
+    if (!selectedRefund || processingRef.current || !dataReady) return;
+    const actionScope = scope;
+    processingRef.current = true;
     setProcessing(true);
+    setProcessError('');
     try {
       const status = processAction === 'approve' ? RefundStatus.APPROVED : processAction === 'reject' ? RefundStatus.REJECTED : RefundStatus.COMPLETED;
       const payload: { rejectReason?: string; refundMethod?: string; receiptRef?: string; receiptAmount?: number; receiptAt?: string } = {};
@@ -86,9 +113,10 @@ const RefundManagement: React.FC = () => {
       }
 
       const result = await refundApi.updateStatus(selectedRefund.id, status, payload);
-      if (result) {
+      if (activeScope.current !== actionScope) return;
+      if (result && result.id === selectedRefund.id && result.status === status) {
         setRefunds(
-          refunds.map((r) =>
+          previous => previous.map((r) =>
             r.id === selectedRefund.id
               ? {
                   ...r,
@@ -96,7 +124,7 @@ const RefundManagement: React.FC = () => {
                   refundMethod: result.refundMethod || refundMethod,
                   rejectReason: result.rejectReason || rejectReason,
                   processedBy: result.processedBy,
-                  processedAt: result.processedAt ? new Date(result.processedAt) : new Date(),
+                  processedAt: result.processedAt ? new Date(result.processedAt) : undefined,
                   refundReceiptRef: result.refundReceiptRef,
                   refundReceiptAmount: result.refundReceiptAmount,
                   refundReceiptAt: result.refundReceiptAt ? new Date(result.refundReceiptAt) : undefined,
@@ -106,18 +134,20 @@ const RefundManagement: React.FC = () => {
               : r
           )
         );
+        setShowProcessModal(false);
+        setSelectedRefund(null);
+        setRejectReason('');
+        setReceiptRef(''); setReceiptAmount(''); setReceiptAt('');
       } else {
-        alert('处理退款失败，请重试');
+        throw new Error('退款处理结果未确认，请关闭弹窗并重新加载核对');
       }
     } catch (err: unknown) {
+      if (activeScope.current !== actionScope) return;
       console.error('[RefundManagement] 处理退款失败:', (err as Error).message);
-      alert('处理退款失败：' + (err as Error).message);
+      setProcessError('处理退款失败：' + ((err as Error).message || '请重新核对后重试'));
     } finally {
+      processingRef.current = false;
       setProcessing(false);
-      setShowProcessModal(false);
-      setSelectedRefund(null);
-      setRejectReason('');
-      setReceiptRef(''); setReceiptAmount(''); setReceiptAt('');
     }
   };
 
@@ -144,7 +174,7 @@ const RefundManagement: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         <div className="p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">此页登记退款申请和处理状态。批准申请不会自动退还余额或发起微信、支付宝退款，请在门店实际完成退款后再确认到账情况。</div>
         {/* 统计卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {dataReady && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <div className="flex items-center justify-between mb-2">
               <Clock size={24} className="text-yellow-500" />
@@ -168,9 +198,14 @@ const RefundManagement: React.FC = () => {
             </div>
             <div className="text-sm text-gray-500">已处理</div>
           </div>
-        </div>
+        </div>}
 
-        {loading ? (
+        {loadError ? (
+          <div role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">
+            <p>{loadError}</p>
+            <button onClick={() => void fetchRefunds()} className="mt-3 px-4 py-2 rounded-lg border border-red-300">重新加载</button>
+          </div>
+        ) : !dataReady ? (
           <div className="text-center text-gray-500 py-12">
             <Loader2 size={48} className="mx-auto mb-2 opacity-50 animate-spin" />
             <p>加载中...</p>
@@ -215,7 +250,7 @@ const RefundManagement: React.FC = () => {
                             </div>
                             <div className="text-right">
                               <div className="text-sm text-gray-600">预约服务</div>
-                              <div className="font-medium text-gray-800">精剪服务</div>
+                              <div className="font-medium text-gray-800 break-all">关联预约：{refund.bookingId || '未记录'}</div>
                             </div>
                           </div>
                         </div>
@@ -320,7 +355,7 @@ const RefundManagement: React.FC = () => {
       {/* 处理退款弹窗 */}
       {showProcessModal && selectedRefund && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">
               {processAction === 'approve' ? '批准退款' : processAction === 'reject' ? '拒绝退款' : '登记实际退款回执'}
             </h3>
@@ -342,6 +377,7 @@ const RefundManagement: React.FC = () => {
                   退款方式
                 </label>
                 <select
+                  disabled={processing}
                   value={refundMethod}
                   onChange={(e) => setRefundMethod(e.target.value as 'original' | 'balance' | 'bank')}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
@@ -357,6 +393,7 @@ const RefundManagement: React.FC = () => {
                   拒绝原因
                 </label>
                 <textarea
+                  disabled={processing}
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
                   rows={3}
@@ -367,13 +404,14 @@ const RefundManagement: React.FC = () => {
             ) : (
               <div className="space-y-3 mb-4">
                 <div className="text-sm text-amber-700 bg-amber-50 rounded-lg p-3">完成退款必须记录实际渠道回执；金额必须与申请金额一致。</div>
-                <input value={receiptRef} onChange={e => setReceiptRef(e.target.value)} placeholder="实际退款回执编号" className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
-                <input type="number" min="0" step="0.01" value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)} placeholder="实际退款金额" className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                <input disabled={processing} value={receiptRef} onChange={e => setReceiptRef(e.target.value)} placeholder="实际退款回执编号" className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                <input disabled={processing} type="number" min="0" step="0.01" value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)} placeholder="实际退款金额" className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
                 <label htmlFor="refund-receipt-at" className="block text-sm text-gray-700">实际退款时间（北京时间，请按渠道回执核对）</label>
-                <input id="refund-receipt-at" type="datetime-local" value={receiptAt} onChange={e => setReceiptAt(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                <input disabled={processing} id="refund-receipt-at" type="datetime-local" value={receiptAt} onChange={e => setReceiptAt(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
               </div>
             )}
 
+            {processError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{processError}</p>}
             <div className="flex gap-3">
               <button
                 onClick={() => setShowProcessModal(false)}

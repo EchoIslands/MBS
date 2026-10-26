@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Clock, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
 import { useAppStore } from '../../store';
@@ -6,6 +6,7 @@ import { mockRefundRequests, mockBookings } from '../../../shared/mockData';
 import {isRealApi} from '../../../shared/api-base';
 import {refundApi,bookingApi} from '../../api';
 import { Booking, RefundRequest, RefundStatus } from '../../../shared/types';
+import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const RefundPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,31 +21,50 @@ const RefundPage: React.FC = () => {
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
-  useEffect(()=>{
+  const [loadError,setLoadError]=useState('');
+  const [loadedScope,setLoadedScope]=useState('');
+  const scope=`${currentCustomer?.id || ''}:${currentCustomer?.shopId || ''}`;
+  const activeScope=useRef(scope);
+  activeScope.current=scope;
+  const sequence=useRef(0);
+  const savingRef=useRef(false);
+  const load=useCallback(async()=>{
+    const request=++sequence.current;
     if(!currentCustomer?.id) {setLoading(false);return;}
-    (async()=>{
+    setLoading(true);setLoadError('');
       try {
         if(isRealApi()) {
           const [refunds,appointments]=await Promise.all([refundApi.getByCustomer(currentCustomer.id),bookingApi.getCustomerBookings(currentCustomer.id)]);
+          if(request!==sequence.current || activeScope.current!==scope) return;
           setRecords(refunds);setBookings(appointments);
         } else {setRecords(mockRefundRequests.filter(r=>r.customerId===currentCustomer.id));setBookings(mockBookings.filter(b=>b.customerId===currentCustomer.id));}
-      } catch(e) {setError(e instanceof Error?e.message:'退款信息加载失败');}
-      finally {setLoading(false);}
-    })();
-  },[currentCustomer?.id]);
+        setLoadedScope(scope);
+      } catch(e) {if(request===sequence.current && activeScope.current===scope) setLoadError(e instanceof Error?e.message:'退款信息加载失败');}
+      finally {if(request===sequence.current && activeScope.current===scope) setLoading(false);}
+  },[currentCustomer?.id,scope]);
+  useEffect(()=>{
+    const requests=sequence;
+    setShowApplyForm(false);setSelectedBooking('');setReason('');setSubmitted(false);setError('');
+    void load();
+    return ()=>{requests.current++;};
+  },[load]);
+  const dataReady=loadedScope===scope && !loading && !loadError;
   const customerRefunds=records;
   const refundableBookings=bookings.filter(b=>b.status!=='cancelled' && !records.some(r=>r.bookingId===b.id && r.status!==RefundStatus.REJECTED));
   const handleSubmit=async(e:React.FormEvent)=>{
-    e.preventDefault();if(saving || !currentCustomer?.id) return;
+    e.preventDefault();if(savingRef.current || !dataReady || !currentCustomer?.id) return;
+    const actionScope=scope;
+    savingRef.current=true;
     setSaving(true);setError('');
     try {
       if(isRealApi()) {
         const record=await refundApi.requestByCustomer(currentCustomer.id,selectedBooking,reason);
+        if(activeScope.current!==actionScope) return;
         setRecords(prev=>[record,...prev.filter(r=>r.id!==record.id)]);
       }
       setSubmitted(true);
-    } catch(e) {setError(e instanceof Error?e.message:'退款申请未提交');}
-    finally {setSaving(false);}
+    } catch(e) {if(activeScope.current===actionScope) setError(e instanceof Error?e.message:'退款申请未提交');}
+    finally {savingRef.current=false;setSaving(false);}
   };
 
   const getStatusIcon = (status: RefundStatus) => {
@@ -111,11 +131,15 @@ const RefundPage: React.FC = () => {
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {loading && <p className="text-gray-500">加载中...</p>}
         {error && <p role="alert" className="text-red-600">{error}</p>}
+        {loadError && <div role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">
+          <p>{loadError}</p>
+          <button onClick={()=>void load()} className="mt-3 px-4 py-2 border border-red-300 rounded-lg">重新加载</button>
+        </div>}
         <p className="text-sm text-gray-500">仅已付款的服务可申请退款，金额按实际付款核定。申请由门店审核，到账以门店实际处理结果为准。</p>
         {/* 申请退款按钮 */}
-        {!showApplyForm && (
+        {dataReady && !showApplyForm && (
           <button
-            onClick={() => setShowApplyForm(true)}
+            onClick={() => {setSubmitted(false);setError('');setShowApplyForm(true);}}
             className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-4 rounded-2xl font-semibold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
           >
             <AlertCircle size={20} />
@@ -124,7 +148,7 @@ const RefundPage: React.FC = () => {
         )}
 
         {/* 申请退款表单 */}
-        {showApplyForm && (
+        {dataReady && showApplyForm && (
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4">提交退款申请</h2>
             
@@ -141,6 +165,7 @@ const RefundPage: React.FC = () => {
                     选择预约
                   </label>
                   <select
+                    disabled={saving}
                     value={selectedBooking}
                     onChange={(e) => setSelectedBooking(e.target.value)}
                     required
@@ -161,6 +186,7 @@ const RefundPage: React.FC = () => {
                     退款原因
                   </label>
                   <textarea
+                    disabled={saving}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     required
@@ -173,6 +199,7 @@ const RefundPage: React.FC = () => {
                 <div className="flex gap-3">
                   <button
                     type="button"
+                    disabled={saving}
                     onClick={() => setShowApplyForm(false)}
                     className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
                   >
@@ -191,7 +218,7 @@ const RefundPage: React.FC = () => {
         )}
 
         {/* 退款记录 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6">
+        {dataReady && <div className="bg-white rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4">退款记录</h2>
           
           {customerRefunds.length > 0 ? (
@@ -230,6 +257,12 @@ const RefundPage: React.FC = () => {
                         {new Date(refund.processedAt).toLocaleString('zh-CN')}
                       </div>
                     )}
+                    {refund.refundReceiptRef && <div className="mt-3 rounded-lg bg-green-50 p-3 space-y-1 break-words">
+                      <div>退款回执编号：{refund.refundReceiptRef}</div>
+                      <div>实际退款金额：{refund.refundReceiptAmount == null ? '未记录' : `¥${Number(refund.refundReceiptAmount).toFixed(2)}`}</div>
+                      <div>实际退款时间（北京时间）：{settlementDateLabel(refund.refundReceiptAt)}</div>
+                      <div className="text-xs">门店人工登记回执，请以实际渠道到账为准。</div>
+                    </div>}
                   </div>
                 </div>
               ))}
@@ -240,18 +273,12 @@ const RefundPage: React.FC = () => {
               <p>暂无退款记录</p>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* 退款政策说明 */}
         <div className="bg-blue-50 rounded-2xl p-6">
-          <h3 className="font-bold text-blue-800 mb-3">退款政策</h3>
-          <ul className="text-sm text-blue-700 space-y-2">
-            <li>• 服务开始前24小时可全额退款</li>
-            <li>• 服务开始前12小时退款收取20%手续费</li>
-            <li>• 服务开始前2小时内不支持退款</li>
-            <li>• 如遇服务质量问题，可申请全额退款</li>
-            <li>• 退款将在1-3个工作日内原路返回</li>
-          </ul>
+          <h3 className="font-bold text-blue-800 mb-3">退款说明</h3>
+          <p className="text-sm text-blue-700">退款条件、办理方式及到账时间请联系门店确认。申请获批不代表款项已到账，请以实际退款凭据和渠道到账记录为准。</p>
         </div>
       </div>
     </div>
