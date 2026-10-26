@@ -124,6 +124,15 @@
   <!-- 主内容区 -->
   <view wx:if="{{customer}}" class="container profile-content">
 
+    <view class="card product-orders-entry" bindtap="goToProductOrders" role="button" aria-label="我的商品订单">
+      <mbs-icon name="shoppingBag" size="40" color="var(--primary)" />
+      <view class="product-orders-entry-text">
+        <view class="product-orders-entry-title">我的商品订单</view>
+        <view class="product-orders-entry-hint">查看订单、提货与退款</view>
+      </view>
+      <mbs-icon name="chevronRight" size="32" color="var(--text-tertiary)" />
+    </view>
+
     <!-- 股东会员权益说明卡 -->
     <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-benefits-card">
       <view class="card-title stockholder-benefits-title">

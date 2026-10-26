@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   User, Calendar, Star, LogOut, Clock, CheckCircle, AlertCircle, MessageSquare,
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
-  X, Phone, Scissors, MapPin, Loader2, Ticket, Share2,
+  X, Phone, Scissors, MapPin, Loader2, Ticket, Share2, Package,
 } from 'lucide-react';
 import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType, Shop, MemberBenefitRecord } from '../../../shared/types';
 import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
@@ -340,6 +340,25 @@ const Profile: React.FC = () => {
 
       {/* 主内容区 —— 手机端减少 padding */}
       <div className="max-w-4xl mx-auto px-3 sm:px-4 -mt-2 sm:-mt-3 pb-6">
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!currentCustomer?.shopId) {
+              alert('门店信息未加载，请刷新个人中心后重试');
+              return;
+            }
+            navigate(`/customer/product-orders/${encodeURIComponent(currentCustomer.shopId)}`);
+          }}
+          className="w-full flex items-center gap-3 bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100 text-left hover:bg-orange-50 transition-colors"
+        >
+          <Package size={24} className="text-orange-500 shrink-0" />
+          <span className="flex-1">
+            <span className="block font-bold text-gray-800">我的商品订单</span>
+            <span className="block text-sm text-gray-500 mt-1">查看订单、提货与退款</span>
+          </span>
+          <ChevronRight size={20} className="text-gray-400 shrink-0" />
+        </button>
 
         {/* 股东会员权益说明 */}
         {stockholderSummary.isStockholder && stockholderSummary.enabled && (

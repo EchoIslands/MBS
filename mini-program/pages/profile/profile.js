@@ -415,6 +415,19 @@ Page({
     wx.showToast({ title: '功能开发中', icon: 'none' });
   },
 
+  goToProductOrders() {
+    const { customer } = this.data;
+    if (!customer) {
+      ensureLogin({ content: '登录后即可查看你的商品订单' });
+      return;
+    }
+    if (!customer.shopId) {
+      wx.showToast({ title: '门店信息未加载，请刷新后重试', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/product-orders/product-orders?shopId=${encodeURIComponent(customer.shopId)}` });
+  },
+
   
   goToPackages() {
     const { customer } = this.data;

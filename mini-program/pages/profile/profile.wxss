@@ -986,5 +986,15 @@
 .min-w-0 { min-width: 0; }
 .text-center { text-align: center; }
 
+.product-orders-entry {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.product-orders-entry-text { flex: 1; min-width: 0; }
+.product-orders-entry-title { font-size: 30rpx; font-weight: 700; color: var(--text-primary); }
+.product-orders-entry-hint { margin-top: 8rpx; font-size: 24rpx; color: var(--text-secondary); }
+
 /* 未使用但保留给 JS 动态类 */
 .bg-gray-light { background: var(--gray-100); }
