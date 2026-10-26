@@ -12,7 +12,7 @@ import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
 import { bookingAccess } from '../middleware/bookingAccess.js';
 import { customerSession, resourceAccess, ownRecord, optionalStaff, shopContext } from '../middleware/resourceAccess.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
-import { mapCustomerBodyToDB, validateCustomerData, isValidPhone, CUSTOMER_ACCOUNT_FIELDS } from '../utils/customerMapper.js';
+import { mapCustomerBodyToDB, validateCustomerData, isValidPhone, CUSTOMER_ACCOUNT_FIELDS, customerValuesEqual } from '../utils/customerMapper.js';
 import {
   calcDiscountedItemPrice,
   getEffectivePurchaseVIPLevel,
@@ -2002,43 +2002,39 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
       return;
     }
 
-    const { data, error } = await scopeCustomerQuery(supabase.from('customers').select('*'), req)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('[customers] 查询客户列表失败:', error.message);
-      res.status(500).json({ success: false, error: '查询客户列表失败' });
-      return;
-    }
-
-    const customers = toCamelCaseList(data || []);
-
-    // 批量查询客户画像与到店记录，按 customer_id 聚合
-    const customerIds = customers.map((c) => c.id).filter(Boolean);
-    let profilesMap: Record<string, unknown> = {};
-    let visitsMap: Record<string, unknown[]> = {};
-
-    if (customerIds.length > 0) {
-      const [{ data: profiles }, { data: visits }] = await Promise.all([
-        supabase.from('customer_profiles').select('*').in('customer_id', customerIds),
-        supabase
-          .from('customer_visit_records')
-          .select('*')
-          .in('customer_id', customerIds)
-          .order('check_in_time', { ascending: false }),
+    // Explicit pages prevent PostgREST's row cap from silently hiding customers/visits.
+    // Every query retains employee scope; enrichment failure cannot masquerade as empty history.
+    const rows: DbRecord[] = [];
+    const readPages = async (query: () => {
+      range: (start: number, end: number) => PromiseLike<{data: DbRecord[] | null; error: unknown}>;
+    }): Promise<DbRecord[]> => {
+      const all: DbRecord[] = [];
+      for (let page = 0; page < 200; page++) {
+        const {data,error} = await query().range(page * 500, page * 500 + 499);
+        if (error || !Array.isArray(data)) throw new Error('客户及到店资料同步失败，请刷新重试');
+        all.push(...data);
+        if (data.length < 500) return all;
+      }
+      throw new Error('客户资料超过单次同步上限，请联系项目维护人员');
+    };
+    rows.push(...await readPages(() => scopeCustomerQuery(supabase.from('customers').select('*'), req)
+      .order('created_at', {ascending:false}).order('id', {ascending:false})));
+    const customers = toCamelCaseList(rows);
+    const customerIds = customers.map(c => c.id).filter(Boolean);
+    const profilesMap: Record<string, unknown> = {};
+    const visitsMap: Record<string, DbRecord[]> = {};
+    // Bound URL size and DB load; each batch still reads all of its pages.
+    for (let offset = 0; offset < customerIds.length; offset += 100) {
+      const ids = customerIds.slice(offset, offset + 100);
+      const [profiles,visits] = await Promise.all([
+        readPages(() => supabase.from('customer_profiles').select('*').in('customer_id',ids).order('id',{ascending:true})),
+        readPages(() => supabase.from('customer_visit_records').select('*').in('customer_id',ids).order('check_in_time',{ascending:false}).order('id',{ascending:false})),
       ]);
-
-      profilesMap = (profiles || []).reduce((acc, p) => {
-        acc[p.customer_id as string] = toCamelCase(p) as DbRecord;
-        return acc;
-      }, {} as Record<string, DbRecord>);
-
-      visitsMap = (visits || []).reduce((acc, v) => {
-        const camel = toCamelCase(v) as DbRecord;
-        if (!acc[camel.customerId as string]) acc[camel.customerId as string] = [];
-        (acc[camel.customerId as string] as DbRecord[]).push(camel);
-        return acc;
-      }, {} as Record<string, DbRecord[]>);
+      for (const profile of profiles) profilesMap[profile.customer_id as string] = toCamelCase(profile);
+      for (const visit of visits) {
+        const camel = toCamelCase(visit);
+        (visitsMap[camel.customerId as string] ||= []).push(camel);
+      }
     }
 
     const enriched = customers.map((c) => ({
@@ -2136,15 +2132,15 @@ customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Requ
     const expected=mapCustomerBodyToDB(body._expected && typeof body._expected==='object' ? body._expected : {});
     const accountChanges:string[]=[];
     for(const [field,value] of Object.entries(updateData)) {
-      if(!CUSTOMER_ACCOUNT_FIELDS.has(field)) continue;
-      if(canonicalJson(value ?? null)===canonicalJson(current[field] ?? null)) { delete updateData[field]; continue; }
-      if(!Object.prototype.hasOwnProperty.call(expected,field) || canonicalJson(expected[field] ?? null)!==canonicalJson(current[field] ?? null)) {
-        return res.status(409).json({success:false,error:'客户余额或会员资料已变化，请刷新后重新核对修改'});
+      if(customerValuesEqual(field,value,current[field])) { delete updateData[field]; continue; }
+      const hasExpected=Object.prototype.hasOwnProperty.call(expected,field);
+      if((CUSTOMER_ACCOUNT_FIELDS.has(field) && !hasExpected) || (hasExpected && !customerValuesEqual(field,expected[field],current[field]))) {
+        return res.status(409).json({success:false,error:'客户资料已变化，请刷新后重新核对修改'});
       }
-      if(typeof current[field]==='number' || ['balance','stored_value_balance','withdrawable_referral_amount','withdrawable_amount','referral_earnings','total_spent','points','visit_count','total_saved','shared_fund','total_shared_fund','referral_consumption','referral_bonus_rate'].includes(field)) {
+      if(CUSTOMER_ACCOUNT_FIELDS.has(field) && (typeof current[field]==='number' || ['balance','stored_value_balance','withdrawable_referral_amount','withdrawable_amount','referral_earnings','total_spent','points','visit_count','total_saved','shared_fund','total_shared_fund','referral_consumption','referral_bonus_rate'].includes(field))) {
         if(typeof value!=='number' || !Number.isFinite(value) || value<0) return res.status(400).json({success:false,error:'金额和统计数值必须是非负数'});
       }
-      accountChanges.push(field);
+      if (hasExpected) accountChanges.push(field);
     }
     const balanceCandidate = Object.prototype.hasOwnProperty.call(updateData,'stored_value_balance') ? updateData.stored_value_balance : updateData.balance;
     if (Object.prototype.hasOwnProperty.call(updateData,'stored_value_balance') && Object.prototype.hasOwnProperty.call(updateData,'balance') &&
@@ -2153,6 +2149,9 @@ customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Requ
     }
     const balanceChanged = (Object.prototype.hasOwnProperty.call(updateData,'stored_value_balance') || Object.prototype.hasOwnProperty.call(updateData,'balance')) &&
       canonicalJson(balanceCandidate ?? null) !== canonicalJson(current.stored_value_balance ?? null);
+    if (balanceChanged && Object.keys(updateData).some(field => !['balance','stored_value_balance'].includes(field) && !customerValuesEqual(field,updateData[field],current[field]))) {
+      return res.status(400).json({success:false,error:'余额调整请单独保存，其他资料请另一次修改'});
+    }
     if (balanceChanged) {
       const expectedBalance = Number(current.stored_value_balance ?? 0);
       const newBalance = Number(balanceCandidate);
@@ -2171,7 +2170,10 @@ customersRouter.put('/:id', requirePermission('customer:edit'), async (req: Requ
     }
     if(!Object.keys(updateData).length) return res.json({success:true,data:toCamelCase(balanceChanged ? (await supabase.from('customers').select('*').eq('id',id).eq('shop_id',shopId).single()).data || current : current)});
     let update=supabase.from('customers').update(updateData).eq('id',id).eq('shop_id',shopId);
-    for(const field of accountChanges) update=current[field]==null ? update.is(field,null) : update.eq(field,current[field]);
+    for(const field of accountChanges) {
+      const oldValue=Array.isArray(current[field]) ? '{'+(current[field] as unknown[]).map(value=>'"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"').join(',')+'}' : current[field];
+      update=oldValue==null ? update.is(field,null) : update.eq(field,oldValue);
+    }
     const {data,error}=await update.select().maybeSingle();
 
     if (error) {

@@ -151,7 +151,7 @@ tables.shops[0]={id:'shop1',name:'本地合成测试门店',phone:'13800000000',
 tables.customers[0]={...tables.customers[0],shop_id:'shop1',name:'合成顾客',tags:[],is_weak_password:true,identity_verified:false,balance:100,stored_value_balance:100,purchase_vip_level:'regular',stored_value_level:'none',password_hash:await hashPassword('123456')};
 tables.employees[0]={...tables.employees[0],shop_id:'shop1',phone:'13800000009'};
 tables.employees[2]={...tables.employees[2],shop_id:'shop1',phone:'13800000008'};
-if(customerSaveMode) Object.assign(tables.customers[0],{age:null,birthday:null,gender:'other',source:'',is_stockholder:false,stockholder_since:null,points:0,total_spent:0,visit_count:0,membership_level:'regular',balance:10,stored_value_balance:10});
+if(customerSaveMode) Object.assign(tables.customers[0],{age:null,birthday:null,gender:'other',source:'',is_stockholder:false,stockholder_since:null,points:0,total_spent:0,visit_count:0,membership_level:'regular',balance:10,stored_value_balance:10,last_visit_at:"2026-09-24T08:36:33.685+00:00",created_at:"2026-09-01T06:00:00Z",shared_fund:null,last_service_items:["原有服务"]});
 if(productListMode) {
  tables.product_orders=[
   {id:'synthetic-product-order',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',order_no:'SYNTHETIC-PRODUCT-001',status:'paid',payment_method:'balance',payment_status:'paid',total_amount:12,discount_amount:0,payable_amount:12,created_at:'2026-10-26T04:00:00Z'},
@@ -197,7 +197,7 @@ const {default:handler}=await import('../../api/index.js');
 const server=createServer((req,res)=>{
  if(customerSaveMode && req.method==='GET' && req.url==='/api/__fixture/customer-save') {
   res.setHeader('Content-Type','application/json');
-  res.end(JSON.stringify({balance:tables.customers[0].stored_value_balance,adjustments:tables.stored_value_transactions||[]}));return;
+  res.end(JSON.stringify({balance:tables.customers[0].stored_value_balance,adjustments:tables.stored_value_transactions||[],lastVisitAt:tables.customers[0].last_visit_at,sharedFund:tables.customers[0].shared_fund,customerCount:tables.customers.filter(c=>c.shop_id==="shop1").length}));return;
  }
  res.once('finish',()=>console.log('[合成HTTP]',req.method,req.url?.split('?')[0],res.statusCode));
  void handler(req as any,res as any);

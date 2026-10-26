@@ -4,6 +4,7 @@ import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSe
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
 import { getEmployeePassword } from './lib/employeePassword';
+import { notifyCustomerChange } from './lib/customerChanges';
 
 interface AuthUser extends Employee {
   shopId?: string;
@@ -970,7 +971,7 @@ const normalizeCustomerDates = (customer: Customer): Customer => {
   };
   return {
     ...customer,
-    joinedAt: toDate(customer.joinedAt) || new Date(),
+    joinedAt: toDate(customer.joinedAt) || toDate((customer as Customer & {createdAt?: string}).createdAt) || customer.joinedAt,
     lastVisitAt: toDate(customer.lastVisitAt),
     birthday: toDate(customer.birthday),
     purchaseVIPExpiresAt: toDate(customer.purchaseVIPExpiresAt),
@@ -1008,6 +1009,7 @@ export const customerApi = {
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || '核实失败');
+    notifyCustomerChange();
   },
   login: async (phone: string, password?: string, setupPassword = false): Promise<{ setupRequired: boolean; customer?: Customer } | null> => {
     if (!USE_REAL_API) return null;
@@ -1025,6 +1027,7 @@ export const customerApi = {
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || '重置失败');
+    notifyCustomerChange();
   },
 
   // 获取全部客户（带缓存回退）
@@ -1062,7 +1065,7 @@ export const customerApi = {
         body: JSON.stringify(data),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.success) return result.data;
+      if (result?.success) { notifyCustomerChange(); return normalizeCustomerDates(result.data); }
       throw new Error('操作失败或无权访问');
     }
     // Mock fallback
@@ -1087,7 +1090,7 @@ export const customerApi = {
         body: JSON.stringify({ ...patch, _expected: expected }),
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.success) return result.data;
+      if (result?.success) { notifyCustomerChange(); return normalizeCustomerDates(result.data); }
       throw new Error('操作失败或无权访问');
     }
     const idx = mockCustomers.findIndex((c) => c.id === id);
@@ -1106,7 +1109,7 @@ export const customerApi = {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (result?.success) return true;
+      if (result?.success) { notifyCustomerChange(); return true; }
       throw new Error('删除失败或无权访问');
     }
     const idx = mockCustomers.findIndex((c) => c.id === id);

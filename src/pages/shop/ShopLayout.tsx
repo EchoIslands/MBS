@@ -73,12 +73,6 @@ const menuItems: MenuItem[] = [
     roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
   },
   {
-    label: '客户表格管理',
-    path: '/shop/customers-table',
-    icon: <FileText size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER],
-  },
-  {
     label: '客户智能召回',
     path: '/shop/customer-recall',
     icon: <Bell size={18} />,
@@ -267,7 +261,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 
   const displayTitle =
     title ||
-    visibleMenus.find((m) => location.pathname.startsWith(m.path) && m.path !== '/shop')
+    visibleMenus.find((m) => (location.pathname === m.path || location.pathname.startsWith(m.path + '/')) && m.path !== '/shop')
       ?.label ||
     visibleMenus.find((m) => m.path === location.pathname)?.label ||
     '首页概览';
@@ -411,7 +405,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
               const isActive =
                 item.path === '/shop'
                   ? location.pathname === '/shop'
-                  : location.pathname.startsWith(item.path);
+                  : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
               return (
                 <button
                   key={item.path}
@@ -451,7 +445,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
             const isActive =
               item.path === '/shop'
                 ? location.pathname === '/shop'
-                : location.pathname.startsWith(item.path);
+                : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
             return (
               <button
                 key={item.path}

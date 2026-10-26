@@ -61,15 +61,22 @@ export const CUSTOMER_ACCOUNT_FIELDS = new Set([
 ]);
 
 /**
- * 需要按日期处理的字段（只保留 YYYY-MM-DD 部分）
+ * 生日是日历日期，其他账户时间都是timestamptz，禁止截断其时分秒。
  */
 const DATE_FIELDS = new Set([
   'birthday',
-  'last_visit_at',
-  'purchase_vip_expires_at',
-  'stored_value_expires_at',
-  'stockholder_since',
 ]);
+
+export const CUSTOMER_TIMESTAMP_FIELDS = new Set(['last_visit_at','purchase_vip_expires_at','stored_value_expires_at','stockholder_since']);
+
+export function customerValuesEqual(field: string, left: unknown, right: unknown): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  if (CUSTOMER_TIMESTAMP_FIELDS.has(field)) {
+    const a = new Date(left as string).getTime(), b = new Date(right as string).getTime();
+    return Number.isFinite(a) && Number.isFinite(b) && a === b;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 /**
  * 必须是数组的字段

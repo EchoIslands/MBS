@@ -37,6 +37,7 @@ let failMigration = false;
 let failAuthentication = false;
 let failPaymentQuery = false;
 let failDashboardTable = '';
+let syntheticRowCap: number | undefined;
 class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
  rowStart=0;rowEnd:number|undefined;exactCount=false;
@@ -56,7 +57,7 @@ class Query {
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
   const matched=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
-  let rows=matched.slice(this.rowStart,this.rowEnd).slice(0,this.maxRows);
+  let rows=matched.slice(this.rowStart,this.rowEnd).slice(0,this.maxRows ?? syntheticRowCap);
   if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
   if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
   if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
@@ -511,6 +512,24 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const large=await request('/customers/login','','POST',{value:'x'.repeat(3*1024*1024)});assert.equal(large.status,413);
    tables.bookings=[];
   });
+  await t.test('客户目录完整分页、到店记录不截断；资料查询失败不能返回假空历史',async()=>{
+   const token=await login('ceo');
+   const beforeCustomers=structuredClone(tables.customers),beforeVisits=structuredClone(tables.customer_visit_records),beforeProfiles=structuredClone(tables.customer_profiles);
+   try {
+    syntheticRowCap=1000;
+    tables.customers=Array.from({length:1003},(_,i)=>({id:'page-c'+i,shop_id:'s1',name:'合成分页'+i,phone:'13800000001',served_by_stylist_ids:[]}));
+    tables.customers.push({id:'other-page',shop_id:'s2',name:'跨店不能出现',phone:'13800000002'});
+    tables.customer_visit_records=Array.from({length:1002},(_,i)=>({id:'page-v'+i,customer_id:'page-c0',check_in_time:'2026-10-01T08:00:00Z'}));
+    tables.customer_profiles=[{id:'page-p',customer_id:'page-c1002',hair_type:'dry'}];
+    const result=await request('/customers',token);
+    assert.equal(result.status,200);assert.equal(result.body.data.length,1003);
+    assert.equal(result.body.data.find((c:Row)=>c.id==='page-c0').visitRecords.length,1002);
+    assert.equal(result.body.data.find((c:Row)=>c.id==='page-c1002').profile.hairType,'dry');
+    assert.ok(!result.body.data.some((c:Row)=>c.id==='other-page'));
+    failDashboardTable='customer_visit_records';
+    const failed=await request('/customers',token);assert.equal(failed.status,500);assert.equal(failed.body.success,false);assert.equal(failed.body.data,undefined);
+   } finally {tables.customers=beforeCustomers;tables.customer_visit_records=beforeVisits;tables.customer_profiles=beforeProfiles;failDashboardTable='';syntheticRowCap=undefined;}
+  });
   await t.test('客户资料只改姓名不改余额，经营字段需旧值且拒绝过期覆盖',async()=>{
    const c=tables.customers[0],before=structuredClone(c);
    try {
@@ -526,6 +545,23 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:-1,_expected:{storedValueBalance:222}})).status,400);
     assert.equal((await request('/customers/c1',ceo,'PUT',{storedValueBalance:333,_expected:{storedValueBalance:before.stored_value_balance}})).status,409);
    } finally {Object.assign(c,before);}
+  });
+  await t.test('客户统一编辑：日期旧值不截断，资料快照冲突拒绝，余额与其他改动不能部分成功',async()=>{
+   const c=tables.customers[0],before=structuredClone(c);
+   const beforeLedger=structuredClone(tables.stored_value_transactions || []);
+   try {
+    c.last_visit_at='2026-09-24T08:36:33.685+00:00';
+    const response=await request('/customers/c1',ceo,'PUT',{lastVisitAt:'2026-09-24T08:37:00.000Z',_expected:{lastVisitAt:'2026-09-24T08:36:33.685Z'}});
+    assert.equal(response.status,200);assert.equal(c.last_visit_at,'2026-09-24T08:37:00.000Z');
+    const stale=await request('/customers/c1',ceo,'PUT',{lastVisitAt:'2026-09-24T08:38:00.000Z',_expected:{lastVisitAt:'2026-09-24T08:36:33.685Z'}});
+    assert.equal(stale.status,409);
+    c.name='Concurrent edit';
+    assert.equal((await request('/customers/c1',ceo,'PUT',{name:'Overwrite',_expected:{name:before.name}})).status,409);
+    assert.equal(c.name,'Concurrent edit');
+    const mixed=await request('/customers/c1',ceo,'PUT',{storedValueBalance:c.stored_value_balance+35,name:'Another name',_expected:{storedValueBalance:c.stored_value_balance,name:c.name}});
+    assert.equal(mixed.status,400);assert.equal(c.stored_value_balance,before.stored_value_balance);
+    assert.deepEqual(tables.stored_value_transactions || [],beforeLedger);
+   } finally { for(const key of Object.keys(c))delete c[key];Object.assign(c,before); }
   });
   await t.test('商品订单列表：员工上下文、同店与角色、分页和明细失败',async()=>{
    const beforeOrders=tables.product_orders,beforeItems=tables.product_order_items;

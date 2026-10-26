@@ -11,11 +11,11 @@ const bundle = await build({
   define: { 'import.meta.env': JSON.stringify({ PROD: true }) }, logLevel: 'silent',
 });
 
-function client(failure?: string) {
+function client(failure?: string, browserGlobals: Record<string, unknown> = {}) {
   const requests: Record<string, any>[] = [];
   const module = { exports: {} as any };
   const context = vm.createContext({
-    module, exports: module.exports, console, AbortController, setTimeout, clearTimeout,
+    module, exports: module.exports, console, AbortController, setTimeout, clearTimeout, ...browserGlobals,
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     fetch: async (url: string, options: RequestInit) => {
       assert.equal(url, '/api/customers/synthetic-customer');
@@ -58,4 +58,15 @@ test('实际客户API：服务端拒绝仍抛出原错误，不伪装成功', as
   const { api, requests } = client('客户余额或会员资料已变化，请刷新后重新核对修改');
   await assert.rejects(api.update(previous.id, { ...previous, storedValueBalance: 0 }, previous), /客户余额或会员资料已变化/);
   assert.equal(requests.length, 1);
+});
+
+test('实际客户API：浏览器禁用跨标签广播不影响已成功保存，广播不包含客户资料', async () => {
+  const events: string[] = [];
+  const {api,requests} = client(undefined, {
+    window: {dispatchEvent: (event: Event) => {events.push(event.type);}}, Event,
+    BroadcastChannel: class {constructor() {throw new Error('Synthetic SecurityError');}},
+  });
+  await api.update(previous.id, {storedValueBalance:0}, previous);
+  assert.equal(requests.length,1);
+  assert.deepEqual(events,['mbs:customers-changed']);
 });
