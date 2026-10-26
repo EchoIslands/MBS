@@ -249,8 +249,9 @@ const RefundManagement: React.FC = () => {
                               <div className="text-2xl font-bold text-orange-500">¥{refund.amount}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm text-gray-600">预约服务</div>
-                              <div className="font-medium text-gray-800 break-all">关联预约：{refund.bookingId || '未记录'}</div>
+                              <div className="text-sm text-gray-600">原单信息</div>
+                              <div className="font-medium text-gray-800 break-all">结算单：{refund.settlementId || '历史申请未关联结算单'}</div>
+                              {refund.bookingId && <div className="text-sm text-gray-600 break-all">关联预约：{refund.bookingId}</div>}
                             </div>
                           </div>
                         </div>
@@ -301,6 +302,7 @@ const RefundManagement: React.FC = () => {
                             <div className="text-sm text-gray-500">
                               处理时间：{refund.processedAt && new Date(refund.processedAt).toLocaleString('zh-CN')}
                             </div>
+                            {refund.settlementId && <div className="text-sm text-gray-500 break-all">结算单：{refund.settlementId}</div>}
                           </div>
                           <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${statusConfig.color}`}>
                             <StatusIcon size={16} />
@@ -361,6 +363,7 @@ const RefundManagement: React.FC = () => {
             </h3>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
+              {selectedRefund.settlementId && <div className="text-sm text-gray-600 break-all mb-2">原结算单：{selectedRefund.settlementId}</div>}
               <div className="flex justify-between mb-2">
                 <span className="text-gray-600">顾客</span>
                 <span className="font-medium">{selectedRefund.customerName}</span>

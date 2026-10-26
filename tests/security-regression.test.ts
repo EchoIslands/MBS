@@ -608,6 +608,51 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     failDashboardTable='';tables.product_orders=beforeOrders;tables.product_order_items=beforeItems;
    }
   });
+  await t.test('原结算退款HTTP：本人及同店身份取服务端，完整分页，缺迁移不返回假空',async()=>{
+   const {signCustomerToken}=await import('../backend/lib/tokens.js');
+   const hash=await hashPassword('246810');tables.customers[1].password_hash=hash;tables.customers[1].is_weak_password=false;
+   const own=signCustomerToken('c2','s1',hash);
+   const savedRpc=(supabase as any).rpc;
+   const trace:{name:string;args:any}[]=[];
+   let mode='ok';
+   const rows=Array.from({length:206},(_,i)=>({settlement_id:'candidate-'+String(i).padStart(4,'0'),booking_id:null,amount:33.64,payment_method:'wechat',created_at:'2026-10-24T07:28:20Z',service_name:'Synthetic'}));
+   (supabase as any).rpc=async(name:string,args:any)=>{
+    if(!['get_service_refund_candidates','request_settlement_refund_atomic','request_service_refund_atomic'].includes(name)) return savedRpc(name,args);
+    trace.push({name,args});
+    if(mode==='missing') return {data:null,error:{code:'PGRST202'}};
+    if(name==='get_service_refund_candidates') {
+     if(mode==='second-page-failure' && args.p_after_id) return {data:null,error:{code:'08006'}};
+     return {data:rows.filter(r=>r.settlement_id>args.p_after_id).slice(0,100),error:null};
+    }
+    if(args.p_customer_id!=='c2'||args.p_shop_id!=='s1')return {data:null,error:{message:'ORDER_NOT_FOUND'}};
+    return {data:[{id:'synthetic-application',settlement_id:args.p_settlement_id || 'old-unique',booking_id:args.p_booking_id || null,
+     shop_id:args.p_shop_id,customer_id:args.p_customer_id,amount:33.64,status:'pending',reason:args.p_reason}],error:null};
+   };
+   try {
+    const url='/refunds/customer/c2';
+    assert.equal((await request(url+'/candidates')).status,401);
+    assert.equal((await request('/refunds/customer/c1/candidates',own)).status,403);
+    const listed=await request(url+'/candidates?shopId=s2&customerId=c1',own);
+    assert.equal(listed.status,200);assert.equal(listed.body.data.length,206);
+    assert.deepEqual(trace.map(c=>c.args.p_after_id),['','candidate-0099','candidate-0199']);
+    assert.ok(trace.every(c=>c.args.p_customer_id==='c2'&&c.args.p_shop_id==='s1'));
+    const before=trace.length;
+    for(const body of [{settlementId:'x',bookingId:'b',reason:'Both'},{settlementId:'',reason:'Empty'},{settlementId:'x',reason:''}])
+     assert.equal((await request(url,own,'POST',body)).status,400);
+    assert.equal(trace.length,before);
+    const submitted=await request(url,own,'POST',{settlementId:'walkin',reason:' Synthetic ',amount:999,shopId:'s2',customerId:'c1'});
+    assert.equal(submitted.status,201);assert.equal(submitted.body.data.amount,33.64);assert.equal(submitted.body.data.settlementId,'walkin');
+    assert.deepEqual(trace.at(-1)?.args,{p_customer_id:'c2',p_shop_id:'s1',p_settlement_id:'walkin',p_reason:'Synthetic'});
+    assert.equal((await request(url,own,'POST',{bookingId:'old-booking',reason:'Legacy'})).status,201);
+    assert.equal(trace.at(-1)?.name,'request_service_refund_atomic');
+    assert.equal((await request('/refunds',stylist,'POST',{customerId:'c2',settlementId:'walkin',reason:'Forbidden'})).status,403);
+    assert.equal((await request('/refunds',ceo,'POST',{customerId:'c2',shopId:'s2',settlementId:'walkin',reason:'Cross shop'})).status,403);
+    const staff=await request('/refunds',ceo,'POST',{customerId:'c2',settlementId:'walkin',reason:'Staff'});
+    assert.equal(staff.status,201);assert.equal(trace.at(-1)?.args.p_shop_id,'s1');
+    mode='second-page-failure';const failed=await request(url+'/candidates',own);assert.equal(failed.status,503);assert.equal(failed.body.data,undefined);
+    mode='missing';assert.equal((await request(url+'/candidates',own)).status,503);assert.equal((await request(url,own,'POST',{settlementId:'walkin',reason:'Unavailable'})).status,503);
+   } finally {(supabase as any).rpc=savedRpc;}
+  });
   await t.test('退款终态防反转、拒绝需原因、重复请求不产生二次处理',async()=>{
    tables.refund_requests=[{id:'refund-cas',shop_id:'s1',status:'pending',amount:10}];
    assert.equal((await request('/refunds/refund-cas/status',ceo,'PUT',{status:'rejected'})).status,400);

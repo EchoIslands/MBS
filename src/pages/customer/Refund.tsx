@@ -2,22 +2,22 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Clock, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { mockRefundRequests, mockBookings } from '../../../shared/mockData';
+import { mockRefundRequests, mockSettlements } from '../../../shared/mockData';
 import {isRealApi} from '../../../shared/api-base';
-import {refundApi,bookingApi} from '../../api';
-import { Booking, RefundRequest, RefundStatus } from '../../../shared/types';
+import {refundApi} from '../../api';
+import { ServiceRefundCandidate, RefundRequest, RefundStatus } from '../../../shared/types';
 import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const RefundPage: React.FC = () => {
   const navigate = useNavigate();
   const { currentCustomer } = useAppStore();
   const [showApplyForm, setShowApplyForm] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState('');
+  const [selectedSettlement, setSelectedSettlement] = useState('');
   const [reason, setReason] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   const [records,setRecords]=useState<RefundRequest[]>([]);
-  const [bookings,setBookings]=useState<Booking[]>([]);
+  const [candidates,setCandidates]=useState<ServiceRefundCandidate[]>([]);
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
@@ -34,23 +34,30 @@ const RefundPage: React.FC = () => {
     setLoading(true);setLoadError('');
       try {
         if(isRealApi()) {
-          const [refunds,appointments]=await Promise.all([refundApi.getByCustomer(currentCustomer.id),bookingApi.getCustomerBookings(currentCustomer.id)]);
+          const [refunds,orders]=await Promise.all([refundApi.getByCustomer(currentCustomer.id),refundApi.getCandidates(currentCustomer.id)]);
           if(request!==sequence.current || activeScope.current!==scope) return;
-          setRecords(refunds);setBookings(appointments);
-        } else {setRecords(mockRefundRequests.filter(r=>r.customerId===currentCustomer.id));setBookings(mockBookings.filter(b=>b.customerId===currentCustomer.id));}
+          if(!Array.isArray(refunds) || !Array.isArray(orders)) throw new Error('退款信息返回异常，请重新加载');
+          setRecords(refunds);setCandidates(orders);
+        } else {
+          setRecords(mockRefundRequests.filter(r=>r.customerId===currentCustomer.id));
+          setCandidates(mockSettlements.filter(s=>s.customerId===currentCustomer.id && s.shopId===currentCustomer.shopId && s.paymentStatus==='completed' && s.total>0 && s.items.some(i=>i.type==='service'))
+            .map(s=>({settlementId:s.id,bookingId:s.bookingId,amount:s.total,paymentMethod:s.paymentMethod,createdAt:new Date(s.createdAt).toISOString(),serviceName:s.items.find(i=>i.type==='service')?.name || '服务结算'})));
+        }
         setLoadedScope(scope);
       } catch(e) {if(request===sequence.current && activeScope.current===scope) setLoadError(e instanceof Error?e.message:'退款信息加载失败');}
       finally {if(request===sequence.current && activeScope.current===scope) setLoading(false);}
-  },[currentCustomer?.id,scope]);
+  },[currentCustomer?.id,currentCustomer?.shopId,scope]);
   useEffect(()=>{
     const requests=sequence;
-    setShowApplyForm(false);setSelectedBooking('');setReason('');setSubmitted(false);setError('');
+    setShowApplyForm(false);setSelectedSettlement('');setReason('');setSubmitted(false);setError('');
     void load();
     return ()=>{requests.current++;};
   },[load]);
   const dataReady=loadedScope===scope && !loading && !loadError;
   const customerRefunds=records;
-  const refundableBookings=bookings.filter(b=>b.status!=='cancelled' && !records.some(r=>r.bookingId===b.id && r.status!==RefundStatus.REJECTED));
+  const refundableOrders=candidates.filter(s=>!records.some(r=>r.status!==RefundStatus.REJECTED && r.status!==RefundStatus.CANCELLED
+    && (r.settlementId===s.settlementId || (!r.settlementId && s.bookingId && r.bookingId===s.bookingId))))
+    .sort((a,b)=>String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || b.settlementId.localeCompare(a.settlementId));
   const handleSubmit=async(e:React.FormEvent)=>{
     e.preventDefault();if(savingRef.current || !dataReady || !currentCustomer?.id) return;
     const actionScope=scope;
@@ -58,8 +65,9 @@ const RefundPage: React.FC = () => {
     setSaving(true);setError('');
     try {
       if(isRealApi()) {
-        const record=await refundApi.requestByCustomer(currentCustomer.id,selectedBooking,reason);
+        const record=await refundApi.requestSettlementByCustomer(currentCustomer.id,selectedSettlement,reason);
         if(activeScope.current!==actionScope) return;
+        if(!record?.id || record.settlementId!==selectedSettlement) throw new Error('退款申请结果尚未确认，请重新加载后核对');
         setRecords(prev=>[record,...prev.filter(r=>r.id!==record.id)]);
       }
       setSubmitted(true);
@@ -139,7 +147,7 @@ const RefundPage: React.FC = () => {
         {/* 申请退款按钮 */}
         {dataReady && !showApplyForm && (
           <button
-            onClick={() => {setSubmitted(false);setError('');setShowApplyForm(true);}}
+            onClick={() => {setSubmitted(false);setSelectedSettlement('');setError('');setShowApplyForm(true);}}
             className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-4 rounded-2xl font-semibold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
           >
             <AlertCircle size={20} />
@@ -162,23 +170,24 @@ const RefundPage: React.FC = () => {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    选择预约
+                    选择已付款服务结算
                   </label>
                   <select
                     disabled={saving}
-                    value={selectedBooking}
-                    onChange={(e) => setSelectedBooking(e.target.value)}
+                    value={selectedSettlement}
+                    onChange={(e) => setSelectedSettlement(e.target.value)}
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                   >
-                    <option value="">请选择要退款的预约</option>
-                    {refundableBookings.map(booking => (
-                      <option key={booking.id} value={booking.id}>
-                        {booking.shopName} - {booking.serviceName} - ¥{booking.price} - 
-                        {new Date(booking.scheduledTime).toLocaleDateString('zh-CN')}
+                    <option value="">请选择要退款的结算单</option>
+                    {refundableOrders.map(order => (
+                      <option key={order.settlementId} value={order.settlementId}>
+                        {order.serviceName} - 实付¥{order.amount.toFixed(2)} - {settlementDateLabel(order.createdAt)} - {order.settlementId.slice(-6)}
                       </option>
                     ))}
                   </select>
+                  {selectedSettlement && <p className="mt-2 text-sm text-gray-500 break-all">原结算单号：{selectedSettlement}</p>}
+                  {refundableOrders.length===0 && <p className="mt-2 text-sm text-gray-500">暂无可申请的已付款服务结算；如需核对原单，请联系门店。</p>}
                 </div>
 
                 <div>
@@ -206,7 +215,7 @@ const RefundPage: React.FC = () => {
                     取消
                   </button>
                   <button
-                    type="submit" disabled={saving || loading}
+                    type="submit" disabled={saving || loading || !selectedSettlement || !refundableOrders.some(s=>s.settlementId===selectedSettlement)}
                     className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors"
                   >
                     提交申请
@@ -247,6 +256,7 @@ const RefundPage: React.FC = () => {
                   </div>
                   
                   <div className="text-sm text-gray-600">
+                    {refund.settlementId && <div className="mb-1 break-all"><span className="font-medium">原结算单号：</span>{refund.settlementId}</div>}
                     <div className="mb-1"><span className="font-medium">退款原因：</span>{refund.reason}</div>
                     {refund.rejectReason && (
                       <div className="text-red-600"><span className="font-medium">拒绝原因：</span>{refund.rejectReason}</div>

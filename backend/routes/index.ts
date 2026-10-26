@@ -5798,6 +5798,38 @@ mainRouter.use('/satisfaction-surveys', surveysRouter);
 // ===================== refunds =====================
 const refundsRouter = Router();
 
+refundsRouter.get('/customer/:customerId/candidates',(req,res,next)=>personalCustomerAccess(req,res,next,'customerId'),async(req: Request,res: Response)=>{
+  try {
+    const candidates: Record<string,unknown>[]=[];
+    let after='';
+    for (;;) {
+      const {data,error}=await supabase.rpc('get_service_refund_candidates',{p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,p_after_id:after});
+      if(error) return operationError(res,error,'可退款结算单读取失败，请重新加载');
+      if(!Array.isArray(data) || data.length>100 || data.some(r=>typeof r.settlement_id!=='string' || r.settlement_id<=after)) {
+        return res.status(503).json({success:false,error:'可退款结算单返回异常，请重新加载'});
+      }
+      candidates.push(...data.map(r=>({settlementId:r.settlement_id,bookingId:r.booking_id || undefined,
+        amount:Number(r.amount),paymentMethod:r.payment_method,createdAt:r.created_at,serviceName:r.service_name})));
+      if(data.length<100) break;
+      const next=data[data.length-1].settlement_id;
+      if(next<=after) return res.status(503).json({success:false,error:'可退款结算单分页异常，请重新加载'});
+      after=next;
+    }
+    return res.json({success:true,data:candidates});
+  } catch { return res.status(503).json({success:false,error:'可退款结算单读取失败，请重新加载'}); }
+});
+
+function refundApplication(body: Record<string,unknown> | undefined) {
+  const {settlementId,bookingId,reason}=body || {};
+  if(typeof reason!=='string' || !reason.trim() || reason.length>2000) return null;
+  if(settlementId!==undefined) {
+    if(typeof settlementId!=='string' || !settlementId.trim() || bookingId!==undefined) return null;
+    return {rpc:'request_settlement_refund_atomic',args:{p_settlement_id:settlementId},reason:reason.trim()};
+  }
+  if(typeof bookingId!=='string' || !bookingId.trim()) return null;
+  return {rpc:'request_service_refund_atomic',args:{p_booking_id:bookingId},reason:reason.trim()};
+}
+
 // 顾客只登记本人已付服务退款申请；审批记录不等于实际退款到账。
 refundsRouter.get('/customer/:customerId',(req,res,next)=>personalCustomerAccess(req,res,next,'customerId'),async(req: Request,res: Response)=>{
   const {data,error}=await supabase.from('refund_requests').select('*').eq('customer_id',req.customer!.id).eq('shop_id',req.customer!.shopId).order('created_at',{ascending:false});
@@ -5805,9 +5837,9 @@ refundsRouter.get('/customer/:customerId',(req,res,next)=>personalCustomerAccess
   return res.json({success:true,data:(data || []).map(refundFromDb)});
 });
 refundsRouter.post('/customer/:customerId',(req,res,next)=>personalCustomerAccess(req,res,next,'customerId'),async(req: Request,res: Response)=>{
-  const {bookingId,reason}=req.body || {};
-  if(typeof bookingId!=='string' || typeof reason!=='string' || !reason.trim() || reason.length>2000) return res.status(400).json({success:false,error:'请选择预约并填写退款原因（最多2000字）'});
-  const {data,error}=await supabase.rpc('request_service_refund_atomic',{p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,p_booking_id:bookingId,p_reason:reason.trim()});
+  const application=refundApplication(req.body);
+  if(!application) return res.status(400).json({success:false,error:'请选择一笔已付款服务结算并填写退款原因（最多2000字）'});
+  const {data,error}=await supabase.rpc(application.rpc,{p_customer_id:req.customer!.id,p_shop_id:req.customer!.shopId,...application.args,p_reason:application.reason});
   if(error || !data?.[0]) return operationError(res,error || {},'退款申请未提交，请稍后重试');
   return res.status(201).json({success:true,data:refundFromDb(data[0])});
 });
@@ -5818,6 +5850,7 @@ const refundFromDb = (r: Record<string, unknown>): unknown => ({
   id: r.id,
   shopId: r.shop_id,
   bookingId: r.booking_id,
+  settlementId: r.settlement_id,
   customerId: r.customer_id,
   customerName: r.customer_name || '顾客',
   amount: Number(r.amount) || 0,
@@ -5861,9 +5894,10 @@ refundsRouter.get('/', async (req: Request, res: Response) => {
 // 创建退款申请
 refundsRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const {bookingId,customerId,reason}=req.body || {};
-    if(typeof bookingId!=='string' || typeof customerId!=='string' || typeof reason!=='string' || !reason.trim() || reason.length>2000) return res.status(400).json({success:false,error:'请选择顾客预约并填写退款原因（最多2000字）'});
-    const {data,error}=await supabase.rpc('request_service_refund_atomic',{p_customer_id:customerId,p_shop_id:req.employee!.shopId,p_booking_id:bookingId,p_reason:reason.trim()});
+    const {customerId}=req.body || {};
+    const application=refundApplication(req.body);
+    if(!application || typeof customerId!=='string' || !customerId.trim()) return res.status(400).json({success:false,error:'请选择顾客已付款服务结算并填写退款原因（最多2000字）'});
+    const {data,error}=await supabase.rpc(application.rpc,{p_customer_id:customerId,p_shop_id:req.employee!.shopId,...application.args,p_reason:application.reason});
     if(error || !data?.[0]) return operationError(res,error || {},'退款申请未提交，请稍后重试');
     return res.status(201).json({success:true,data:refundFromDb(data[0])});
   } catch {return res.status(503).json({success:false,error:'退款申请未提交，请稍后重试'});}

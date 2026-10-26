@@ -140,7 +140,7 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
       assert.equal(await scalar("SELECT status FROM membership_enrollments WHERE customer_id='d'"),'revoked');
     });
     await t.test('服务退款只取本人实付金额，同单申请防重，未付款拒绝',async()=>{
-      await db.exec("INSERT INTO bookings(id,shop_id,customer_id,scheduled_time) VALUES('refund-booking','s','c',NOW()),('unpaid-booking','s','c',NOW()); INSERT INTO settlements(id,shop_id,customer_id,booking_id,total,payment_method,payment_status) VALUES('refund-paid','s','c','refund-booking',33.64,'cash','completed')");
+      await db.exec(`INSERT INTO bookings(id,shop_id,customer_id,scheduled_time) VALUES('refund-booking','s','c',NOW()),('unpaid-booking','s','c',NOW()); INSERT INTO settlements(id,shop_id,customer_id,booking_id,total,payment_method,payment_status,items) VALUES('refund-paid','s','c','refund-booking',33.64,'cash','completed','[{"type":"service","name":"Synthetic"}]')`);
       const request=()=>db.query<any>("SELECT * FROM request_service_refund_atomic('c','s','refund-booking','Synthetic')");
       const [a,b]=await Promise.all([request(),request()]);assert.equal(a.rows[0].id,b.rows[0].id);assert.equal(Number(a.rows[0].amount),33.64);
       await assert.rejects(db.query("SELECT * FROM request_service_refund_atomic('d','s','refund-booking','Synthetic')"),/ORDER_NOT_FOUND/);

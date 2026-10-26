@@ -1,5 +1,5 @@
 import { buildFinancialReport, FINANCIAL_TIME_BASIS } from '../shared/lib/financialReport';
-import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
+import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, ServiceRefundCandidate, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
 import { http, getApiBase, isRealApi } from '../shared/api-base';
@@ -1706,6 +1706,8 @@ export const surveyApi = {
 // 退款管理 API
 export const refundApi = {
   getByCustomer: async (id:string):Promise<RefundRequest[]> => httpThrowing<RefundRequest[]>(API_BASE+'/refunds/customer/'+encodeURIComponent(id)),
+  getCandidates: async (id:string):Promise<ServiceRefundCandidate[]> => httpThrowing<ServiceRefundCandidate[]>(API_BASE+'/refunds/customer/'+encodeURIComponent(id)+'/candidates'),
+  requestSettlementByCustomer: async (id:string,settlementId:string,reason:string):Promise<RefundRequest> => httpThrowing<RefundRequest>(API_BASE+'/refunds/customer/'+encodeURIComponent(id),{method:'POST',body:JSON.stringify({settlementId,reason})}),
   requestByCustomer: async (id:string,bookingId:string,reason:string):Promise<RefundRequest> => httpThrowing<RefundRequest>(API_BASE+'/refunds/customer/'+encodeURIComponent(id),{method:'POST',body:JSON.stringify({bookingId,reason})}),
   getByShop: async (shopId: string): Promise<RefundRequest[]> => {
     if (USE_REAL_API) {

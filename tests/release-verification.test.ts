@@ -78,7 +78,10 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     assert.deepEqual(report.issues, []);
     assert.equal(report.passed, true);
     assert.equal(report.counts?.must_change_password, '1');
-    assert.equal(report.checkedFunctions, 36);
+    assert.equal(report.checkedFunctions, 38);
+    await db.exec('DROP INDEX service_refund_active_settlement_unique');
+    assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('042退款原单防重索引')));
+    await db.exec(await readFile(new URL('../migrations/042_service_refunds_by_settlement.sql',import.meta.url),'utf8'));
     assert.equal(queries[0], 'BEGIN READ ONLY');
     assert.equal(queries.at(-1), 'ROLLBACK');
     assert.ok(queries.every(sql => /^(SELECT|WITH password_states AS|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
@@ -88,11 +91,11 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     // 复现旧迁移只撤 PUBLIC 后仍遗留的 20 条有效授权。
     await db.exec('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;');
     const exposed = await verifyRelease(connection);
-    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 80);
+    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 84);
     await fixRpcPermissions(connection);
     const after030=await verifyRelease(connection);
     assert.equal(after030.passed,false);
-    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,60);
+    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,64);
     await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/033_atomic_customer_operations.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/035_membership_and_shipping_atomic.sql', import.meta.url), 'utf8'));
@@ -102,6 +105,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     await db.exec(await readFile(new URL('../migrations/039_manual_payment_times.sql',import.meta.url),'utf8'));
     await db.exec(await readFile(new URL('../migrations/040_atomic_wechat_checkout.sql',import.meta.url),'utf8'));
     await db.exec(await readFile(new URL('../migrations/041_balance_adjustment_and_refund_receipts.sql',import.meta.url),'utf8'));
+    await db.exec(await readFile(new URL('../migrations/042_service_refunds_by_settlement.sql',import.meta.url),'utf8'));
     assert.equal((await verifyRelease(connection)).passed, true);
     await db.exec('GRANT SELECT(phone) ON customers TO anon;');
     assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('customers') && issue.includes('anon')));

@@ -74,6 +74,12 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
     if (!paymentColumns.rows.some(row=>row.column_name==='paid_at_source')) issues.push('缺少 037 微信支付来源字段');
     const refundColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='refund_requests' AND column_name IN ('refund_receipt_ref','refund_receipt_amount','refund_receipt_at','refund_receipt_recorded_by','refund_receipt_recorded_by_name')");
     if (refundColumns.rows.length !== 5) issues.push('缺少041退款回执字段');
+    const refundSettlement = await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='refund_requests' AND column_name='settlement_id'");
+    if (!refundSettlement.rows.some(row => row.data_type==='text')) issues.push('缺少或不兼容042退款原结算字段');
+    const refundIndex = await connection.query("SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='refund_requests' AND indexname='service_refund_active_settlement_unique'");
+    if (!refundIndex.rows.some(row => /CREATE UNIQUE INDEX/.test(row.indexdef) && row.indexdef.includes('(settlement_id)') && row.indexdef.includes('WHERE') && ['pending','approved','completed'].every(status=>row.indexdef.includes("'"+status+"'")))) issues.push('缺少042退款原单防重索引');
+    const refundReference = await connection.query("SELECT pg_get_constraintdef(oid) AS definition,convalidated FROM pg_constraint WHERE conrelid='public.refund_requests'::regclass AND conname='refund_requests_settlement_fk' AND contype='f'");
+    if (!refundReference.rows.some(row=>row.convalidated===true && /FOREIGN KEY \(settlement_id\) REFERENCES settlements\(id\) ON DELETE RESTRICT/.test(row.definition))) issues.push('缺少042退款原单保留约束');
     for (const signature of [
       'public.adjust_customer_balance_atomic(text,text,numeric,numeric,text,text,text)',
       'public.complete_service_refund_atomic(text,text,text,text,text,text,numeric,timestamp with time zone)',

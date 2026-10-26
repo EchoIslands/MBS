@@ -894,7 +894,8 @@ export enum RefundStatus {
 // 退款申请
 export interface RefundRequest {
   id: string;
-  bookingId: string;
+  bookingId?: string;
+  settlementId?: string;
   customerId: string;
   customerName: string;
   shopId: string;
@@ -912,6 +913,15 @@ export interface RefundRequest {
   refundReceiptAt?: Date;
   refundReceiptRecordedBy?: string;
   refundReceiptRecordedByName?: string;
+}
+
+export interface ServiceRefundCandidate {
+  settlementId: string;
+  bookingId?: string;
+  amount: number;
+  paymentMethod: string;
+  createdAt?: string;
+  serviceName: string;
 }
 
 // 商品订单退款申请

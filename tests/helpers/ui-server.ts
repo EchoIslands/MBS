@@ -86,6 +86,19 @@ const productListMode=process.env.MBS_UI_PRODUCT_LIST==='1';
   Object.assign(row,{status:'completed',refund_method:args.p_refund_method,refund_receipt_ref:args.p_receipt_ref,refund_receipt_amount:args.p_receipt_amount,refund_receipt_at:args.p_receipt_at,refund_receipt_recorded_by:args.p_employee_id,refund_receipt_recorded_by_name:args.p_employee_name,processed_by:args.p_employee_id,processed_at:new Date().toISOString()});
   return {data:[structuredClone(row)],error:null};
  }
+ if(process.env.MBS_UI_SERVICE_REFUND==='1' && name==='get_service_refund_candidates') {
+  return {data:tables.settlements.filter(s=>s.customer_id===args.p_customer_id&&s.shop_id===args.p_shop_id&&s.payment_status==='completed'&&s.total>0&&s.id>args.p_after_id&&s.items?.some((i:Row)=>i.type==='service')
+   &&!tables.refund_requests.some(r=>r.settlement_id===s.id&&['pending','approved','completed'].includes(r.status)))
+   .sort((a,b)=>a.id<b.id?-1:1).slice(0,100).map(s=>({settlement_id:s.id,booking_id:s.booking_id || null,amount:s.total,payment_method:s.payment_method,created_at:s.created_at,service_name:s.items[0].name})),error:null};
+ }
+ if(process.env.MBS_UI_SERVICE_REFUND==='1' && name==='request_settlement_refund_atomic') {
+  const s=tables.settlements.find(s=>s.id===args.p_settlement_id&&s.customer_id===args.p_customer_id&&s.shop_id===args.p_shop_id&&s.payment_status==='completed');
+  if(!s) return {data:null,error:{message:'ORDER_NOT_FOUND'}};
+  const previous=tables.refund_requests.find(r=>r.settlement_id===s.id&&['pending','approved','completed'].includes(r.status));
+  if(previous) return {data:[structuredClone(previous)],error:null};
+  const row={id:'synthetic-new-service-refund',settlement_id:s.id,booking_id:s.booking_id || null,customer_id:s.customer_id,customer_name:'合成顾客',shop_id:s.shop_id,amount:s.total,status:'pending',reason:args.p_reason,created_at:new Date().toISOString()};
+  tables.refund_requests.push(row);return {data:[structuredClone(row)],error:null};
+ }
  if(newCheckoutMode && name==='create_wechat_settlement_atomic') {
   const row={...args.p_settlement,checkout_payment_started:true,server_priced:true,payment_status:'pending',created_at:new Date().toISOString()};
   tables.settlements.push(row);
@@ -160,6 +173,7 @@ if(productListMode) {
  tables.product_order_items=[{id:'synthetic-product-item',order_id:'synthetic-product-order',product_id:'synthetic-product',name:'隔离测试商品',image:'',price:12,quantity:1,total_amount:12}];
 }
 if(process.env.MBS_UI_REFUND==='1') tables.refund_requests=[{id:'synthetic-refund',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',booking_id:'synthetic-today-booking',amount:33.64,status:'approved',refund_method:'original',reason:'仅隔离界面验收',created_at:new Date().toISOString()}];
+if(process.env.MBS_UI_SERVICE_REFUND==='1') tables.refund_requests=[];
 // 本次支付追溯页面验收只使用合成订单；日期/金额用于覆盖旧单新付和历史缺失时间。
 tables.settlements=[
  {id:'synthetic-old-paid',shop_id:'shop1',customer_id:'c1',customer_name:'合成顾客',items:[{id:'svc',type:'service',name:'设计师洗剪吹',quantity:1,originalPrice:58,discountedPrice:33.64,total:33.64,employeeId:'stylist',employeeName:'合成设计师'}],subtotal:58,discount:24.36,total:33.64,payment_method:'wechat',payment_status:'completed',created_at:'2026-08-01T08:00:00Z'},
