@@ -13,7 +13,7 @@ export const customerColumns: {label: string; value: (customer: Customer) => str
   {label:'储值余额',value:c=>Number(c.storedValueBalance ?? 0).toFixed(2)},{label:'推荐奖励余额',value:c=>Number(c.withdrawableReferralAmount ?? 0).toFixed(2)},
   {label:'积分',value:c=>c.points ?? 0},{label:'累计消费',value:c=>Number(c.totalSpent ?? 0).toFixed(2)},
   {label:'到店次数',value:c=>c.visitCount ?? 0},{label:'上次到店',value:c=>date(c.lastVisitAt)},
-  {label:'上次服务设计师',value:c=>c.lastStylist || c.visitRecords?.[0]?.stylistName || '—'},
+  {label:'上次服务发型师',value:c=>(c.lastStylist ?? c.visitRecords?.[0]?.stylistName) || '—'},
   {label:'上次消费项目',value:c=>(c.lastServiceItems ?? c.visitRecords?.[0]?.serviceNames ?? []).join('、') || '—'},
   {label:'是否有预约',value:c=>c.hasBooking ? '是' : '否'},
   {label:'档案会员标记',value:c=>c.isMember == null ? '未记录' : c.isMember ? '是' : '否'},

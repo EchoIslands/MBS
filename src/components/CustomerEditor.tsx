@@ -46,6 +46,12 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
           {field('wechat','微信')}{field('source','客户来源')}
           {select('gender','性别',[['other','其他'],['male','男'],['female','女']])}{field('age','年龄','number')}
           {field('birthday','生日','date')}{field('idCardNumber','身份证号（选填）')}{field('hobbies','爱好及其他')}
+          <div className="md:col-span-2 border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {field('lastStylist','上次服务的发型师')}
+            {field('lastVisitAt','上次服务时间（北京时间）','datetime-local')}
+            <div className="md:col-span-2">{field('lastServiceItems','上次消费项目（多个项目用、分隔）')}</div>
+            <p className="md:col-span-2 text-xs text-gray-500">可由门店补录历史服务。预约服务正式结算后自动更新；预约、改期或取消不会记为上次消费。</p>
+          </div>
         </>)}
         {section('会员资料', <>
           {select('purchaseVIPLevel','购买型 VIP 等级',Object.values(PurchaseVIPLevel).map(value=>[value,getPurchaseVIPLabel(value)]))}
@@ -61,8 +67,7 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
           <p className="text-sm text-gray-500 mb-3">保留原有人工维护能力；没有修改的字段不会提交。累计消费与上次到店不等于本次收款。</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {field('points','积分','number')}{field('totalSpent','累计消费金额（元）','number')}
-            {field('lastStylist','上次服务设计师')}{field('lastServiceItems','上次消费项目（用、分隔）')}
-            {field('lastVisitAt','上次到店时间（北京时间）','datetime-local')}{select('hasBooking','是否有预约',yesNo)}
+            {select('hasBooking','是否有预约',yesNo)}
             {select('isReferred','是否转介绍',yesNo)}{field('referrerName','转介绍人员姓名')}{field('referrerPhone','转介绍人员电话','tel')}
             {field('referralConsumption','转介绍带来的消费（元）','number')}{field('sharedFund','共享基金（元）','number')}
             {field('totalSharedFund','合计共享基金（元）','number')}{field('withdrawableAmount','可消费金额（元）','number')}

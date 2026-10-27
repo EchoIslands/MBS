@@ -57,7 +57,7 @@ export const CUSTOMER_ACCOUNT_FIELDS = new Set([
   'last_visit_at', 'purchase_vip_level', 'purchase_vip_expires_at', 'stored_value_level',
   'stored_value_balance', 'stored_value_expires_at', 'withdrawable_referral_amount', 'total_saved',
   'referral_consumption', 'shared_fund', 'total_shared_fund', 'withdrawable_amount',
-  'is_member', 'has_recharged', 'recharge_level',
+  'is_member', 'has_recharged', 'recharge_level', 'last_stylist', 'last_service_items',
 ]);
 
 /**

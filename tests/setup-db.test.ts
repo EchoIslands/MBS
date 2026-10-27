@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
-import { setupDatabase, databaseConfig, type SetupConnection } from '../scripts/setup-db.js';
+import { setupDatabase, databaseConfig, SETUP_MIGRATIONS, type SetupConnection } from '../scripts/setup-db.js';
 import { upgradeCheckout } from '../scripts/upgrade-checkout.js';
 
 const baseline = ['001_baseline_schema.sql', '019_create_customer_packages.sql', '021_create_membership_enrollments.sql',  '007_create_product_tables.sql', '010_add_shipping_to_orders.sql', '009_create_product_inventory_logs.sql', '011_create_product_order_refunds.sql', '013_create_group_buy.sql', '016_fix_coupon_schema.sql', '019_create_customer_packages.sql', '020_create_package_usage_logs.sql'];
@@ -25,7 +25,7 @@ test('真实引擎：无 025–029 时完整安装、重复执行、已有数据
   const logs: string[] = [];
   try {
     await setupDatabase(connection, line => logs.push(line));
-    assert.equal(logs.filter(line => line.includes('等待统一提交')).length, 19);
+    assert.equal(logs.filter(line => line.includes('等待统一提交')).length, SETUP_MIGRATIONS.length);
     const row = (await db.query<any>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
     assert.equal(row.password_hash, null); assert.equal(row.is_weak_password, false); assert.equal(row.identity_verified, false); assert.equal(Number(row.balance), 100);
     await db.exec("UPDATE customers SET password_hash='synthetic-preserved',is_weak_password=true,identity_verified=true WHERE id='c';");

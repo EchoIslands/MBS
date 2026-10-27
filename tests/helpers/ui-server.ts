@@ -38,7 +38,7 @@ class Query {
  rowStart=0;rowEnd:number|undefined;exactCount=false;
  constructor(public table:string) { calls++; }
  select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
- eq(k:string,v:any) {this.filters.push(r=>r[k]===v);return this;}
+ eq(k:string,v:any) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
  is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
  contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
  in(k:string,v:any[]) {this.filters.push(r=>v.includes(r[k]));return this;}

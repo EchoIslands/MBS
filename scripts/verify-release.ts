@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { databaseConfig, SETUP_MIGRATIONS, type SetupConnection } from './setup-db.js';
 import { databaseErrorDiagnostic } from './init-legacy-passwords.js';
+import { checkCustomerServiceSchema } from './lib/customer-service-schema.js';
 
 export type ReleaseCheckOptions = { expectedPendingPasswords?: number };
 
@@ -44,6 +45,10 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
     await connection.query("SET LOCAL statement_timeout = '30s'");
     const actual = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='customers'");
     const present = new Set(actual.rows.map(row => row.column_name));
+    try { await checkCustomerServiceSchema(connection); } catch(error) { issues.push((error as Error).message); }
+    if(!present.has('last_stylist')) issues.push('缺少044上次服务发型师字段');
+    const serviceTrigger = await connection.query("SELECT tgname FROM pg_trigger WHERE tgrelid='public.settlements'::regclass AND NOT tgisinternal AND tgenabled='O' AND tgname='sync_customer_last_service' AND tgfoid=to_regprocedure('public.sync_customer_last_service()')");
+    if(!serviceTrigger.rows.length) issues.push('缺少044上次服务资料同步触发器');
     const authFields = await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_auth_limits'");
     for (const [name, type] of Object.entries({failure_day:'date', daily_failures:'integer'})) {
       if (!authFields.rows.some(row=>row.column_name===name && row.data_type===type)) issues.push('缺少或不兼容043登录失败计数字段：'+name);

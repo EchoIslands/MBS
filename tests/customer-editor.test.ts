@@ -53,3 +53,22 @@ test('服务端日期映射：只截生日，账户timestamp保留原始时分�
   assert.equal(customerValuesEqual('last_visit_at',mapped.last_visit_at,'2026-09-24T16:36:33.685+08:00'),true);
   assert.equal(customerValuesEqual('last_visit_at',mapped.last_visit_at,'2026-09-24'),false);
 });
+
+test('上次服务：门店新增、修改、清除三项；不改字段保持原精度且不提交',()=>{
+  const draft=customerDraft();
+  Object.assign(draft,{name:'合成顾客',phone:'13800000005',lastStylist:'历史发型师',lastVisitAt:'2026-09-23T15:20',lastServiceItems:'洗剪吹、染发，护理'});
+  const patch=customerPatch(draft);
+  assert.equal(patch.lastStylist,'历史发型师');
+  assert.equal(String(patch.lastVisitAt),'2026-09-23T07:20:00.000Z');
+  assert.deepEqual(patch.lastServiceItems,['洗剪吹','染发','护理']);
+  const saved={...customer,...patch} as Customer;
+  assert.deepEqual(customerPatch(customerDraft(saved),saved),{});
+  const edit=customerDraft(saved);edit.lastStylist='新发型师';
+  assert.deepEqual(customerPatch(edit,saved),{lastStylist:'新发型师'});
+  Object.assign(edit,{lastStylist:'',lastVisitAt:'',lastServiceItems:''});
+  assert.deepEqual(customerPatch(edit,saved),{lastStylist:'',lastVisitAt:null,lastServiceItems:[]});
+  const mapped=mapCustomerBodyToDB(patch as Record<string,unknown>);
+  assert.equal(mapped.last_stylist,'历史发型师');
+  assert.equal(mapped.last_visit_at,'2026-09-23T07:20:00.000Z');
+  assert.deepEqual(mapped.last_service_items,['洗剪吹','染发','护理']);
+});

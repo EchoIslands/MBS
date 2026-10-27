@@ -44,7 +44,7 @@ class Query {
  rowStart=0;rowEnd:number|undefined;exactCount=false;
  constructor(public table:string) { calls++; }
  select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
- eq(k:string,v:any) {this.filters.push(r=>r[k]===v);return this;}
+ eq(k:string,v:any) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
  is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
  contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
  in(k:string,v:any[]) {this.filters.push(r=>v.includes(r[k]));return this;}
@@ -599,6 +599,25 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(mixed.status,400);assert.equal(c.stored_value_balance,before.stored_value_balance);
     assert.deepEqual(tables.stored_value_transactions || [],beforeLedger);
    } finally { for(const key of Object.keys(c))delete c[key];Object.assign(c,before); }
+  });
+  await t.test('上次服务HTTP：新增读取、差异修改、旧编辑冲突拒绝及清除',async()=>{
+   const id='synthetic-service-customer';
+   try {
+    const fields={lastStylist:'历史发型师',lastVisitAt:'2026-09-23T07:20:00.000Z',lastServiceItems:['洗剪吹','染发']};
+    const added=await request('/customers',ceo,'POST',{id,name:'合成服务客户',phone:'13800000101',...fields});
+    assert.equal(added.status,200);assert.equal(added.body.data.lastStylist,fields.lastStylist);
+    const directory=await request('/customers',ceo);
+    const saved=directory.body.data.find((r:any)=>r.id===id);
+    assert.deepEqual(saved.lastServiceItems,fields.lastServiceItems);assert.equal(saved.lastVisitAt,fields.lastVisitAt);
+    const edit=await request('/customers/'+id,ceo,'PUT',{lastStylist:'人工修改',lastServiceItems:['护理'],_expected:fields});
+    assert.equal(edit.status,200);assert.deepEqual(edit.body.data.lastServiceItems,['护理']);
+    const stale=await request('/customers/'+id,ceo,'PUT',{lastStylist:'旧编辑覆盖',_expected:fields});
+    assert.equal(stale.status,409);
+    assert.equal((await request('/customers/'+id,ceo,'PUT',{lastStylist:'无旧值覆盖'})).status,409);
+    assert.equal((await request('/customers/c3',ceo,'PUT',{lastStylist:'跨店',_expected:{lastStylist:null}})).status,404);
+    const cleared=await request('/customers/'+id,ceo,'PUT',{lastStylist:'',lastVisitAt:null,lastServiceItems:[],_expected:{lastStylist:'人工修改',lastVisitAt:fields.lastVisitAt,lastServiceItems:['护理']}});
+    assert.equal(cleared.status,200);assert.equal(cleared.body.data.lastStylist,'');assert.equal(cleared.body.data.lastVisitAt,null);assert.deepEqual(cleared.body.data.lastServiceItems,[]);
+   } finally {tables.customers=tables.customers.filter(r=>r.id!==id);}
   });
   await t.test('商品订单列表：员工上下文、同店与角色、分页和明细失败',async()=>{
    const beforeOrders=tables.product_orders,beforeItems=tables.product_order_items;
