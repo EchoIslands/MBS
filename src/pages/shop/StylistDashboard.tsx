@@ -52,7 +52,7 @@ const StylistDashboard: React.FC = () => {
         const shopId = currentShop.id;
         const [performanceList, bookings] = await Promise.all([
           stylistApi.getPerformance(shopId),
-          bookingApi.getBookingsByShop(shopId, businessDateKey(new Date())),
+          bookingApi.getBookingsByShop(shopId, businessDateKey(new Date()), undefined, 30_000),
         ]);
         if (cancelled) return;
 
@@ -115,7 +115,7 @@ const StylistDashboard: React.FC = () => {
         });
         setTodayBookings(filtered);
       } catch (err: unknown) {
-        if (!cancelled) setError((err as Error).message || '加载数据失败');
+        if (!cancelled) setError(err instanceof Error && err.name === 'AbortError' ? '预约数据加载超时，请稍后重试' : (err as Error).message || '加载数据失败');
       } finally {
         if (!cancelled) setLoading(false);
       }

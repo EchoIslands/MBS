@@ -878,7 +878,7 @@ export const bookingApi = {
     return mockBookings.filter((b) => b.customerId === customerId);
   },
 
-  getBookingsByShop: async (shopId: string, dateStart?: string, status?: string): Promise<Booking[]> => {
+  getBookingsByShop: async (shopId: string, dateStart?: string, status?: string, timeout = 15000): Promise<Booking[]> => {
     if (USE_REAL_API) {
       const params = new URLSearchParams();
       params.set('shopId', shopId);
@@ -886,7 +886,7 @@ export const bookingApi = {
       if (status) params.set('status', status);
       params.set('pageSize', '1000');
       const result = await httpThrowing<Booking[]>(
-        `${API_BASE}/bookings?${params.toString()}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} }
+        `${API_BASE}/bookings?${params.toString()}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} }, timeout
       );
       return (result || []).map(normalizeBooking);
     }
@@ -1359,12 +1359,18 @@ export const stylistApi = {
   getPerformance: async (shopId: string): Promise<StylistPerformance[]> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: StylistPerformance[] }>(
-        `${API_BASE}/stylists/performance?shopId=${shopId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (Array.isArray(result?.data)) return result.data;
-      throw new Error('发型师业绩返回格式异常，请重试');
+      try {
+        const result = await httpThrowing<StylistPerformance[]>(
+          `${API_BASE}/stylists/performance?shopId=${encodeURIComponent(shopId)}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+          30_000
+        );
+        if (Array.isArray(result)) return result;
+        throw new Error('发型师业绩返回格式异常，请重试');
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw new Error('发型师业绩加载超时，请稍后重试');
+        throw error;
+      }
     }
     // Mock fallback
     return [];

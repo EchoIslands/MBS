@@ -2042,20 +2042,23 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
     rows.push(...await readPages(() => scopeCustomerQuery(supabase.from('customers').select('*'), req)
       .order('created_at', {ascending:false}).order('id', {ascending:false})));
     const customers = toCamelCaseList(rows);
-    const customerIds = customers.map(c => c.id).filter(Boolean);
+    const customerIds = customers.map(c => String(c.id || '')).filter(Boolean);
     const profilesMap: Record<string, unknown> = {};
     const visitsMap: Record<string, DbRecord[]> = {};
-    // Bound URL size and DB load; each batch still reads all of its pages.
-    for (let offset = 0; offset < customerIds.length; offset += 100) {
-      const ids = customerIds.slice(offset, offset + 100);
-      const [profiles,visits] = await Promise.all([
+    // Bound URL size and database concurrency while reading independent customer batches.
+    const batches: string[][] = [];
+    for (let offset = 0; offset < customerIds.length; offset += 100) batches.push(customerIds.slice(offset, offset + 100));
+    for (let offset = 0; offset < batches.length; offset += 3) {
+      const enrichedBatches = await Promise.all(batches.slice(offset, offset + 3).map(async ids => Promise.all([
         readPages(() => supabase.from('customer_profiles').select('*').in('customer_id',ids).order('id',{ascending:true})),
         readPages(() => supabase.from('customer_visit_records').select('*').in('customer_id',ids).order('check_in_time',{ascending:false}).order('id',{ascending:false})),
-      ]);
-      for (const profile of profiles) profilesMap[profile.customer_id as string] = toCamelCase(profile);
-      for (const visit of visits) {
-        const camel = toCamelCase(visit);
-        (visitsMap[camel.customerId as string] ||= []).push(camel);
+      ])));
+      for (const [profiles, visits] of enrichedBatches) {
+        for (const profile of profiles) profilesMap[profile.customer_id as string] = toCamelCase(profile);
+        for (const visit of visits) {
+          const camel = toCamelCase(visit);
+          (visitsMap[camel.customerId as string] ||= []).push(camel);
+        }
       }
     }
 

@@ -6,46 +6,64 @@ import { subscribeCustomerChanges } from '../lib/customerChanges';
 /** One server snapshot for both views. Never persist customer data in browser storage. */
 export function useCustomerDirectory(scope: string) {
   const generation = useRef(0);
-  const inFlight = useRef(0);
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  const queued = useRef<Promise<boolean> | null>(null);
+  const lastStarted = useRef(0);
   const [snapshot, setSnapshot] = useState<{ scope: string; customers: Customer[]; syncedAt: number }>({ scope: '', customers: [], syncedAt: 0 });
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
-  const refresh = useCallback(async () => {
+  const refresh = useCallback((afterCurrent = true): Promise<boolean> => {
+    if (!scope) return Promise.resolve(false);
+    if (inFlight.current) {
+      if (!afterCurrent) return inFlight.current;
+      if (!queued.current) {
+        queued.current = inFlight.current.then(() => {
+          queued.current = null;
+          return scopeRef.current === scope ? refresh(false) : false;
+        });
+      }
+      return queued.current;
+    }
     const request = ++generation.current;
-    if (!scope) return false;
-    ++inFlight.current;
+    lastStarted.current = Date.now();
     setSyncing(true);
-    try {
-      const customers = await customerApi.getAll();
+    const job = customerApi.getAll().then(customers => {
       if (request !== generation.current || scopeRef.current !== scope) return false;
       setSnapshot({ scope, customers, syncedAt: Date.now() });
       setError(null);
       return true;
-    } catch (err) {
+    }).catch(err => {
       if (request === generation.current && scopeRef.current === scope) setError(err instanceof Error ? err.message : '客户同步失败');
       return false;
-    } finally {
-      --inFlight.current;
+    }).finally(() => {
+      if (inFlight.current === job) inFlight.current = null;
       if (request === generation.current && scopeRef.current === scope) setSyncing(false);
-    }
+    });
+    inFlight.current = job;
+    return job;
   }, [scope]);
 
   const invalidatePending = useCallback(() => { ++generation.current; }, []);
   useEffect(() => {
+    scopeRef.current = scope;
     setSnapshot({ scope, customers: [], syncedAt: 0 });
     setError(null);
-    void refresh();
-    const visibleRefresh = () => { if (document.visibilityState === 'visible') void refresh(); };
+    void refresh(false);
+    const visibleRefresh = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastStarted.current >= 60_000) void refresh(false);
+    };
     const unsubscribe = subscribeCustomerChanges(() => { void refresh(); });
     window.addEventListener('focus', visibleRefresh);
     window.addEventListener('online', visibleRefresh);
     document.addEventListener('visibilitychange', visibleRefresh);
-    // Do not invalidate a slow request at the same instant as its 15s HTTP timeout.
-    const interval = window.setInterval(() => { if (!inFlight.current) visibleRefresh(); }, 15_000);
+    const interval = window.setInterval(visibleRefresh, 60_000);
     return () => {
       invalidatePending();
+      scopeRef.current = '';
+      inFlight.current = null;
+      queued.current = null;
       unsubscribe();
       window.removeEventListener('focus', visibleRefresh);
       window.removeEventListener('online', visibleRefresh);

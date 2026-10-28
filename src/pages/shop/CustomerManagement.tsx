@@ -91,12 +91,12 @@ const CustomerManagement: React.FC = () => {
       else await customerApi.create(patch);
     } catch (err) { await fetchCustomers(); throw err; }
     setShowEdit(null);setShowAdd(false);
-    await fetchCustomers();
+    await fetchCustomers(false);
   };
   const runAccountAction = async (action: () => Promise<void>) => {
     if (accountBusy || error || loading) return;
     setAccountBusy(true);setActionError(null);
-    try { await action(); await fetchCustomers(); }
+    try { await action(); await fetchCustomers(false); }
     catch(err) { setActionError(err instanceof Error ? err.message : '操作失败'); }
     finally { setAccountBusy(false); }
   };
@@ -354,7 +354,7 @@ const CustomerManagement: React.FC = () => {
           <button aria-pressed={!tableView} onClick={()=>{const next=new URLSearchParams(searchParams);next.delete('view');setSearchParams(next,{replace:true});}} className={!tableView?'rounded-lg px-4 py-2 bg-orange-500 text-white':'rounded-lg px-4 py-2 bg-gray-100'}>日常视图</button>
           {canUseTable && <button aria-pressed={tableView} onClick={()=>{const next=new URLSearchParams(searchParams);next.set('view','table');setSearchParams(next,{replace:true});}} className={tableView?'rounded-lg px-4 py-2 bg-orange-500 text-white':'rounded-lg px-4 py-2 bg-gray-100'}>表格视图</button>}
         </div>
-        <p role="status" className="text-sm text-gray-600">{error ? '同步失败，暂停编辑和导出' : syncing ? '正在同步客户数据…' : syncedAt ? '最近同步：'+new Date(syncedAt).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+'（北京时间）' : '正在载入'}<br/>同页两视图共用数据；其他操作员变更每15秒检查，返回页面时同步。</p>
+        <p role="status" className="text-sm text-gray-600">{error ? '同步失败，暂停编辑和导出' : syncing ? '正在同步客户数据…' : syncedAt ? '最近同步：'+new Date(syncedAt).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+'（北京时间）' : '正在载入'}<br/>同页两视图共用数据；其他操作员变更每分钟检查，返回页面时同步。</p>
       </div>
       {actionError && <p role="alert" className="mb-4 rounded-lg bg-red-50 text-red-700 p-3">{actionError}</p>}
 
