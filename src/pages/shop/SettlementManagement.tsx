@@ -68,7 +68,7 @@ const SettlementManagement: React.FC = () => {
         const shopId = currentShop?.id || 'shop1';
         const [settlementList, customerList] = await Promise.all([
           settlementApi.getByShop(shopId),
-          customerApi.getAll(),
+          customerApi.getDirectory(),
         ]);
         if (cancelled) return;
         setSettlements((settlementList || []).map((s: unknown) => {

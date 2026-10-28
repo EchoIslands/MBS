@@ -100,6 +100,7 @@ const Checkout: React.FC = () => {
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [loadingBooking, setLoadingBooking] = useState(Boolean(initialBookingId));
   const [error, setError] = useState<string | null>(null);
+  const [initialLoadAttempt, setInitialLoadAttempt] = useState(0);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedBenefits, setSelectedBenefits] = useState<string[]>([]);
@@ -171,13 +172,18 @@ const Checkout: React.FC = () => {
       setError(null);
       try {
         const shopId = currentShop?.id || 'shop1';
-        const [shopData, customerList] = await Promise.all([
+        const [shopResult, customersResult] = await Promise.allSettled([
           shopApi.getShop(shopId),
-          customerApi.getAll(),
+          customerApi.getDirectory(),
         ]);
         if (cancelled) return;
-        setShop(shopData);
-        setCustomers(customerList || []);
+        if (shopResult.status === 'fulfilled') setShop(shopResult.value);
+        if (customersResult.status === 'fulfilled') setCustomers(customersResult.value);
+        const failures = [
+          shopResult.status === 'rejected' ? `店铺资料：${shopResult.reason instanceof Error ? shopResult.reason.message : '加载失败'}` : '',
+          customersResult.status === 'rejected' ? `客户目录：${customersResult.reason instanceof Error ? customersResult.reason.message : '加载失败'}` : '',
+        ].filter(Boolean);
+        if (failures.length) setError(failures.join('；'));
       } catch (err: unknown) {
         if (!cancelled) setError((err as Error).message || '加载初始数据失败');
       } finally {
@@ -189,7 +195,7 @@ const Checkout: React.FC = () => {
     };
     loadInitialData();
     return () => { cancelled = true; };
-  }, [currentShop?.id]);
+  }, [currentShop?.id, initialLoadAttempt]);
 
   // 确保预约对应的未完成结算草稿存在（用于中途退出后找回）
   const ensureDraftForBooking = useCallback(
@@ -208,7 +214,7 @@ const Checkout: React.FC = () => {
         employeeName: booking.stylistName || booking.barberName,
       };
       try {
-        const all = await settlementApi.getByShop(shopId);
+        const all = await settlementApi.getByShop(shopId, true);
         const existing = all.find(
           (s) => s.bookingId === booking.id && s.paymentStatus === 'pending'
         );
@@ -350,7 +356,7 @@ const Checkout: React.FC = () => {
     const shopId = currentShop?.id || 'shop1';
     setLoadingPendingSettlements(true);
     try {
-      const all = await settlementApi.getByShop(shopId);
+      const all = await settlementApi.getByShop(shopId, true);
       setPendingSettlements(all.filter((s) => s.paymentStatus === 'pending'));
     } catch (_e) {
       setPendingSettlements([]);
@@ -1033,6 +1039,7 @@ const Checkout: React.FC = () => {
           {error && !loadingShop && !loadingCustomers && (
             <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-red-600 text-sm">
               {error}
+              <button type="button" className="ml-3 underline" onClick={() => setInitialLoadAttempt(attempt => attempt + 1)}>重新加载店铺与客户</button>
             </div>
           )}
 

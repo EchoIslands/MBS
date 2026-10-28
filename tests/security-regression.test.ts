@@ -564,6 +564,11 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(result.body.data.find((c:Row)=>c.id==='page-c1002').profile.hairType,'dry');
     assert.ok(!result.body.data.some((c:Row)=>c.id==='other-page'));
     failDashboardTable='customer_visit_records';
+    const summary=await request('/customers?summary=1',token);
+    assert.equal(summary.status,200);
+    assert.equal(summary.body.data.length,1003);
+    assert.equal(summary.body.data[0].visitRecords,undefined);
+    assert.ok(!summary.body.data.some((c:Row)=>c.id==='other-page'));
     const failed=await request('/customers',token);assert.equal(failed.status,500);assert.equal(failed.body.success,false);assert.equal(failed.body.data,undefined);
    } finally {tables.customers=beforeCustomers;tables.customer_visit_records=beforeVisits;tables.customer_profiles=beforeProfiles;failDashboardTable='';syntheticRowCap=undefined;}
   });
@@ -726,6 +731,8 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    tables.shops=[{id:'s1',name:'Own',is_active:true},{id:'s2',name:'Foreign',is_active:true}];
    tables.settlements=[{id:'paid',shop_id:'s1',total:10,payment_method:'cash',payment_status:'completed',created_at:now,manual_paid_at:now,manual_paid_recorded_at:now,manual_paid_recorded_by:'cashier',items:[{employeeId:'stylist',type:'service',total:10,quantity:1}]},{id:'draft',shop_id:'s1',total:999,payment_status:'pending',created_at:now},{id:'foreign',shop_id:'s2',total:888,payment_status:'completed',created_at:now}];tables.reviews=[];
    try {
+    const pending=await request('/settlements?pending=1',ceo);
+    assert.equal(pending.status,200);assert.deepEqual(pending.body.data.map((row:Row)=>row.id),['draft']);
     const owner=await request('/owner/dashboard',ceo);assert.equal(owner.status,200);assert.equal(owner.body.data.totalRevenue.today,10);assert.equal(owner.body.data.shopStats.length,1);
     const financial=await request('/financial/report',ceo);assert.equal(financial.body.data.revenue.today,10);
     const performance=await request('/stylists/performance',stylist);assert.equal(performance.status,200);assert.equal(performance.body.data.length,1);assert.equal(performance.body.data[0].revenue.today,10);

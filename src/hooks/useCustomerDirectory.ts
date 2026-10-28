@@ -29,7 +29,7 @@ export function useCustomerDirectory(scope: string) {
     const request = ++generation.current;
     lastStarted.current = Date.now();
     setSyncing(true);
-    const job = customerApi.getAll().then(customers => {
+    const job = customerApi.getDirectory().then(customers => {
       if (request !== generation.current || scopeRef.current !== scope) return false;
       setSnapshot({ scope, customers, syncedAt: Date.now() });
       setError(null);

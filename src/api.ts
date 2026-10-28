@@ -1036,7 +1036,8 @@ export const customerApi = {
       const token = getAuthToken();
       const result = await http<{ success: boolean; data: Customer[] }>(
         `${API_BASE}/customers`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
+        40000
       );
       if (result?.success && Array.isArray(result.data)) {
         // 更新本地缓存
@@ -1055,6 +1056,17 @@ export const customerApi = {
       } catch (_e) { /* ignore */ }
     }
     return [...mockCustomers];
+  },
+
+  getDirectory: async (): Promise<Customer[]> => {
+    if (!USE_REAL_API) return customerApi.getAll();
+    const result = await http<{ success: boolean; data: Customer[] }>(
+      `${API_BASE}/customers?summary=1`,
+      { headers: { Authorization: `Bearer ${getAuthToken()}` } },
+      30000
+    );
+    if (result?.success && Array.isArray(result.data)) return result.data.map(normalizeCustomerDates);
+    throw new Error('客户列表返回格式异常，请稍后重试');
   },
 
   create: async (data: Partial<Customer>): Promise<Customer> => {
@@ -1527,15 +1539,15 @@ export const settlementApi = {
     return newSettlement;
   },
 
-  getByShop: async (shopId: string): Promise<Settlement[]> => {
+  getByShop: async (shopId: string, onlyPending = false): Promise<Settlement[]> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await httpThrowing<Settlement[]>(`${API_BASE}/settlements?shopId=${shopId}`, {
+      const result = await httpThrowing<Settlement[]>(`${API_BASE}/settlements?shopId=${encodeURIComponent(shopId)}${onlyPending ? '&pending=1' : ''}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       return result || [];
     }
-    return mockSettlements.filter((s) => s.shopId === shopId);
+    return mockSettlements.filter((s) => s.shopId === shopId && (!onlyPending || s.paymentStatus === 'pending'));
   },
 
   getById: async (settlementId: string): Promise<Settlement | null> => {

@@ -2042,6 +2042,12 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
     rows.push(...await readPages(() => scopeCustomerQuery(supabase.from('customers').select('*'), req)
       .order('created_at', {ascending:false}).order('id', {ascending:false})));
     const customers = toCamelCaseList(rows);
+    // Directory views only need customer fields. Full profile and visit history remain
+    // available from this route by default and from GET /:id on demand.
+    if (req.query.summary === '1') {
+      res.json({ success: true, data: customers });
+      return;
+    }
     const customerIds = customers.map(c => String(c.id || '')).filter(Boolean);
     const profilesMap: Record<string, unknown> = {};
     const visitsMap: Record<string, DbRecord[]> = {};
@@ -5088,8 +5094,9 @@ settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) =
     const shopId = req.employee!.shopId;
     const rows:Record<string,unknown>[]=[];
     for(let page=0;;page++) {
-      const {data,error}=await supabase.from('settlements').select('*').eq('shop_id',shopId)
-        .order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*500,page*500+499);
+      let query=supabase.from('settlements').select('*').eq('shop_id',shopId);
+      if(req.query.pending==='1') query=query.eq('payment_status','pending');
+      const {data,error}=await query.order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*500,page*500+499);
       if(error) return res.status(503).json({success:false,error:'结算列表暂不可读取，请刷新重试'});
       rows.push(...(data || []));
       if((data || []).length<500) break;

@@ -36,9 +36,10 @@ export function isRealApi(): boolean {
  *
  * 注意：本函数不处理认证 token，调用方需自行在 opts.headers 中传入 Authorization。
  */
-export async function http<T>(url: string, opts: RequestInit = {}): Promise<T | null> {
+export async function http<T>(url: string, opts: RequestInit = {}, timeoutMs = 15000): Promise<T | null> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   const abort = () => controller.abort();
   if (opts.signal?.aborted) controller.abort();
   else opts.signal?.addEventListener('abort', abort, { once: true });
@@ -58,6 +59,9 @@ export async function http<T>(url: string, opts: RequestInit = {}): Promise<T | 
     }
     if (body === null) throw new Error('服务返回格式异常，请稍后重试');
     return body as T;
+  } catch (error) {
+    if (timedOut) throw new Error(`请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`);
+    throw error;
   } finally {
     clearTimeout(timeoutId);
     opts.signal?.removeEventListener('abort', abort);

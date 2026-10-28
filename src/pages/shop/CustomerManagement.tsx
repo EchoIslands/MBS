@@ -81,7 +81,29 @@ const CustomerManagement: React.FC = () => {
 
   const scope = currentEmployee ? [currentEmployee.id, currentShop?.id, userRole].join(':') : '';
   const {customers, loading, error, syncing, syncedAt, refresh: fetchCustomers} = useCustomerDirectory(scope);
-  const viewingCustomer = customers.find(customer => customer.id === viewingId) || null;
+  const [detail, setDetail] = useState<Customer | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const directoryCustomer = customers.find(customer => customer.id === viewingId) || null;
+  const detailReady = !!viewingId && detail?.id === viewingId;
+  const viewingCustomer = directoryCustomer && detailReady
+    ? { ...detail, ...directoryCustomer, profile: detail.profile, visitRecords: detail.visitRecords }
+    : directoryCustomer;
+  React.useEffect(() => {
+    if (!viewingId || !scope) { setDetail(null); setDetailError(null); setDetailLoading(false); return; }
+    let cancelled = false;
+    setDetail(null); setDetailError(null); setDetailLoading(true);
+    void customerApi.getById(viewingId).then(customer => {
+      if (!cancelled) {
+        if (customer) setDetail(customer);
+        else setDetailError('客户完整档案未找到，请稍后重试');
+      }
+    }).catch(err => {
+      if (!cancelled) setDetailError(err instanceof Error ? err.message : '完整档案加载失败');
+    }).finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [viewingId, scope]);
+  const countText = (count: number) => syncedAt ? count : '—';
   const canUseTable = [UserRole.CEO,UserRole.CUSTOMER_SERVICE,UserRole.SHOP_MANAGER].includes(userRole as UserRole);
   const tableView = canUseTable && searchParams.get('view') === 'table';
   React.useEffect(() => { setShowEdit(null);setShowAdd(false);setViewingId(null);setActionError(null); }, [scope]);
@@ -372,7 +394,7 @@ const CustomerManagement: React.FC = () => {
                   <Icon size={20} className={stat.color} />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-gray-800">{stat.value}</div>
+                  <div className="text-2xl font-bold text-gray-800">{countText(stat.value)}</div>
                   <div className="text-sm text-gray-500">{stat.label}</div>
                 </div>
               </div>
@@ -445,7 +467,7 @@ const CustomerManagement: React.FC = () => {
                 {storedValueLabels[activeStoredLevel]}
               </span>
             )}
-            <span className="text-gray-400">共 {filteredCustomers.length} 位客户</span>
+            <span className="text-gray-400">共 {countText(filteredCustomers.length)} 位客户</span>
           </div>
         )}
       </div>
@@ -471,7 +493,7 @@ const CustomerManagement: React.FC = () => {
                 : 'bg-gray-50 text-gray-700 hover:bg-orange-50 hover:text-orange-600 border border-gray-100'
             }`}
           >
-            <div className="text-xl md:text-2xl font-bold">{filteredCustomers.length}</div>
+            <div className="text-xl md:text-2xl font-bold">{countText(filteredCustomers.length)}</div>
             <div className="text-sm font-medium mt-1">全部客户</div>
           </button>
           {Object.entries(tagLabels).map(([key, label]) => {
@@ -512,7 +534,7 @@ const CustomerManagement: React.FC = () => {
                 : 'bg-gray-50 text-gray-700 hover:bg-orange-50 hover:text-orange-600 border border-gray-100'
             }`}
           >
-            <div className="text-xl md:text-2xl font-bold">{filteredCustomers.length}</div>
+            <div className="text-xl md:text-2xl font-bold">{countText(filteredCustomers.length)}</div>
             <div className="text-sm font-medium mt-1">全部</div>
           </button>
           {Object.entries(purchaseVIPLabels).map(([key, label]) => {
@@ -529,7 +551,7 @@ const CustomerManagement: React.FC = () => {
                     : purchaseVIPColors[levelKey] + ' hover:shadow-sm opacity-80 hover:opacity-100'
                 }`}
               >
-                <div className="text-xl md:text-2xl font-bold">{count}</div>
+                <div className="text-xl md:text-2xl font-bold">{countText(count)}</div>
                 <div className="text-sm font-medium mt-1">{label}</div>
               </button>
             );
@@ -552,7 +574,7 @@ const CustomerManagement: React.FC = () => {
                 : 'bg-gray-50 text-gray-700 hover:bg-orange-50 hover:text-orange-600 border border-gray-100'
             }`}
           >
-            <div className="text-xl md:text-2xl font-bold">{filteredCustomers.length}</div>
+            <div className="text-xl md:text-2xl font-bold">{countText(filteredCustomers.length)}</div>
             <div className="text-sm font-medium mt-1">全部</div>
           </button>
           {Object.entries(storedValueLabels).map(([key, label]) => {
@@ -569,7 +591,7 @@ const CustomerManagement: React.FC = () => {
                     : storedValueColors[levelKey] + ' hover:shadow-sm opacity-80 hover:opacity-100'
                 }`}
               >
-                <div className="text-xl md:text-2xl font-bold">{count}</div>
+                <div className="text-xl md:text-2xl font-bold">{countText(count)}</div>
                 <div className="text-sm font-medium mt-1">{label}</div>
               </button>
             );
@@ -583,7 +605,7 @@ const CustomerManagement: React.FC = () => {
           <h2 className="text-base md:text-lg font-bold text-gray-800 flex items-center gap-2">
             <User size={18} className="text-orange-500" />
             {activeTag === 'all' && activePurchaseLevel === 'all' && activeStoredLevel === 'all' ? '所有客户' : '筛选结果'}
-            <span className="text-sm font-normal text-gray-500">({filteredCustomers.length})</span>
+            <span className="text-sm font-normal text-gray-500">({countText(filteredCustomers.length)})</span>
           </h2>
           {canExport && filteredCustomers.length > 0 && (
             <button
@@ -608,7 +630,7 @@ const CustomerManagement: React.FC = () => {
         {error && !loading && (
           <div className="flex flex-col items-center justify-center py-12 text-red-500">
             <AlertCircle size={48} className="mb-4" />
-            <p className="text-sm mb-4">{error}</p>
+            <p className="text-sm mb-4">客户资料未同步；这不代表客户数量为零。{error}</p>
             <button
               onClick={() => { void fetchCustomers(); }}
               className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors text-sm"
@@ -753,6 +775,8 @@ const CustomerManagement: React.FC = () => {
             </div>
             {actionError && <p role="alert" className="text-red-700 mb-4">{actionError}</p>}
             {error && <p role="alert" className="text-red-700 mb-4">同步失败，当前详情为上次快照，暂停修改。请关闭后刷新。</p>}
+            {detailLoading && <p role="status" className="text-gray-600 mb-4">正在加载完整档案和到店记录…</p>}
+            {detailError && <p role="alert" className="text-red-700 mb-4">{detailError}，请关闭后重试。</p>}
             {/* 头部信息 */}
             <div className="flex flex-col items-center mb-5 pb-5 border-b border-gray-100">
               <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center mb-3">
@@ -912,7 +936,7 @@ const CustomerManagement: React.FC = () => {
             )}
 
             {/* 客户画像 */}
-            {viewingCustomer.profile && (
+            {detailReady && viewingCustomer.profile && (
               <div className="mb-5 border border-gray-200 rounded-xl p-4 bg-gray-50">
                 <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2 text-sm">
                   <UserCircle size={16} className="text-orange-500" />
@@ -1055,7 +1079,7 @@ const CustomerManagement: React.FC = () => {
             )}
 
             {/* 到店记录 */}
-            {viewingCustomer.visitRecords && viewingCustomer.visitRecords.length > 0 && (
+            {detailReady && viewingCustomer.visitRecords && viewingCustomer.visitRecords.length > 0 && (
               <div className="mb-5">
                 <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2 text-sm">
                   <ClipboardList size={16} className="text-orange-500" />
@@ -1137,7 +1161,7 @@ const CustomerManagement: React.FC = () => {
                   className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition-colors text-sm font-medium"
                 >
                   <UserCircle size={16} />
-                  {viewingCustomer.profile ? '编辑画像' : '新建画像'}
+                  {detailReady ? (viewingCustomer.profile ? '编辑画像' : '新建画像') : '查看画像'}
                 </button>
               )}
             </div>
