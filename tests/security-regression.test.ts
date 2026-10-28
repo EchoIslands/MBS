@@ -168,7 +168,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   });
   await t.test('历史支付恢复区分草稿、原二维码、缺二维码及初始化认领，跨店拒绝',async()=>{
    const token=await login('ceo');
-   const row:Row={id:'recover',shop_id:'s1',payment_status:'pending',total:58,checkout_payment_started:false,created_at:new Date(Date.now()-24*3600_000).toISOString()};
+   const row:Row={id:'recover',shop_id:'s1',payment_status:'pending',server_priced:true,total:58,checkout_payment_started:false,created_at:new Date(Date.now()-24*3600_000).toISOString()};
    tables.settlements.push(row);tables.payments=[];
    const state=async()=> (await request('/settlements/recover/payment-status',token)).body.data.recoveryState;
    try {
@@ -188,6 +188,10 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const protectedPayment=await request('/settlements/recover/release-unstarted-payment',token,'POST',{});
     assert.equal(protectedPayment.status,409);
     assert.equal(await state(),'payment_needs_review');
+    row.server_priced=false;assert.equal(await state(),'legacy_review');
+    const legacy=(await request('/settlements?pending=1',token)).body.data.find((item:Row)=>item.id==='recover');
+    assert.equal(legacy.legacyPaymentReviewRequired,true);
+    row.server_priced=true;
     tables.payments[0].code_url='synthetic:original';assert.equal(await state(),'payment_needs_review');
     tables.payments[0].amount=59;assert.equal(await state(),'payment_needs_review');
     tables.payments[0].amount=58;tables.payments[0].status='paid';assert.equal(await state(),'payment_needs_review');

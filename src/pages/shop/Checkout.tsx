@@ -124,6 +124,8 @@ const Checkout: React.FC = () => {
 
   // 未完成结算（草稿/待支付）找回
   const [pendingSettlements, setPendingSettlements] = useState<Settlement[]>([]);
+  const actionablePendingSettlements = pendingSettlements.filter(s => !s.legacyPaymentReviewRequired);
+  const legacyPendingCount = pendingSettlements.length - actionablePendingSettlements.length;
   const [loadingPendingSettlements, setLoadingPendingSettlements] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [lockedSettlement, setLockedSettlement] = useState<Settlement | null>(null);
@@ -679,6 +681,10 @@ const Checkout: React.FC = () => {
   // 继续未完成的结算（草稿 / 待支付），恢复其内容供继续编辑
   const handleContinueSettlement = async (s: Settlement) => {
     if (submissionLock.current) return;
+    if (s.legacyPaymentReviewRequired) {
+      setError('此旧版待支付单已有支付记录，须先在微信商户平台核对；不能继续结算或直接删除。');
+      return;
+    }
     submissionLock.current = true;
     setLockedSettlement(s);
     setPaymentRecoveryBlock('正在核对原单支付状态，请稍候');
@@ -724,7 +730,9 @@ const Checkout: React.FC = () => {
           setPendingSettlementId(s.id);
           setShowWechatModal(true);
         } else {
-          const reason = state.recoveryState === 'initialization_started'
+          const reason = state.recoveryState === 'legacy_review'
+            ? '旧版结算未经服务端核价，需人工核对微信商户订单，不能直接恢复或删除'
+            : state.recoveryState === 'initialization_started'
             ? '支付认领尚未过期或状态不能安全释放，请稍后重试或联系管理员核对'
             : state.payment ? '已有支付记录，可点击下方按钮向微信核对并恢复原支付'
             : '无法确认原单是否已发起支付，请核对部署版本与支付状态';
@@ -1043,20 +1051,27 @@ const Checkout: React.FC = () => {
             </div>
           )}
 
-          {!loadingShop && !loadingCustomers && pendingSettlements.length > 0 && (
+          {!loadingShop && !loadingCustomers && legacyPendingCount > 0 && (
+            <p className="mb-4 rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm text-amber-900" role="status">
+              {legacyPendingCount} 笔旧版待支付记录已从继续开单列表移出；存在支付记录，须先核对微信商户订单。可在结算管理查看。
+            </p>
+          )}
+          {!loadingShop && !loadingCustomers && actionablePendingSettlements.length > 0 && (
             <div className="mb-6 bg-white rounded-2xl shadow-sm border border-amber-100 p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Clock size={18} className="text-amber-500" />
                 <h2 className="text-base font-bold text-gray-800">未完成结算</h2>
-                <span className="text-xs text-gray-400">{pendingSettlements.length} 笔</span>
+                <span className="text-xs text-gray-400">{actionablePendingSettlements.length} 笔</span>
               </div>
               <div className="space-y-2">
-                {pendingSettlements.map((s) => (
+                {actionablePendingSettlements.map((s) => (
                   <div key={s.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-xl bg-gray-50/50">
                     <div className="min-w-0">
                       <div className="font-medium text-gray-800 text-sm">
                         {s.customerName || '未命名客户'}
-                        {s.paymentMethod === 'wechat' || s.paymentMethod === 'alipay' ? (
+                        {s.legacyPaymentReviewRequired ? (
+                          <span className="ml-2 text-xs text-amber-700">旧版待核对</span>
+                        ) : s.paymentMethod === 'wechat' || s.paymentMethod === 'alipay' ? (
                           <span className="ml-2 text-xs text-blue-600">待支付</span>
                         ) : (
                           <span className="ml-2 text-xs text-amber-600">未完成</span>
@@ -1068,9 +1083,11 @@ const Checkout: React.FC = () => {
                     </div>
                     <button
                       onClick={() => handleContinueSettlement(s)}
-                      className="shrink-0 ml-3 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium transition-colors"
+                      disabled={s.legacyPaymentReviewRequired}
+                      title={s.legacyPaymentReviewRequired ? '有支付记录的旧版结算需先核对微信商户订单' : undefined}
+                      className="shrink-0 ml-3 px-4 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                     >
-                      继续结算
+                      {s.legacyPaymentReviewRequired ? '需人工核对' : '继续结算'}
                     </button>
                   </div>
                 ))}

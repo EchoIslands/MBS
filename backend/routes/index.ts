@@ -4652,6 +4652,7 @@ const settlementFromDb = (s: Record<string, unknown>, payment?: Record<string, u
     manualPaidRecordedBy:s.manual_paid_recorded_by,
     transactionId:matches ? payment?.transaction_id : undefined, paymentRecordStatus:matches ? payment?.status : undefined,
     paymentReviewRequired:!matches || Boolean(payment?.multiple) || (payment?.status==='paid' && s.payment_status!=='completed'),
+    legacyPaymentReviewRequired:s.payment_status==='pending' && s.server_priced!==true,
   };
 };
 
@@ -5075,6 +5076,7 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
     if (paymentError) return res.status(503).json({ success: false, error: '原支付记录暂无法查询，尚不能判断是否可继续结算，请稍后重试' });
     // Stored URLs may be expired or of unknown age. Recover through the gateway before display.
     const recoveryState = settlement.payment_status === 'completed' ? 'completed'
+      : settlement.server_priced !== true ? 'legacy_review'
       : payment ? 'payment_needs_review'
       : settlement.checkout_payment_started ? 'initialization_started' : 'editable';
     res.json({success:true,data:{

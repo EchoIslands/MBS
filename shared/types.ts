@@ -436,6 +436,7 @@ export interface Settlement {
   manualPaidRecordedBy?: string;
   paymentRecordStatus?: string;
   paymentReviewRequired?: boolean;
+  legacyPaymentReviewRequired?: boolean;
   transactionId?: string;
   processedBy?: string;          // 操作员
 }

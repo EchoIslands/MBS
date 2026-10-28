@@ -129,6 +129,10 @@ const SettlementManagement: React.FC = () => {
   };
 
   const handleRetryPayment = async (settlement: Settlement) => {
+    if (settlement.legacyPaymentReviewRequired) {
+      alert('旧版结算需先核对原商户支付单，不能重新发起支付。');
+      return;
+    }
     try {
       const payment = await settlementApi.retryPayment(settlement.id);
       if(payment.status==='paid') {await loadSettlements();alert('微信已收款，原结算已同步');return;}
@@ -146,6 +150,11 @@ const SettlementManagement: React.FC = () => {
   };
 
   const handleDelete = async (settlementId: string) => {
+    const existing = settlements.find(item => item.id === settlementId);
+    if (existing?.paymentId) {
+      alert('此结算已关联支付订单，请先核对商户支付记录，不能直接删除。');
+      return;
+    }
     if (!window.confirm('确定删除这条结算记录吗？删除后不可恢复。')) return;
     try {
       await settlementApi.delete(settlementId);
@@ -423,6 +432,7 @@ const SettlementManagement: React.FC = () => {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(settlement.paymentStatus)}`}>
                           {getStatusLabel(settlement.paymentStatus)}
                         </span>
+                        {settlement.legacyPaymentReviewRequired && <div className="text-xs text-amber-700 mt-2">旧版待核对，不可继续支付</div>}
                         {settlement.paymentReviewRequired && <div className="text-xs text-red-600 mt-2">支付/结算状态待核对，请勿重复收款</div>}
                       </td>
                       <td className="py-4 px-4">
@@ -447,7 +457,7 @@ const SettlementManagement: React.FC = () => {
                           >
                             <Eye size={18} className="text-gray-600" />
                           </button>
-                          {(settlement.paymentStatus === 'pending' || settlement.paymentStatus === 'failed') && (
+                          {(settlement.paymentStatus === 'pending' || settlement.paymentStatus === 'failed') && !settlement.paymentId && (
                             <button
                               onClick={() => handleDelete(settlement.id)}
                               className="p-2 hover:bg-red-50 rounded-lg transition-colors"
@@ -466,7 +476,7 @@ const SettlementManagement: React.FC = () => {
                               <CheckCircle size={18} className="text-green-600" />
                             </button>
                           )}
-                          {settlement.paymentStatus === 'pending' && ['wechat', 'alipay'].includes(settlement.paymentMethod) && (
+                          {settlement.paymentStatus === 'pending' && !settlement.legacyPaymentReviewRequired && ['wechat', 'alipay'].includes(settlement.paymentMethod) && (
                             <button
                               onClick={() => handleRetryPayment(settlement)}
                               className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
@@ -596,6 +606,7 @@ const SettlementManagement: React.FC = () => {
               {viewingSettlement.paymentId && <div className="text-sm break-all">商户支付单号：{viewingSettlement.gatewayOrderNo || viewingSettlement.paymentId}</div>}
               {viewingSettlement.transactionId && <div className="text-sm break-all">微信交易号：{viewingSettlement.transactionId}</div>}
               {viewingSettlement.paymentRecordStatus === 'paid' && viewingSettlement.paymentAmount !== undefined && <div>登记收款金额：¥{viewingSettlement.paymentAmount.toFixed(2)}（未扣手续费）</div>}
+              {viewingSettlement.legacyPaymentReviewRequired && <p className="text-sm text-amber-700">旧版结算不能重新发起支付。若已关联商户支付单，请先核对微信收款状态，不能直接删除。</p>}
               {viewingSettlement.paymentReviewRequired && <p className="text-sm text-red-600">支付记录与结算状态需核对，请勿重新收款。</p>}
               {viewingSettlement.paymentMethod === 'wechat' && viewingSettlement.paymentId && <button disabled={checkingPayment !== null} aria-busy={checkingPayment === viewingSettlement.id} onClick={()=>handleConfirmPayment(viewingSettlement.id, undefined, true)} className="w-full py-2 bg-green-600 text-white rounded-xl disabled:opacity-50">{checkingPayment === viewingSettlement.id ? '向微信核对中...' : '核对微信收款与支付时间'}</button>}
               {checkingPayment === viewingSettlement.id && <p role="status" className="text-sm text-gray-600">正在查询微信原订单，请稍候；不会再次发起扣款。</p>}
@@ -615,7 +626,7 @@ const SettlementManagement: React.FC = () => {
               >
                 关闭
               </button>
-              {(viewingSettlement.paymentStatus === 'pending' || viewingSettlement.paymentStatus === 'failed') && (
+              {(viewingSettlement.paymentStatus === 'pending' || viewingSettlement.paymentStatus === 'failed') && !viewingSettlement.paymentId && (
                 <button
                   onClick={() => handleDelete(viewingSettlement.id)}
                   className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors"
@@ -634,7 +645,7 @@ const SettlementManagement: React.FC = () => {
                   确认收款
                 </button>
               )}
-              {viewingSettlement.paymentStatus === 'pending' && ['wechat', 'alipay'].includes(viewingSettlement.paymentMethod) && (
+              {viewingSettlement.paymentStatus === 'pending' && !viewingSettlement.legacyPaymentReviewRequired && ['wechat', 'alipay'].includes(viewingSettlement.paymentMethod) && (
                 <button
                   onClick={() => {
                     handleRetryPayment(viewingSettlement);
