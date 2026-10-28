@@ -1,186 +1,44 @@
-﻿﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
   Users,
   Calendar,
   BarChart3,
-  MessageSquare,
-  FileSpreadsheet,
-  FileText,
   CreditCard,
-  Crown,
   LogOut,
   Scissors,
-  UserCircle,
   Wallet,
   Settings,
-  Building2,
-  AlertTriangle,
   Package,
-  Gift,
-  Ticket,
-  Bell,
   ArrowLeft,
   Camera,
   Check,
   X,
   Lock,
   Edit3,
-  Activity,
+  MoreHorizontal,
 } from 'lucide-react';
 import { useAppStore, setEmployeePassword } from '../../store';
 import { employeeApi, authApi } from '../../api';
 import { getAvatarUrl } from '../../lib/avatar';
 import { UserRole, Employee } from '../../../shared/types';
+import { activeShopSection, pathMatchesShopTab, visibleShopSections, type ShopNavigationIcon } from '../../lib/shopNavigation';
 
 interface ShopLayoutProps {
   children: React.ReactNode;
   title?: string;
 }
 
-interface MenuItem {
-  label: string;
-  path: string;
-  icon: React.ReactNode;
-  roles: UserRole[];
-}
-
-// 统一的导航菜单配置
-const menuItems: MenuItem[] = [
-  {
-    label: '首页概览',
-    path: '/shop',
-    icon: <Home size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
-  },
-  {
-    label: '客户洞察',
-    path: '/shop/customer-insights',
-    icon: <Activity size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE],
-  },
-  {
-    label: '预约管理',
-    path: '/shop/bookings',
-    icon: <Calendar size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER, UserRole.STYLIST],
-  },
-  {
-    label: '客户管理',
-    path: '/shop/customers',
-    icon: <Users size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
-  },
-  {
-    label: '客户智能召回',
-    path: '/shop/customer-recall',
-    icon: <Bell size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '客户画像',
-    path: '/shop/customer-profile',
-    icon: <UserCircle size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '评价管理',
-    path: '/shop/reviews',
-    icon: <MessageSquare size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '发型师看板',
-    path: '/shop/stylist',
-    icon: <Scissors size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER, UserRole.STYLIST],
-  },
-  {
-    label: '财务报表',
-    path: '/shop/financial',
-    icon: <BarChart3 size={18} />,
-    roles: [UserRole.CEO],
-  },
-  {
-    label: '会员权益配置',
-    path: '/shop/vip-configs',
-    icon: <Crown size={18} />,
-    roles: [UserRole.CEO],
-  },
-  {
-    label: '会员管理',
-    path: '/shop/membership',
-    icon: <Crown size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '退款管理',
-    path: '/shop/refunds',
-    icon: <AlertTriangle size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '商品管理',
-    path: '/shop/products',
-    icon: <Package size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '商品订单',
-    path: '/shop/product-orders',
-    icon: <Package size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '次卡管理',
-    path: '/shop/packages',
-    icon: <Gift size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '优惠券管理',
-    path: '/shop/coupons',
-    icon: <Ticket size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '外部团购券',
-    path: '/shop/group-buy',
-    icon: <Ticket size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '开单结算',
-    path: '/shop/checkout',
-    icon: <CreditCard size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.STYLIST],
-  },
-  {
-    label: '结算管理',
-    path: '/shop/settlement',
-    icon: <CreditCard size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '满意度回访',
-    path: '/shop/survey',
-    icon: <FileSpreadsheet size={18} />,
-    roles: [UserRole.CEO, UserRole.CUSTOMER_SERVICE],
-  },
-  {
-    label: '店铺设置',
-    path: '/shop/manage',
-    icon: <Settings size={18} />,
-    roles: [UserRole.CEO, UserRole.SHOP_MANAGER],
-  },
-  {
-    label: '老板视图',
-    path: '/shop/owner',
-    icon: <Building2 size={18} />,
-    roles: [UserRole.CEO],
-  },
-];
+const sectionIcons: Record<ShopNavigationIcon, React.ReactNode> = {
+  home: <Home size={18} />,
+  calendar: <Calendar size={18} />,
+  users: <Users size={18} />,
+  'credit-card': <CreditCard size={18} />,
+  package: <Package size={18} />,
+  'bar-chart': <BarChart3 size={18} />,
+  settings: <Settings size={18} />,
+};
 
 const roleLabels: Record<string, string> = {
   [UserRole.CEO]: 'CEO',
@@ -197,6 +55,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 
   // 个人资料弹窗状态（必须在所有 early return 之前调用 Hook）
   const [profileOpen, setProfileOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: currentEmployee?.name || '',
@@ -243,10 +102,9 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
     return null;
   }
 
-  // 根据角色筛选菜单项
-  const visibleMenus = menuItems.filter((item) =>
-    userRole ? item.roles.includes(userRole) : true,
-  );
+  // 一级导航按业务模块收拢；每个模块内仍按原角色权限显示页面标签。
+  const visibleSections = visibleShopSections(userRole);
+  const currentSection = activeShopSection(visibleSections, location.pathname);
 
   const handleLogout = () => {
     logout();
@@ -261,9 +119,7 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 
   const displayTitle =
     title ||
-    visibleMenus.find((m) => (location.pathname === m.path || location.pathname.startsWith(m.path + '/')) && m.path !== '/shop')
-      ?.label ||
-    visibleMenus.find((m) => m.path === location.pathname)?.label ||
+    currentSection?.tabs.find((tab) => pathMatchesShopTab(location.pathname, tab))?.label ||
     '首页概览';
 
   const employeeName = currentEmployee?.name || currentShop?.name || '管理后台';
@@ -340,9 +196,10 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
     }
   };
 
-  // 手机端只显示前 5 个菜单（避免底部导航过密）
-  const bottomMenus = visibleMenus.slice(0, 5);
-  const moreMenus = visibleMenus.slice(5);
+  // 手机端保留四个一级模块，其余模块进入可展开的“更多”面板。
+  const bottomSections = visibleSections.slice(0, 4);
+  const moreSections = visibleSections.slice(4);
+  const activeSectionInMore = moreSections.some((section) => section === currentSection);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -401,23 +258,21 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
         {/* 左侧导航 —— 桌面端显示 */}
         <aside className="shop-side-nav w-48 md:w-56 bg-white border-r border-gray-200 min-h-[calc(100vh-56px)] py-3 flex-shrink-0">
           <nav className="space-y-1 px-2">
-            {visibleMenus.map((item) => {
-              const isActive =
-                item.path === '/shop'
-                  ? location.pathname === '/shop'
-                  : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
+            {visibleSections.map((section) => {
+              const isActive = section === currentSection;
               return (
                 <button
-                  key={item.path}
-                  onClick={() => navigate(item.path)}
+                  key={section.label}
+                  onClick={() => navigate(section.tabs[0].path)}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     isActive
                       ? 'bg-orange-500 text-white shadow-sm'
                       : 'text-gray-700 hover:bg-orange-50 hover:text-orange-700'
                   }`}
                 >
-                  {item.icon}
-                  {item.label}
+                  {sectionIcons[section.icon]}
+                  {section.label}
                 </button>
               );
             })}
@@ -434,44 +289,102 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 
         {/* 右侧内容 */}
         <main className="shop-main-content flex-1 px-3 sm:px-4 md:px-6 py-4 sm:py-6 overflow-x-hidden w-full">
-          <div className="max-w-5xl mx-auto pb-24">{children}</div>
+          <div className="max-w-5xl mx-auto pb-24">
+            {currentSection && currentSection.tabs.length > 1 && (
+              <nav aria-label={`${currentSection.label}页面`} className="mb-4 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
+                <div className="flex min-w-max gap-1">
+                  {currentSection.tabs.map((tab) => {
+                    const isActive = pathMatchesShopTab(location.pathname, tab);
+                    return (
+                      <button
+                        key={tab.path}
+                        onClick={() => navigate(tab.path)}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-orange-500 text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-orange-50 hover:text-orange-700'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </nav>
+            )}
+            {children}
+          </div>
         </main>
       </div>
 
+      {/* 手机端“更多”模块面板 */}
+      {mobileMoreOpen && moreSections.length > 0 && (
+        <>
+          <button
+            type="button"
+            aria-label="关闭更多导航"
+            onClick={() => setMobileMoreOpen(false)}
+            className="fixed inset-0 z-40 bg-black/30 md:hidden"
+          />
+          <div className="fixed bottom-[64px] left-3 right-3 z-50 rounded-2xl bg-white p-3 shadow-2xl md:hidden mobile-safe-bottom">
+            <div className="mb-2 px-2 text-sm font-bold text-gray-800">更多功能</div>
+            <div className="grid grid-cols-2 gap-2">
+              {moreSections.map((section) => {
+                const isActive = section === currentSection;
+                return (
+                  <button
+                    key={section.label}
+                    onClick={() => {
+                      setMobileMoreOpen(false);
+                      navigate(section.tabs[0].path);
+                    }}
+                    className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-medium ${
+                      isActive ? 'bg-orange-500 text-white' : 'bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    {sectionIcons[section.icon]}
+                    {section.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* 手机端底部导航栏 */}
-      <nav className="shop-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40 mobile-safe-bottom">
-        <div className="flex justify-around items-stretch">
-          {bottomMenus.map((item) => {
-            const isActive =
-              item.path === '/shop'
-                ? location.pathname === '/shop'
-                : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
+      <nav className="shop-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 mobile-safe-bottom">
+        <div className="flex w-full justify-around items-stretch">
+          {bottomSections.map((section) => {
+            const isActive = section === currentSection;
             return (
               <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
+                key={section.label}
+                onClick={() => {
+                  setMobileMoreOpen(false);
+                  navigate(section.tabs[0].path);
+                }}
+                aria-current={isActive ? 'page' : undefined}
                 className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs transition-colors min-h-[56px] ${
-                  isActive ? 'text-orange-600' : 'text-gray-500'
-                } ${isActive ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
+                  isActive ? 'bg-orange-50 text-orange-600' : 'text-gray-500 hover:bg-gray-50'
+                }`}
               >
-                <div className={isActive ? 'text-orange-600' : 'text-gray-500'}>
-                  {item.icon}
-                </div>
-                <span className="truncate max-w-full px-1 text-[11px] font-medium">
-                  {item.label}
-                </span>
+                <div>{sectionIcons[section.icon]}</div>
+                <span className="truncate max-w-full px-1 text-[11px] font-medium">{section.label}</span>
               </button>
             );
           })}
-          {moreMenus.length > 0 && (
+          {moreSections.length > 0 && (
             <button
-              onClick={() => navigate(moreMenus[0].path)}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs text-gray-500 hover:bg-gray-50 min-h-[56px]"
+              onClick={() => setMobileMoreOpen((open) => !open)}
+              aria-expanded={mobileMoreOpen}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs min-h-[56px] ${
+                activeSectionInMore || mobileMoreOpen ? 'bg-orange-50 text-orange-600' : 'text-gray-500 hover:bg-gray-50'
+              }`}
             >
-              <Crown size={18} />
-              <span className="truncate max-w-full px-1 text-[11px] font-medium">
-                {moreMenus[0].label}
-              </span>
+              <MoreHorizontal size={18} />
+              <span className="truncate max-w-full px-1 text-[11px] font-medium">更多</span>
             </button>
           )}
         </div>
@@ -611,5 +524,3 @@ const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {
 };
 
 export default ShopLayout;
-
-

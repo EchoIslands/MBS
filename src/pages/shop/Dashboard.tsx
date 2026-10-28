@@ -10,7 +10,7 @@ import {
   Clock,
   Scissors,
   MessageSquare,
-  UserCircle,
+  Bell,
   Edit2,
 } from 'lucide-react';
 import { Booking, Customer, UserRole, Settlement, Employee } from '../../../shared/types';
@@ -42,15 +42,16 @@ const Dashboard: React.FC = () => {
   const [savingProfile, setSavingProfile] = useState(false);
   const navigate = useNavigate();
   const { currentShop, currentEmployee, userRole, updateCurrentEmployee } = useAppStore();
+  const shopId = currentShop?.id;
 
   useEffect(() => {
-    if (!currentShop) return;
+    if (!shopId) return;
     let cancelled = false;
     const now = new Date(), today = businessDateKey(now);
     setBookingState('加载中'); setSettlementState('加载中'); setCustomerError(false);
     setTodayBookings([]); setTodaySettlements([]); setRecentCustomers([]); setExcluded({count:0,amount:0});
     setGeneratedAt(now.toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}));
-    void bookingApi.getBookingsByShop(currentShop.id, today).then(data => {
+    void bookingApi.getBookingsByShop(shopId, today).then(data => {
       if (cancelled) return;
       if (!Array.isArray(data)) throw new Error('预约数据无效');
       setTodayBookings(data.filter(b => businessDateKey(b.scheduledTime) === today)); setBookingState('');
@@ -60,7 +61,7 @@ const Dashboard: React.FC = () => {
       if (!Array.isArray(data)) throw new Error('客户数据无效');
       setRecentCustomers(data.slice(0,5));
     }).catch(() => { if (!cancelled) setCustomerError(true); });
-    void settlementApi.getByShop(currentShop.id).then(data => {
+    void settlementApi.getByShop(shopId).then(data => {
       if (cancelled) return;
       if (!Array.isArray(data)) throw new Error('结算数据无效');
       const unknown = data.filter(s => s.paymentStatus === 'completed' && !financialTime(s,now).time);
@@ -69,7 +70,7 @@ const Dashboard: React.FC = () => {
       setSettlementState('');
     }).catch(() => { if (!cancelled) setSettlementState('结算加载失败，请刷新重试'); });
     return () => { cancelled = true; };
-  }, [currentShop?.id, currentEmployee?.id, userRole, refresh]);
+  }, [shopId, currentEmployee?.id, userRole, refresh]);
 
   if (!currentShop && !currentEmployee) return null;
 
@@ -162,7 +163,7 @@ const Dashboard: React.FC = () => {
       desc: '查看和回复评价',
       icon: <MessageSquare size={20} />,
       path: '/shop/reviews',
-      show: userRole !== UserRole.STYLIST || true,
+      show: userRole !== UserRole.STYLIST,
     },
     {
       label: '发型师看板',
@@ -172,11 +173,11 @@ const Dashboard: React.FC = () => {
       show: true,
     },
     {
-      label: '客户画像',
-      desc: '记录客户偏好',
-      icon: <UserCircle size={20} />,
-      path: '/shop/customer-profile',
-      show: true,
+      label: '客户智能召回',
+      desc: '维护需要回访的客户',
+      icon: <Bell size={20} />,
+      path: '/shop/customer-recall',
+      show: userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER || userRole === UserRole.CUSTOMER_SERVICE,
     },
     {
       label: '会员管理',
@@ -201,7 +202,7 @@ const Dashboard: React.FC = () => {
     <ShopLayout title="首页概览">
       <div className="bg-blue-50 text-blue-900 text-sm p-4 rounded-xl mb-4 space-y-2">
         <p>{FINANCIAL_BASIS_NOTE}</p>
-        <p>数据截止：{generatedAt}　<button onClick={() => setRefresh(n => n+1)} className="underline">刷新数据</button></p>
+        <p>数据截止：{generatedAt} <button onClick={() => setRefresh(n => n+1)} className="underline">刷新数据</button></p>
         {bookingState && <p role="status">{bookingState}</p>}{settlementState && <p role="status">{settlementState}</p>}
         {excluded.count > 0 && <p>历史已完成结算中有 {excluded.count} 笔（¥{excluded.amount.toFixed(2)}）待核对，未计入今日金额。</p>}
       </div>
