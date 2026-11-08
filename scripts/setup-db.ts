@@ -31,6 +31,7 @@ export const SETUP_MIGRATIONS = [
   '042_service_refunds_by_settlement.sql',
   '043_customer_auth_failure_limits.sql',
   '044_customer_last_service.sql',
+  '045_customer_sms_login.sql',
 ] as const;
 
 const BASE_TABLES = [
@@ -106,7 +107,7 @@ export function databaseConfig(env: NodeJS.ProcessEnv): ClientConfig {
   try { url = new URL(value); } catch { throw new Error('SUPABASE_DB_URL 格式无效。'); }
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || !url.username || !url.password) throw new Error('SUPABASE_DB_URL 须为含用户名和数据库密码的 PostgreSQL URI。');
   if (url.port === '6543') throw new Error('请使用 Direct connection 或 Session pooler 的 5432 连接串，不使用 6543 事务池。');
-  // 仅本地一次性脚本按用户要求跳过证书验证；剥离 URI 参数，避免 pg 覆盖 SSL 对象。
+  // 数据库连接必须校验服务端证书；剥离 URI 参数，避免 pg 覆盖 SSL 对象。
   for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'ssl', 'uselibpqcompat']) {
     url.searchParams.delete(key);
   }
@@ -119,7 +120,7 @@ export function databaseConfig(env: NodeJS.ProcessEnv): ClientConfig {
       throw new Error('SUPABASE_DB_URL 与 SUPABASE_URL 的项目不一致，请核对连接串。');
     }
   }
-  return { connectionString: url.toString(), ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15_000, application_name: 'mbs-setup-025-044' };
+  return { connectionString: url.toString(), ssl: { rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, application_name: 'mbs-setup-025-044' };
 }
 
 async function main() {

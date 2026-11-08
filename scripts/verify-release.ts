@@ -32,7 +32,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
   const issues: string[] = [];
   const warnings: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
-  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
+  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
   const signatures = new Set<string>();
   for (const file of SETUP_MIGRATIONS) {
     const sql = await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8');
@@ -128,7 +128,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
       (has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') OR has_any_column_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE')) AS authenticated_access
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='public' AND c.relkind='r' AND c.relname=ANY($1::text[])`, [[
-      'bookings','coupons','customer_auth_limits','customer_auth_reservations','customer_coupons','customer_events','customer_packages','customer_password_initialization_runs',
+      'bookings','coupons','customer_auth_limits','customer_auth_reservations','customer_sms_ip_limits','customer_sms_challenges','customer_coupons','customer_events','customer_packages','customer_password_initialization_runs',
       'customer_profiles','customer_visit_records','customers','employees','group_buy_batches','group_buy_vouchers','member_benefit_records',
       'member_benefits','membership_enrollments','package_usage_logs','payments','product_inventory_logs','product_order_items','product_order_refunds',
       'product_orders','products','purchase_vip_configs','queues','referral_records','refund_requests','reviews','satisfaction_surveys','services',

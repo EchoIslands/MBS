@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Download, Loader2, RefreshCw } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import ShopLayout from './ShopLayout';
 import { useAppStore } from '../../store';
@@ -56,7 +55,8 @@ const FinancialReportPage: React.FC = () => {
     setExporting(true); setExportError(null);
     try {
     // 预约附表沿用既有导出功能，明确与真实收款分开；只在导出时读取。
-    const bookings = await bookingApi.getBookingsByShop(shopId);
+    const bookings = await bookingApi.getAllBookingsByShop(shopId);
+    const XLSX = await import('xlsx');
     const data = [
       ['财务报表', currentShop?.name || '店铺'], ['数据截止时间', settlementDateLabel(report.generatedAt)],
       ['统计口径', FINANCIAL_BASIS_NOTE], ['明细导出范围', '全部已完成结算，不受图表范围、搜索与页码影响'],

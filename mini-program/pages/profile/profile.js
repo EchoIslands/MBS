@@ -2,7 +2,7 @@ import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
 import { getShop } from '../../api/shop';
 import { cancelBooking, respondDelay } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
-import { getCustomerId, clearCustomerId, setRouteParams } from '../../utils/storage';
+import { getCustomerId, getToken, clearCustomerId, setRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
 import {
   PurchaseVIPLevel,
@@ -144,6 +144,8 @@ Page({
     rescheduleTime: '',
     rescheduling: false,
     shopPhone: '',
+    publicShop: null,
+    publicShopError: '',
     // 顾客评价映射：bookingId -> review对象
     bookingReviewMap: {},
     bookingReviewedMap: {},
@@ -153,11 +155,32 @@ Page({
   },
 
   async onLoad() {
+    if (!getCustomerId() || !getToken()) {
+      await this.loadProfile();
+      return;
+    }
+    this.loadPublicShop();
     await this.loadProfile();
+  },
+
+  async loadPublicShop() {
+    try {
+      const shop = await getShop('shop1');
+      if (!shop || shop.isActive === false) throw new Error('门店暂不可用');
+      const publicPhone = /^(?:1\d{10}|0\d{2,3}-?\d{7,8}|[2-9]\d{7})$/.test(String(shop.phone || '')) && !['13800138001', '13900000001'].includes(String(shop.phone)) ? shop.phone : '';
+      this.setData({
+        publicShop: { name: shop.name, description: shop.description, address: shop.address, phone: publicPhone },
+        publicShopError: '',
+        shopPhone: publicPhone,
+      });
+    } catch (err) {
+      this.setData({ publicShopError: '门店资料暂时无法加载，请稍后重试' });
+    }
   },
 
   async onShow() {
     // 首次加载由 onLoad 完成；只有显式需要刷新时才重新加载
+    if (!getCustomerId() || !getToken()) return;
     if (!this.data._profileLoaded || this.data._needRefresh) {
       this.setData({ _needRefresh: false });
       await this.loadProfile();
@@ -166,7 +189,8 @@ Page({
 
   async loadProfile() {
     const customerId = getCustomerId();
-    if (!customerId) {
+    if (!customerId || !getToken()) {
+      if (customerId) clearCustomerId();
       wx.reLaunch({ url: '/pages/login/login' });
       return;
     }
@@ -229,7 +253,7 @@ Page({
         myBenefits: this.computeMyBenefits(customer),
         stockholderSummary,
         vipHeaderClass,
-        shopPhone: shop?.phone || '',
+        shopPhone: this.data.shopPhone || '',
         bookingReviewMap,
         bookingReviewedMap,
         isMember: this.isCustomerMember(customer),
@@ -404,6 +428,7 @@ Page({
   },
 
   goToBooking() {
+    if (!ensureLogin({ content: '登录后即可预约门店服务' })) return;
     wx.navigateTo({ url: '/pages/booking/booking' });
   },
 

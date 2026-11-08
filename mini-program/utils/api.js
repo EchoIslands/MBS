@@ -41,7 +41,7 @@ export function request(url, options = {}) {
     ...(requestToken && !url.startsWith('http') ? { Authorization: 'Bearer ' + requestToken } : {}),
     ...(options.headers || {}),
   };
-  const usesCustomerSession = !url.startsWith('http') && url !== '/customers/login'
+  const usesCustomerSession = !url.startsWith('http') && !['/customers/login', '/customers/sms/send', '/customers/sms/login'].includes(url)
     && (requestToken || requestCustomerId) && (!requestToken || headers.Authorization === 'Bearer ' + requestToken);
 
   return new Promise((resolve, reject) => {

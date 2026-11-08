@@ -1,4 +1,5 @@
 import { getShop, getShopReviews } from '../../api/shop';
+import { sortStylistsByRank } from '../../utils/stylist-order';
 import { getCustomerPublic } from '../../api/customer';
 import { getCustomerId, getToken, setRouteParams, clearCustomerId } from '../../utils/storage';
 import { trackPageView, trackServiceDetailView } from '../../utils/tracking';
@@ -124,8 +125,8 @@ Page({
         services,
         images: limitImageList(rawShop.images, 3),
       };
-      const stylists = (rawShop.employees || [])
-        .filter((e) => this.isStylist(e) && e.isActive !== false)
+      const stylists = sortStylistsByRank((rawShop.employees || [])
+        .filter((e) => this.isStylist(e) && e.isActive !== false))
         .slice(0, 8)
         .map((e) => ({
           id: e.id,

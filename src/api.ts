@@ -903,6 +903,23 @@ export const bookingApi = {
     });
   },
 
+  getAllBookingsByShop: async (shopId: string): Promise<Booking[]> => {
+    if (!USE_REAL_API) return mockBookings.filter(booking => booking.shopId === shopId);
+    const bookings: Booking[] = [];
+    for (let page = 1; page <= 200; page++) {
+      const params = new URLSearchParams({ shopId, page: String(page), pageSize: '1000' });
+      const response = await http<{ success: boolean; data: Booking[]; pagination: { totalPages: number } }>(
+        `${API_BASE}/bookings?${params}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } }, 30000
+      );
+      if (!response?.success || !Array.isArray(response.data) || !Number.isInteger(response.pagination?.totalPages) || response.pagination.totalPages < page) {
+        throw new Error('预约附表未能完整读取，请重试导出');
+      }
+      bookings.push(...response.data.map(normalizeBooking));
+      if (page >= response.pagination.totalPages) return bookings;
+    }
+    throw new Error('预约附表超过导出上限，请联系项目维护人员');
+  },
+
   delayBooking: async (id: string, extraMinutes: number, reason?: string): Promise<{ expectedEnd: string; affected: Booking[] }> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
@@ -1058,10 +1075,10 @@ export const customerApi = {
     return [...mockCustomers];
   },
 
-  getDirectory: async (): Promise<Customer[]> => {
+  getDirectory: async (compact = false, recent = false): Promise<Customer[]> => {
     if (!USE_REAL_API) return customerApi.getAll();
     const result = await http<{ success: boolean; data: Customer[] }>(
-      `${API_BASE}/customers?summary=1`,
+      `${API_BASE}/customers?summary=1${compact ? '&compact=1' : ''}${compact && recent ? '&recent=1' : ''}`,
       { headers: { Authorization: `Bearer ${getAuthToken()}` } },
       30000
     );

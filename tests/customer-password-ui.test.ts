@@ -7,9 +7,9 @@ test('小程序实际守卫：普通页面、深链、返回受限；改密与�
  const storage=new Map();const routes:string[]=[];let page:any;let loaded=0;let shown=0;
  const context=vm.createContext({
   wx:{getStorageSync:(k:string)=>storage.get(k),setStorageSync:(k:string,v:any)=>storage.set(k,v),removeStorageSync:(k:string)=>storage.delete(k),reLaunch:(o:any)=>{routes.push(o.url);o.complete?.();}},
-  Page:(config:any)=>{page=config;},App:()=>{},console,
+  Page:(config:any)=>{page=config;},App:()=>{},getCurrentPages:()=>[],console,
  });
- for(const file of ['utils/storage.js','utils/password-gate.js','app.js']) {
+ for(const file of ['utils/storage.js','utils/payment-order-link.js','utils/password-gate.js','utils/share.js','app.js']) {
   let code=await readFile(new URL('../mini-program/'+file,import.meta.url),'utf8');
   code=code.replace(/^import .*;\r?\n/gm,'').replace(/^export /gm,'');
   vm.runInContext(code,context,{filename:file});
@@ -31,6 +31,8 @@ test('小程序真实改密表单：六位校验、确认、防重复提交、�
   changeCustomerPassword:async(current:string,next:string,confirm:string)=>{changes++;assert.equal(current,'123456');assert.equal(next,'246810');assert.equal(confirm,next);},
   wx:{reLaunch:(o:any)=>routes.push(o.url),hideHomeButton:()=>hidden++},
  });
+ let link=await readFile(new URL('../mini-program/utils/payment-order-link.js',import.meta.url),'utf8');
+ vm.runInContext(link.replace(/^export /gm,''),context);
  let code=await readFile(new URL('../mini-program/pages/change-password/change-password.js',import.meta.url),'utf8');
  code=code.split(String.fromCharCode(10)).filter(line=>!line.startsWith('import ')).join(String.fromCharCode(10));vm.runInContext(code,context);
  page.setData=(patch:any)=>Object.assign(page.data,patch);page.onShow();assert.equal(hidden,1);

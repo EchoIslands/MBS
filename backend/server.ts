@@ -5,9 +5,11 @@
  */
 import app from './app.js';
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
-app.listen(PORT, () => {
-  console.log(`[server] API 服务已启动: http://localhost:${PORT}`);
-  console.log(`[server] 健康检查: http://localhost:${PORT}/api/health`);
+// 开发环境默认只在本机监听；需要手机局域网调试时显式设置 HOST。
+const HOST = process.env.HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => {
+  console.log(`[server] API 服务已启动: http://${HOST}:${PORT}`);
+  console.log(`[server] 健康检查: http://${HOST}:${PORT}/api/health`);
 });

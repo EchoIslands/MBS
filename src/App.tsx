@@ -10,6 +10,7 @@ const ChangePassword = lazy(() => import('./pages/customer/ChangePassword'));
 const CustomerLogin = lazy(() => import('./pages/customer/Login'));
 const ShopDetail = lazy(() => import('./pages/customer/ShopDetail'));
 const Booking = lazy(() => import('./pages/customer/Booking'));
+const HairTryOn = lazy(() => import('./pages/customer/HairTryOn'));
 const Queue = lazy(() => import('./pages/customer/Queue'));
 const Profile = lazy(() => import('./pages/customer/Profile'));
 const ReviewPage = lazy(() => import('./pages/customer/Review'));
@@ -85,7 +86,12 @@ const ShopRouteGuard = () => {
 
   useEffect(() => {
     let active=true;
-    (async()=>{if(!checked && hasEmployeeSession()) await restoreEmployeeSession();if(active) setChecked(true);})();
+    (async()=>{
+      if (!checked && (!currentEmployee || !currentShop) && hasEmployeeSession()) {
+        await restoreEmployeeSession();
+      }
+      if (active) setChecked(true);
+    })();
     return ()=>{active=false;};
   }, [checked]);
 
@@ -127,7 +133,7 @@ const CustomerRouteGuard = () => {
     );
   }
   if (!currentCustomer && location.pathname !== "/customer/login") {
-    return <Navigate to="/customer/login" replace />;
+    return <Navigate to={`/customer/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
   return <Outlet />;
 };
@@ -157,9 +163,8 @@ export default function App() {
 
   useEffect(() => {
     if (!hasHydrated) return;
-    // 从独立的会话存储中恢复登录态，避免多角色共用同一 key 互相覆盖
-    if(window.location.pathname.startsWith('/shop')) void restoreEmployeeSession();
-    else void restoreCustomerSession();
+    // 店铺会话由 ShopRouteGuard 统一恢复，避免启动阶段重复请求 /auth/me 和门店信息。
+    if(!window.location.pathname.startsWith('/shop')) void restoreCustomerSession();
   }, [hasHydrated]);
 
   return (
@@ -180,6 +185,7 @@ export default function App() {
         <Route path="/customer/products/:shopId" element={<ProductList />} />
         <Route path="/customer/product/:shopId/:productId" element={<ProductDetail />} />
         <Route path="/customer/booking/:shopId" element={<Booking />} />
+        <Route path="/customer/try-on/:shopId" element={<HairTryOn />} />
         <Route path="/customer/queue/:bookingId" element={<Queue />} />
         <Route element={<CustomerRouteGuard />}>
           <Route path="/customer/change-password" element={<ChangePassword />} />

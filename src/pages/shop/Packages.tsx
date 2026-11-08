@@ -63,7 +63,7 @@ const Packages: React.FC = () => {
       const shopId = currentShop?.id || 'shop1';
       const [pkgList, customerList, shopData] = await Promise.all([
         packageApi.getByShop(shopId),
-        customerApi.getAll(),
+        customerApi.getDirectory(true),
         shopApi.getShop(shopId),
       ]);
       setPackages(pkgList || []);

@@ -1,10 +1,12 @@
 import { enforcePasswordChange } from './utils/password-gate';
+import { withPageSharing } from './utils/share';
 // 所有 Page 的深链、返回和切 tab 均受同一守卫约束。
 const registerPage = Page;
 Page = function(config) {
-  const guarded = { ...config };
+  const shared = withPageSharing(config);
+  const guarded = { ...shared };
   ['onLoad', 'onShow'].forEach((lifecycle) => {
-    const original = config[lifecycle];
+    const original = shared[lifecycle];
     guarded[lifecycle] = function(...args) {
       if (enforcePasswordChange(this.route, lifecycle === 'onLoad' ? args[0] : this.options)) return;
       return original && original.apply(this, args);

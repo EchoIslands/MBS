@@ -1,5 +1,24 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="profile-page">
+  <!-- 登录后展示真实门店照片与资料。 -->
+  <view wx:if="{{customer}}" class="public-profile container">
+    <view class="card public-shop-card">
+      <swiper class="public-shop-gallery" indicator-dots="true" autoplay="false">
+        <swiper-item><image class="public-shop-image" src="/assets/shop/storefront.jpg" mode="aspectFill" aria-label="皓诗形象门头实景" /></swiper-item>
+        <swiper-item><image class="public-shop-image" src="/assets/shop/service.jpg" mode="aspectFill" aria-label="皓诗形象店内服务实景" /></swiper-item>
+      </swiper>
+      <view class="public-image-label">皓诗形象 · 门店实景</view>
+      <view class="public-shop-body">
+        <view class="public-kicker">门店服务</view>
+        <view class="public-shop-name">{{publicShop.name || '皓诗形象设计'}}</view>
+        <view wx:if="{{publicShop.description}}" class="public-shop-description">{{publicShop.description}}</view>
+        <view wx:if="{{publicShop.address}}" class="public-shop-detail">地址：{{publicShop.address}}</view>
+        <view wx:if="{{publicShop.phone}}" class="public-shop-detail">电话：{{publicShop.phone}}</view>
+        <view wx:if="{{publicShop.phone}}" class="public-shop-contact" bindtap="callStore" role="button">联系门店</view>
+        <view wx:if="{{publicShopError}}" class="public-shop-error">{{publicShopError}} <text class="public-shop-retry" bindtap="loadPublicShop">重新加载</text></view>
+      </view>
+    </view>
+  </view>
   <!-- 1) 渐变 VIP 头部 -->
   <view wx:if="{{customer}}" class="{{vipHeaderClass}}">
     <view class="vip-decor vip-decor-1"></view>
@@ -116,7 +135,7 @@
           <mbs-icon name="user" size="56" color="var(--primary)" />
         </view>
         <view class="placeholder-title">登录后查看个人资料</view>
-        <view class="placeholder-hint">可查看积分、余额、历史预约等信息</view>
+        <view class="placeholder-hint">登录后可预约服务、查看个人订单和积分余额</view>
       </view>
     </view>
   </view>
@@ -387,12 +406,6 @@
       <mbs-icon name="logOut" size="28" color="var(--danger)" />
       退出登录
     </view>
-  </view>
-
-  <!-- 兜底 -->
-  <view wx:if="{{!loading && !error && !customer}}" class="container empty-state">
-    <view class="empty-text">页面加载异常，请重试</view>
-    <view class="btn btn-primary" bindtap="loadProfile">重新加载</view>
   </view>
 
   <!-- 13) 预约详情弹窗 -->

@@ -18,6 +18,10 @@
     "test:legacy-password": "tsx --test tests/legacy-password-initialization.test.ts tests/customer-password-ui.test.ts"
   },
   "dependencies": {
+    "@alicloud/dysmsapi20170525": "^4.6.0",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@alicloud/tea-util": "^1.4.11",
+    "@mediapipe/tasks-vision": "^1.2.0",
     "@supabase/supabase-js": "^2.108.1",
     "ali-oss": "^6.23.0",
     "bcryptjs": "^3.0.3",

@@ -1,4 +1,5 @@
 import {bookingSlots} from '../../utils/booking-hours';
+import { sortStylistsByRank } from '../../utils/stylist-order';
 import { getShop } from '../../api/shop';
 import { createBooking, getBookingsByShop } from '../../api/booking';
 import { getCustomerPublic } from '../../api/customer';
@@ -167,6 +168,9 @@ Page({
       const service = getServiceById(this.data.shop?.services || [], serviceId);
       this.setData({
         selectedService: serviceId,
+        selectedBarberId: '',
+        selectedBarberName: '',
+        selectionMode: 'fastest',
         selectedServiceName: service?.name || '',
         selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
       });
@@ -188,9 +192,14 @@ Page({
       const service = getServiceById(this.data.shop?.services || [], serviceId);
       this.setData({
         selectedService: serviceId,
+        selectedBarberId: '',
+        selectedBarberName: '',
+        selectionMode: 'fastest',
         selectedServiceName: service?.name || '',
         selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
       });
+      this.updateStylists((this.data.shop?.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
+      this.updateTimeSlots();
     }
     trackPageView('pages/booking/booking', {
       shop_id: this.data.shop?.id || 'shop1',
@@ -337,7 +346,7 @@ Page({
 
     const eligibleRaw = rawStylists.filter(isEligible);
 
-    const stylists = rawStylists.map((s) => {
+    const stylists = sortStylistsByRank(rawStylists).map((s) => {
       const eligible = isEligible(s);
       const isAvailable = !isBarberBusy(s.id, selectedDate, selectedTime, existingBookings, service?.duration);
       const sameDayBookings = existingBookings.filter((bk) => {
@@ -390,7 +399,8 @@ Page({
     const rawSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
     const duration = getServiceById(this.data.shop?.services || [],this.data.selectedService)?.duration;
     const timeSlots = rawSlots.map((time) => {
-      const allBusy = stylists.length > 0 && stylists.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
+      const eligible = stylists.filter((s) => s.eligible);
+      const allBusy = eligible.length === 0 || eligible.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
       return { time, full: allBusy };
     });
     const stillValid = rawSlots.includes(selectedTime);
@@ -405,11 +415,15 @@ Page({
     const service = getServiceById(this.data.shop?.services || [], id);
     this.setData({
       selectedService: id,
+      selectedBarberId: '',
+      selectedBarberName: '',
+      selectionMode: 'fastest',
       selectedServiceName: service?.name || '',
       selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
     });
     // 切换服务后按金牌/店长要求重新计算可选发型师
     this.updateStylists((this.data.shop?.employees || []).filter((emp) => isStylist(emp) && emp.isActive !== false));
+    this.updateTimeSlots();
   },
 
   onDateSelect(e) {
@@ -491,8 +505,8 @@ Page({
       ? stylists.find((e) => e.id === selectedBarberId)
       : this.data.fastest;
 
-    if (!target) {
-      wx.showToast({ title: '当前所选时间没有可用发型师，请更换时间', icon: 'none' });
+    if (!target || !stylists.some((stylist) => stylist.id === target.id && stylist.eligible && stylist.isAvailable) || isBarberBusy(target.id, selectedDate, selectedTime, this.data.existingBookings, getServiceById(shop?.services || [], selectedService)?.duration)) {
+      wx.showToast({ title: '当前服务没有可用的对应级别发型师，请更换发型师或时间', icon: 'none' });
       return;
     }
 

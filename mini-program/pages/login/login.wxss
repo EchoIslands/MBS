@@ -133,3 +133,8 @@
 .login-submit-btn-disabled {
   opacity: 0.7;
 }
+.login-modes { display: flex; gap: 16rpx; margin-bottom: 30rpx; }
+.login-mode { flex: 1; text-align: center; padding: 18rpx 8rpx; border-radius: 16rpx; font-size: 25rpx; color: var(--text-secondary); background: var(--gray-50); }
+.login-mode.selected { color: #ea580c; background: #fff7ed; font-weight: 700; }
+.sms-send { margin: -8rpx 0 22rpx; color: #ea580c; background: #fff7ed; font-size: 26rpx; }
+.sms-send::after { border: none; }

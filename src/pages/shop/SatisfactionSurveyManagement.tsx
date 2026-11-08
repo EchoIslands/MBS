@@ -71,7 +71,7 @@ const SatisfactionSurveyManagement: React.FC = () => {
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const data = await customerApi.getAll();
+        const data = await customerApi.getDirectory(true);
         if (Array.isArray(data)) {
           setCustomers(data);
         }

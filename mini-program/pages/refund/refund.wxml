@@ -1,9 +1,5 @@
 <view class="refund-page">
-  <view class="refund-header">
-    <view class="refund-back" bindtap="goBack">‹</view>
-    <view class="refund-title">退款管理</view>
-    <view class="refund-header-placeholder"></view>
-  </view>
+  <view wx:if="{{!hasPreviousPage}}" class="refund-root-back" role="button" aria-label="返回个人中心" bindtap="goBack">‹ 返回个人中心</view>
 
   <view wx:if="{{loading}}" class="refund-state">加载中...</view>
   <view wx:elif="{{error}}" class="refund-state refund-state--error">

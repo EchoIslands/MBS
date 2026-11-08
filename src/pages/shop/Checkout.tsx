@@ -176,7 +176,7 @@ const Checkout: React.FC = () => {
         const shopId = currentShop?.id || 'shop1';
         const [shopResult, customersResult] = await Promise.allSettled([
           shopApi.getShop(shopId),
-          customerApi.getDirectory(),
+          customerApi.getDirectory(true),
         ]);
         if (cancelled) return;
         if (shopResult.status === 'fulfilled') setShop(shopResult.value);

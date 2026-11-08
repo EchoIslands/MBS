@@ -56,7 +56,7 @@ const Dashboard: React.FC = () => {
       if (!Array.isArray(data)) throw new Error('预约数据无效');
       setTodayBookings(data.filter(b => businessDateKey(b.scheduledTime) === today)); setBookingState('');
     }).catch(() => { if (!cancelled) setBookingState('预约加载失败，请刷新重试'); });
-    void customerApi.getAll().then(data => {
+    void customerApi.getDirectory(true, true).then(data => {
       if (cancelled) return;
       if (!Array.isArray(data)) throw new Error('客户数据无效');
       setRecentCustomers(data.slice(0,5));

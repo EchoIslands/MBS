@@ -77,11 +77,11 @@ test('缺历史基础表在 DDL 前停止；缺陷列类型不兼容则回滚', 
   } finally { await f.db.close(); }
 });
 
-test('本地连接配置：SSL 跳过证书验证、剥离冲突参数、项目匹配、拒绝事务池', () => {
+test('本地连接配置：SSL 校验证书、剥离冲突参数、项目匹配、拒绝事务池', () => {
   assert.throws(() => databaseConfig({}), /SUPABASE_DB_URL/);
   assert.throws(() => databaseConfig({ SUPABASE_DB_URL: 'https://synthetic.invalid' }), /PostgreSQL URI/);
   const config = databaseConfig({ SUPABASE_DB_URL: 'postgresql://postgres.fake:secret@aws-0-test.pooler.supabase.com:5432/postgres?sslmode=disable', SUPABASE_URL: 'https://fake.supabase.co' });
-  assert.deepEqual(config.ssl, { rejectUnauthorized: false });
+  assert.deepEqual(config.ssl, { rejectUnauthorized: true });
   assert.doesNotMatch(config.connectionString!, /sslmode/);
   for (const mode of ['require', 'verify-full', 'disable']) {
     const local = databaseConfig({ SUPABASE_DB_URL: `postgresql://postgres.fake:secret@aws-0-test.pooler.supabase.com:5432/postgres?sslmode=${mode}&sslrootcert=unused&sslcert=unused&sslkey=unused&ssl=true&uselibpqcompat=true&application_name=local-test`, SUPABASE_DB_CA_FILE: 'unused' });
@@ -90,7 +90,7 @@ test('本地连接配置：SSL 跳过证书验证、剥离冲突参数、项目�
     assert.equal(parsed.searchParams.get('application_name'), 'local-test');
     // 只构造真实 pg 客户端，不连接网络；确认 URI 解析后也不覆盖配置。
     const client = new pg.Client(local);
-    assert.deepEqual(client.ssl, { rejectUnauthorized: false });
+    assert.deepEqual(client.ssl, { rejectUnauthorized: true });
   }
   assert.throws(() => databaseConfig({ SUPABASE_DB_URL: 'postgresql://postgres.other:secret@aws-0-test.pooler.supabase.com:5432/postgres', SUPABASE_URL: 'https://fake.supabase.co' }), /项目不一致/);
   assert.throws(() => databaseConfig({ SUPABASE_DB_URL: 'postgresql://postgres.fake:secret@aws-0-test.pooler.supabase.com:6543/postgres' }), /5432/);

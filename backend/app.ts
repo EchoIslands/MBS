@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import apiRouter from './routes/index.js';
 import analyticsRoutes from '../server/routes/analytics.js';
 import uploadRoutes from '../server/routes/upload.js';
@@ -13,7 +12,12 @@ interface RequestWithBody extends Request {
 
 const app = express();
 
-app.use(cors());
+// 网页和 API 同源；小程序请求不受浏览器 CORS 限制。跨站网页不开放读取 API 响应。
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 
 // 兼容 Vercel Runtime 的自定义 JSON body parser
 // 原因：在部分 Vercel Node Runtime 版本里 express.json() 读不到流，

@@ -24,6 +24,17 @@ export async function loginCustomer(phone, password, setupPassword = false) {
   return { setupRequired: false, customer: result?.data || null };
 }
 
+export async function sendCustomerSmsCode(phone) {
+  return post('/customers/sms/send', { phone, client: 'mini' });
+}
+
+export async function loginCustomerWithSms(phone, code) {
+  const result = await post('/customers/sms/login', { phone, code, client: 'mini' });
+  if (!result?.token || !result?.data?.id) throw new Error('未获取有效登录凭证');
+  setToken(result.token);
+  setPasswordChangeRequired(result.data.mustChangePassword === true);
+  return result.data;
+}
 export async function restoreCustomerSession() {
   const id = getCustomerId();
   if (!id || !getToken()) return null;

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
   Scissors, Sparkles, Award, Zap
 } from 'lucide-react';
 import {isRealApi} from '../../../shared/api-base';
 import {bookingSlots} from '../../../shared/lib/bookingHours';
+import { sortStylistsByRank } from '../../../shared/lib/stylistOrder';
 import { mockShops } from '../../../shared/mockData';
 import { Employee, Shop, UserRole, Booking } from '../../../shared/types';
 import { bookingApi, shopApi } from '../../../src/api';
@@ -17,6 +18,7 @@ type SelectionMode = 'specific' | 'fastest';
 
 const BookingPage: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
+  const location = useLocation();
   const { currentCustomer } = useAppStore();
 
   const [shop, setShop] = useState<Shop | null>(null);
@@ -30,7 +32,10 @@ const BookingPage: React.FC = () => {
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [selectedBarberId, setSelectedBarberId] = useState<string>('');
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('fastest');
-  const [notes, setNotes] = useState<string>('');
+  const [notes, setNotes] = useState<string>(() => {
+    const hairstyle = (location.state as { hairstyle?: unknown } | null)?.hairstyle;
+    return typeof hairstyle === 'string' && hairstyle.length <= 30 ? `试发型偏好：${hairstyle}` : '';
+  });
   const [booking, setBooking] = useState(false);
   const navigate = useNavigate();
 
@@ -134,7 +139,7 @@ const BookingPage: React.FC = () => {
   const requireShopManager = !!selectedServiceData?.requiresShopManager;
 
   const stylists = useMemo(() =>
-    shop?.employees.filter((e) => isStylist(e) && e.isActive !== false) || [],
+    sortStylistsByRank(shop?.employees.filter((e) => isStylist(e) && e.isActive !== false) || []),
   [shop]);
 
   // 店长专属服务仅店长可选；金牌专属服务仅金牌发型师（含店长）可选；普通服务则均可
@@ -220,11 +225,11 @@ const BookingPage: React.FC = () => {
     }
     if (!currentCustomer) {
       alert('请先登录顾客账号');
-      navigate('/customer/login');
+      navigate(`/customer/login?redirect=${encodeURIComponent(`/customer/booking/${shop?.id || 'shop1'}`)}`);
       return;
     }
     const target = selectionMode === 'specific'
-      ? eligibleStylists.find((e) => e.id === selectedBarberId)
+      ? eligibleStylists.find((e) => e.id === selectedBarberId && !isBarberBusy(e.id, selectedDate, selectedTime))
       : fastest;
     if (!target) {
       alert('当前所选时间没有可用发型师，请更换时间');
@@ -382,7 +387,7 @@ const BookingPage: React.FC = () => {
                     type="radio"
                     name="service"
                     checked={selectedService === service.id}
-                    onChange={() => setSelectedService(service.id)}
+                    onChange={() => { setSelectedService(service.id); setSelectionMode('fastest'); setSelectedBarberId(''); }}
                     className="accent-amber-500 flex-shrink-0"
                   />
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center flex-shrink-0">
@@ -461,7 +466,7 @@ const BookingPage: React.FC = () => {
           </h3>
           <div className="grid grid-cols-4 gap-2 sm:gap-3">
             {availableTimeSlots.map((time) => {
-              const allBusy = stylists.every((e) => isBarberBusy(e.id, selectedDate, time));
+              const allBusy = eligibleStylists.length === 0 || eligibleStylists.every((e) => isBarberBusy(e.id, selectedDate, time));
               return (
                 <button
                   key={time}

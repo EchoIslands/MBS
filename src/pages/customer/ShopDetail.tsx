@@ -20,6 +20,7 @@ import { getAvatarUrl } from '../../lib/avatar';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 import ProductImage from '../../components/ProductImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
+import { sortStylistsByRank } from '../../../shared/lib/stylistOrder';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -186,8 +187,8 @@ const ShopDetail: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
             <h3 className="text-lg font-bold text-gray-800 mb-4">发型师团队</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {shop.employees
-                .filter(emp => emp.isActive !== false && isStylist(emp))
+              {sortStylistsByRank(shop.employees
+                .filter(emp => emp.isActive !== false && isStylist(emp)))
                 .map((employee) => (
                   <div
                     key={employee.id}
@@ -298,8 +299,7 @@ const ShopDetail: React.FC = () => {
         {/* 服务项目 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
           <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Scissors size={20} className="text-amber-600" />
-            服务项目
+            <Scissors size={20} className="text-amber-600" />服务项目
           </h3>
           <VerticalScrollSlider maxHeight={360} containerClassName="space-y-3 pr-1">
             {shop.services.map((service) => (

@@ -207,6 +207,18 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const migrated=tables.employees[0].password_hash;await login('ceo');assert.equal(tables.employees[0].password_hash,migrated);
   });
   const ceo=await login('ceo'),cs=await login('cs'),stylist=await login('stylist'),manager=await login('manager');
+  await t.test('员工登录由数据库限流；失败锁定与安全组件故障不发凭证',async()=>{
+   rpcFailures=0;
+   try {
+    for(let i=0;i<5;i++) assert.equal((await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'wrong'})).status,401);
+    const locked=await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'old-password'});
+    assert.equal(locked.status,429);assert.equal(locked.body.data,undefined);assert.equal(locked.retryAfter,'900');
+    rpcFailures=0;failRpc=true;
+    const unavailable=await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'old-password'});
+    assert.equal(unavailable.status,503);assert.equal(unavailable.body.data,undefined);
+   } finally { rpcFailures=0;failRpc=false; }
+   assert.equal((await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'old-password'})).status,200);
+  });
   await t.test('预约本人凭证、跨店隔离、人工确认、真实信息和公开档期脱敏',async()=>{
    tables.bookings=[];
    tables.shops[0].services=[{id:'svc',name:'Actual service',price:0,duration:30}];
@@ -221,7 +233,8 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal(created.body.data.stylistName,'Synthetic stylist');
    assert.equal(created.body.data.price,0);
    const id=created.body.data.id;
-   const slots=await request('/bookings?shopId=s1');
+   assert.equal((await request('/bookings?shopId=s1')).status,400);
+   const slots=await request('/bookings?shopId=s1&date=2029-01-01');
    assert.equal(slots.status,200);
    for(const key of ['id','customerId','customerName','customerPhone','notes']) assert.equal(slots.body.data[0][key],undefined);
    assert.equal((await request('/bookings/'+id)).status,401);
@@ -545,9 +558,19 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   await t.test('全项目复核：公开队列脱敏、JSON错误与过大请求明确拒绝',async()=>{
    tables.bookings=[{id:'private',shop_id:'s1',customer_id:'c1',customer_name:'Sensitive',notes:'PRIVATE',status:'confirmed',service_id:'svc',scheduled_time:new Date().toISOString(),queue_number:1}];
    const pub=await request('/queues/s1');assert.equal(pub.status,200);assert.equal(pub.body.data.bookings.length,1);
-   for(const key of ['id','customerId','customerName','notes']) assert.equal(pub.body.data.bookings[0][key],undefined);
+   for(const key of ['id','customerId','customerName','notes','stylistId','stylistName','serviceId','serviceName','shopId']) assert.equal(pub.body.data.bookings[0][key],undefined);
    assert.equal((await request('/queues/s1',ceo)).body.data.bookings[0].customerName,'Sensitive');
    assert.equal((await request('/queues/s2',ceo)).status,403);
+   failDashboardTable='bookings';
+   try {
+    const failed=await request('/bookings?shopId=s1&date=2026-10-29');
+    assert.equal(failed.status,500);
+    assert.equal(failed.body.details,undefined);assert.equal(failed.body.stack,undefined);
+    assert.ok(!JSON.stringify(failed.body).includes('synthetic dashboard unavailable'));
+   } finally { failDashboardTable=''; }
+   const crossOrigin=await fetch(base+'/api/health',{headers:{Origin:'https://untrusted.invalid'}});
+   assert.equal(crossOrigin.headers.get('access-control-allow-origin'),null);
+   assert.equal(crossOrigin.headers.get('x-content-type-options'),'nosniff');
    const invalid=await fetch(base+'/api/customers/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{invalid'});
    assert.equal(invalid.status,400);assert.equal((await invalid.json()).success,false);
    const large=await request('/customers/login','','POST',{value:'x'.repeat(3*1024*1024)});assert.equal(large.status,413);
@@ -573,6 +596,14 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(summary.body.data.length,1003);
     assert.equal(summary.body.data[0].visitRecords,undefined);
     assert.ok(!summary.body.data.some((c:Row)=>c.id==='other-page'));
+    const compact=await request('/customers?summary=1&compact=1',token);
+    assert.equal(compact.status,200);assert.equal(compact.body.data.length,1003);
+    assert.deepEqual(Object.keys(compact.body.data[0]).sort(),['id','shopId','name','phone'].sort());
+    assert.ok(!compact.body.data.some((c:Row)=>c.id==='other-page'));
+    const recent=await request('/customers?summary=1&compact=1&recent=1',token);
+    assert.equal(recent.status,200);assert.equal(recent.body.data.length,5);
+    assert.ok(!recent.body.data.some((c:Row)=>c.id==='other-page'));
+    assert.equal(recent.body.data[0].visitRecords,undefined);
     const failed=await request('/customers',token);assert.equal(failed.status,500);assert.equal(failed.body.success,false);assert.equal(failed.body.data,undefined);
    } finally {tables.customers=beforeCustomers;tables.customer_visit_records=beforeVisits;tables.customer_profiles=beforeProfiles;failDashboardTable='';syntheticRowCap=undefined;}
   });

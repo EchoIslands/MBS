@@ -151,6 +151,7 @@ test('首页店铺失败结束loading，本人资料请求不等待慢店铺', a
     trackPageView() {}, getShopReviews: async () => [],
     getShop: async () => { throw new Error('合成店铺故障'); },
   });
+  await load(h.context, 'utils/stylist-order.js');
   await load(h.context, 'pages/index/index.js');
   const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
   await page.loadShop(); assert.equal(page.data.loading, false); assert.match(page.data.error, /合成店铺故障/);
@@ -162,4 +163,33 @@ test('首页店铺失败结束loading，本人资料请求不等待慢店铺', a
   assert.equal(customerStarted, true);
   finishShop(null); await pending;
   assert.equal(page.data.loading, false); assert.equal(page.data.customer, null);
+});
+
+
+test('个人中心保持登录门槛，登录后可查看真实门店照片和资料', async () => {
+  const h = await harness('pages/profile/profile');
+  let shopRequests = 0;
+  Object.assign(h.context, {
+    PurchaseVIPLevel: { REGULAR: 'regular' }, StoredValueLevel: { NONE: 'none' }, BenefitType: {},
+    purchaseVIPPlans: [], storedValuePlans: [], vipBenefits: [], storedBenefits: [],
+    getPurchaseVIPLabel: () => '', getStoredValueLabel: () => '',
+    getShop: async () => { shopRequests++; return { name: '实际门店' }; },
+  });
+  await load(h.context, 'pages/profile/profile.js');
+  const page = h.context.page;
+  page.setData = (patch: any) => Object.assign(page.data, patch);
+  await page.onLoad();
+  assert.equal(h.redirects.length, 1);
+  assert.equal(h.redirects[0].url, '/pages/login/login');
+  assert.equal(shopRequests, 0);
+  assert.equal(page.data.customer, null);
+  const view = await readFile(new URL('../mini-program/pages/profile/profile.wxml', import.meta.url), 'utf8');
+  assert.ok(view.includes('<view wx:if="{{customer}}" class="public-profile container">'));
+  for (const section of ['服务与价格', '门店在售商品', '会员权益简介']) assert.equal(view.includes(section), false);
+  for (const photo of ['storefront.jpg', 'service.jpg']) {
+    const bytes = await readFile(new URL('../mini-program/assets/shop/' + photo, import.meta.url));
+    assert.equal(bytes[0], 0xff); assert.equal(bytes[1], 0xd8);
+    assert.ok(bytes.length < 200 * 1024);
+    assert.ok(view.includes('/assets/shop/' + photo));
+  }
 });

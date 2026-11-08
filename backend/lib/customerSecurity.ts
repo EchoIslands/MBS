@@ -11,8 +11,8 @@ export async function isCustomerVerified(customerId: string, shopId: string): Pr
   return !error && data?.identity_verified === true && data?.is_weak_password !== true;
 }
 
-export function customerAuthIpKey(ip: string): string {
-  return createHmac('sha256', getJwtSecret()).update('customer-auth-ip:' + ip).digest('hex');
+export function customerAuthIpKey(ip: string, scope: 'customer' | 'employee' = 'customer'): string {
+  return createHmac('sha256', getJwtSecret()).update(scope + '-auth-ip:' + ip).digest('hex');
 }
 
 export type CustomerAuthAttempt = { ipKey: string; attemptId: string };
@@ -21,9 +21,9 @@ type AuthDecision = { allowed: true; attempt: CustomerAuthAttempt } | {
 };
 export const CUSTOMER_AUTH_UNAVAILABLE = '登录安全组件暂不可用，请联系门店确认043数据库更新';
 
-export async function beginCustomerAuthAttempt(ip: string): Promise<AuthDecision> {
+export async function beginCustomerAuthAttempt(ip: string, scope: 'customer' | 'employee' = 'customer'): Promise<AuthDecision> {
   if (!ip || ip === 'unknown') throw new Error(CUSTOMER_AUTH_UNAVAILABLE);
-  const ipKey = customerAuthIpKey(ip);
+  const ipKey = customerAuthIpKey(ip, scope);
   const { data, error } = await supabase.rpc('begin_customer_auth_attempt_v2', { p_ip_hash: ipKey });
   if (error) throw new Error(CUSTOMER_AUTH_UNAVAILABLE);
   const row = Array.isArray(data) && data.length === 1 ? data[0] : null;
@@ -38,7 +38,7 @@ export async function beginCustomerAuthAttempt(ip: string): Promise<AuthDecision
   const time = new Date(retryAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
   const label = reason === 'daily_limit' ? '当前网络今日密码错误次数已达上限' :
     reason === 'temporary_lock' ? '当前网络连续输错密码，已暂时锁定' : '当前网络正在验证的请求较多';
-  return { allowed: false, code: 'CUSTOMER_AUTH_' + reason.toUpperCase(), retryAfterSeconds, retryAt,
+  return { allowed: false, code: (scope === 'employee' ? 'EMPLOYEE_AUTH_' : 'CUSTOMER_AUTH_') + reason.toUpperCase(), retryAfterSeconds, retryAt,
     error: `${label}，请于北京时间 ${time} 后重试。本次尚未验证密码。` };
 }
 

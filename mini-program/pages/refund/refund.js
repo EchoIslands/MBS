@@ -26,6 +26,7 @@ function formatAmount(value) {
 Page({
   data: {
     shopId: 'shop1',
+    hasPreviousPage: true,
     customerId: '',
     records: [],
     candidates: [],
@@ -37,8 +38,8 @@ Page({
     error: '',
   },
 
-  onLoad(options) {
-    this.setData({ shopId: options.shopId || 'shop1' });
+  onLoad(options = {}) {
+    this.setData({ shopId: options.shopId || 'shop1', hasPreviousPage: getCurrentPages().length > 1 });
   },
 
   onShow() {
@@ -131,6 +132,11 @@ Page({
   },
 
   goBack() {
-    wx.navigateBack();
+    const returnToProfile = () => wx.reLaunch({ url: '/pages/profile/profile' });
+    if (getCurrentPages().length > 1) {
+      wx.navigateBack({ delta: 1, fail: returnToProfile });
+    } else {
+      returnToProfile();
+    }
   },
 });

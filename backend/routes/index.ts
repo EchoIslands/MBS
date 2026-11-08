@@ -1,6 +1,7 @@
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import customerPaymentOrdersRouter from './customerPaymentOrders.js';
 import { Router, Request, Response } from 'express';
+import { smsReady, generateSmsCode, reserveSmsCode, cancelSmsCode, verifySmsCode, sendSmsCode } from '../services/customerSms.js';
 import jwt from 'jsonwebtoken';
 import { randomUUID, createHash } from 'crypto';
 import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified, FIRST_USE_MESSAGE, CUSTOMER_AUTH_UNAVAILABLE, type CustomerAuthAttempt } from '../lib/customerSecurity.js';
@@ -10,6 +11,7 @@ import { operationError } from '../lib/rpcErrors.js';
 import {businessDayRange,businessDate} from '../lib/businessTime.js';
 import {imageReference,sendStoredImage,restoreImageReference} from '../lib/imageData.js';
 import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
+import { serviceWithStylistRequirements, stylistCanPerformService } from '../../shared/lib/serviceEligibility.js';
 import { bookingAccess } from '../middleware/bookingAccess.js';
 import { customerSession, resourceAccess, ownRecord, optionalStaff, shopContext } from '../middleware/resourceAccess.js';
 import { toCamelCase, toCamelCaseList, toSnakeCase } from '../utils/case.js';
@@ -55,16 +57,25 @@ getJwtSecret(); // 生产密钥配置不合格时拒绝启动
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
     const { phone, password } = req.body;
-
     if (typeof phone !== 'string' || typeof password !== 'string' || !phone || !password) {
       res.status(400).json({ success: false, error: '手机号和密码不能为空' });
       return;
     }
-
-    // 1. 查 employees 表
-    const { data: employees, error: queryError } = await supabase
-      .from('employees')
-      .select('*')
+    // 使用数据库持久化的失败次数限制，和顾客登录分开计数。
+    const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
+    const loginIp = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
+    let attempt: CustomerAuthAttempt | undefined;
+    try {
+      const decision = await beginCustomerAuthAttempt(loginIp, 'employee');
+      if (decision.allowed === false) {
+        res.setHeader('Retry-After', decision.retryAfterSeconds);
+        return res.status(429).json({ success: false, ...decision });
+      }
+      attempt = decision.attempt;
+      // 只读取登录所需字段，避免传输员工记录中的大字段。
+      const { data: employees, error: queryError } = await supabase
+        .from('employees')
+        .select('id,shop_id,name,phone,role,avatar,title,specialty,rating,password_hash,is_active')
       .eq('phone', phone)
       .eq('is_active', true);
 
@@ -75,6 +86,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     }
 
     if (!employees || employees.length === 0) {
+      await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       res.status(401).json({ success: false, error: '手机号或密码错误' });
       return;
     }
@@ -83,6 +95,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     // 成功校验旧密码后平滑迁移为哈希。
     if (!(await verifyPassword(password, employee.password_hash))) {
+      await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       res.status(401).json({ success: false, error: '手机号或密码错误' });
       return;
     }
@@ -104,6 +117,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       }
     }
 
+    await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
     // 3. 签发 JWT（有效期 7 天）
     const payload: AuthEmployee = {
       id: employee.id,
@@ -129,9 +143,12 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     console.log('[auth] 员工登录成功');
     res.json({ success: true, data: { token, user } });
+    } finally {
+      if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
+    }
   } catch (err: unknown) {
-    console.error('[auth] 登录异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
+    console.error('[auth] 登录异常:', err instanceof Error ? err.message : 'unknown');
+    res.status(503).json({ success: false, error: '员工登录暂不可用，请稍后重试' });
   }
 });
 
@@ -520,12 +537,14 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
     // 兼容小程序传入 date=YYYY-MM-DD 与 H5 传入 dateStart=YYYY-MM-DD
     const dateStart = (req.query.dateStart || req.query.date) as string | undefined;
+    if (!req.employee && !dateStart) return res.status(400).json({ success: false, error: '查询公开档期时请指定日期' });
     const page = String(req.query.page || '1');
     const pageSize = String(req.query.pageSize || '1000');
 
+    // Fetch only fields used by bookingFromDb and the public availability response.
     let query = supabase
       .from('bookings')
-      .select('*', { count: 'exact' })
+      .select('id, shop_id, customer_id, customer_name, customer_phone, stylist_id, stylist_name, service_id, service_name, price, scheduled_time, scheduled_end_time, actual_start_time, actual_end_time, package_id, queue_number, status, notes, created_at, delay_state, delay_reason, delay_expected_end, delay_created_at', { count: 'exact' })
       .eq('shop_id', shopId)
       .order('scheduled_time', { ascending: true });
 
@@ -554,7 +573,6 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
       return res.status(500).json({
         success: false,
         error: '获取预约列表失败',
-        details: error.message,
       });
     }
 
@@ -562,7 +580,6 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     if (slotShopError) return res.status(503).json({success:false,error:'档期服务时长暂不可用'});
     const bookings = (data || []).map(b => req.employee ? bookingFromDb(b) : {
       scheduledTime: b.scheduled_time, scheduledEndTime: b.scheduled_end_time,
-      actualStartTime: b.actual_start_time, actualEndTime: b.actual_end_time,
       stylistId: b.stylist_id, barberId: b.stylist_id, serviceId: b.service_id, status: b.status,
       duration: Math.max(1, Number((slotShop?.services || []).find((service:any) => String(service.id)===String(b.service_id))?.duration) || 30),
     });
@@ -580,15 +597,8 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : '';
     console.error('[bookings] 获取预约列表失败:', error);
-    res.status(500).json({
-      success: false,
-      error: '获取预约列表失败',
-      details: message,
-      stack,
-    });
+    res.status(503).json({ success: false, error: '获取预约列表失败，请稍后重试' });
   }
 });
 
@@ -927,9 +937,15 @@ bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Resp
       return res.status(404).json({ success: false, error: '预约不存在' });
     }
 
-    const { data: stylist, error: stylistError } = await supabase.from('employees').select('name').eq('id', stylistId).eq('shop_id', employee.shopId).eq('is_active', true).maybeSingle();
+    if (originalBooking.shop_id !== employee.shopId) return res.status(403).json({ success: false, error: '无权调配其他门店预约' });
+    const { data: stylist, error: stylistError } = await supabase.from('employees').select('name, role, is_gold_stylist').eq('id', stylistId).eq('shop_id', employee.shopId).eq('is_active', true).maybeSingle();
     if (stylistError) return res.status(503).json({ success: false, error: '设计师信息暂不可用' });
     if (!stylist) return res.status(400).json({ success: false, error: '设计师不属于本店有效员工' });
+    const { data: shop, error: shopError } = await supabase.from('shops').select('services').eq('id', employee.shopId).maybeSingle();
+    if (shopError || !shop) return res.status(503).json({ success: false, error: '服务目录暂不可用' });
+    const service = (shop.services || []).find((item: DbRecord) => String(item.id) === String(originalBooking.service_id));
+    if (!service) return res.status(400).json({ success: false, error: '预约服务已下架，暂不能调配' });
+    if (!stylistCanPerformService(serviceWithStylistRequirements(employee.shopId, service), stylist)) return res.status(400).json({ success: false, error: '所选发型师级别与服务不匹配' });
     const { data, error } = await supabase
       .from('bookings')
       .update({ stylist_id: stylistId, stylist_name: stylist.name })
@@ -1386,11 +1402,14 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
     const [customerResult, shopResult, stylistResult] = await Promise.all([
       supabase.from('customers').select('name, phone').eq('id', customerId).eq('shop_id', shopId).maybeSingle(),
       supabase.from('shops').select('services, booking_confirm_mode, opening_hours, is_active').eq('id', shopId).maybeSingle(),
-      stylistId ? supabase.from('employees').select('name').eq('id', stylistId).eq('shop_id', shopId).eq('is_active', true).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      stylistId ? supabase.from('employees').select('name, role, is_gold_stylist').eq('id', stylistId).eq('shop_id', shopId).eq('is_active', true).maybeSingle() : Promise.resolve({ data: null, error: null }),
     ]);
     if (customerResult.error || shopResult.error || stylistResult.error) return res.status(503).json({ success: false, error: '预约基础信息暂不可用' });
     const service = (shopResult.data?.services || []).find((s: any) => String(s.id) === String(serviceId) && s.isActive !== false);
     if (!customerResult.data || !service || (stylistId && !stylistResult.data)) return res.status(400).json({ success: false, error: '顾客、服务或设计师不属于本店有效目录' });
+    const requiredService = serviceWithStylistRequirements(shopId, service);
+    if ((requiredService.requiresGoldStylist || requiredService.requiresShopManager) && !stylistId) return res.status(400).json({ success: false, error: '该服务需选择对应级别的发型师' });
+    if (stylistId && !stylistCanPerformService(requiredService, stylistResult.data!)) return res.status(400).json({ success: false, error: '所选发型师级别与服务不匹配，请重新选择' });
     if(shopResult.data?.is_active===false || !startsDuringOpening(scheduledTimeDate,shopResult.data?.opening_hours)) return res.status(400).json({success:false,error:'预约开始时间不在门店设置的营业时间内，请重新选择'});
     const finalCustomerName = customerResult.data.name;
     const finalCustomerPhone = customerResult.data.phone;
@@ -1804,6 +1823,54 @@ const customersRouter = Router();
 // 本人展示白名单：不返回证件、微信标识、员工备注及客户画像。
 const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
 
+/** 顾客短信验证：仅向已建档手机号发送，响应不暴露是否建档。 */
+customersRouter.post('/sms/send', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  if (!/^1[3-9]\d{9}$/.test(phone)) return res.status(400).json({ success: false, error: '请输入正确的手机号' });
+  if (!smsReady()) return res.status(503).json({ success: false, error: '短信登录尚未开通，请先使用密码登录' });
+  const forwarded = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
+  const ip = typeof forwarded === 'string' && forwarded.trim() ? forwarded.split(',')[0].trim() : req.ip || '';
+  if (!ip) return res.status(503).json({ success: false, error: '验证码服务暂不可用' });
+  try {
+    const code = generateSmsCode();
+    const quota = await reserveSmsCode(phone, ip, code);
+    if (!quota.allowed) { res.setHeader('Retry-After', quota.retryAfterSeconds); return res.status(429).json({ success: false, error: '发送太频繁，请稍后再试', retryAfterSeconds: quota.retryAfterSeconds }); }
+    const { data: customers, error } = await supabase.from('customers').select('id').eq('phone', phone).limit(2);
+    if (error) { await cancelSmsCode(phone, code); return res.status(503).json({ success: false, error: '验证码服务暂不可用' }); }
+    if (customers?.length !== 1) { return res.json({ success: true, message: '若该手机号已在门店建档，验证码将发送到该手机' }); }
+    try { await sendSmsCode(phone, code); }
+    catch (err) { await cancelSmsCode(phone, code); console.error('[customer-sms] 发送失败:', err instanceof Error ? err.message : 'unknown'); return res.status(503).json({ success: false, error: '短信暂未送达，请稍后再试或使用密码登录' }); }
+    return res.json({ success: true, message: '若该手机号已在门店建档，验证码将发送到该手机' });
+  } catch { return res.status(503).json({ success: false, error: '验证码服务暂不可用' }); }
+});
+
+customersRouter.post('/sms/login', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  const code = req.body?.code;
+  if (!/^1[3-9]\d{9}$/.test(phone) || typeof code !== 'string' || !/^\d{6}$/.test(code)) return res.status(400).json({ success: false, error: '请输入手机号和六位验证码' });
+  const forwarded = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
+  const ip = typeof forwarded === 'string' && forwarded.trim() ? forwarded.split(',')[0].trim() : req.ip || 'unknown';
+  let attempt: CustomerAuthAttempt | undefined;
+  try {
+    const decision = await beginCustomerAuthAttempt(ip);
+    if (decision.allowed === false) { res.setHeader('Retry-After', decision.retryAfterSeconds); return res.status(429).json({ success: false, ...decision }); }
+    attempt = decision.attempt;
+    if (!(await verifySmsCode(phone, code))) { await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined; return res.status(401).json({ success: false, error: '验证码错误或已过期' }); }
+    const { data: customers, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('phone', phone).limit(2);
+    if (error || customers?.length !== 1) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
+    const customer = customers[0];
+    // 临时弱密码账户仍需完成原改密流程，短信登录不可绕过强制改密。
+    if (customer.is_weak_password === true) return res.status(403).json({ success: false, error: '此账户须先使用原密码登录并修改临时密码' });
+    await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
+    const { password_hash: passwordHash, is_weak_password: _weak, ...safe } = customer;
+    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash || '');
+    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
+    return res.json({ success: true, data: toCamelCase({ ...safe, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...(req.body?.client === 'mini' ? { token } : {}) });
+  } catch { return res.status(503).json({ success: false, error: '验证码登录暂不可用' }); }
+  finally { if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {}); }
+});
 /**
  * POST /api/customers/login
  * 顾客登录：手机号 + 自设六位数字密码
@@ -2039,8 +2106,17 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
       }
       throw new Error('客户资料超过单次同步上限，请联系项目维护人员');
     };
-    rows.push(...await readPages(() => scopeCustomerQuery(supabase.from('customers').select('*'), req)
-      .order('created_at', {ascending:false}).order('id', {ascending:false})));
+    const customerFields = req.query.summary === '1' && req.query.compact === '1'
+      ? 'id, shop_id, name, phone, purchase_vip_level, purchase_vip_expires_at, stored_value_level, stored_value_expires_at, stored_value_balance, withdrawable_referral_amount, is_stockholder, points, balance'
+      : '*';
+    const customerQuery = () => scopeCustomerQuery(supabase.from('customers').select(customerFields), req)
+      .order('created_at', {ascending:false}).order('id', {ascending:false});
+    if (req.query.summary === '1' && req.query.compact === '1' && req.query.recent === '1') {
+      const { data, error } = await customerQuery().limit(5);
+      if (error || !Array.isArray(data)) throw new Error('最近客户资料读取失败');
+      return res.json({ success: true, data: toCamelCaseList(data as DbRecord[]) });
+    }
+    rows.push(...await readPages(customerQuery));
     const customers = toCamelCaseList(rows);
     // Directory views only need customer fields. Full profile and visit history remain
     // available from this route by default and from GET /:id on demand.
@@ -2118,7 +2194,7 @@ customersRouter.post('/', requirePermission('customer:create'), async (req: Requ
 
     if (error) {
       console.error('[customers] 创建客户失败:', error.message);
-      res.status(500).json({ success: false, error: '创建客户失败: ' + error.message });
+      res.status(500).json({ success: false, error: '创建客户失败，请稍后重试' });
       return;
     }
 
@@ -2614,7 +2690,7 @@ customersRouter.post('/:id/profile', requirePermission('customer:edit'), require
 
     if (error) {
       console.error('[customers] 创建客户画像失败:', error.message);
-      res.status(500).json({ success: false, error: '创建客户画像失败: ' + error.message });
+      res.status(500).json({ success: false, error: '创建客户画像失败，请稍后重试' });
       return;
     }
 
@@ -2681,7 +2757,7 @@ customersRouter.put('/:id/profile', requirePermission('customer:edit'), requireC
 
     if (result.error) {
       console.error('[customers] 更新客户画像失败:', result.error.message);
-      res.status(500).json({ success: false, error: '更新客户画像失败: ' + result.error.message });
+      res.status(500).json({ success: false, error: '更新客户画像失败，请稍后重试' });
       return;
     }
 
@@ -2829,7 +2905,10 @@ queuesRouter.get('/:shopId', optionalStaff, async (req: Request, res: Response) 
         shopId,
         currentNumber,
         estimatedWaitTime,
-        bookings: req.employee ? list : list.map(({ id: _id, customerId: _customerId, customerName: _name, notes: _notes, ...slot }) => slot),
+        bookings: req.employee ? list : list.map((booking) => ({
+          queueNumber: booking.queueNumber, scheduledTime: booking.scheduledTime,
+          status: booking.status, duration: booking.duration,
+        })),
         timeSlotMinutes: QUEUE_TIME_SLOT_MINUTES,
       },
     });
@@ -2959,7 +3038,7 @@ reviewsRouter.post('/', customerSession, async (req: Request, res: Response) => 
       console.error('[reviews] 创建评价失败:', error.message);
       return res.status(500).json({
         success: false,
-        error: `创建评价失败: ${error.message}`,
+        error: '创建评价失败，请稍后重试',
       });
     }
 
@@ -3009,7 +3088,7 @@ reviewsRouter.get('/booking/:bookingId', resourceAccess('bookings', 'bookingId',
       console.error('[reviews] 查询预约评价失败:', error.message);
       return res.status(500).json({
         success: false,
-        error: `查询预约评价失败: ${error.message}`,
+        error: '查询预约评价失败，请稍后重试',
       });
     }
 
@@ -3125,7 +3204,7 @@ reviewsRouter.put('/:id/reply', authMiddleware, requirePermission('review:manage
       console.error('[reviews] 回复评价失败:', error.message);
       return res.status(500).json({
         success: false,
-        error: `回复评价失败: ${error.message}`,
+        error: '回复评价失败，请稍后重试',
       });
     }
 
@@ -3159,7 +3238,7 @@ reviewsRouter.put('/:id/hide', authMiddleware, requirePermission('review:manage'
       console.error('[reviews] 更新评价显示状态失败:', error.message);
       return res.status(500).json({
         success: false,
-        error: `更新评价显示状态失败: ${error.message}`,
+        error: '更新评价显示状态失败，请稍后重试',
       });
     }
 
@@ -3222,7 +3301,7 @@ const shopFromDb = (s: Record<string, unknown>): Record<string, unknown> => ({
   isActive: s.is_active !== false,
   avatar: imageReference(s.avatar || '', '/api/shops/'+encodeURIComponent(String(s.id))+'/media/avatar'),
   images: ((s.images as unknown[]) || []).map((url,index)=>imageReference(url,'/api/shops/'+encodeURIComponent(String(s.id))+'/media/'+index)),
-  services: s.services || [],
+  services: Array.isArray(s.services) ? s.services.map((service: DbRecord) => serviceWithStylistRequirements(s.id, service)) : [],
   products: productImageReferences(s.products as unknown[],String(s.id)),
   openingHours: s.opening_hours || {},
   employees: Array.isArray(s.employees) ? s.employees.map((raw) => { const e=raw as DbRecord; return {id:e.id,name:e.name,avatar:imageReference(e.avatar,'/api/shops/'+encodeURIComponent(String(s.id))+'/employees/'+encodeURIComponent(String(e.id))+'/avatar'),title:e.title,role:e.role,rating:e.rating,specialty:e.specialty,isGoldStylist:e.isGoldStylist ?? e.is_gold_stylist,isActive:e.isActive ?? e.is_active}; }) : [],
@@ -3400,7 +3479,7 @@ shopsRouter.put('/:id', authMiddleware, requirePermission('shop:edit'), requireO
 
     if (error) {
       console.error('[shops] 更新店铺失败:', error.message);
-      return res.status(500).json({ success: false, error: `更新店铺失败: ${error.message}` });
+      return res.status(500).json({ success: false, error: '更新店铺失败，请稍后重试' });
     }
 
     res.json({
@@ -5401,7 +5480,7 @@ referralsRouter.post('/invite', customerSession, async (req: Request, res: Respo
 
     if (insertError) {
       console.error('[referrals] 创建推荐记录失败:', insertError.message);
-      return res.status(500).json({ success: false, error: `创建邀请记录失败: ${insertError.message}` });
+      return res.status(500).json({ success: false, error: '创建邀请记录失败，请稍后重试' });
     }
 
     // 生成二维码图片（Data URL）
@@ -5422,7 +5501,7 @@ referralsRouter.post('/invite', customerSession, async (req: Request, res: Respo
     });
   } catch (error) {
     console.error('[referrals] 生成邀请二维码异常:', error);
-    res.status(500).json({ success: false, error: `生成邀请二维码失败: ${(error as Error).message}` });
+    res.status(500).json({ success: false, error: '生成邀请二维码失败，请稍后重试' });
   }
 });
 

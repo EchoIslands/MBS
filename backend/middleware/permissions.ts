@@ -71,7 +71,7 @@ export async function customerIdentity(req: Request, res: Response, next: NextFu
     const { data, error } = await supabase.from('customers').select('id, shop_id, password_hash, is_weak_password').eq('id', identity.id).eq('shop_id', identity.shopId).maybeSingle();
     if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
     if (!data) { res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return; }
-    if (typeof data.password_hash !== 'string' || passwordVersion(data.password_hash) !== identity.passwordVersion) {
+    if (passwordVersion(data.password_hash || '') !== identity.passwordVersion) {
       res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return;
     }
     identity.mustChangePassword = data.is_weak_password === true;
