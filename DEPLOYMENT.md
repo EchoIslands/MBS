@@ -1,166 +1,25 @@
 # 理发店预约系统 - 部署指南
 
-## 🌐 推荐部署方案
+> 历史部署示例（含通用测试密码及“无需额外环境变量”）不适用于目前生产环境。现有 MBS 项目请以项目状态日志、项目开发宪章和 docs/customer-sms-login.md 的发布及验收节点为准，旧示例已归档，勿复制示例凭据或直接运行旧命令。
 
-我们推荐使用 **Vercel**（免费）来部署整个应用，Vercel 支持同时托管前端和后端。
+## 现行发布前核对（2026-11-11）
 
----
+先读 [当前工作现场](docs/current-state.md)、[文档入口](docs/README.md) 与[宪章发布工作流](MBS%20项目开发宪章.md)。本地 `main` 有未提交的代码、文档和私有配置变更；先逐项查看差异，确认拟发布范围与负责人，不执行归档草案中的旧仓库初始化或示例提交命令。数据库迁移按实际生产只读结构核对、隔离测试、经项目负责人确认后独立执行；GitHub 推送、Vercel Ready、小程序上传/审核、真实业务验收分别记状态。生产密钥只在平台安全配置，不记值。
 
-## 📋 方案一：Vercel 一键部署（免费，最简单）
+早期 Vercel/Railway 方案和费用描述已隔离至 [历史部署示例](docs/archive/2026-11-11/DEPLOYMENT-early-example.md)，不可作为现行生产操作步骤。对未知的备份与回滚能力先核实，不把“重新部署”视为数据库回滚。
 
-### 前置准备
+## 短信验证码上线补充（2026-11-09）
 
-1. **GitHub/GitLab 账号**（用于托管代码）
-2. **Vercel 账号**（免费注册）
+- 数据库 045 迁移由项目负责人确认执行，仍须上线前只读核对结构和 RPC 权限；本地代码和小程序包的推送、上传、发布是不同步骤。
+- 阿里云验证码模板已审核通过；签名三家运营商为“已报备待验证”，需要实际发送记录与手机送达结果确认，不把模板审核通过视为短信可用。
+- Vercel Production 环境曾保存 SMS_TEMPLATE_CODE，主人退出了当次 Redeploy。完整启用仍需 SMS_ACCESS_KEY_ID、SMS_ACCESS_KEY_SECRET、SMS_SIGN_NAME、SMS_TEMPLATE_CODE 四项及成功的新部署；密钥为 Secret，不写日志/仓库。
+- 新部署 Ready 后，再用门店已建档的测试顾客验证短信登录、密码回退、失败/过期/限流和实际账单。详细状态、控制台路径及验收方式见 docs/customer-sms-login.md。
 
-### 详细部署步骤
+## 发布与恢复的最小闭环
 
-#### 第一步：准备代码仓库
+1. 开发者逐项核对 Git 差异、依赖和验证结果，只交付本次范围；项目主人按既定流程手动推送 GitHub。不要笼统暂存本地所有文件或提交私有配置。
+2. 迁移先核对生产结构、在隔离环境验证，并由项目主人确认执行窗口、备份与恢复办法；SQL 执行与代码部署各自留证。
+3. 在 Vercel 核对项目、Production 环境变量名称及权限（不展示值），部署后确认对应提交和 Ready；小程序需另行上传、审核和发布。
+4. 在真实环境按角色做授权的核心业务验收，失败时记录脱敏请求和响应并按事先确认的恢复路径处理。数据库回滚不能靠重新部署代码完成。
 
-1. 在 GitHub/GitLab 创建一个新仓库
-2. 将代码推送到仓库
-
-```bash
-# 如果还没有初始化 Git
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin <你的仓库地址>
-git push -u origin main
-```
-
-#### 第二步：使用 Vercel 部署
-
-1. 访问 [Vercel 官网](https://vercel.com) 并登录
-2. 点击 **"New Project"**
-3. 选择你刚才创建的 GitHub 仓库
-4. **项目配置**（按以下设置）：
-   - **Project Name**: `barbershop-booking` (或你喜欢的名字)
-   - **Framework Preset**: `Vite`
-   - **Root Directory**: `./`
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-5. 点击 **"Deploy"** 开始部署
-
-#### 第三步：环境配置（可选）
-
-项目已经配置好了 Vercel 的 serverless 部署，无需额外配置环境变量。
-
----
-
-## 📋 方案二：前端 + 后端分离部署（更灵活）
-
-### 前端部署：Vercel
-
-1. 同上，使用 Vercel 部署前端
-2. 部署完成后会得到一个域名，如 `https://barbershop.vercel.app`
-
-### 后端部署：Railway（免费额度）
-
-1. 访问 [Railway](https://railway.app)
-2. 使用 GitHub 账号登录
-3. 点击 **"New Project"** → **"Empty Project"**
-4. 在项目中添加服务：点击 **"Add a Service"** → **"GitHub Repo"**
-5. 选择你的仓库
-6. **配置服务**：
-   - **Root Directory**: `./`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm run server:dev` （生产使用 `node api/server.js`）
-   - 添加环境变量：`PORT=3001`
-7. 点击部署
-8. 部署完成后会得到一个后端地址
-
-### 配置前端 API 地址
-
-修改 `src/api.ts`，将 API 地址指向你的后端地址
-
----
-
-## 🔧 项目部署文件说明
-
-### 已有的部署配置文件
-
-#### 1. `vercel.json`
-配置了 Vercel 的路由重写：
-- `/api/*` 路由指向后端
-- 其他路由指向前端 SPA
-
-#### 2. `api/index.ts`
-Vercel Serverless Function 入口文件
-
-#### 3. `package.json`
-- `build`: 构建前端
-- `server:dev`: 启动后端开发服务器
-
----
-
-## 🚀 快速部署（使用 Vercel 自动部署）
-
-### 最简单的方式：
-
-1. **Fork 或 Push 代码到 GitHub**
-2. **访问 Vercel 并导入项目**
-3. **等待部署完成**
-
-就是这么简单！Vercel 会自动：
-- 检测到这是 Vite 项目
-- 自动构建前端
-- 自动部署 Serverless 函数（API）
-
----
-
-## 📱 部署完成后
-
-访问你的 Vercel 分配的域名即可：
-
-- 顾客端：选择「我是顾客」
-- 理发店端：选择「我是理发店」，使用密码 `123456` 登录
-
----
-
-## 💡 常见问题
-
-### 1. 部署后 API 调用失败？
-
-检查：
-- 确保 `api/index.ts` 存在
-- 检查 `vercel.json` 配置正确
-
-### 2. 如何绑定自定义域名？
-
-Vercel 支持绑定自定义域名，在项目设置中添加即可。
-
-### 3. 数据持久化问题？
-
-当前版本使用内存数据，重启服务会清空。可以接入数据库如：
-- **Supabase**（PostgreSQL）
-- **MongoDB Atlas**
-- **Prisma**（ORM）
-
-### 4. 费用如何？
-
-- Vercel Hobby 计划：完全免费
-- Railway Hobby 计划：有免费额度，超出部分按量付费
-
----
-
-## 🎯 推荐部署路线图
-
-### 第一阶段：MVP 部署（当前方案）
-✅ Vercel 部署
-✅ 模拟数据运行
-✅ 完整功能验证
-
-### 第二阶段：数据库接入（可选）
-- 接入 Supabase 或其他数据库
-- 数据持久化
-
-### 第三阶段：生产优化
-- 添加 Analytics
-- 添加 Sentry 错误监控
-- 添加 CDN 加速
-
----
-
-需要帮助部署吗？让我知道！
+数据库连接配置入口为 `scripts/setup-db.ts`（`SUPABASE_DB_URL`）；线上密钥取得方式、备份可用性及回滚演练仍待负责人现场核实，不应凭此文档直接执行安装器。专项步骤见 [短信登录](docs/customer-sms-login.md) 和 [排队试运行](docs/queue-pilot-phase1.md)。

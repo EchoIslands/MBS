@@ -42,6 +42,7 @@ export const SHOP_NAVIGATION: ShopNavigationSection[] = [
     icon: 'calendar',
     tabs: [
       { label: '预约管理', path: '/shop/bookings', roles: OPERATIONS },
+      { label: '今日到店快记', path: '/shop/queue-desk', roles: ALL_STAFF },
       { label: '发型师看板', path: '/shop/stylist', roles: OPERATIONS },
     ],
   },

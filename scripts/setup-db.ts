@@ -32,6 +32,8 @@ export const SETUP_MIGRATIONS = [
   '043_customer_auth_failure_limits.sql',
   '044_customer_last_service.sql',
   '045_customer_sms_login.sql',
+  '046_booking_queue_pilot.sql',
+  '047_sms_customer_registration.sql',
 ] as const;
 
 const BASE_TABLES = [

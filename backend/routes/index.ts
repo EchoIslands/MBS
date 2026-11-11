@@ -467,6 +467,45 @@ mainRouter.use('/employees', employeesRouter);
 const bookingsRouter = Router();
 bookingsRouter.use(bookingAccess);
 
+// Staff-only queue pilot actions. The database function serializes each booking and its event.
+bookingsRouter.post('/:id/queue-event', authMiddleware, async (req: Request, res: Response) => {
+  const employee = req.employee!;
+  if (!['ceo', 'shop_manager', 'customer_service', 'stylist'].includes(employee.role)) return res.status(403).json({success:false,error:'无权记录排队事件'});
+  const eventType = String(req.body?.eventType || '');
+  if (!['arrived','left_reported','returned','called','missed','service_started','service_finished'].includes(eventType)) return res.status(400).json({success:false,error:'无效的排队操作'});
+  try {
+    const {data:booking,error:lookupError}=await supabase.from('bookings').select('stylist_id').eq('id',req.params.id).eq('shop_id',employee.shopId).maybeSingle();
+    if(lookupError) return res.status(503).json({success:false,error:'预约查询暂不可用'});
+    if(!booking) return res.status(404).json({success:false,error:'预约不存在'});
+    if(employee.role==='stylist' && (booking.stylist_id!==employee.id || !['service_started','service_finished'].includes(eventType))) return res.status(403).json({success:false,error:'无权操作该预约'});
+    const {data,error}=await supabase.rpc('record_booking_queue_event',{p_booking_id:req.params.id,p_shop_id:employee.shopId,p_event_type:eventType,p_actor_id:employee.id});
+    if(error) return res.status(error.message.includes('QUEUE_')?409:503).json({success:false,error:error.message.includes('QUEUE_')?'当前状态不允许此操作，请刷新后重试':'记录失败，请稍后重试'});
+    res.json({success:true,data});
+  } catch(error) { console.error('[queue-pilot] action failed',error); res.status(503).json({success:false,error:'记录失败'}); }
+});
+
+bookingsRouter.get('/:id/queue-events', authMiddleware, async (req: Request, res: Response) => {
+  const employee=req.employee!;
+  if(!['ceo','shop_manager','customer_service'].includes(employee.role)) return res.status(403).json({success:false,error:'无权查看排队流水'});
+  const {data,error}=await supabase.from('booking_queue_events').select('id,event_type,occurred_at,recorded_at,actor_type,actor_id,note,related_event_id').eq('booking_id',req.params.id).eq('shop_id',employee.shopId).order('id',{ascending:true}).limit(200);
+  if(error) return res.status(503).json({success:false,error:'流水查询暂不可用'});
+  res.json({success:true,data});
+});
+
+bookingsRouter.patch('/:id/queue-events/:eventId', authMiddleware, async (req: Request, res: Response) => {
+  const employee=req.employee!;
+  if(!['ceo','shop_manager'].includes(employee.role)) return res.status(403).json({success:false,error:'只有店长可更正'});
+  const eventId=Number(req.params.eventId);
+  const occurredAt=typeof req.body?.occurredAt==='string'?new Date(req.body.occurredAt):new Date(NaN);
+  if(!Number.isSafeInteger(eventId)||eventId<=0||!Number.isFinite(occurredAt.getTime())) return res.status(400).json({success:false,error:'事件或时间无效'});
+  const {data:owned,error:lookupError}=await supabase.from('booking_queue_events').select('id').eq('id',eventId).eq('booking_id',req.params.id).eq('shop_id',employee.shopId).maybeSingle();
+  if(lookupError) return res.status(503).json({success:false,error:'流水查询暂不可用'});
+  if(!owned) return res.status(404).json({success:false,error:'事件不存在'});
+  const {data,error}=await supabase.rpc('correct_booking_queue_event',{p_event_id:eventId,p_shop_id:employee.shopId,p_actor_id:employee.id,p_occurred_at:occurredAt.toISOString()});
+  if(error) return res.status(error.message.includes('QUEUE_')?409:503).json({success:false,error:error.message.includes('QUEUE_')?'仅可更正当天最新事件，请核对时间先后':'更正失败'});
+  res.json({success:true,data});
+});
+
 const generateBookingId = () => `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
 // 时段长度（分钟），用于排队号分组
@@ -508,6 +547,14 @@ const bookingFromDb = (b: Record<string, unknown>): Record<string, unknown> => (
   delayReason: b.delay_reason,
   delayExpectedEnd: b.delay_expected_end,
   delayCreatedAt: b.delay_created_at,
+  queueState: b.queue_state,
+  arrivedAt: b.arrived_at,
+  calledAt: b.called_at,
+  graceDeadlineAt: b.grace_deadline_at,
+  missedAt: b.missed_at,
+  returnedAt: b.returned_at,
+  plannedDurationMinutes: b.planned_duration_minutes,
+  durationSource: b.duration_source,
 });
 
 // 惰性过期：将超过 4 小时未处理的延时预约标记为 no_response（读取时批量处理，每次最多 100 条，避免频繁写库）
@@ -544,7 +591,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     // Fetch only fields used by bookingFromDb and the public availability response.
     let query = supabase
       .from('bookings')
-      .select('id, shop_id, customer_id, customer_name, customer_phone, stylist_id, stylist_name, service_id, service_name, price, scheduled_time, scheduled_end_time, actual_start_time, actual_end_time, package_id, queue_number, status, notes, created_at, delay_state, delay_reason, delay_expected_end, delay_created_at', { count: 'exact' })
+      .select('id, shop_id, customer_id, customer_name, customer_phone, stylist_id, stylist_name, service_id, service_name, price, scheduled_time, scheduled_end_time, actual_start_time, actual_end_time, package_id, queue_number, status, notes, created_at, delay_state, delay_reason, delay_expected_end, delay_created_at, queue_state, arrived_at, called_at, grace_deadline_at, missed_at, returned_at, planned_duration_minutes, duration_source', { count: 'exact' })
       .eq('shop_id', shopId)
       .order('scheduled_time', { ascending: true });
 
@@ -1823,7 +1870,7 @@ const customersRouter = Router();
 // 本人展示白名单：不返回证件、微信标识、员工备注及客户画像。
 const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
 
-/** 顾客短信验证：仅向已建档手机号发送，响应不暴露是否建档。 */
+/** 顾客短信验证：新老顾客均可发送，验证成功后才创建档案。 */
 customersRouter.post('/sms/send', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
@@ -1836,12 +1883,9 @@ customersRouter.post('/sms/send', async (req: Request, res: Response) => {
     const code = generateSmsCode();
     const quota = await reserveSmsCode(phone, ip, code);
     if (!quota.allowed) { res.setHeader('Retry-After', quota.retryAfterSeconds); return res.status(429).json({ success: false, error: '发送太频繁，请稍后再试', retryAfterSeconds: quota.retryAfterSeconds }); }
-    const { data: customers, error } = await supabase.from('customers').select('id').eq('phone', phone).limit(2);
-    if (error) { await cancelSmsCode(phone, code); return res.status(503).json({ success: false, error: '验证码服务暂不可用' }); }
-    if (customers?.length !== 1) { return res.json({ success: true, message: '若该手机号已在门店建档，验证码将发送到该手机' }); }
     try { await sendSmsCode(phone, code); }
     catch (err) { await cancelSmsCode(phone, code); console.error('[customer-sms] 发送失败:', err instanceof Error ? err.message : 'unknown'); return res.status(503).json({ success: false, error: '短信暂未送达，请稍后再试或使用密码登录' }); }
-    return res.json({ success: true, message: '若该手机号已在门店建档，验证码将发送到该手机' });
+    return res.json({ success: true, message: '验证码已发送，请查看手机短信' });
   } catch { return res.status(503).json({ success: false, error: '验证码服务暂不可用' }); }
 });
 
@@ -1858,9 +1902,10 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
     if (decision.allowed === false) { res.setHeader('Retry-After', decision.retryAfterSeconds); return res.status(429).json({ success: false, ...decision }); }
     attempt = decision.attempt;
     if (!(await verifySmsCode(phone, code))) { await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined; return res.status(401).json({ success: false, error: '验证码错误或已过期' }); }
-    const { data: customers, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('phone', phone).limit(2);
-    if (error || customers?.length !== 1) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
-    const customer = customers[0];
+    const { data: customerId, error: resolveError } = await supabase.rpc('resolve_sms_customer', { p_phone: phone });
+    if (resolveError || !customerId) return res.status(503).json({ success: false, error: '客户档案暂不可用或存在重复，请联系门店' });
+    const { data: customer, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('id', customerId).single();
+    if (error || !customer) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
     // 临时弱密码账户仍需完成原改密流程，短信登录不可绕过强制改密。
     if (customer.is_weak_password === true) return res.status(403).json({ success: false, error: '此账户须先使用原密码登录并修改临时密码' });
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;

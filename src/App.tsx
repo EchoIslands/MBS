@@ -48,6 +48,7 @@ const ReviewManagement = lazy(() => import('./pages/shop/ReviewManagement'));
 const CustomerProfileForm = lazy(() => import('./pages/shop/CustomerProfileForm'));
 const CustomerRecall = lazy(() => import('./pages/shop/CustomerRecall'));
 const BookingManagement = lazy(() => import('./pages/shop/BookingManagement'));
+const QueueQuickDesk = lazy(() => import('./pages/shop/QueueQuickDesk'));
 const Checkout = lazy(() => import('./pages/shop/Checkout'));
 const Packages = lazy(() => import('./pages/shop/Packages'));
 
@@ -221,6 +222,7 @@ export default function App() {
           <Route path="/shop/customers" element={<CustomerManagement />} />
           <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
           <Route path="/shop/bookings" element={<BookingManagement />} />
+          <Route path="/shop/queue-desk" element={<QueueQuickDesk />} />
           <Route path="/shop/checkout" element={<Checkout />} />
           <Route path="/shop/settlement" element={<SettlementManagement />} />
           <Route path="/shop/membership" element={<MembershipManagement />} />

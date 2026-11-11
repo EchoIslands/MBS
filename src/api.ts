@@ -633,11 +633,27 @@ function normalizeBooking(b: unknown): Booking {
     delayCreatedAt: raw.delayCreatedAt
       ? raw.delayCreatedAt instanceof Date ? raw.delayCreatedAt : new Date(raw.delayCreatedAt as string | number)
       : undefined,
+    queueState: (raw.queueState || raw.queue_state) as Booking['queueState'],
+    arrivedAt: raw.arrivedAt || raw.arrived_at ? new Date((raw.arrivedAt || raw.arrived_at) as string) : undefined,
+    calledAt: raw.calledAt || raw.called_at ? new Date((raw.calledAt || raw.called_at) as string) : undefined,
+    graceDeadlineAt: raw.graceDeadlineAt || raw.grace_deadline_at ? new Date((raw.graceDeadlineAt || raw.grace_deadline_at) as string) : undefined,
+    missedAt: raw.missedAt || raw.missed_at ? new Date((raw.missedAt || raw.missed_at) as string) : undefined,
+    returnedAt: raw.returnedAt || raw.returned_at ? new Date((raw.returnedAt || raw.returned_at) as string) : undefined,
+    plannedDurationMinutes: Number(raw.plannedDurationMinutes || raw.planned_duration_minutes) || undefined,
+    durationSource: (raw.durationSource || raw.duration_source) as Booking['durationSource'],
   };
 }
 
 // 预约相关 API
 export const bookingApi = {
+  recordQueueEvent: (id: string, eventType: string) => httpThrowing<unknown>(
+    API_BASE + '/bookings/' + encodeURIComponent(id) + '/queue-event',
+    {method:'POST',headers:{Authorization:'Bearer ' + getAuthToken()},body:JSON.stringify({eventType})}),
+  getQueueEvents: (id: string) => httpThrowing<Array<{id:number;event_type:string;occurred_at:string;recorded_at:string;actor_id:string;note?:string;related_event_id?:number}>>(
+    API_BASE + '/bookings/' + encodeURIComponent(id) + '/queue-events',{headers:{Authorization:'Bearer ' + getAuthToken()}}),
+  correctQueueEvent: (id: string, eventId: number, occurredAt: string) => httpThrowing<unknown>(
+    API_BASE + '/bookings/' + encodeURIComponent(id) + '/queue-events/' + eventId,
+    {method:'PATCH',headers:{Authorization:'Bearer ' + getAuthToken()},body:JSON.stringify({occurredAt})}),
   createBooking: async (
     data: {
       shopId: string;

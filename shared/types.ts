@@ -588,6 +588,14 @@ export interface Booking {
   delayReason?: string;          // 延时通知文案
   delayExpectedEnd?: Date;       // 延时后预计结束时间
   delayCreatedAt?: Date;         // 标记待处理的时间（用于超时判定）
+  queueState?: 'arrived' | 'away' | 'returned' | 'called' | 'missed' | 'serving' | 'finished';
+  arrivedAt?: Date;
+  calledAt?: Date;
+  graceDeadlineAt?: Date;
+  missedAt?: Date;
+  returnedAt?: Date;
+  plannedDurationMinutes?: number;
+  durationSource?: 'service' | 'stylist' | 'manual';
 }
 
 export type DelayState = 'needs_action' | 'no_response' | 'rescheduled' | 'reassigned';
