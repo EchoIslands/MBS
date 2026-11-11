@@ -591,7 +591,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     // Fetch only fields used by bookingFromDb and the public availability response.
     let query = supabase
       .from('bookings')
-      .select('id, shop_id, customer_id, customer_name, customer_phone, stylist_id, stylist_name, service_id, service_name, price, scheduled_time, scheduled_end_time, actual_start_time, actual_end_time, package_id, queue_number, status, notes, created_at, delay_state, delay_reason, delay_expected_end, delay_created_at, queue_state, arrived_at, called_at, grace_deadline_at, missed_at, returned_at, planned_duration_minutes, duration_source', { count: 'exact' })
+      .select('id, shop_id, customer_id, customer_name, customer_phone, stylist_id, stylist_name, service_id, service_name, price, scheduled_time, scheduled_end_time, actual_start_time, actual_end_time, queue_number, status, notes, created_at, delay_state, delay_reason, delay_expected_end, delay_created_at, queue_state, arrived_at, called_at, grace_deadline_at, missed_at, returned_at, planned_duration_minutes, duration_source', { count: 'exact' })
       .eq('shop_id', shopId)
       .order('scheduled_time', { ascending: true });
 
