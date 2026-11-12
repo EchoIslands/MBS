@@ -1,3 +1,4 @@
+import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, liveQueueAction } from '../services/liveQueue.js';
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import customerPaymentOrdersRouter from './customerPaymentOrders.js';
 import { Router, Request, Response } from 'express';
@@ -466,6 +467,8 @@ mainRouter.use('/employees', employeesRouter);
 // 结算奖励在036触发器内与结算同事务提交；不在响应后异步更新余额。
 const bookingsRouter = Router();
 bookingsRouter.use(bookingAccess);
+bookingsRouter.get('/:id/live-queue', customerQueueSnapshot);
+bookingsRouter.post('/:id/live-queue', liveQueueAction);
 
 // Staff-only queue pilot actions. The database function serializes each booking and its event.
 bookingsRouter.post('/:id/queue-event', authMiddleware, async (req: Request, res: Response) => {
@@ -2817,6 +2820,8 @@ mainRouter.use('/customers', customersRouter);
 
 // ===================== queues =====================
 const queuesRouter = Router();
+queuesRouter.get('/:shopId/live', authMiddleware, staffQueueSnapshot);
+queuesRouter.post('/:shopId/live/availability', authMiddleware, staffQueueAvailability);
 
 // 时段长度（分钟）
 const QUEUE_TIME_SLOT_MINUTES = 30;
