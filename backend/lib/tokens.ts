@@ -14,10 +14,11 @@ export function getJwtSecret(): string {
 }
 
 export const CUSTOMER_COOKIE = 'mbs_customer_auth';
-export const CUSTOMER_SESSION_SECONDS = 2 * 60 * 60;
+export const CUSTOMER_SESSION_SECONDS = 30 * 24 * 60 * 60;
+export const CUSTOMER_RESTRICTED_SESSION_SECONDS = 2 * 60 * 60;
 export function signCustomerToken(id: string, shopId: string, passwordHash: string, mustChangePassword = false): string {
   return jwt.sign({ id, shopId, kind: 'customer', mustChangePassword, passwordVersion: passwordVersion(passwordHash) }, getJwtSecret(), {
-    algorithm: 'HS256', audience: 'customer', issuer: 'mbs', expiresIn: CUSTOMER_SESSION_SECONDS,
+    algorithm: 'HS256', audience: 'customer', issuer: 'mbs', expiresIn: mustChangePassword ? CUSTOMER_RESTRICTED_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS,
   });
 }
 
