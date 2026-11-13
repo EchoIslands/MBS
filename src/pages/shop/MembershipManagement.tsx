@@ -46,6 +46,7 @@ import {
 import { useAppStore } from '../../store';
 import { customerApi, memberBenefitApi, referralApi, membershipApi, packageApi } from '../../api';
 import ShopLayout from './ShopLayout';
+import MembershipFollowups from './MembershipFollowups';
 
 type ModalMode = 'purchase' | 'storedValue' | null;
 
@@ -353,6 +354,24 @@ const MembershipManagement: React.FC = () => {
       setModalMode(null);
       setModalCustomer(null);
     }
+  };
+
+  const cancelCurrentMembership = async () => {
+    if (!modalCustomer || revoking || !canRevokeMembership) return;
+    const vip = modalMode === 'purchase';
+    if (!window.confirm('确定取消' + (vip ? '购买型VIP' : '储值会员折扣资格') + '？不会自动退款，不清空储值余额，不删除次卡和历史记录。')) return;
+    setRevoking(true);
+    try {
+      const result = vip
+        ? await membershipApi.revoke(modalCustomer.id, { note: '会员管理调整窗口取消VIP' })
+        : await membershipApi.upgrade(modalCustomer.id, { storedValueLevel: StoredValueLevel.NONE });
+      if (!result?.customer) throw new Error('取消未完成，请刷新核对');
+      const updated = { ...modalCustomer, ...result.customer };
+      setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+      if (viewingCustomer?.id === updated.id) { setViewingCustomer(updated); await fetchEnrollments(updated.id); }
+      setModalMode(null); setModalCustomer(null);
+    } catch (e) { alert(e instanceof Error ? e.message : '取消失败'); }
+    finally { setRevoking(false); }
   };
 
   const handleRevoke = async (enrollment: MembershipEnrollment) => {
@@ -1075,6 +1094,11 @@ const MembershipManagement: React.FC = () => {
             </div>
           </div>
 
+          {canRevokeMembership && (isPurchase ? modalCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR : modalCustomer.storedValueLevel !== StoredValueLevel.NONE) && (
+            <button disabled={revoking} onClick={() => void cancelCurrentMembership()} className="w-full mb-4 p-4 rounded-xl border-2 border-red-200 bg-red-50 text-red-700 font-bold disabled:opacity-40">
+              {revoking ? '处理中…' : isPurchase ? '取消VIP资格' : '取消储值会员资格（保留余额）'}
+            </button>
+          )}
           <div className="bg-gray-50 rounded-xl p-4 mb-4">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500">当前{isPurchase ? '已付' : '已储'}金额</span>
@@ -1101,6 +1125,7 @@ const MembershipManagement: React.FC = () => {
               取消
             </button>
             <button
+              disabled={revoking}
               onClick={isPurchase ? confirmPurchaseUpgrade : confirmStoredUpgrade}
               className="flex-1 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-medium transition-colors"
             >
@@ -1135,6 +1160,7 @@ const MembershipManagement: React.FC = () => {
             })}
           </div>
 
+          {canRevokeMembership && <MembershipFollowups />}
           {renderPlanCards()}
           {renderCustomerList()}
 
