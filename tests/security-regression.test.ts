@@ -269,6 +269,33 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/financial/report',cs)).status,403);
    assert.equal((await request('/financial/report',ceo)).status,200);
   });
+  await t.test('顾客本人可改昵称，越权字段和其他顾客档案不可修改',async()=>{
+   const {signCustomerToken}=await import('../backend/lib/tokens.js');
+   const previousHashes=tables.customers.slice(0,2).map(row=>row.password_hash);
+   tables.customers[0].password_hash=await hashPassword('synthetic-profile-one');
+   tables.customers[1].password_hash=await hashPassword('synthetic-profile-two');
+   try {
+   const own=signCustomerToken('c1','s1',tables.customers[0].password_hash);
+   const other=signCustomerToken('c2','s1',tables.customers[1].password_hash);
+   const beforePhone=tables.customers[0].phone;
+   assert.equal((await request('/customers/c1/self','','PUT',{name:'新昵称'})).status,401);
+   assert.equal((await request('/customers/c1/self',ceo,'PUT',{name:'新昵称'})).status,401);
+   assert.equal((await request('/customers/c1/self',other,'PUT',{name:'新昵称'})).status,403);
+   assert.equal((await request('/customers/c1/self',own,'PUT',{phone:'13900000001'})).status,400);
+   assert.equal((await request('/customers/c1/self',own,'PUT',{name:'新昵称',avatar:'https://evil.invalid/a.jpg'})).status,400);
+   assert.equal((await request('/upload/customer-avatar','','POST',{image:'data:image/png;base64,AA=='})).status,401);
+   assert.equal((await request('/upload/customer-avatar',own,'POST',{image:'data:image/png;base64,AA=='})).status,400);
+   const saved=await request('/customers/c1/self',own,'PUT',{name:'新昵称',gender:'female',birthday:'1990-01-01'});
+   assert.equal(saved.status,200);
+   assert.equal(saved.body.data.name,'新昵称');
+   assert.equal(saved.body.data.birthday,'1990-01-01');
+   assert.equal(saved.body.data.idCardNumber,undefined);
+   assert.equal(tables.customers[0].phone,beforePhone);
+   } finally {
+    tables.customers[0].name='Synthetic one';tables.customers[0].gender=undefined;tables.customers[0].birthday=undefined;
+    tables.customers[0].password_hash=previousHashes[0];tables.customers[1].password_hash=previousHashes[1];
+   }
+  });
   await t.test('CEO/客服可新增删除；无权限修改和跨店设置被拒',async()=>{
    for(const token of [ceo,cs]){
     assert.equal((await request('/customers',token,'POST',{id:'new',name:'Synthetic',phone:'13800000000'})).status,200);

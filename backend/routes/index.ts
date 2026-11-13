@@ -1871,7 +1871,7 @@ mainRouter.use('/customer-packages', customerPackagesRouter);
 // ===================== customers =====================
 const customersRouter = Router();
 // 本人展示白名单：不返回证件、微信标识、员工备注及客户画像。
-const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
+const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, gender, birthday, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
 
 /** 顾客短信验证：新老顾客均可发送，验证成功后才创建档案。 */
 customersRouter.post('/sms/send', async (req: Request, res: Response) => {
@@ -2056,6 +2056,50 @@ customersRouter.get('/:id/public', (req, res, next) => { void customerIdentity(r
     console.error('[customers] 获取公开客户信息异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
+});
+
+// 顾客仅能修改本人展示资料；手机号、会员等级及账户资金不能从此入口更新。
+customersRouter.put('/:id/self', personalCustomerAccess, async (req: Request, res: Response) => {
+  const body = req.body || {};
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      Object.keys(body).some(key => !['name', 'avatar', 'gender', 'birthday'].includes(key))) {
+    return res.status(400).json({ success: false, error: '只允许修改称呼、头像、性别和生日' });
+  }
+  const patch: Record<string, string | null> = {};
+  if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name || name.length > 40 || /[\u0000-\u001f\u007f]/.test(name)) return res.status(400).json({ success: false, error: '称呼需为 1 至 40 个字符' });
+    patch.name = name;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'avatar')) {
+    const avatar = body.avatar;
+    const prefix = 'https://' + process.env.OSS_BUCKET + '.' + process.env.OSS_REGION + '.aliyuncs.com/customer-avatars/' + req.customer!.shopId + '/' + req.customer!.id + '/';
+    if (avatar !== null && (typeof avatar !== 'string' || !process.env.OSS_BUCKET || !process.env.OSS_REGION ||
+        !avatar.startsWith(prefix) || !/^https:\/\/[^?#]+\.(?:png|jpg|webp)$/.test(avatar))) {
+      return res.status(400).json({ success: false, error: '请先上传有效头像' });
+    }
+    patch.avatar = avatar;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'gender')) {
+    if (body.gender !== null && !['male', 'female', 'other'].includes(body.gender)) return res.status(400).json({ success: false, error: '性别选项无效' });
+    patch.gender = body.gender;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'birthday')) {
+    const birthday = body.birthday;
+    if (birthday !== null && (typeof birthday !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(birthday) ||
+        !Number.isFinite(Date.parse(birthday)) || new Date(birthday).toISOString().slice(0, 10) !== birthday || birthday > new Date().toISOString().slice(0, 10))) {
+      return res.status(400).json({ success: false, error: '生日日期无效' });
+    }
+    patch.birthday = birthday;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ success: false, error: '请填写要修改的资料' });
+  try {
+    const { data, error } = await supabase.from('customers').update(patch)
+      .eq('id', req.customer!.id).eq('shop_id', req.customer!.shopId).select(CUSTOMER_SELF_FIELDS).maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ success: false, error: '顾客档案不存在' });
+    return res.json({ success: true, data: toCamelCase(data) });
+  } catch { return res.status(503).json({ success: false, error: '资料保存失败，请稍后重试' }); }
 });
 
 /**

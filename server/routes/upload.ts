@@ -3,8 +3,31 @@ import 'dotenv/config';
 import OSS from 'ali-oss';
 import { authMiddleware } from '../../backend/middleware/index.js';
 import { requirePermission } from '../../backend/middleware/permissions.js';
+import { customerSession } from '../../backend/middleware/resourceAccess.js';
+import { randomUUID } from 'crypto';
 
 const router = Router();
+
+// 顾客头像单独授权与存放，不能复用员工的店铺图片上传权限。
+router.post('/customer-avatar', customerSession, async (req: Request, res: Response) => {
+  const image = req.body?.image;
+  const match = typeof image === 'string' && image.length <= 3 * 1024 * 1024
+    ? image.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/) : null;
+  if (!match) return res.status(400).json({ success: false, error: '请选择不超过 2MB 的 PNG、JPEG 或 WebP 头像' });
+  const bytes = Buffer.from(match[2], 'base64');
+  const valid = bytes.length > 0 && bytes.length <= 2 * 1024 * 1024 && bytes.toString('base64') === match[2] &&
+    (match[1] === 'png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+      : match[1] === 'jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+      : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP');
+  if (!valid) return res.status(400).json({ success: false, error: '头像文件格式无效' });
+  try {
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+    const key = 'customer-avatars/' + req.customer!.shopId + '/' + req.customer!.id + '/' + randomUUID() + '.' + ext;
+    await getOssClient().put(key, bytes, { mime: 'image/' + match[1] });
+    const url = 'https://' + process.env.OSS_BUCKET + '.' + process.env.OSS_REGION + '.aliyuncs.com/' + key;
+    return res.json({ success: true, data: url });
+  } catch { return res.status(503).json({ success: false, error: '头像上传失败，请稍后重试' }); }
+});
 
 // 阿里云 OSS 客户端（懒加载，避免启动时因缺环境变量而抛错）
 let ossClient: OSS | null = null;
