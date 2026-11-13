@@ -57,6 +57,33 @@ Page({
 
   onUnload() { if (this.smsTimer) clearInterval(this.smsTimer); },
 
+  onShow() { this.fillSmsCodeFromClipboard(); },
+
+  onSmsCodeFocus() { this.fillSmsCodeFromClipboard(); },
+
+  onPasteSmsCode() { this.fillSmsCodeFromClipboard(true); },
+
+  fillSmsCodeFromClipboard(manual = false) {
+    if (this.data.loginMode !== 'sms' || this.data.loggingIn || this.clipboardReading) return;
+    if (!manual && (this.data.smsCode || this.smsRequestedPhone !== this.data.phone || Date.now() - this.smsRequestedAt > 5 * 60 * 1000)) return;
+    const phone = this.data.phone;
+    const previousCode = this.data.smsCode;
+    const requestedAt = this.smsRequestedAt;
+    if (typeof wx.getClipboardData !== 'function') return;
+    this.clipboardReading = true;
+    wx.getClipboardData({
+      success: ({ data }) => {
+        // A late clipboard response must not overwrite typing or a different phone/request.
+        if (this.data.loginMode !== 'sms' || this.data.loggingIn || this.data.phone !== phone || this.data.smsCode !== previousCode || this.smsRequestedAt !== requestedAt) return;
+        const code = String(data || '').trim();
+        if (/^\d{6}$/.test(code)) this.setData({ smsCode: code, error: '' });
+        else if (manual) wx.showToast({ title: '请先复制六位短信验证码', icon: 'none' });
+      },
+      fail: () => { if (manual) wx.showToast({ title: '无法读取，请长按输入框粘贴', icon: 'none' }); },
+      complete: () => { this.clipboardReading = false; },
+    });
+  },
+
   onHide() {
     this.setData({ showPassword: false, showConfirmPassword: false });
   },
@@ -89,6 +116,8 @@ Page({
     this.setData({ smsSending: true, error: '' });
     try {
       const result = await sendCustomerSmsCode(phone);
+      this.smsRequestedPhone = phone;
+      this.smsRequestedAt = Date.now();
       this.setData({ error: '', smsSeconds: 60 });
       wx.showToast({ title: result.message || '验证码已发送', icon: 'none' });
       if (this.smsTimer) clearInterval(this.smsTimer);

@@ -1,11 +1,14 @@
 import { getShop, getShopReviews } from '../../api/shop';
 import { sortStylistsByRank } from '../../utils/stylist-order';
-import { getCustomerPublic } from '../../api/customer';
+import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
 import { getCustomerId, getToken, setRouteParams, clearCustomerId } from '../../utils/storage';
 import { trackPageView, trackServiceDetailView } from '../../utils/tracking';
+import { createTabSwipeHandlers, syncTabBarSelected } from '../../utils/tab-swipe';
 import {
   PurchaseVIPLevel,
   StoredValueLevel,
+  vipBenefits,
+  storedBenefits,
   purchaseVIPPlans,
   storedValuePlans,
   getPurchaseVIPLabel,
@@ -44,7 +47,11 @@ function limitImageList(images, maxCount = 1) {
 }
 
 Page({
+  ...createTabSwipeHandlers(0),
   data: {
+    vipBenefits,
+    storedBenefits,
+    membershipExpanded: false,
     shop: null,
     stylists: [],
     selectedStylist: null,
@@ -63,8 +70,19 @@ Page({
     purchasePlan: null,
     storedPlan: null,
     isMember: false,
+    activeQueueBooking: null,
     memberHeaderClass: 'member-header gradient-member-regular',
     StoredValueLevel,
+  },
+
+  toggleMembershipDetails() {
+    this.setData({ membershipExpanded: !this.data.membershipExpanded });
+  },
+
+  callStore() {
+    const phone = this.data.shop && this.data.shop.phone;
+    if (!phone) return;
+    wx.makePhoneCall({ phoneNumber: phone, fail: () => wx.showToast({ title: '拨打失败', icon: 'none' }) });
   },
 
   async onLoad() {
@@ -74,7 +92,41 @@ Page({
 
   onShow() {
     if (!this.checkSession()) return;
+    syncTabBarSelected(this, 0);
+    if (this._indexShown) this.loadCustomer();
+    else this._indexShown = true;
+    this.loadActiveBooking();
     trackPageView('pages/index/index', { shop_id: 'shop1' });
+  },
+
+  async loadActiveBooking() {
+    const customerId = getCustomerId();
+    if (!customerId) return;
+    const requestId = (this._activeQueueRequestId || 0) + 1;
+    this._activeQueueRequestId = requestId;
+    try {
+      const bookings = await getCustomerBookings(customerId);
+      if (requestId !== this._activeQueueRequestId || getCustomerId() !== customerId) return;
+      const beijingDay = (value) => Math.floor((new Date(value).getTime() + 8 * 3600000) / 86400000);
+      const today = beijingDay(Date.now());
+      const active = (Array.isArray(bookings) ? bookings : [])
+        .filter((booking) => booking.status === 'confirmed' && beijingDay(booking.scheduledTime || booking.scheduled_time) === today)
+        .sort((a, b) => new Date(a.scheduledTime || a.scheduled_time) - new Date(b.scheduledTime || b.scheduled_time))[0];
+      this.setData({ activeQueueBooking: active ? {
+        id: active.id,
+        serviceName: active.serviceName || active.service_name || '今日预约',
+      } : null });
+    } catch (error) {
+      if (requestId !== this._activeQueueRequestId || getCustomerId() !== customerId) return;
+      console.warn('[index] 加载今日预约入口失败:', error);
+      this.setData({ activeQueueBooking: null });
+    }
+  },
+
+  goToActiveQueue() {
+    if (!this.data.activeQueueBooking?.id) return;
+    setRouteParams({ bookingId: this.data.activeQueueBooking.id });
+    wx.navigateTo({ url: '/pages/queue/queue' });
   },
 
   checkSession() {
@@ -118,6 +170,7 @@ Page({
       const shop = {
         id: rawShop.id,
         name: rawShop.name || '皓诗形象设计',
+        description: rawShop.description || '',
         address: rawShop.address || '',
         phone: rawShop.phone || '',
         rating: rawShop.rating || 4.8,
@@ -217,7 +270,7 @@ Page({
   noop() {},
 
   goToProfile() {
-    wx.navigateTo({ url: '/pages/profile/profile' });
+    wx.switchTab({ url: '/pages/profile/profile' });
   },
 
   handleLogout() {
@@ -309,13 +362,12 @@ Page({
 
   goToProducts() {
     const shopId = (this.data.shop && this.data.shop.id) || 'shop1';
-    wx.navigateTo({
-      url: `/pages/products/products?shopId=${shopId}`,
-    });
+    setRouteParams({ shopId });
+    wx.switchTab({ url: '/pages/products/products' });
   },
 
   goToBooking() {
-    wx.navigateTo({ url: '/pages/booking/booking' });
+    wx.switchTab({ url: '/pages/booking/booking' });
   },
 
   onServiceTap(e) {
@@ -327,9 +379,7 @@ Page({
 
   goToBookingWithService(serviceId) {
     setRouteParams({ serviceId });
-    wx.navigateTo({
-      url: '/pages/booking/booking',
-    });
+    wx.switchTab({ url: '/pages/booking/booking' });
   },
 
   onPrivacyAccept() {

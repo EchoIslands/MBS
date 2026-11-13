@@ -1,0 +1,27 @@
+<view class="member-page">
+  <view class="member-hero"><view class="member-title">会员办理</view><view class="member-sub">本人办理 · 微信支付核验后自动开通或续费</view></view>
+  <view wx:if="{{error}}" class="member-error">{{error}}</view>
+  <view wx:if="{{notice}}" class="member-notice">{{notice}}</view>
+  <view wx:if="{{activeOrder}}" class="member-pending">
+    <view>当前订单：{{activeOrder.kind === 'vip' ? 'VIP' : '储值'}} {{activeOrder.level}} · ¥{{activeOrder.amount}}</view>
+    <view>{{activeOrder.status === 'review' ? '微信已收款，待门店核对，请勿重复支付' : '支付结果待确认，请先核对原订单'}}</view>
+    <button bindtap="checkActive" loading="{{checking}}">核对支付结果</button>
+    <button wx:if="{{activeOrder.status === 'pending' && activeOrder.channel === 'wechat_mini'}}" bindtap="resumeActive" loading="{{busy}}">继续支付原订单</button>
+    <view wx:if="{{activeOrder.status === 'pending' && activeOrder.channel === 'wechat_h5'}}">请回到原 H5 手机浏览器继续原订单支付</view>
+  </view>
+  <view class="member-section"><view class="member-heading">购买 VIP</view><view class="member-caption">原档续费按完整年费收取，顺延 365 天</view>
+    <view wx:for="{{vip}}" wx:key="level" class="member-card">
+      <view class="member-card-top"><text>{{item.name}}</text><text>¥{{item.price}} / 年</text></view>
+      <view class="member-benefits">{{item.benefitText}}</view>
+      <button class="member-buy" data-kind="vip" data-level="{{item.level}}" bindtap="choosePlan" disabled="{{busy || activeOrder}}">{{currentVip.active && currentVip.level === item.level ? '原档续费' : '微信支付办理'}}</button>
+    </view>
+  </view>
+  <view class="member-section"><view class="member-heading">储值会员</view><view class="member-caption">储值本金全额到账，原档续期顺延 730 天</view>
+    <view wx:for="{{stored}}" wx:key="level" class="member-card">
+      <view class="member-card-top"><text>{{item.name}}</text><text>储值 ¥{{item.amount}}</text></view>
+      <view class="member-benefits">{{item.benefitText}}</view>
+      <button class="member-buy" data-kind="stored" data-level="{{item.level}}" bindtap="choosePlan" disabled="{{busy || activeOrder}}">{{currentStored.active && currentStored.level === item.level ? '原档续费' : '微信支付办理'}}</button>
+    </view>
+  </view>
+  <view class="member-footnote">有效期内跨档调整及支付异常请联系门店。付款后如未即时显示权益，请先核对支付结果，不要重复付款。</view>
+</view>

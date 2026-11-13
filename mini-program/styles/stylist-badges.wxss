@@ -1,0 +1,24 @@
+.stylist-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.2;
+  padding: 8rpx 12rpx;
+  border: 1rpx solid transparent;
+  border-radius: 999rpx;
+  font-weight: 700;
+}
+.stylist-badge-icon { width: 30rpx; height: 30rpx; flex-shrink: 0; }
+
+.stylist-badge-gold {
+  background: linear-gradient(135deg, #f7f0e2, #ecddbd);
+  color: #795a2e;
+  border-color: #d6c19b;
+}
+
+.stylist-badge-manager {
+  background: linear-gradient(135deg, #f5f0f6, #e8deed);
+  color: #6b5579;
+  border-color: #cdbbd8;
+}

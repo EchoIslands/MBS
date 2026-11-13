@@ -122,12 +122,12 @@
   width: 100%;
   height: 100rpx;
   margin-top: 32rpx;
-  background: linear-gradient(135deg, #f97316, #ea580c);
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   font-size: 32rpx;
   font-weight: 700;
   border-radius: 28rpx;
-  box-shadow: 0 12rpx 32rpx rgba(234, 88, 12, 0.2);
+  box-shadow: 0 12rpx 32rpx rgba(153, 97, 63, 0.16);
 }
 
 .login-submit-btn-disabled {
@@ -135,6 +135,8 @@
 }
 .login-modes { display: flex; gap: 16rpx; margin-bottom: 30rpx; }
 .login-mode { flex: 1; text-align: center; padding: 18rpx 8rpx; border-radius: 16rpx; font-size: 25rpx; color: var(--text-secondary); background: var(--gray-50); }
-.login-mode.selected { color: #ea580c; background: #fff7ed; font-weight: 700; }
-.sms-send { margin: -8rpx 0 22rpx; color: #ea580c; background: #fff7ed; font-size: 26rpx; }
+.login-mode.selected { color: var(--primary-dark); background: #fff7ed; font-weight: 700; }
+.sms-send { margin: -8rpx 0 22rpx; color: var(--primary-dark); background: #fff7ed; font-size: 26rpx; }
 .sms-send::after { border: none; }
+.login-input-wrap .sms-paste { flex-shrink: 0; margin: 0; padding: 0 12rpx; font-size: 24rpx; color: var(--primary-dark); background: transparent; }
+.sms-paste::after { border: none; }

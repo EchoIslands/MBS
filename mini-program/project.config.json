@@ -9,7 +9,15 @@
       },
       {
         "type": "folder",
+        "value": "pages/membership"
+      },
+      {
+        "type": "folder",
         "value": "assets/share"
+      },
+      {
+        "type": "folder",
+        "value": "assets/tabbar"
       }
     ]
   },

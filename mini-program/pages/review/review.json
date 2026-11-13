@@ -1,8 +1,8 @@
 {
   "navigationBarTitleText": "发表评价",
-  "navigationBarBackgroundColor": "#ffffff",
+  "navigationBarBackgroundColor": "#fff8f0",
   "navigationBarTextStyle": "black",
-  "backgroundColor": "#f9fafb",
+  "backgroundColor": "#faf4ec",
   "usingComponents": {
     "mbs-icon": "/components/icon/icon"
   }

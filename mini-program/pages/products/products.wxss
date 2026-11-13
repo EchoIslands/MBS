@@ -1,14 +1,14 @@
 .products-page {
   min-height: 100vh;
   background: var(--bg);
-  padding-bottom: calc(24rpx + env(safe-area-inset-bottom, 0));
+  padding-bottom: calc(144rpx + env(safe-area-inset-bottom, 0px));
 }
 
 /* ===== 1. 悬浮购物车入口 ===== */
 .fab-cart {
   position: fixed;
   right: 32rpx;
-  bottom: calc(48rpx + env(safe-area-inset-bottom, 0));
+  bottom: calc(144rpx + env(safe-area-inset-bottom, 0px));
   height: 80rpx;
   padding: 0 28rpx;
   border-radius: 9999rpx;
@@ -161,14 +161,17 @@
   color: var(--gray-700);
 }
 
-.category-scroll {
-  white-space: nowrap;
+.category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
 }
 
 .category-chip {
+  box-sizing: border-box;
+  max-width: 100%;
   display: inline-block;
   padding: 14rpx 28rpx;
-  margin-right: 16rpx;
   border-radius: 9999rpx;
   font-size: 26rpx;
   font-weight: 500;
@@ -223,11 +226,12 @@
 /* ===== 6. 商品网格 ===== */
 .product-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16rpx;
 }
 
 .product-card {
+  min-width: 0;
   background: #fff;
   border-radius: 24rpx;
   overflow: hidden;
@@ -276,6 +280,8 @@
 }
 
 .product-info {
+  box-sizing: border-box;
+  min-width: 0;
   padding: 20rpx;
   display: flex;
   flex-direction: column;
@@ -349,16 +355,18 @@
 }
 
 .product-add-btn {
-  width: 280rpx;
-  margin: 16rpx auto 0;
-  padding: 14rpx 32rpx;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 16rpx 0 0;
+  padding: 16rpx 12rpx;
   background: var(--accent);
   color: #fff;
   font-size: 26rpx;
   font-weight: 500;
   border-radius: 9999rpx;
   text-align: center;
-  line-height: 1;
+  line-height: 1.4;
 }
 
 .product-add-btn.disabled {

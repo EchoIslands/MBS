@@ -37,7 +37,7 @@ export function ensureLogin(options = {}) {
     content: options.content || '登录后即可使用该功能',
     confirmText: '去登录',
     cancelText: '取消',
-    confirmColor: '#2563eb',
+    confirmColor: '#99613f',
     success: (res) => {
       if (res.confirm) {
         wx.navigateTo({ url: LOGIN_PAGE });

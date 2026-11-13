@@ -1,0 +1,34 @@
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  height: calc(112rpx + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+  display: flex;
+  background: #fff9f3;
+  border-top: 1rpx solid #eadbcf;
+  box-shadow: 0 -4rpx 16rpx rgba(104, 69, 48, 0.07);
+}
+
+.tabbar-item {
+  flex: 1;
+  min-width: 0;
+  height: 112rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3rpx;
+  color: #71665d;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.tabbar-icon { width: 52rpx; height: 52rpx; }
+.tabbar-label { line-height: 1.2; }
+.tabbar-item-active { color: #a8582f; font-weight: 700; }
+.tabbar-item-booking { color: #a8582f; font-weight: 700; }
+.tabbar-item-booking .tabbar-icon { width: 58rpx; height: 58rpx; }

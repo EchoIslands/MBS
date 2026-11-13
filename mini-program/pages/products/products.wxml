@@ -1,5 +1,5 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="products-page">
+<view class="products-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
   <!-- 1. 悬浮购物车入口 -->
   <view class="fab-cart" bindtap="goToCart">
     <text class="fab-cart-text">购物车</text>
@@ -40,7 +40,7 @@
         <mbs-icon name="filter" size="28" color="var(--text-secondary)" />
         <text class="category-title">商品分类</text>
       </view>
-      <scroll-view scroll-x class="category-scroll" enable-flex>
+      <view class="category-list">
         <view
           wx:for="{{categories}}"
           wx:key="key"
@@ -50,7 +50,7 @@
         >
           {{item.name}}
         </view>
-      </scroll-view>
+      </view>
     </view>
 
     <!-- 5. 排序栏 -->

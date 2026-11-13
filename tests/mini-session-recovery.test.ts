@@ -29,7 +29,7 @@ async function harness(route = 'pages/index/index') {
     },
     Page: (config: any) => { context.page = config; },
   });
-  for (const file of ['utils/storage.js', 'utils/payment-order-link.js', 'utils/password-gate.js', 'utils/auth.js', 'utils/api.js']) await load(context, file);
+  for (const file of ['utils/storage.js', 'utils/payment-order-link.js', 'utils/password-gate.js', 'utils/auth.js', 'utils/api.js', 'utils/tab-swipe.js']) await load(context, file);
   const setSession = (token = 'synthetic-old', id = 'synthetic-customer') => {
     context.setToken(token); context.setCustomerId(id);
   };
@@ -99,6 +99,49 @@ test('网络故障、503和外部请求401保留当前会话', async () => {
   assert.equal(h.context.getToken(), 'synthetic-old'); assert.equal(h.redirects.length, 0);
 });
 
+test('资料接口误入员工鉴权时提示服务未更新，不清除顾客登录态', async () => {
+  const h = await harness(); h.setSession();
+  const saving = assert.rejects(h.context.put('/customers/synthetic-customer/self', { name: '新昵称' }), /资料服务尚未更新/);
+  h.requests[0].success({ statusCode: 401, data: { error: '登录已过期，请重新登录' } });
+  await saving;
+  assert.equal(h.context.getToken(), 'synthetic-old');
+  assert.equal(h.context.getCustomerId(), 'synthetic-customer');
+  assert.equal(h.redirects.length, 0);
+});
+
+test('个人资料只提交实际变更，头像提示文字可点击', async () => {
+  const h = await harness('pages/profile/profile');
+  Object.assign(h.context, {
+    PurchaseVIPLevel: { REGULAR: 'regular' }, StoredValueLevel: { NONE: 'none' }, BenefitType: {},
+    purchaseVIPPlans: [], storedValuePlans: [], getPurchaseVIPLabel: () => '', getStoredValueLabel: () => '',
+  });
+  await load(h.context, 'pages/profile/profile.js');
+  const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
+  page.loadProfile = async () => {};
+  page.data.customer = { id: 'synthetic-customer', name: '旧昵称', avatar: 'https://old.example/avatar.jpg', gender: 'female', birthday: '1990-01-01' };
+  page.openProfileEdit();
+  page.onEditName({ detail: { value: '新昵称' } });
+  let sent: any;
+  h.context.updateMyProfile = async (id: string, fields: any) => { sent = { id, fields }; return {}; };
+  await page.saveProfileEdit();
+  assert.equal(sent.id, 'synthetic-customer');
+  assert.deepEqual(Object.keys(sent.fields), ['name']);
+  assert.equal(sent.fields.name, '新昵称');
+  const view = await readFile(new URL('../mini-program/pages/profile/profile.wxml', import.meta.url), 'utf8');
+  assert.match(view, /class="profile-edit-avatar-hint" bindtap="chooseProfileAvatar"/);
+  let picker: any; let uploadedImage = '';
+  h.context.wx.chooseMedia = (options: any) => { picker = options; };
+  h.context.wx.getFileSystemManager = () => ({ readFile: ({ success }: any) => success({ data: '/9j/AA==' }) });
+  h.context.uploadMyAvatar = async (image: string) => { uploadedImage = image; return 'https://avatars.example/new.jpg'; };
+  page.openProfileEdit(); page.chooseProfileAvatar();
+  assert.equal(picker.mediaType[0], 'image');
+  picker.success({ tempFiles: [{ tempFilePath: 'wxfile://avatar', size: 4 }] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(uploadedImage, 'data:image/jpeg;base64,/9j/AA==');
+  assert.equal(page.data.editAvatar, 'https://avatars.example/new.jpg');
+  assert.equal(page.data.editAvatarUploading, false);
+});
+
 test('403仍执行强制改密，旧会话403不影响新账号', async () => {
   const h = await harness(); h.setSession();
   const forbidden = assert.rejects(h.context.get('/customers/synthetic-customer/public'), { statusCode: 403 });
@@ -148,7 +191,7 @@ test('首页店铺失败结束loading，本人资料请求不等待慢店铺', a
   const h = await harness(); h.setSession();
   Object.assign(h.context, {
     PurchaseVIPLevel: { REGULAR: 'regular' }, StoredValueLevel: { NONE: 'none' },
-    trackPageView() {}, getShopReviews: async () => [],
+    trackPageView() {}, getShopReviews: async () => [], vipBenefits: [], storedBenefits: [],
     getShop: async () => { throw new Error('合成店铺故障'); },
   });
   await load(h.context, 'utils/stylist-order.js');
@@ -166,7 +209,7 @@ test('首页店铺失败结束loading，本人资料请求不等待慢店铺', a
 });
 
 
-test('个人中心保持登录门槛，登录后可查看真实门店照片和资料', async () => {
+test('个人中心保持登录门槛，门店与通用权益集中在首页', async () => {
   const h = await harness('pages/profile/profile');
   let shopRequests = 0;
   Object.assign(h.context, {
@@ -184,12 +227,52 @@ test('个人中心保持登录门槛，登录后可查看真实门店照片和�
   assert.equal(shopRequests, 0);
   assert.equal(page.data.customer, null);
   const view = await readFile(new URL('../mini-program/pages/profile/profile.wxml', import.meta.url), 'utf8');
-  assert.ok(view.includes('<view wx:if="{{customer}}" class="public-profile container">'));
+  const home = await readFile(new URL('../mini-program/pages/index/index.wxml', import.meta.url), 'utf8');
+  assert.equal(view.includes('public-shop-gallery'), false);
+  assert.equal(view.includes('membership-system-card'), false);
+  assert.ok(view.includes('myBenefits'));
+  assert.ok(view.includes('vipHeaderClass'));
+  assert.equal(home.includes('member-stats-grid'), false);
+  assert.ok(home.indexOf('home-shop-gallery') < home.indexOf('home-membership'));
+  assert.ok(home.indexOf('home-membership') < home.indexOf('index-invite-card'));
+  assert.ok(home.lastIndexOf('<!-- 商品商城 -->') > home.indexOf('<!-- 顾客评价 -->'));
+  assert.ok(home.includes('vipBenefits'));
+  assert.ok(home.includes('storedBenefits'));
   for (const section of ['服务与价格', '门店在售商品', '会员权益简介']) assert.equal(view.includes(section), false);
   for (const photo of ['storefront.jpg', 'service.jpg']) {
     const bytes = await readFile(new URL('../mini-program/assets/shop/' + photo, import.meta.url));
     assert.equal(bytes[0], 0xff); assert.equal(bytes[1], 0xd8);
     assert.ok(bytes.length < 200 * 1024);
-    assert.ok(view.includes('/assets/shop/' + photo));
+    assert.ok(home.includes('/assets/shop/' + photo));
+    assert.equal(view.includes('/assets/shop/' + photo), false);
   }
+});
+
+test('短信复制填充：仅当前请求空输入框可自动填入，不覆盖手输或跨手机号回调', async () => {
+  const h = await harness('pages/login/login');
+  await load(h.context, 'pages/login/login.js');
+  const page = h.context.page;
+  page.setData = (patch: any) => Object.assign(page.data, patch);
+  let clipboard: any;
+  let reads = 0;
+  h.context.wx.getClipboardData = (options: any) => { reads++; clipboard = options; };
+  Object.assign(page.data, { loginMode: 'sms', phone: '13900000001' });
+  page.onShow(); assert.equal(reads, 0);
+  page.smsRequestedPhone = page.data.phone; page.smsRequestedAt = Date.now();
+  page.onSmsCodeFocus();
+  clipboard.success({ data: ' 246810 ' }); clipboard.complete();
+  assert.equal(page.data.smsCode, '246810');
+  page.onShow(); assert.equal(reads, 1);
+  page.setData({ smsCode: '' }); page.onShow();
+  page.onSmsCodeInput({ detail: { value: '12' } });
+  clipboard.success({ data: '246810' }); clipboard.complete();
+  assert.equal(page.data.smsCode, '12');
+  page.setData({ smsCode: '' }); page.onShow();
+  page.onPhoneInput({ detail: { value: '13900000002' } });
+  clipboard.success({ data: '246810' }); clipboard.complete();
+  assert.equal(page.data.smsCode, '');
+  page.onPasteSmsCode(); clipboard.success({ data: '13900000001' }); clipboard.complete();
+  assert.equal(page.data.smsCode, '');
+  page.onPasteSmsCode(); clipboard.fail(); clipboard.complete();
+  assert.equal(page.data.smsCode, '');
 });

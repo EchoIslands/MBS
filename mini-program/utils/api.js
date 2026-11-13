@@ -71,7 +71,11 @@ export function request(url, options = {}) {
         }
 
         const isCurrentSession = getToken() === requestToken && getCustomerId() === requestCustomerId;
-        if (res.statusCode === 401 && usesCustomerSession) {
+        // 员工专用接口的 401 可能是路由尚未部署，不能据此注销有效的顾客会话。
+        const employeeAuthFailure = res.statusCode === 401 && [
+          '未登录，请先登录', '登录已过期，请重新登录', '账号或会话已失效，请重新登录',
+        ].includes(res.data?.error);
+        if (res.statusCode === 401 && usesCustomerSession && !employeeAuthFailure) {
           handleExpiredCustomerSession(requestToken, requestCustomerId);
         }
         if (res.data?.code === 'PASSWORD_CHANGE_REQUIRED' && isCurrentSession) {
@@ -79,7 +83,9 @@ export function request(url, options = {}) {
           const pages = getCurrentPages();
           enforcePasswordChange(pages[pages.length - 1]?.route);
         }
-        const errMsg = res.data?.error || res.data?.message || `请求失败（${res.statusCode}）`;
+        const errMsg = employeeAuthFailure && /^(?:\/customers\/[^/]+\/self|\/upload\/customer-avatar)$/.test(url)
+          ? '资料服务尚未更新，请稍后重试'
+          : res.data?.error || res.data?.message || `请求失败（${res.statusCode}）`;
         if (res.data?.code === 'CUSTOMER_IDENTITY_UNVERIFIED') {
           wx.showModal({ title: '首次使用需由门店核实身份', content: '请在到店消费时联系店员，确认顾客本人后即可使用线上支付。', showCancel: false });
         }
@@ -116,8 +122,16 @@ export function request(url, options = {}) {
   });
 }
 
+// 仅合并同一会话中同时进行的相同读取，不缓存结果，避免影响排队实时性。
+const pendingGets = new Map();
 export function get(url, headers) {
-  return request(url, { method: 'GET', headers });
+  const key = JSON.stringify([getApiBase(), getCustomerId(), getToken(), url, headers || {}]);
+  if (pendingGets.has(key)) return pendingGets.get(key);
+  const pending = request(url, { method: 'GET', headers }).finally(() => {
+    if (pendingGets.get(key) === pending) pendingGets.delete(key);
+  });
+  pendingGets.set(key, pending);
+  return pending;
 }
 
 export function post(url, body, headers) {

@@ -20,7 +20,7 @@ async function sharingHarness() {
       .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
     vm.runInContext(code, context, { filename: file });
   }
-  await load('utils/share.js'); await load('app.js');
+  await load('utils/share.js'); await load('utils/tab-swipe.js'); await load('app.js');
   return {
     context, menus, load, get page() { return page; },
     register(config: any) { context.config = config; vm.runInContext('Page(config)', context); return page; },
@@ -73,7 +73,7 @@ test('实际商城、商品与邀请分享保持原路径及邀请码，所有�
     const timeline = h.page.onShareTimeline.call(instance);
     assert.equal(card.imageUrl, '/assets/share/shop-card.png');
     assert.equal(timeline.imageUrl, '/assets/share/shop-card.png');
-    if (file.includes('products/products')) assert.equal(card.path, '/pages/products/products?shopId=shop1');
+    if (file.includes('products/products')) assert.equal(card.path, '/pages/products/products');
     else if (file.includes('product-detail')) assert.equal(card.path, '/pages/product-detail/product-detail?shopId=shop1&productId=p1');
     else { assert.equal(card.path, '/pages/invite/claim?ref=synthetic_ref'); assert.equal(timeline.query, 'ref=synthetic_ref'); }
   }

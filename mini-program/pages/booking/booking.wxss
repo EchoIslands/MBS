@@ -1,122 +1,50 @@
+@import "../../styles/stylist-badges.wxss";
+
 /* ============================================================
-   Booking Page — Visual sync with H5 Booking.tsx
-   Design tokens: app.scss
+   预约页：暖色分层与清晰选中态，使用 app.wxss 品牌变量。
    ============================================================ */
 
 .booking-page {
   min-height: 100vh;
-  background: var(--bg);
-  padding-bottom: 200rpx;
+  background: linear-gradient(180deg, #fff1df 0, var(--bg) 720rpx);
+  padding-bottom: calc(280rpx + env(safe-area-inset-bottom, 0px));
 }
 
 .container {
   padding: 24rpx 24rpx 0;
 }
 
-/* ========== 顶部导航 ========== */
-.nav-bar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24rpx 32rpx;
-  background: var(--card-bg);
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
-}
-
-.nav-btn {
-  width: 72rpx;
-  height: 72rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16rpx;
-  transition: background 0.15s;
-}
-
-.nav-btn:active {
-  background: var(--gray-100);
-}
-
-.nav-title {
-  font-size: 34rpx;
-  font-weight: 600;
-  color: var(--gray-800);
-}
-
-.nav-spacer {
-  width: 72rpx;
-}
-
 /* ========== 通用卡片 ========== */
 .card {
   background: var(--card-bg);
   border-radius: 32rpx;
-  padding: 40rpx;
+  padding: 32rpx;
+  margin: 0 0 28rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
-  border: 1rpx solid var(--gray-100);
+  box-shadow: 0 8rpx 28rpx rgba(113, 69, 35, 0.05);
+  border: 1rpx solid var(--border);
 }
 
 .card-header {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  margin-bottom: 32rpx;
+  margin: -32rpx -32rpx 28rpx;
+  padding: 26rpx 32rpx;
+  border-radius: 32rpx 32rpx 0 0;
+  background: linear-gradient(110deg, #fff0df, #fffaf4);
+  border-bottom: 1rpx solid #f2e5d6;
 }
 
 .card-header-text {
   font-size: 32rpx;
   font-weight: 700;
-  color: var(--gray-800);
+  color: #553b2d;
 }
 
 .card-subtitle {
   font-size: 28rpx;
   margin-bottom: 24rpx;
-}
-
-/* ========== 2) 店铺迷你信息卡 ========== */
-.shop-card {
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-}
-
-.shop-icon-wrap {
-  width: 96rpx;
-  height: 96rpx;
-  border-radius: 20rpx;
-  background: var(--blue-50);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.shop-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.shop-name {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: var(--gray-800);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shop-address {
-  font-size: 26rpx;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 6rpx;
 }
 
 /* ========== 3) 股东权益卡 ========== */
@@ -169,9 +97,9 @@
   gap: 16rpx;
   padding: 18rpx;
   margin-bottom: 12rpx;
-  border: 2rpx solid var(--gray-200);
+  border: 2rpx solid var(--border);
   border-radius: 20rpx;
-  background: var(--card-bg);
+  background: var(--surface-warm);
   transition: all 0.15s;
 }
 
@@ -180,8 +108,9 @@
 }
 
 .service-item-active {
-  border-color: var(--accent);
-  background: var(--amber-50);
+  border-color: var(--primary);
+  background: #f4e6d6;
+  box-shadow: 0 4rpx 14rpx rgba(153, 97, 63, 0.1);
 }
 
 .service-radio {
@@ -373,15 +302,17 @@
   justify-content: center;
   min-width: 132rpx;
   padding: 20rpx 0;
-  background: var(--gray-100);
+  background: var(--surface-warm);
+  border: 2rpx solid var(--border);
   border-radius: 20rpx;
   transition: all 0.15s;
 }
 
 .date-chip-active {
-  background: var(--accent);
-  color: var(--card-bg);
-  box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.3);
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  border-color: var(--primary);
+  color: var(--on-action);
+  box-shadow: 0 6rpx 18rpx rgba(153, 97, 63, 0.2);
 }
 
 .date-chip-label {
@@ -405,7 +336,8 @@
 .time-chip {
   padding: 20rpx 0;
   text-align: center;
-  background: var(--gray-100);
+  background: var(--surface-warm);
+  border: 2rpx solid var(--border);
   border-radius: 16rpx;
   font-size: 26rpx;
   color: var(--gray-700);
@@ -413,9 +345,10 @@
 }
 
 .time-chip-active {
-  background: var(--accent);
-  color: var(--card-bg);
-  box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.3);
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  border-color: var(--primary);
+  color: var(--on-action);
+  box-shadow: 0 6rpx 18rpx rgba(153, 97, 63, 0.2);
   font-weight: 600;
 }
 
@@ -423,6 +356,8 @@
   background: var(--gray-200);
   color: var(--gray-400);
   text-decoration: line-through;
+  border-color: var(--gray-200);
+  box-shadow: none;
 }
 
 .time-chip-tag {
@@ -438,9 +373,9 @@
   gap: 16rpx;
   padding: 24rpx;
   margin-bottom: 20rpx;
-  border: 2rpx solid var(--gray-200);
+  border: 2rpx solid var(--border);
   border-radius: 28rpx;
-  background: var(--card-bg);
+  background: var(--surface-warm);
   transition: all 0.15s;
 }
 
@@ -454,14 +389,15 @@
 }
 
 .barber-card-smart-active {
-  border-color: var(--green-500);
-  background: var(--green-50);
+  border-color: var(--primary);
+  background: linear-gradient(120deg, #f4e6d6, #fff9ef);
+  box-shadow: 0 4rpx 16rpx rgba(153, 97, 63, 0.08);
 }
 
 /* 指定发型师选中 */
 .barber-card-selected {
-  border-color: var(--accent);
-  background: var(--amber-50);
+  border-color: var(--primary);
+  background: #f4e6d6;
 }
 
 /* 已约发型师 */
@@ -485,22 +421,22 @@
 }
 
 .barber-card-smart-active .barber-radio {
-  border-color: var(--green-500);
+  border-color: var(--primary);
 }
 
 .barber-card-selected .barber-radio {
-  border-color: var(--accent);
+  border-color: var(--primary);
 }
 
 .barber-radio-inner {
   width: 18rpx;
   height: 18rpx;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--primary);
 }
 
 .barber-radio-inner-green {
-  background: var(--green-500);
+  background: var(--primary);
 }
 
 .barber-avatar {
@@ -713,11 +649,11 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  background: var(--card-bg);
-  border-top: 1rpx solid var(--gray-200);
-  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom, 0));
-  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.05);
+  bottom: calc(112rpx + env(safe-area-inset-bottom, 0px));
+  background: #fffaf4;
+  border-top: 1rpx solid var(--primary-border);
+  padding: 20rpx 32rpx;
+  box-shadow: 0 -8rpx 24rpx rgba(113, 69, 35, 0.06);
   z-index: 100;
 }
 
@@ -759,12 +695,12 @@
   justify-content: center;
   gap: 12rpx;
   padding: 28rpx 56rpx;
-  background: linear-gradient(135deg, var(--primary-light), var(--primary));
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   border-radius: 24rpx;
   font-size: 32rpx;
   font-weight: 700;
-  box-shadow: 0 8rpx 24rpx rgba(37, 99, 235, 0.3);
+  box-shadow: 0 8rpx 24rpx rgba(153, 97, 63, 0.24);
   transition: opacity 0.15s;
 }
 
@@ -819,7 +755,7 @@
 }
 
 .btn-secondary {
-  background: #fff;
+  background: var(--surface-warm);
   color: var(--text-primary);
   border: 2rpx solid var(--gray-200);
 }
@@ -925,27 +861,11 @@
   width: 100%;
   text-align: center;
   padding: 22rpx 0;
-  background: var(--primary);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   font-size: 28rpx;
   font-weight: 600;
   border-radius: 999rpx;
 }
 
-.stylist-badge {
-  font-size: 20rpx;
-  line-height: 1;
-  padding: 6rpx 12rpx;
-  border-radius: 999rpx;
-  font-weight: 500;
-}
-
-.stylist-badge-gold {
-  background: #fff7e6;
-  color: #b45309;
-}
-
-.stylist-badge-manager {
-  background: #f3e8ff;
-  color: #7e22ce;
-}
+.booking-queue-rules { margin:20rpx 24rpx; padding:20rpx; border:1rpx solid var(--primary-border); background:#fff5e9; color:var(--text-secondary); border-radius:16rpx; font-size:24rpx; line-height:1.7; }

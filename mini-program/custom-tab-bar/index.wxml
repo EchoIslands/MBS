@@ -1,0 +1,6 @@
+<view class="tabbar" role="tablist" aria-label="主导航">
+  <view wx:for="{{tabs}}" wx:key="pagePath" class="tabbar-item {{selected === index ? 'tabbar-item-active' : ''}} {{index === 2 ? 'tabbar-item-booking' : ''}}" data-index="{{index}}" bindtap="onSelect" role="tab" aria-label="{{item.text}}" aria-selected="{{selected === index}}">
+    <image class="tabbar-icon" src="{{selected === index ? item.selectedIcon : item.icon}}" mode="aspectFit" />
+    <text class="tabbar-label">{{item.text}}</text>
+  </view>
+</view>

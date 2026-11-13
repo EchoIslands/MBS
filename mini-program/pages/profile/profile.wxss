@@ -2,43 +2,38 @@
 
 .profile-page {
   min-height: 100vh;
-  background: linear-gradient(180deg, #fff8f0 0%, #fff5eb 20%, #faf9f7 100%);
-  padding-bottom: calc(48rpx + env(safe-area-inset-bottom, 0));
+  background: var(--bg);
+  padding: 24rpx 0 calc(148rpx + env(safe-area-inset-bottom, 0px));
 }
 
 .profile-page .card {
-  background: #fff;
-  border: 1rpx solid rgba(245, 158, 11, 0.12);
-  box-shadow: 0 4rpx 20rpx rgba(245, 158, 11, 0.06);
+  margin: 0 0 24rpx;
+  padding: 28rpx;
+  background: #fffdf9;
+  border: 1rpx solid var(--border);
+  border-radius: 24rpx;
+  box-shadow: 0 6rpx 20rpx rgba(113, 69, 35, 0.04);
 }
 
 .profile-page .card-title {
-  color: #1f2937;
+  color: var(--text-primary);
+  font-size: 30rpx;
+  line-height: 1.5;
+  margin-bottom: 24rpx;
 }
 
 .profile-page .container {
-  padding: 32rpx;
+  padding: 0 24rpx;
 }
-
-/* 登录后展示的门店实景与联系方式 */
-.public-profile { padding-bottom: 0 !important; }
-.public-profile .card { margin-bottom: 20rpx; border-radius: 24rpx; overflow: hidden; }
-.public-shop-gallery, .public-shop-image { display: block; width: 100%; height: 260rpx; }
-.public-image-label { padding: 10rpx 28rpx; color: #9a3412; background: #fff7ed; font-size: 23rpx; }
-.public-shop-body { padding: 28rpx; }
-.public-kicker { color: #ea580c; font-size: 23rpx; font-weight: 600; margin-bottom: 8rpx; }
-.public-shop-name { color: #1f2937; font-size: 32rpx; font-weight: 700; margin-bottom: 16rpx; }
-.public-shop-description, .public-shop-detail { color: #6b7280; font-size: 24rpx; line-height: 1.6; margin-top: 10rpx; }
-.public-shop-contact { display: inline-block; padding: 12rpx 24rpx; margin-top: 20rpx; background: #fff7ed; border-radius: 12rpx; color: #c2410c; font-size: 26rpx; }
-.public-shop-error { margin-top: 12rpx; font-size: 24rpx; color: #b45309; }
-.public-shop-retry { text-decoration: underline; margin-left: 12rpx; }
 
 /* ===== 渐变头部（按等级配色） ===== */
 .vip-header {
   position: relative;
   overflow: hidden;
   color: #fff;
-  padding: 48rpx 24rpx calc(64rpx + env(safe-area-inset-top, 0));
+  margin: 0 24rpx 24rpx;
+  border-radius: 28rpx;
+  padding: 32rpx 28rpx;
 }
 
 .gradient-vip-regular {
@@ -103,6 +98,8 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 32rpx;
+  flex-wrap: wrap;
+  gap: 20rpx;
 }
 
 .vip-info-left {
@@ -120,7 +117,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
+
+.vip-avatar-image { width: 100%; height: 100%; border-radius: 50%; }
+.profile-self-actions { display: flex; gap: 14rpx; margin: -4rpx 0 24rpx; }
+.profile-self-action { flex: 1; text-align: center; padding: 16rpx 8rpx; border-radius: 16rpx; background: rgba(255,255,255,.18); border: 1rpx solid rgba(255,255,255,.38); color: #fff; font-size: 25rpx; font-weight: 650; }
+.profile-self-action-primary { background: #fff0dd; color: #82482c; border-color: #fff4e8; }
+.profile-edit-dialog { max-width: 640rpx; width: calc(100% - 64rpx); }
+.profile-edit-body { padding: 24rpx; }
+.profile-edit-avatar { width: 112rpx; height: 112rpx; margin: 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #f8e9dc; }
+.profile-edit-avatar image { width: 100%; height: 100%; }
+.profile-edit-avatar-hint { text-align: center; color: #8b6958; font-size: 24rpx; margin: 10rpx 0 22rpx; }
+.profile-edit-field { margin-bottom: 20rpx; font-size: 25rpx; color: #47372e; }
+.profile-edit-field text { display: block; margin-bottom: 8rpx; font-weight: 600; }
+.profile-edit-field input, .profile-edit-choice { box-sizing: border-box; width: 100%; min-height: 78rpx; padding: 16rpx 20rpx; border: 1rpx solid #e9d8c8; border-radius: 14rpx; background: #fffcf8; color: #382c27; }
+.profile-edit-note { font-size: 22rpx; color: #806d61; line-height: 1.5; margin-bottom: 22rpx; }
+.profile-edit-save { background: #efa66e; color: #2b2018; font-size: 28rpx; font-weight: 700; border-radius: 16rpx; }
 
 .vip-identity {
   display: flex;
@@ -154,8 +167,8 @@
   border-radius: 9999rpx;
   background: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(8rpx);
-  font-size: 26rpx;
-  font-weight: 500;
+  font-size: 28rpx;
+  font-weight: 700;
 }
 
 .vip-badge-sub {
@@ -166,11 +179,10 @@
 
 /* 折扣卡 */
 .vip-discount-card {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8rpx);
-  border-radius: 32rpx;
-  padding: 32rpx;
-  margin-bottom: 24rpx;
+  background: rgba(255,255,255,0.14);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
 }
 
 .vip-discount-label {
@@ -203,10 +215,11 @@
 }
 
 .vip-stat-item {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8rpx);
-  border-radius: 24rpx;
-  padding: 24rpx;
+  background: rgba(255,255,255,0.12);
+  border: 1rpx solid rgba(255,255,255,0.14);
+  border-radius: 18rpx;
+  padding: 20rpx;
+  min-width: 0;
 }
 
 .vip-stat-label {
@@ -221,6 +234,8 @@
 .vip-stat-value {
   font-size: 34rpx;
   font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: break-word;
 }
 
 .vip-stat-action {
@@ -302,9 +317,8 @@
 
 /* 主内容区 */
 .profile-content {
-  margin-top: -24rpx;
+  margin-top: 0;
   position: relative;
-  z-index: 2;
 }
 
 /* 未登录占位 */
@@ -368,12 +382,16 @@
 
 /* 邀请好友 —— 醒目暖色卡片 */
 .profile-page .invite-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  flex-wrap: wrap;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #ff7a18 0%, #ff5e3a 50%, #ff2e63 100%);
+  background: linear-gradient(120deg, #ffc18c, #ffad6b);
   border: none;
-  box-shadow: 0 12rpx 40rpx rgba(255, 94, 58, 0.28);
-  color: #fff;
+  box-shadow: 0 12rpx 40rpx rgba(153, 97, 63, 0.16);
+  color: var(--on-action);
   padding: 40rpx 36rpx;
 }
 
@@ -400,6 +418,8 @@
 }
 
 .profile-page .invite-left {
+  flex: 1 1 360rpx;
+  min-width: 0;
   position: relative;
   z-index: 1;
   display: flex;
@@ -414,14 +434,14 @@
 }
 
 .profile-page .invite-title {
-  font-size: 34rpx;
+  font-size: 36rpx;
   font-weight: 700;
-  color: #fff;
+  color: var(--on-action);
 }
 
 .profile-page .invite-hint {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.92);
+  color: #513c2d;
   font-weight: 500;
 }
 
@@ -436,11 +456,12 @@
   width: 72rpx;
   height: 72rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: #99613f;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: pulse-soft 2s ease-in-out infinite;
+
 }
 
 @keyframes pulse-soft {
@@ -593,6 +614,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16rpx;
   margin-bottom: 24rpx;
 }
 
@@ -603,24 +626,24 @@
 /* Tab 切换 */
 .tab-switcher {
   display: inline-flex;
-  background: var(--gray-100);
-  border-radius: 16rpx;
-  padding: 6rpx;
+  background: #f5ede3;
+  border-radius: 14rpx;
+  padding: 5rpx;
 }
 
 .tab-item {
-  padding: 12rpx 32rpx;
-  font-size: 26rpx;
+  padding: 12rpx 24rpx;
+  font-size: 25rpx;
   font-weight: 500;
-  border-radius: 12rpx;
+  border-radius: 10rpx;
   color: var(--text-secondary);
-  transition: all 0.15s;
 }
 
 .tab-active {
-  background: linear-gradient(135deg, #ff7a18, #ff5e3a);
-  color: #fff;
-  box-shadow: 0 4rpx 16rpx rgba(255, 94, 58, 0.28);
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
+  font-weight: 700;
+  box-shadow: 0 2rpx 8rpx rgba(113,69,35,0.08);
 }
 
 /* 预约列表 */
@@ -631,10 +654,10 @@
 }
 
 .booking-item {
-  border: 1rpx solid var(--gray-200);
-  border-radius: 24rpx;
+  border: 1rpx solid var(--border);
+  background: #fffbf6;
+  border-radius: 18rpx;
   padding: 24rpx;
-  transition: box-shadow 0.15s;
 }
 
 .booking-item:active {
@@ -790,38 +813,24 @@
 /* 快捷功能 */
 .quick-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr);
   gap: 16rpx;
-  margin-bottom: 32rpx;
+  margin-bottom: 24rpx;
 }
 
 .quick-item {
-  background: #fff;
-  border-radius: 32rpx;
-  padding: 24rpx;
-  border: 1rpx solid rgba(245, 158, 11, 0.12);
-  box-shadow: 0 4rpx 20rpx rgba(245, 158, 11, 0.06);
-  min-height: 176rpx;
+  background: #fffdf9;
+  border-radius: 20rpx;
+  padding: 24rpx 16rpx;
+  border: 1rpx solid var(--border);
+  min-width: 0;
+  min-height: 156rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14rpx;
-}
-
-.quick-item:nth-child(1) {
-  background: linear-gradient(180deg, #fff7ed 0%, #fff 100%);
-  border-color: rgba(245, 158, 11, 0.18);
-}
-
-.quick-item:nth-child(2) {
-  background: linear-gradient(180deg, #fff1f2 0%, #fff 100%);
-  border-color: rgba(244, 63, 94, 0.18);
-}
-
-.quick-item:nth-child(3) {
-  background: linear-gradient(180deg, #eff6ff 0%, #fff 100%);
-  border-color: rgba(59, 130, 246, 0.18);
+  text-align: center;
+  gap: 12rpx;
 }
 
 .quick-title {
@@ -837,9 +846,10 @@
 
 /* 协议与政策 */
 .profile-legal-section {
-  background: #fff;
+  background: #fffdf9;
+  border: 1rpx solid var(--border);
   border-radius: 24rpx;
-  margin-bottom: 32rpx;
+  margin-bottom: 24rpx;
   overflow: hidden;
 }
 
@@ -877,13 +887,14 @@
   justify-content: center;
   gap: 12rpx;
   width: 100%;
-  padding: 28rpx 0;
-  border-radius: 24rpx;
-  background: #fff;
-  color: var(--danger);
-  border: 2rpx solid var(--red-300);
-  font-size: 30rpx;
-  font-weight: 600;
+  box-sizing: border-box;
+  padding: 26rpx 0;
+  border-radius: 20rpx;
+  background: #fffdf9;
+  color: var(--text-secondary);
+  border: 1rpx solid var(--border);
+  font-size: 28rpx;
+  font-weight: 500;
 }
 
 /* 弹窗 */
@@ -1011,3 +1022,21 @@
 
 /* 未使用但保留给 JS 动态类 */
 .bg-gray-light { background: var(--gray-100); }
+
+/* 会员权益对比保持原等级色，突出栏目层级。 */
+.membership-system-card { border: 2rpx solid #edcfb5; box-shadow: 0 8rpx 24rpx rgba(113, 69, 35, 0.06); }
+.membership-system-card .card-title { font-size: 34rpx; padding-bottom: 20rpx; border-bottom: 1rpx solid #f1dfca; }
+
+/* 个人中心标题、会员与邀请层级统一；会员等级渐变沿用原配色。 */
+.profile-page .booking-title { margin-bottom: 0; }
+.profile-page .invite-card { padding: 28rpx; border: 1rpx solid #edc5a1; border-radius: 24rpx; box-shadow: 0 6rpx 20rpx rgba(113,69,35,0.06); }
+.profile-page .invite-title { font-size: 30rpx; line-height: 1.5; }
+.profile-page .invite-hint { font-size: 24rpx; line-height: 1.7; font-weight: 400; }
+.profile-page .invite-text { min-width: 0; }
+.profile-page .invite-action-label { position: relative; padding: 14rpx 24rpx; border-radius: 14rpx; background: rgba(255,255,255,0.7); color: var(--on-action); font-size: 25rpx; font-weight: 700; }
+.profile-page .benefit-item { background: #fff6eb; border: 1rpx solid var(--border); border-radius: 16rpx; }
+.profile-page .benefit-desc { line-height: 1.6; }
+.profile-page .stockholder-benefits-card { background: #fff5e8; }
+.profile-page .stockholder-benefit-tag { color: var(--primary-dark); border-color: var(--primary-border); }
+
+.profile-queue-direct { padding:20rpx; margin-top:18rpx; border-radius:14rpx; background:linear-gradient(135deg,var(--action-start),var(--action-end)); color:var(--on-action); font-size:26rpx; font-weight:700; text-align:center; }

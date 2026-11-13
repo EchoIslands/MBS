@@ -1,6 +1,6 @@
 import { getCustomerPublic } from '../../api/customer';
 import { getCustomerProductOrders, requestProductOrderRefund, cancelProductOrder, getProductOrderTracking, confirmProductOrderReceipt, payProductOrder } from '../../api/product';
-import { getCustomerId } from '../../utils/storage';
+import { getCustomerId, setRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
 
 const statusLabels = {
@@ -111,9 +111,8 @@ Page({
   },
 
   goToProducts() {
-    wx.navigateTo({
-      url: `/pages/products/products?shopId=${this.data.shopId}`,
-    });
+    setRouteParams({ shopId: this.data.shopId });
+    wx.switchTab({ url: '/pages/products/products' });
   },
 
   goBack() {
@@ -201,9 +200,8 @@ Page({
     const index = e.currentTarget.dataset.index;
     const order = this.data.filteredOrders[index];
     if (!order) return;
-    wx.navigateTo({
-      url: `/pages/products/products?shopId=${this.data.shopId}`,
-    });
+    setRouteParams({ shopId: this.data.shopId });
+    wx.switchTab({ url: '/pages/products/products' });
   },
 
   closeDetail() {

@@ -1,4 +1,4 @@
-import { get } from '../utils/api';
+import { get, post } from '../utils/api';
 
 /**
  * 获取店铺当天排队状态
@@ -10,4 +10,12 @@ export async function getQueue(shopId, date) {
   const queryString = query.length > 0 ? `?${query.join('&')}` : '';
   const result = await get(`/queues/${shopId}${queryString}`);
   return result?.data || null;
+}
+
+export async function getLiveQueue(bookingId) {
+ const result=await get(`/bookings/${encodeURIComponent(bookingId)}/live-queue`);
+ return result.data;
+}
+export async function actOnQueue(bookingId,action,version,minutes) {
+ return post(`/bookings/${encodeURIComponent(bookingId)}/live-queue`,{action,version,minutes});
 }

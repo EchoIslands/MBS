@@ -1,17 +1,16 @@
-import { getCustomerPublic, getCustomerBookings } from '../../api/customer';
+import { getCustomerPublic, getCustomerBookings, updateMyProfile, uploadMyAvatar } from '../../api/customer';
 import { getShop } from '../../api/shop';
 import { cancelBooking, respondDelay } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
 import { getCustomerId, getToken, clearCustomerId, setRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
+import { createTabSwipeHandlers, syncTabBarSelected } from '../../utils/tab-swipe';
 import {
   PurchaseVIPLevel,
   StoredValueLevel,
   BenefitType,
   purchaseVIPPlans,
   storedValuePlans,
-  vipBenefits,
-  storedBenefits,
   getPurchaseVIPLabel,
   getStoredValueLabel,
   getCustomerEffectiveDiscount,
@@ -54,6 +53,9 @@ function slimCustomer(raw) {
   return {
     id: raw.id,
     name: truncate(raw.name, 40) || '顾客',
+    avatar: raw.avatar || '',
+    gender: raw.gender || '',
+    birthday: raw.birthday || '',
     phone: raw.phone || '',
     shopId: raw.shopId || raw.shop_id || '',
     purchaseVIPLevel: raw.purchaseVIPLevel ?? raw.purchase_vip_level ?? PurchaseVIPLevel.REGULAR,
@@ -105,6 +107,7 @@ function slimBookings(list) {
 }
 
 Page({
+  ...createTabSwipeHandlers(3),
   data: {
     customer: null,
     bookings: [],
@@ -115,8 +118,6 @@ Page({
     activeTab: 'current',
     purchaseVIPPlans,
     storedValuePlans,
-    vipBenefits,
-    storedBenefits,
     PurchaseVIPLevel,
     StoredValueLevel,
     BenefitType,
@@ -144,8 +145,15 @@ Page({
     rescheduleTime: '',
     rescheduling: false,
     shopPhone: '',
-    publicShop: null,
-    publicShopError: '',
+    editVisible: false,
+    editName: '',
+    editAvatar: '',
+    genderOptions: ['不展示', '男', '女', '其他'],
+    editGender: '',
+    editBirthday: '',
+    editBirthdayMax: new Date().toISOString().slice(0, 10),
+    editSaving: false,
+    editAvatarUploading: false,
     // 顾客评价映射：bookingId -> review对象
     bookingReviewMap: {},
     bookingReviewedMap: {},
@@ -159,32 +167,30 @@ Page({
       await this.loadProfile();
       return;
     }
-    this.loadPublicShop();
+    this.loadStoreContact();
     await this.loadProfile();
   },
 
-  async loadPublicShop() {
+  async loadStoreContact() {
     try {
       const shop = await getShop('shop1');
       if (!shop || shop.isActive === false) throw new Error('门店暂不可用');
       const publicPhone = /^(?:1\d{10}|0\d{2,3}-?\d{7,8}|[2-9]\d{7})$/.test(String(shop.phone || '')) && !['13800138001', '13900000001'].includes(String(shop.phone)) ? shop.phone : '';
       this.setData({
-        publicShop: { name: shop.name, description: shop.description, address: shop.address, phone: publicPhone },
-        publicShopError: '',
         shopPhone: publicPhone,
       });
     } catch (err) {
-      this.setData({ publicShopError: '门店资料暂时无法加载，请稍后重试' });
+      console.warn('[profile] 门店联系方式加载失败');
     }
   },
 
   async onShow() {
-    // 首次加载由 onLoad 完成；只有显式需要刷新时才重新加载
+    syncTabBarSelected(this, 3);
     if (!getCustomerId() || !getToken()) return;
-    if (!this.data._profileLoaded || this.data._needRefresh) {
-      this.setData({ _needRefresh: false });
-      await this.loadProfile();
-    }
+    // 首次由 onLoad 加载；从其他主页面或详情页返回时刷新预约、排队和会员状态。
+    if (!this._profileShown) { this._profileShown = true; return; }
+    this.setData({ _needRefresh: false });
+    await this.loadProfile();
   },
 
   async loadProfile() {
@@ -195,18 +201,20 @@ Page({
       return;
     }
 
-    this.setData({ loading: true, error: '' });
+    this.setData({ loading: !this.data.customer, error: '' });
     try {
-      const rawCustomer = await getCustomerPublic(customerId);
+      const [rawCustomer, rawBookings, rawReviews] = await Promise.all([
+        getCustomerPublic(customerId),
+        getCustomerBookings(customerId),
+        getCustomerReviews(customerId).catch((err) => {
+          console.warn('[profile] 加载顾客评价失败，继续展示其他内容:', err);
+          return [];
+        }),
+      ]);
       const customer = slimCustomer(rawCustomer);
-      const rawBookings = await getCustomerBookings(customerId);
       const allBookings = slimBookings(rawBookings);
 
       // 加载顾客评价，构建 bookingId → review 映射（三端协同，对齐H5 Profile的bookingReviewMap）
-      const rawReviews = await getCustomerReviews(customerId).catch((err) => {
-        console.warn('[profile] 加载顾客评价失败，继续展示其他内容:', err);
-        return [];
-      });
       const bookingReviewMap = {};
       const bookingReviewedMap = {};
       (rawReviews || []).forEach((r) => {
@@ -286,6 +294,10 @@ Page({
     );
   },
 
+  goToMembership() {
+    wx.navigateTo({ url: '/pages/membership/membership' });
+  },
+
   goToInvite() {
     const { customer } = this.data;
     if (!customer || !this.isCustomerMember(customer)) {
@@ -293,6 +305,70 @@ Page({
       return;
     }
     wx.navigateTo({ url: `/pages/invite/invite?customerId=${customer.id}` });
+  },
+
+  openProfileEdit() {
+    const customer = this.data.customer;
+    if (!customer) return;
+    this.setData({ editVisible: true, editName: customer.name || '', editAvatar: customer.avatar || '',
+      editGender: customer.gender || '', editBirthday: customer.birthday || '' });
+  },
+  closeProfileEdit() { if (!this.data.editSaving) this.setData({ editVisible: false }); },
+  onEditName(e) { this.setData({ editName: e.detail.value }); },
+  onEditGender(e) { this.setData({ editGender: ['','male','female','other'][Number(e.detail.value)] || '' }); },
+  onEditBirthday(e) { this.setData({ editBirthday: e.detail.value }); },
+  chooseProfileAvatar() {
+    if (this.data.editAvatarUploading || this.data.editSaving) return;
+    wx.chooseMedia({ count: 1, mediaType: ['image'], sizeType: ['compressed'], sourceType: ['album', 'camera'],
+      success: ({ tempFiles }) => {
+        const file = tempFiles && tempFiles[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) { wx.showToast({ title: '头像不能超过2MB', icon: 'none' }); return; }
+        this.setData({ editAvatarUploading: true });
+        wx.getFileSystemManager().readFile({ filePath: file.tempFilePath, encoding: 'base64',
+          success: async ({ data }) => {
+            try {
+              const mime = data.startsWith('iVBORw0KGgo') ? 'png'
+                : data.startsWith('UklGR') ? 'webp' : data.startsWith('/9j/') ? 'jpeg' : null;
+              if (!mime) throw new Error('请选择 PNG、JPEG 或 WebP 图片');
+              const url = await uploadMyAvatar('data:image/' + mime + ';base64,' + data);
+              this.setData({ editAvatar: url });
+            } catch (err) { wx.showToast({ title: err.message || '头像上传失败', icon: 'none' }); }
+            finally { this.setData({ editAvatarUploading: false }); }
+          },
+          fail: () => { this.setData({ editAvatarUploading: false }); wx.showToast({ title: '头像读取失败', icon: 'none' }); },
+        });
+      },
+      fail: (err) => {
+        if (!/cancel/i.test(err?.errMsg || '')) {
+          wx.showToast({ title: '无法打开相册，请检查微信的照片权限', icon: 'none' });
+        }
+      },
+    });
+  },
+  async saveProfileEdit() {
+    if (this.data.editSaving || this.data.editAvatarUploading) return;
+    const name = String(this.data.editName || '').trim();
+    if (!name || name.length > 40) { wx.showToast({ title: '请输入1至40字称呼', icon: 'none' }); return; }
+    const customer = this.data.customer;
+    const fields = {};
+    if (name !== customer.name) fields.name = name;
+    if ((this.data.editAvatar || '') !== (customer.avatar || '')) fields.avatar = this.data.editAvatar || null;
+    if ((this.data.editGender || '') !== (customer.gender || '')) fields.gender = this.data.editGender || null;
+    if ((this.data.editBirthday || '') !== (customer.birthday || '')) fields.birthday = this.data.editBirthday || null;
+    if (!Object.keys(fields).length) {
+      this.setData({ editVisible: false });
+      wx.showToast({ title: '资料没有变化', icon: 'none' });
+      return;
+    }
+    this.setData({ editSaving: true });
+    try {
+      await updateMyProfile(customer.id, fields);
+      this.setData({ editVisible: false });
+      wx.showToast({ title: '资料已保存', icon: 'success' });
+      await this.loadProfile();
+    } catch (err) { wx.showToast({ title: err.message || '保存失败', icon: 'none' }); }
+    finally { this.setData({ editSaving: false }); }
   },
 
   refreshFilteredBookings() {
@@ -408,8 +484,8 @@ Page({
     }
   },
 
-  goToQueue() {
-    const { viewingBooking } = this.data;
+  goToQueue(e) {
+    const viewingBooking = e?.currentTarget?.dataset?.id ? {id:e.currentTarget.dataset.id} : this.data.viewingBooking;
     if (!viewingBooking) return;
     this.setData({ viewingBooking: null });
     setRouteParams({ bookingId: viewingBooking.id });
@@ -429,7 +505,7 @@ Page({
 
   goToBooking() {
     if (!ensureLogin({ content: '登录后即可预约门店服务' })) return;
-    wx.navigateTo({ url: '/pages/booking/booking' });
+    wx.switchTab({ url: '/pages/booking/booking' });
   },
 
   goToFeedback() {
@@ -485,7 +561,7 @@ goToCoupons() {
   },
 
   goToShop() {
-    wx.navigateTo({ url: '/pages/index/index' });
+    wx.switchTab({ url: '/pages/index/index' });
   },
 
   handleLogout() {

@@ -122,8 +122,8 @@
 }
 
 .packages-btn {
-  background: #2563eb;
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   font-size: 28rpx;
   padding: 20rpx 48rpx;
   border-radius: 999rpx;

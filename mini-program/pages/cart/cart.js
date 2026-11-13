@@ -9,7 +9,7 @@ import {
   clearSelectedCartItems,
   clearCart,
 } from '../../utils/cart';
-import { getCustomerId } from '../../utils/storage';
+import { getCustomerId, setRouteParams } from '../../utils/storage';
 import { calcDiscountedItemPrice } from '../../utils/membership';
 
 Page({
@@ -281,9 +281,8 @@ Page({
   },
 
   goToProducts() {
-    wx.navigateTo({
-      url: `/pages/products/products?shopId=${this.data.shopId}`,
-    });
+    setRouteParams({ shopId: this.data.shopId });
+    wx.switchTab({ url: '/pages/products/products' });
   },
 
   goBack() {

@@ -1,6 +1,6 @@
 import { enforcePasswordChange } from '../utils/password-gate';
 import { setToken, getCustomerId, getToken, setPasswordChangeRequired } from '../utils/storage';
-import { get, post } from '../utils/api';
+import { get, post, put } from '../utils/api';
 
 /**
  * 获取顾客公开信息（顾客端使用）
@@ -10,6 +10,16 @@ export async function getCustomerPublic(id) {
   setPasswordChangeRequired(result?.data?.mustChangePassword === true);
   if (result?.data?.mustChangePassword) enforcePasswordChange(getCurrentPages().slice(-1)[0]?.route);
   return result?.data || null;
+}
+
+export async function updateMyProfile(id, fields) {
+  const result = await put('/customers/' + encodeURIComponent(id) + '/self', fields);
+  return result?.data;
+}
+
+export async function uploadMyAvatar(image) {
+  const result = await post('/upload/customer-avatar', { image });
+  return result?.data;
 }
 
 /**

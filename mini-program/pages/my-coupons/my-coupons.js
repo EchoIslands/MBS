@@ -1,5 +1,5 @@
 import { getCustomerCoupons } from '../../api/product';
-import { getCustomerId } from '../../utils/storage';
+import { getCustomerId, setRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
 import { getCart } from '../../utils/cart';
 
@@ -104,7 +104,7 @@ Page({
     const { shopId } = this.data;
 
     if (coupon.applicableScope === 'service') {
-      wx.switchTab({ url: `/pages/index/index?shopId=${shopId}` });
+      wx.switchTab({ url: '/pages/booking/booking' });
       return;
     }
 
@@ -117,18 +117,21 @@ Page({
           if (res.tapIndex === 0) {
             wx.navigateTo({ url: `/pages/cart/cart?shopId=${shopId}` });
           } else {
-            wx.navigateTo({ url: `/pages/products/products?shopId=${shopId}` });
+            setRouteParams({ shopId });
+            wx.switchTab({ url: '/pages/products/products' });
           }
         },
       });
     } else {
-      wx.navigateTo({ url: `/pages/products/products?shopId=${shopId}` });
+      setRouteParams({ shopId });
+      wx.switchTab({ url: '/pages/products/products' });
     }
   },
 
   goToClaim() {
     const { shopId } = this.data;
-    wx.navigateTo({ url: `/pages/products/products?shopId=${shopId}` });
+    setRouteParams({ shopId });
+    wx.switchTab({ url: '/pages/products/products' });
   },
 
 });

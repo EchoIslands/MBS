@@ -6,6 +6,7 @@
     "pages/booking/booking",
     "pages/queue/queue",
     "pages/profile/profile",
+    "pages/membership/membership",
     "pages/checkout/checkout",
     "pages/products/products",
     "pages/product-detail/product-detail",
@@ -22,12 +23,25 @@
     "pages/invite/invite",
     "pages/invite/claim"
   ],
+  "tabBar": {
+    "custom": true,
+    "color": "#71665D",
+    "selectedColor": "#A8582F",
+    "backgroundColor": "#FFF9F3",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "门店", "iconPath": "assets/tabbar/store.png", "selectedIconPath": "assets/tabbar/store-active.png" },
+      { "pagePath": "pages/products/products", "text": "商城", "iconPath": "assets/tabbar/shop.png", "selectedIconPath": "assets/tabbar/shop-active.png" },
+      { "pagePath": "pages/booking/booking", "text": "预约", "iconPath": "assets/tabbar/booking.png", "selectedIconPath": "assets/tabbar/booking-active.png" },
+      { "pagePath": "pages/profile/profile", "text": "我的", "iconPath": "assets/tabbar/me.png", "selectedIconPath": "assets/tabbar/me-active.png" }
+    ]
+  },
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarBackgroundColor": "#fff8f0",
     "navigationBarTitleText": "",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#f9fafb"
+    "backgroundColor": "#faf4ec"
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",

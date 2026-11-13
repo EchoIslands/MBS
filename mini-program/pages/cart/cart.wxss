@@ -377,8 +377,8 @@
 
 .checkout-btn {
   padding: 24rpx 56rpx;
-  background: linear-gradient(135deg, var(--primary-light), var(--primary));
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   font-size: 30rpx;
   border-radius: 24rpx;
   font-weight: 600;

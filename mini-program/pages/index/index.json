@@ -1,7 +1,7 @@
 {
   "navigationBarTitleText": "",
-  "navigationBarTextStyle": "white",
-  "navigationBarBackgroundColor": "#4f8ef7",
+  "navigationBarTextStyle": "black",
+  "navigationBarBackgroundColor": "#fff8f0",
   "usingComponents": {
     "privacy-modal": "/components/privacy-modal/privacy-modal",
     "mbs-icon": "/components/icon/icon",

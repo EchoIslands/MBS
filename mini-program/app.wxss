@@ -1,4 +1,4 @@
-/* MBS 小程序设计系统 —— 与 H5 顾客端严格对齐 */
+/* MBS 小程序：奶油底色 + 暖橙品牌色；等级与业务状态色独立保留。 */
 
 page {
   /* 品牌色 —— 与 H5 tailwind.config 一致 */
@@ -55,17 +55,23 @@ page {
   --gray-900: #111827;
 
   /* 语义色 */
-  --primary: #2563eb;
-  --primary-light: #3b82f6;
-  --primary-dark: #1d4ed8;
-  --accent: #f59e0b;
-  --accent-dark: #d97706;
+  --primary: #99613f;
+  --primary-light: #b17a55;
+  --primary-dark: #71472e;
+  --primary-soft: #f7eee4;
+  --primary-border: #edcfb5;
+  --surface-warm: #fffaf4;
+  --action-start: #ffc18c;
+  --action-end: #ffad6b;
+  --on-action: #302923;
+  --accent: #a96d3d;
+  --accent-dark: #805536;
   --success: #22c55e;
   --warning: #eab308;
   --danger: #ef4444;
-  --bg: #f9fafb;
+  --bg: #faf4ec;
   --card-bg: #ffffff;
-  --border: #e5e7eb;
+  --border: #ecdfd1;
   --text-primary: #1f2937;
   --text-secondary: #6b7280;
   --text-tertiary: #9ca3af;
@@ -91,7 +97,7 @@ page {
   padding: 48rpx;
   margin: 32rpx;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
-  border: 1rpx solid var(--gray-100);
+  border: 1rpx solid var(--border);
 }
 
 .card-title {
@@ -139,8 +145,8 @@ page {
 .btn:active { opacity: 0.85; }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.22);
 }
 
@@ -151,13 +157,13 @@ page {
 }
 
 .btn-blue {
-  background: linear-gradient(135deg, var(--primary-light), var(--primary));
-  color: #fff;
-  box-shadow: 0 8rpx 20rpx rgba(37, 99, 235, 0.22);
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
+  box-shadow: 0 8rpx 20rpx rgba(185, 71, 28, 0.22);
 }
 
 .btn-secondary {
-  background: #fff;
+  background: var(--surface-warm);
   color: var(--text-primary);
   border: 2rpx solid var(--gray-200);
 }
@@ -215,7 +221,7 @@ page {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #fff;
+  background: #fffaf4;
   border-top: 1rpx solid var(--gray-200);
   padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom, 0));
   box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.05);
@@ -261,7 +267,7 @@ page {
   align-items: center;
   justify-content: space-between;
   padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-top, 0));
-  background: #fff;
+  background: #fff8f0;
   border-bottom: 1rpx solid var(--gray-100);
 }
 
@@ -302,8 +308,20 @@ page {
 }
 
 .index-nav-btn-primary {
-  background: var(--primary);
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
+}
+.invite-action-label {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: 16rpx 24rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.7);
+  border-radius: 999rpx;
+  background: #fff8ee;
+  color: #71472e;
+  font-size: 26rpx;
+  font-weight: 700;
 }
 
 .index-nav-btn-outline {
@@ -361,7 +379,7 @@ page {
   border-radius: 32rpx;
   padding: 40rpx;
   color: #fff;
-  box-shadow: 0 12rpx 32rpx rgba(37, 99, 235, 0.3);
+  box-shadow: 0 12rpx 32rpx rgba(185, 71, 28, 0.3);
   margin: 32rpx;
 }
 
@@ -1240,6 +1258,17 @@ page {
   font-size: 26rpx;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.tab-enter-right { animation: tab-enter-right 220ms ease-out both; }
+.tab-enter-left { animation: tab-enter-left 220ms ease-out both; }
+@keyframes tab-enter-right {
+  from { opacity: 0.55; transform: translateX(40rpx); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes tab-enter-left {
+  from { opacity: 0.55; transform: translateX(-40rpx); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .quick-item-desc {

@@ -1,24 +1,5 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="profile-page">
-  <!-- 登录后展示真实门店照片与资料。 -->
-  <view wx:if="{{customer}}" class="public-profile container">
-    <view class="card public-shop-card">
-      <swiper class="public-shop-gallery" indicator-dots="true" autoplay="false">
-        <swiper-item><image class="public-shop-image" src="/assets/shop/storefront.jpg" mode="aspectFill" aria-label="皓诗形象门头实景" /></swiper-item>
-        <swiper-item><image class="public-shop-image" src="/assets/shop/service.jpg" mode="aspectFill" aria-label="皓诗形象店内服务实景" /></swiper-item>
-      </swiper>
-      <view class="public-image-label">皓诗形象 · 门店实景</view>
-      <view class="public-shop-body">
-        <view class="public-kicker">门店服务</view>
-        <view class="public-shop-name">{{publicShop.name || '皓诗形象设计'}}</view>
-        <view wx:if="{{publicShop.description}}" class="public-shop-description">{{publicShop.description}}</view>
-        <view wx:if="{{publicShop.address}}" class="public-shop-detail">地址：{{publicShop.address}}</view>
-        <view wx:if="{{publicShop.phone}}" class="public-shop-detail">电话：{{publicShop.phone}}</view>
-        <view wx:if="{{publicShop.phone}}" class="public-shop-contact" bindtap="callStore" role="button">联系门店</view>
-        <view wx:if="{{publicShopError}}" class="public-shop-error">{{publicShopError}} <text class="public-shop-retry" bindtap="loadPublicShop">重新加载</text></view>
-      </view>
-    </view>
-  </view>
+<view class="profile-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
   <!-- 1) 渐变 VIP 头部 -->
   <view wx:if="{{customer}}" class="{{vipHeaderClass}}">
     <view class="vip-decor vip-decor-1"></view>
@@ -30,7 +11,8 @@
       <view class="vip-info-row">
         <view class="vip-info-left">
           <view class="vip-avatar">
-            <mbs-icon name="user" size="44" color="rgba(255,255,255,0.9)" />
+            <image wx:if="{{customer.avatar}}" class="vip-avatar-image" src="{{customer.avatar}}" mode="aspectFill" />
+            <mbs-icon wx:else name="user" size="44" color="rgba(255,255,255,0.9)" />
           </view>
           <view class="vip-identity">
             <view class="vip-name">{{customer.name || '顾客'}}</view>
@@ -47,6 +29,10 @@
             <text>{{fmt.getStoredValueLabel(storedLevel)}}</text>
           </view>
         </view>
+      </view>
+      <view class="profile-self-actions">
+        <view class="profile-self-action" bindtap="openProfileEdit">编辑个人资料</view>
+        <view class="profile-self-action profile-self-action-primary" bindtap="goToMembership">办理 / 续费会员</view>
       </view>
 
       <!-- 2) 折扣卡 -->
@@ -127,6 +113,24 @@
     </view>
   </view>
 
+  <view wx:if="{{editVisible}}" class="modal-mask" catchtap="closeProfileEdit">
+    <view class="modal-dialog profile-edit-dialog" catchtap="stopPropagation">
+      <view class="modal-header"><view class="modal-title">编辑个人资料</view><view class="modal-close" bindtap="closeProfileEdit">×</view></view>
+      <view class="profile-edit-body">
+        <view class="profile-edit-avatar" bindtap="chooseProfileAvatar">
+          <image wx:if="{{editAvatar}}" src="{{editAvatar}}" mode="aspectFill" />
+          <mbs-icon wx:else name="user" size="42" color="#9f7058" />
+        </view>
+        <view class="profile-edit-avatar-hint" bindtap="chooseProfileAvatar">{{editAvatarUploading ? '上传中…' : '点击更换头像'}}</view>
+        <view class="profile-edit-field"><text>称呼 / 昵称</text><input value="{{editName}}" maxlength="40" bindinput="onEditName" placeholder="请输入希望展示的称呼" /></view>
+        <view class="profile-edit-field"><text>性别（选填）</text><picker range="{{genderOptions}}" bindchange="onEditGender"><view class="profile-edit-choice">{{editGender === 'male' ? '男' : editGender === 'female' ? '女' : editGender === 'other' ? '其他' : '不展示'}}</view></picker></view>
+        <view class="profile-edit-field"><text>生日（选填）</text><picker mode="date" value="{{editBirthday}}" end="{{editBirthdayMax}}" bindchange="onEditBirthday"><view class="profile-edit-choice">{{editBirthday || '请选择生日'}}</view></picker></view>
+        <view class="profile-edit-note">登录手机号：{{customer.phone}}（如需更换请联系门店核实）</view>
+        <button class="profile-edit-save" loading="{{editSaving}}" disabled="{{editSaving || editAvatarUploading}}" bindtap="saveProfileEdit">保存资料</button>
+      </view>
+    </view>
+  </view>
+
   <!-- 未登录占位 -->
   <view wx:if="{{!customer && !loading}}" class="container">
     <view class="card login-placeholder-card">
@@ -142,15 +146,6 @@
 
   <!-- 主内容区 -->
   <view wx:if="{{customer}}" class="container profile-content">
-
-    <view class="card product-orders-entry" bindtap="goToProductOrders" role="button" aria-label="我的商品订单">
-      <mbs-icon name="shoppingBag" size="40" color="var(--primary)" />
-      <view class="product-orders-entry-text">
-        <view class="product-orders-entry-title">我的商品订单</view>
-        <view class="product-orders-entry-hint">查看订单、提货与退款</view>
-      </view>
-      <mbs-icon name="chevronRight" size="32" color="var(--text-tertiary)" />
-    </view>
 
     <!-- 股东会员权益说明卡 -->
     <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-benefits-card">
@@ -170,17 +165,17 @@
           <mbs-icon name="share-2" size="40" color="#ffffff" />
         </view>
         <view class="invite-text">
-          <view class="invite-title">邀请好友 · 一起变美</view>
+          <view class="invite-title">邀请新顾客 · 一起变美</view>
           <view class="invite-hint">好友消费后，你可获得 {{(customer.referralBonusRate || 0.10) * 100}}% 奖励金，可用于店内消费</view>
         </view>
       </view>
-      <mbs-icon name="chevronRight" size="32" color="#ffffff" />
+      <view class="invite-action-label">立即邀请 ›</view>
     </view>
 
     <!-- 6) 我的可用权益 -->
     <view wx:if="{{myBenefits.length > 0}}" class="card">
-      <view class="card-title" style="color: #db2777;">
-        <mbs-icon name="gift" size="32" color="#db2777" />
+      <view class="card-title" >
+        <mbs-icon name="gift" size="32" color="var(--primary)" />
         我的可用权益
       </view>
       <view class="benefit-list">
@@ -194,80 +189,11 @@
       </view>
     </view>
 
-    <!-- 7) 购买 VIP 权益对比 -->
-    <view class="card">
-      <view class="card-title" style="color: #d97706;">
-        <mbs-icon name="crown" size="32" color="#d97706" />
-        购买 VIP 权益
-      </view>
-
-      <view class="benefits-table-wrap">
-        <view class="benefits-table">
-          <view class="benefits-row benefits-header">
-            <view class="benefits-cell benefits-feature">权益</view>
-            <view class="benefits-cell">普卡</view>
-            <view class="benefits-cell">银卡</view>
-            <view class="benefits-cell">金卡</view>
-            <view class="benefits-cell">钻石</view>
-          </view>
-          <view wx:for="{{vipBenefits}}" wx:key="index" class="benefits-row">
-            <view class="benefits-cell benefits-feature">{{item.feature}}</view>
-            <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.BRONZE ? 'text-orange-600 font-bold bg-orange-light' : 'text-gray-500'}}">{{item.bronze}}</view>
-            <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.SILVER ? 'text-blue-600 font-bold bg-blue-light' : 'text-gray-500'}}">{{item.silver}}</view>
-            <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.GOLD ? 'text-yellow-600 font-bold bg-yellow-light' : 'text-gray-500'}}">{{item.gold}}</view>
-            <view class="benefits-cell {{purchaseLevel === PurchaseVIPLevel.DIAMOND ? 'text-purple-600 font-bold bg-purple-light' : 'text-gray-500'}}">{{item.diamond}}</view>
-          </view>
-        </view>
-      </view>
-
-      <view wx:if="{{purchasePlan}}" class="vip-current-card vip-current-orange">
-        <view class="vip-current-info">
-          <view class="vip-current-title">当前：{{purchasePlan.name}}</view>
-          <view class="vip-current-desc">{{purchasePlan.benefits && purchasePlan.benefits.join ? purchasePlan.benefits.join(' · ') : ''}}</view>
-        </view>
-        <view class="btn btn-small btn-primary-plain" bindtap="goToShop">了解更多</view>
-      </view>
-    </view>
-
-    <!-- 8) 储值会员权益对比 -->
-    <view class="card">
-      <view class="card-title" style="color: #059669;">
-        <mbs-icon name="wallet" size="32" color="#059669" />
-        储值会员权益（折上折）
-      </view>
-
-      <view class="benefits-table-wrap">
-        <view class="benefits-table">
-          <view class="benefits-row benefits-header">
-            <view class="benefits-cell benefits-feature">权益</view>
-            <view class="benefits-cell">储值卡</view>
-            <view class="benefits-cell">安心卡</view>
-            <view class="benefits-cell">顺心卡</view>
-            <view class="benefits-cell">随心卡</view>
-          </view>
-          <view wx:for="{{storedBenefits}}" wx:key="index" class="benefits-row">
-            <view class="benefits-cell benefits-feature">{{item.feature}}</view>
-            <view class="benefits-cell {{storedLevel === StoredValueLevel.STORE_500 ? 'text-green-600 font-bold bg-green-light' : 'text-gray-500'}}">{{item.store500}}</view>
-            <view class="benefits-cell {{storedLevel === StoredValueLevel.STORE_1000 ? 'text-cyan-600 font-bold bg-cyan-light' : 'text-gray-500'}}">{{item.store1000}}</view>
-            <view class="benefits-cell {{storedLevel === StoredValueLevel.STORE_2000 ? 'text-indigo-600 font-bold bg-indigo-light' : 'text-gray-500'}}">{{item.store2000}}</view>
-            <view class="benefits-cell {{storedLevel === StoredValueLevel.STORE_5000 ? 'text-red-600 font-bold bg-red-light' : 'text-gray-500'}}">{{item.store5000}}</view>
-          </view>
-        </view>
-      </view>
-
-      <view wx:if="{{storedPlan}}" class="vip-current-card vip-current-green">
-        <view class="vip-current-info">
-          <view class="vip-current-title">当前：{{storedPlan.name}}</view>
-          <view class="vip-current-desc">储值 {{storedPlan.amount}} 元，折上折再享 {{fmt.formatDiscount(storedPlan.discount)}} 折</view>
-        </view>
-      </view>
-    </view>
-
     <!-- 9) 我的预约 -->
     <view class="card">
       <view class="booking-header">
-        <view class="card-title booking-title" style="color: #2563eb;">
-          <mbs-icon name="calendar" size="32" color="#2563eb" />
+        <view class="card-title booking-title" >
+          <mbs-icon name="calendar" size="32" color="var(--primary)" />
           我的预约
         </view>
         <view class="tab-switcher">
@@ -314,6 +240,8 @@
               <mbs-price current="{{booking.price}}" size="sm" show-tag="{{false}}" />
             </view>
 
+            <view wx:if="{{booking.status === 'confirmed'}}" class="profile-queue-direct" catchtap="goToQueue" data-id="{{booking.id}}">查看排队 / 暂离 / 返回 ›</view>
+
             <!-- 延时警示 -->
             <view wx:if="{{booking.delayState === 'needs_action'}}" class="booking-delay-banner">
               <view class="booking-delay-banner-text">
@@ -357,6 +285,15 @@
           </view>
         </view>
       </block>
+    </view>
+
+    <view class="card product-orders-entry" bindtap="goToProductOrders" role="button" aria-label="我的商品订单">
+      <mbs-icon name="shoppingBag" size="40" color="var(--primary)" />
+      <view class="product-orders-entry-text">
+        <view class="product-orders-entry-title">我的商品订单</view>
+        <view class="product-orders-entry-hint">查看订单、提货与退款</view>
+      </view>
+      <mbs-icon name="chevronRight" size="32" color="var(--text-tertiary)" />
     </view>
 
     <!-- 10) 快捷功能 3 列网格 -->

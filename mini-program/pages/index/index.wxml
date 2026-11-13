@@ -1,108 +1,15 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="index-page">
-  <!-- 顶部导航栏 —— 与 H5 对齐：左侧店铺名，右侧个人中心 -->
+<view class="index-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
+  <!-- 主入口由底部导航承载，顶部只保留店铺名称 -->
   <view class="index-nav-bar">
     <view class="index-nav-title">{{shop.name || '皓诗形象设计'}}</view>
-    <view class="index-nav-actions">
-      <view class="index-nav-btn index-nav-btn-primary" bindtap="goToProfile">
-        <text>个人中心</text>
-      </view>
-    </view>
+  </view>
+  <view wx:if="{{activeQueueBooking}}" class="active-queue-entry" bindtap="goToActiveQueue" role="button" aria-label="查看今日预约与排队">
+    <view><text class="active-queue-title">今日预约 · 查看排队</text><text class="active-queue-service">{{activeQueueBooking.serviceName}}</text></view>
+    <text class="active-queue-arrow">›</text>
   </view>
 
   <view class="container">
-    <!-- 会员信息头 -->
-    <view wx:if="{{customer}}" class="{{memberHeaderClass}}">
-      <view class="member-decor member-decor-1"></view>
-      <view class="member-decor member-decor-2"></view>
-      <view class="member-decor member-decor-3"></view>
-
-      <view class="member-header-inner">
-        <view class="member-info-row">
-          <view class="member-info-left">
-            <view class="member-avatar">
-              <mbs-icon name="user" size="44" color="rgba(255,255,255,0.9)" />
-            </view>
-            <view class="member-identity">
-              <view class="member-name">{{customer.name || '顾客'}}</view>
-              <view class="member-phone">{{customer.phone || ''}}</view>
-            </view>
-          </view>
-          <view class="member-info-right">
-            <view class="member-badge">
-              <mbs-icon name="crown" size="22" color="rgba(255,255,255,0.95)" />
-              <text>{{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
-            </view>
-            <view wx:if="{{storedLevel !== StoredValueLevel.NONE}}" class="member-badge member-badge-sub">
-              <mbs-icon name="wallet" size="18" color="rgba(255,255,255,0.95)" />
-              <text>{{fmt.getStoredValueLabel(storedLevel)}}</text>
-            </view>
-          </view>
-        </view>
-
-        <view class="member-discount-card">
-          <view class="member-discount-label">
-            <mbs-icon name="sparkles" size="24" color="rgba(255,255,255,0.9)" />
-            您当前的消费折扣
-          </view>
-          <view class="member-discount-value">{{fmt.formatDiscount(effectiveDiscount)}} 折</view>
-          <view class="member-discount-hint">
-            <text wx:if="{{purchaseLevel !== PurchaseVIPLevel.REGULAR && storedLevel !== StoredValueLevel.NONE}}">{{fmt.getPurchaseVIPLabel(purchaseLevel)}} × {{fmt.getStoredValueLabel(storedLevel)}} 折上折</text>
-            <text wx:elif="{{purchaseLevel !== PurchaseVIPLevel.REGULAR}}">已开通 {{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
-            <text wx:elif="{{storedLevel !== StoredValueLevel.NONE}}">已开通 {{fmt.getStoredValueLabel(storedLevel)}}</text>
-            <text wx:else>开通会员享受专属折扣</text>
-          </view>
-        </view>
-
-        <view class="member-stats-grid">
-          <view class="member-stat-item">
-            <view class="member-stat-label">储值余额</view>
-            <view class="member-stat-value">¥{{customer.storedValueBalance || 0}}</view>
-          </view>
-          <view class="member-stat-item">
-            <view class="member-stat-label">可消费余额</view>
-            <view class="member-stat-value">¥{{customer.withdrawableReferralAmount || 0}}</view>
-          </view>
-          <view class="member-stat-item">
-            <view class="member-stat-label">积分</view>
-            <view class="member-stat-value">{{customer.points || 0}}</view>
-          </view>
-          <view class="member-stat-item">
-            <view class="member-stat-label">累计消费</view>
-            <view class="member-stat-value">¥{{customer.totalSpent || 0}}</view>
-          </view>
-        </view>
-
-        <!-- 股东推荐收益 -->
-        <view wx:if="{{customer.isStockholder}}" class="member-stockholder">
-          <view class="member-stockholder-label">
-            <mbs-icon name="gift" size="24" color="rgba(255,255,255,0.9)" />
-            股东推荐收益
-          </view>
-          <view class="member-stockholder-row">
-            <view>
-              <view class="member-stockholder-value">¥{{customer.referralEarnings || 0}}</view>
-              <view class="member-stockholder-hint">已推荐客户到店 · 提成比例 {{(customer.referralBonusRate || 0.10) * 100}}%</view>
-            </view>
-            <mbs-icon name="crown" size="64" color="rgba(255,255,255,0.25)" />
-          </view>
-        </view>
-
-        <!-- 邀请好友 -->
-        <view wx:if="{{customer && isMember}}" class="index-invite-card" bindtap="goToInvite">
-          <view class="index-invite-left">
-            <view class="index-share-pulse">
-              <mbs-icon name="share-2" size="40" color="#ffffff" />
-            </view>
-            <view class="index-invite-text">
-              <view class="index-invite-title">邀请好友 · 一起变美</view>
-              <view class="index-invite-hint">好友消费后，你可获得 {{(customer.referralBonusRate || 0.10) * 100}}% 奖励金，可用于店内消费</view>
-            </view>
-          </view>
-          <mbs-icon name="chevronRight" size="32" color="#ffffff" />
-        </view>
-      </view>
-    </view>
     <!-- 加载 / 错误 -->
     <view wx:if="{{loading}}" class="empty-state">
       <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
@@ -117,58 +24,102 @@
     <block wx:elif="{{shop}}">
       <!-- 店铺主卡片 -->
       <view class="card shop-card">
-        <view class="shop-image-placeholder">
-          <mbs-icon name="mapPin" size="72" color="var(--primary)" />
-        </view>
+        <swiper class="home-shop-gallery" indicator-dots="true" autoplay="false" catchtouchstart="noop">
+          <swiper-item><image class="home-shop-image" src="/assets/shop/storefront.jpg" mode="aspectFill" aria-label="皓诗形象门头实景" /></swiper-item>
+          <swiper-item><image class="home-shop-image" src="/assets/shop/service.jpg" mode="aspectFill" aria-label="皓诗形象店内服务实景" /></swiper-item>
+        </swiper>
         <view class="shop-info">
-          <view class="shop-name">{{shop.name}}</view>
-          <view class="shop-rating">
-            <view class="shop-stars">
-              <mbs-icon wx:for="{{ratingStars}}" wx:key="key" name="star" size="22" color="{{item.filled ? 'var(--warning)' : 'var(--gray-300)'}}" />
-            </view>
-            <text class="rating-text">{{shop.rating || '4.8'}} 分</text>
-            <text class="rating-count">{{reviewCount || 0}} 条评价</text>
-          </view>
-          <view class="shop-address">
-            <mbs-icon name="mapPin" size="24" color="var(--text-tertiary)" />
-            <text class="address-text">{{shop.address || '暂无地址'}}</text>
-          </view>
-          <view class="shop-phone" wx:if="{{shop.phone}}">
-            <mbs-icon name="phone" size="24" color="var(--text-tertiary)" />
-            <text class="phone-text">{{shop.phone}}</text>
-          </view>
-          <view class="shop-hours">
-            <mbs-icon name="clock" size="24" color="var(--text-tertiary)" />
-            <text class="hours-text">营业中 · 09:00-21:00</text>
-          </view>
-          <view class="shop-tags" wx:if="{{displayTags && displayTags.length > 0}}">
-            <text wx:for="{{displayTags}}" wx:key="id" class="tag tag-blue">{{item.name}}</text>
+          <view wx:if="{{shop.description}}" class="home-shop-description">{{shop.description}}</view>
+          <view class="home-shop-details">
+            <view class="home-shop-detail"><text class="home-shop-label">评分</text><view class="home-shop-value home-shop-rating"><text class="home-shop-score">{{shop.rating || '4.8'}} 分</text><text class="home-shop-reviews">{{reviewCount || 0}} 条评价</text></view></view>
+            <view class="home-shop-detail"><text class="home-shop-label">地址</text><text class="home-shop-value">{{shop.address || '暂无地址'}}</text></view>
+            <view wx:if="{{shop.phone}}" class="home-shop-detail" bindtap="callStore" role="button" aria-label="联系门店"><text class="home-shop-label">电话</text><view class="home-shop-value home-shop-contact"><text>{{shop.phone}}</text><text class="home-shop-contact-action">联系门店 ›</text></view></view>
+            <view class="home-shop-detail"><text class="home-shop-label">营业时间</text><text class="home-shop-value">09:00–21:00</text></view>
           </view>
         </view>
       </view>
 
-      <!-- 商品商城 -->
-      <view class="card" wx:if="{{products && products.length > 0}}">
-        <view class="card-title">
-          <mbs-icon name="shoppingBag" size="32" color="var(--primary)" />
-          商品商城
-          <text class="service-scroll-hint" bindtap="goToProducts">查看全部 →</text>
+      <view class="card home-membership">
+        <view class="card-title"><mbs-icon name="crown" size="32" color="var(--primary)" />会员体系 · 权益简介</view>
+        <view class="membership-intro">购买 VIP 享等级权益，储值会员可叠加消费折扣。</view>
+        <view class="membership-summary">
+          <view class="membership-summary-item"><text class="membership-summary-title">购买 VIP</text><text>普卡 · 银卡 · 金卡 · 钻石</text><text>等级折扣、洗护赠礼等权益</text></view>
+          <view class="membership-summary-item"><text class="membership-summary-title">储值会员</text><text>储值卡 · 安心卡 · 顺心卡 · 随心卡</text><text>不同储值档位，享折上折</text></view>
         </view>
-        <view class="product-grid">
-          <view
-            wx:for="{{products}}"
-            wx:key="id"
-            class="product-item"
-            bindtap="goToProducts"
-          >
-            <view class="product-image">
-              <mbs-icon wx:if="{{!item.images || item.images.length === 0}}" name="shoppingBag" size="48" color="var(--text-tertiary)" />
-              <image wx:else class="product-image-img" src="{{item.images[0]}}" mode="aspectFill" />
+        <view class="membership-toggle" bindtap="toggleMembershipDetails" role="button" aria-expanded="{{membershipExpanded}}">{{membershipExpanded ? '收起权益详情 −' : '查看各等级价格与权益 ＋'}}</view>
+        <block wx:if="{{membershipExpanded}}">
+          <view class="membership-table-title">购买 VIP 权益</view>
+          <view class="membership-benefit-list">
+            <view wx:for="{{vipBenefits}}" wx:key="feature" class="membership-benefit-card">
+              <view class="membership-benefit-name">{{item.feature}}</view>
+              <view class="membership-benefit-grid">
+                <view class="membership-benefit-value"><text class="membership-benefit-level">普卡</text><text>{{item.bronze}}</text></view>
+                <view class="membership-benefit-value"><text class="membership-benefit-level">银卡</text><text>{{item.silver}}</text></view>
+                <view class="membership-benefit-value"><text class="membership-benefit-level">金卡</text><text>{{item.gold}}</text></view>
+                <view class="membership-benefit-value"><text class="membership-benefit-level">钻石</text><text>{{item.diamond}}</text></view>
+              </view>
             </view>
-            <view class="product-name">{{item.name}}</view>
-            <view class="product-price-row">
-              <text wx:if="{{item.originalPrice && item.originalPrice > item.price}}" class="product-original-price">¥{{fmt.formatMoney(item.originalPrice)}}</text>
-              <text class="product-price">¥{{fmt.formatMoney(item.price)}}</text>
+          </view>
+          <view class="membership-table-title">储值会员权益（折上折）</view>
+          <view class="membership-benefit-list">
+            <view wx:for="{{storedBenefits}}" wx:key="feature" class="membership-benefit-card">
+              <view class="membership-benefit-name">{{item.feature}}</view>
+              <view class="membership-benefit-grid">
+                <view class="membership-benefit-value"><text class="membership-benefit-level">储值卡</text><text>{{item.store500}}</text></view>
+                <view class="membership-benefit-value"><text class="membership-benefit-level">安心卡</text><text>{{item.store1000}}</text></view>
+                <view class="membership-benefit-value"><text class="membership-benefit-level">顺心卡</text><text>{{item.store2000}}</text></view>
+                <view class="membership-benefit-value"><text class="membership-benefit-level">随心卡</text><text>{{item.store5000}}</text></view>
+              </view>
+            </view>
+          </view>
+          <view class="membership-intro">具体适用范围与权益以门店会员规则为准。</view>
+        </block>
+      </view>
+        <!-- 邀请好友 -->
+        <view wx:if="{{customer && isMember}}" class="index-invite-card" bindtap="goToInvite">
+          <view class="index-invite-left">
+            <view class="index-share-pulse">
+              <mbs-icon name="share-2" size="40" color="#ffffff" />
+            </view>
+            <view class="index-invite-text">
+              <view class="index-invite-title">邀请新顾客 · 一起变美</view>
+              <view class="index-invite-hint">好友消费后，你可获得 {{(customer.referralBonusRate || 0.10) * 100}}% 奖励金，可用于店内消费</view>
+            </view>
+          </view>
+          <view class="invite-action-label">立即邀请 ›</view>
+        </view>
+      <!-- 发型师团队 -->
+      <view class="card" wx:if="{{stylists && stylists.length > 0}}">
+        <view class="card-title">
+          <mbs-icon name="award" size="32" color="var(--primary)" />
+          发型师团队
+        </view>
+        <view
+          wx:for="{{stylists}}"
+          wx:key="id"
+          class="stylist-card"
+          bindtap="showStylistProfile"
+          data-id="{{item.id}}"
+        >
+          <view class="stylist-avatar">
+            <image wx:if="{{item.avatar}}" class="stylist-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
+            <mbs-icon wx:else name="user" size="36" color="var(--text-tertiary)" />
+          </view>
+          <view class="stylist-info">
+            <view class="stylist-name-row">
+              <view class="stylist-name">{{item.name}}</view>
+              <view class="stylist-role-badges">
+                <view wx:if="{{item.isGold}}" class="stylist-badge stylist-badge-gold"><image class="stylist-badge-icon" src="/assets/icons/medal.png" mode="aspectFit" /><text>金牌</text></view>
+                <view wx:if="{{item.isManager}}" class="stylist-badge stylist-badge-manager"><image class="stylist-badge-icon" src="/assets/icons/crown.png" mode="aspectFit" /><text>店长</text></view>
+              </view>
+            </view>
+            <view class="stylist-rating-line" wx:if="{{item.rating}}">
+              <mbs-icon name="star" size="20" color="var(--warning)" />
+              <text>{{item.rating}} 分</text>
+            </view>
+            <view class="stylist-specialty" wx:if="{{item.specialty}}">
+              <mbs-icon name="sparkles" size="18" color="var(--primary)" />
+              <text>{{item.specialty}}</text>
             </view>
           </view>
         </view>
@@ -205,43 +156,6 @@
             </view>
           </view>
         </scroll-view>
-      </view>
-
-      <!-- 发型师团队 -->
-      <view class="card" wx:if="{{stylists && stylists.length > 0}}">
-        <view class="card-title">
-          <mbs-icon name="award" size="32" color="var(--primary)" />
-          发型师团队
-        </view>
-        <view
-          wx:for="{{stylists}}"
-          wx:key="id"
-          class="stylist-card"
-          bindtap="showStylistProfile"
-          data-id="{{item.id}}"
-        >
-          <view class="stylist-avatar">
-            <image wx:if="{{item.avatar}}" class="stylist-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
-            <mbs-icon wx:else name="user" size="36" color="var(--text-tertiary)" />
-          </view>
-          <view class="stylist-info">
-            <view class="stylist-name-row">
-              <view class="stylist-name">{{item.name}}</view>
-              <view class="stylist-role-badges">
-                <text wx:if="{{item.isGold}}" class="stylist-badge stylist-badge-gold">金牌</text>
-                <text wx:if="{{item.isManager}}" class="stylist-badge stylist-badge-manager">店长</text>
-              </view>
-            </view>
-            <view class="stylist-rating-line" wx:if="{{item.rating}}">
-              <mbs-icon name="star" size="20" color="var(--warning)" />
-              <text>{{item.rating}} 分</text>
-            </view>
-            <view class="stylist-specialty" wx:if="{{item.specialty}}">
-              <mbs-icon name="sparkles" size="18" color="var(--primary)" />
-              <text>{{item.specialty}}</text>
-            </view>
-          </view>
-        </view>
       </view>
 
       <!-- 顾客评价 -->
@@ -281,19 +195,34 @@
           </view>
         </view>
       </view>
-    </block>
-  </view>
+      <!-- 商品商城 -->
+      <view class="card" wx:if="{{products && products.length > 0}}">
+        <view class="card-title">
+          <mbs-icon name="shoppingBag" size="32" color="var(--primary)" />
+          商品商城
+          <text class="service-scroll-hint" bindtap="goToProducts">查看全部 →</text>
+        </view>
+        <view class="product-grid">
+          <view
+            wx:for="{{products}}"
+            wx:key="id"
+            class="product-item"
+            bindtap="goToProducts"
+          >
+            <view class="product-image">
+              <mbs-icon wx:if="{{!item.images || item.images.length === 0}}" name="shoppingBag" size="48" color="var(--text-tertiary)" />
+              <image wx:else class="product-image-img" src="{{item.images[0]}}" mode="aspectFill" />
+            </view>
+            <view class="product-name">{{item.name}}</view>
+            <view class="product-price-row">
+              <text wx:if="{{item.originalPrice && item.originalPrice > item.price}}" class="product-original-price">¥{{fmt.formatMoney(item.originalPrice)}}</text>
+              <text class="product-price">¥{{fmt.formatMoney(item.price)}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
 
-  <!-- 底部固定操作栏（与 H5 ShopDetail 对齐） -->
-  <view class="fixed-bottom-bar" wx:if="{{shop}}">
-    <view class="index-bottom-actions">
-      <view class="btn btn-primary-plain index-bottom-btn" bindtap="goToProducts">
-        <text class="index-bottom-btn-text">商品商城</text>
-      </view>
-      <view class="btn btn-blue index-bottom-btn" bindtap="goToBooking">
-        <text class="index-bottom-btn-text">立即预约</text>
-      </view>
-    </view>
+    </block>
   </view>
 
   <privacy-modal
@@ -310,8 +239,8 @@
       </view>
       <view class="stylist-profile-name-row">
         <text class="stylist-profile-name">{{selectedStylist.name}}</text>
-        <text wx:if="{{selectedStylist.isGold}}" class="stylist-badge stylist-badge-gold">金牌</text>
-        <text wx:if="{{selectedStylist.isManager}}" class="stylist-badge stylist-badge-manager">店长</text>
+        <view wx:if="{{selectedStylist.isGold}}" class="stylist-badge stylist-badge-gold"><image class="stylist-badge-icon" src="/assets/icons/medal.png" mode="aspectFit" /><text>金牌</text></view>
+        <view wx:if="{{selectedStylist.isManager}}" class="stylist-badge stylist-badge-manager"><image class="stylist-badge-icon" src="/assets/icons/crown.png" mode="aspectFit" /><text>店长</text></view>
       </view>
       <view class="stylist-profile-title" wx:if="{{selectedStylist.title}}">{{selectedStylist.title}}</view>
       <view class="stylist-profile-rating" wx:if="{{selectedStylist.rating}}">

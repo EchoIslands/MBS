@@ -42,7 +42,7 @@
 /* 2) Header with gradient */
 .checkout-hero {
   position: relative;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 60%, #1e3a8a 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 60%, #9c5128 100%);
   padding: 48rpx 32rpx 72rpx;
   overflow: hidden;
 }

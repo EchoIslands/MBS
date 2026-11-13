@@ -6,6 +6,7 @@ import { getCustomerPublic } from '../../api/customer';
 import { getCustomerId, setRouteParams, takeRouteParams } from '../../utils/storage';
 import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../utils/membership';
 import { trackPageView, trackBookingStart, trackBookingComplete } from '../../utils/tracking';
+import { createTabSwipeHandlers, syncTabBarSelected } from '../../utils/tab-swipe';
 
 // 与 H5 的 shared/types.ts 中 UserRole.STYLIST 保持一致
 const STYLIST_ROLE = 'stylist';
@@ -98,9 +99,7 @@ function findFastestStylist(stylists, selectedDate, selectedTime, existingBookin
       const bkDate = new Date(bk.scheduledTime);
       return new Date(bkDate.getTime()+8*3600000).toISOString().slice(0,10) === selectedDate;
     });
-
-    const ratingBonus = Math.min(10, ((barber.rating || 4.5) - 4) * 10);
-    const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
+    const waitTime = sameDayBookings.length;
 
     if (waitTime < minWait) {
       minWait = waitTime;
@@ -111,6 +110,7 @@ function findFastestStylist(stylists, selectedDate, selectedTime, existingBookin
 }
 
 Page({
+  ...createTabSwipeHandlers(2),
   data: {
     shop: null,
     loading: true,
@@ -186,6 +186,7 @@ Page({
   },
 
   async onShow() {
+    syncTabBarSelected(this, 2);
     const routeParams = takeRouteParams();
     const serviceId = routeParams && routeParams.serviceId;
     if (serviceId && serviceId !== this.data.selectedService) {
@@ -200,6 +201,18 @@ Page({
       });
       this.updateStylists((this.data.shop?.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
       this.updateTimeSlots();
+    }
+    if (this._bookingShown && this.data.shop) {
+      const dates = generateDates();
+      if (!dates.some((day) => day.value === this.data.selectedDate)) {
+        this.setData({ dates, selectedDate: dates[0].value, selectedTime: '' });
+      } else {
+        this.setData({ dates });
+      }
+      await Promise.all([this.loadCustomer(), this.loadBookings()]);
+      this.refreshServicesWithCustomer();
+    } else {
+      this._bookingShown = true;
     }
     trackPageView('pages/booking/booking', {
       shop_id: this.data.shop?.id || 'shop1',
@@ -355,8 +368,7 @@ Page({
         const bkDate = new Date(bk.scheduledTime);
         return new Date(bkDate.getTime()+8*3600000).toISOString().slice(0,10) === selectedDate;
       });
-      const ratingBonus = Math.min(10, ((s.rating || 4.5) - 4) * 10);
-      const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
+      const waitTime = sameDayBookings.length;
       return {
         ...s,
         isAvailable,
@@ -536,7 +548,8 @@ Page({
           { shop_id: this.data.shop?.id || 'shop1', barber_id: target.id }
         );
         setRouteParams({ bookingId: newBooking.id });
-        wx.redirectTo({ url: '/pages/queue/queue' });
+        // 保留预约页，让真机返回手势和原生返回键都有上一页可回。
+        wx.navigateTo({ url: '/pages/queue/queue' });
       } else {
         wx.showToast({ title: '预约失败', icon: 'none' });
       }
@@ -562,6 +575,6 @@ Page({
   },
 
   goToShop() {
-    wx.navigateTo({ url: '/pages/index/index' });
+    wx.switchTab({ url: '/pages/index/index' });
   },
 });

@@ -1,9 +1,10 @@
 import { getShopProducts, getShopCoupons, getCustomerCoupons, claimCoupon } from '../../api/product';
 import { getCustomerPublic } from '../../api/customer';
 import { addToCart, getCartCount } from '../../utils/cart';
-import { getCustomerId } from '../../utils/storage';
+import { getCustomerId, setRouteParams, takeRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
 import { calcDiscountedItemPrice } from '../../utils/membership';
+import { createTabSwipeHandlers, syncTabBarSelected } from '../../utils/tab-swipe';
 
 const categories = [
   { key: 'all', name: '全部' },
@@ -16,6 +17,7 @@ const categories = [
 ];
 
 Page({
+  ...createTabSwipeHandlers(1),
   data: {
     shopId: 'shop1',
     customer: null,
@@ -35,7 +37,8 @@ Page({
   },
 
   onLoad(options) {
-    const shopId = options.shopId || 'shop1';
+    const routeParams = takeRouteParams();
+    const shopId = options.shopId || routeParams?.shopId || 'shop1';
     this.setData({ shopId });
     this.loadCustomer();
     this.loadProducts();
@@ -43,6 +46,15 @@ Page({
   },
 
   onShow() {
+    syncTabBarSelected(this, 1);
+    const routeParams = takeRouteParams();
+    if (routeParams?.shopId && routeParams.shopId !== this.data.shopId) {
+      this.setData({ shopId: routeParams.shopId });
+      this.loadProducts();
+      this.loadCoupons();
+    }
+    if (this._productsShown) this.loadCustomer();
+    else this._productsShown = true;
     this.refreshCartCount();
   },
 
@@ -220,14 +232,7 @@ Page({
   },
 
   goBack() {
-    const pages = getCurrentPages();
-    if (pages.length > 1) {
-      wx.navigateBack();
-    } else {
-      wx.redirectTo({
-        url: `/pages/index/index?shopId=${this.data.shopId}`,
-      });
-    }
+    wx.switchTab({ url: '/pages/index/index' });
   },
 
   preventBubble() {
@@ -237,7 +242,7 @@ Page({
   onShareAppMessage() {
     return {
       title: 'MBS 商城 · 美发好物',
-      path: `/pages/products/products?shopId=${this.data.shopId || 'shop1'}`,
+      path: '/pages/products/products',
     };
   },
 

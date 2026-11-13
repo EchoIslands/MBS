@@ -1,13 +1,4 @@
-<view class="booking-page">
-  <!-- ========== 1) 顶部导航 ========== -->
-  <view class="nav-bar" bindtap="goToShop">
-    <view class="nav-btn">
-      <mbs-icon name="arrowLeft" size="36" color="var(--text-primary)" />
-    </view>
-    <text class="nav-title">预约服务</text>
-    <view class="nav-spacer"></view>
-  </view>
-
+<view class="booking-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
   <view class="container">
     <!-- ========== Loading ========== -->
     <view wx:if="{{loading}}" class="empty-state">
@@ -22,17 +13,6 @@
     </view>
 
     <block wx:elif="{{shop}}">
-      <!-- ========== 2) 店铺迷你信息卡 ========== -->
-      <view class="card shop-card">
-        <view class="shop-icon-wrap">
-          <mbs-icon name="mapPin" size="40" color="var(--primary)" />
-        </view>
-        <view class="shop-info">
-          <view class="shop-name">{{shop.name}}</view>
-          <view class="shop-address">{{shop.address || '暂无地址'}}</view>
-        </view>
-      </view>
-
       <!-- ========== 3) 股东权益卡（条件渲染） ========== -->
       <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-card">
         <view class="stockholder-title">
@@ -119,10 +99,10 @@
       <!-- ========== 5) 日期选择卡 ========== -->
       <view class="card">
         <view class="card-header">
-          <mbs-icon name="calendar" size="36" color="var(--text-primary)" />
+          <mbs-icon name="calendar" size="36" color="var(--primary)" />
           <text class="card-header-text">选择日期</text>
         </view>
-        <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false" enhanced="true">
+        <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false" enhanced="true" catchtouchstart="ignoreTabSwipe">
           <view class="date-scroll-inner">
             <view
               wx:for="{{dates}}"
@@ -141,8 +121,8 @@
       <!-- ========== 6) 时间选择卡 ========== -->
       <view class="card">
         <view class="card-header">
-          <mbs-icon name="clock" size="36" color="var(--text-primary)" />
-          <text class="card-header-text">选择时间</text>
+          <mbs-icon name="clock" size="36" color="var(--primary)" />
+          <text class="card-header-text">选择到店时间</text>
         </view>
         <view class="time-grid">
           <view
@@ -179,13 +159,13 @@
           </view>
           <view class="barber-info">
             <view class="barber-name-row">
-              <text class="barber-name">智能匹配 · 最快服务</text>
+              <text class="barber-name">智能匹配 · 推荐发型师</text>
               <text class="tag tag-green">推荐</text>
             </view>
-            <view class="barber-desc">系统为您匹配当前最空闲的发型师，节省等待时间</view>
+            <view class="barber-desc">按所选服务和时段推荐发型师，等待以到店现场为准</view>
             <view wx:if="{{fastest}}" class="barber-meta-row">
               <text class="tag tag-gray">{{fastest.name}}</text>
-              <text class="barber-wait barber-wait-ok">等待 {{fastestWaitTime}} 分钟</text>
+              <text class="barber-wait barber-wait-ok">到店后动态更新等待</text>
             </view>
             <view wx:else class="barber-meta-row">
               <text class="barber-wait barber-wait-pending">正在计算...</text>
@@ -220,8 +200,8 @@
           <view class="barber-info">
             <view class="barber-name-row">
               <text class="barber-name" catchtap="showStylistProfile" data-id="{{item.id}}">{{item.name}}</text>
-              <text wx:if="{{item.isGold}}" class="tag tag-gold">金牌</text>
-              <text wx:if="{{item.isShopManager}}" class="tag tag-purple">店长</text>
+              <view wx:if="{{item.isGold}}" class="stylist-badge stylist-badge-gold"><image class="stylist-badge-icon" src="/assets/icons/medal.png" mode="aspectFit" /><text>金牌</text></view>
+              <view wx:if="{{item.isShopManager}}" class="stylist-badge stylist-badge-manager"><image class="stylist-badge-icon" src="/assets/icons/crown.png" mode="aspectFit" /><text>店长</text></view>
               <text wx:if="{{!item.isAvailable}}" class="tag tag-red">已约</text>
               <text wx:if="{{item.requireGold && !item.eligible}}" class="tag tag-red">该服务需金牌发型师</text>
               <text wx:if="{{item.requireShopManager && !item.eligible}}" class="tag tag-red">该服务需店长</text>
@@ -244,7 +224,7 @@
             </view>
 
             <view class="barber-wait-row">
-              <text wx:if="{{item.isAvailable}}" class="barber-wait barber-wait-ok">预计等待 {{item.waitTime}} 分钟</text>
+              <text wx:if="{{item.isAvailable}}" class="barber-wait barber-wait-ok">此时段可预约，到店后确认等待</text>
               <text wx:else class="barber-wait barber-wait-busy">当前时段已满</text>
             </view>
           </view>
@@ -272,6 +252,7 @@
   </view>
 
   <!-- ========== 9) 固定底部栏 ========== -->
+  <view class="booking-queue-rules">预约时间为到店时间段，非保证开剪时间。到店请前台确认；暂离请登记，叫号后保留10分钟。实际等待以排队页和现场确认动态更新。</view>
   <view class="fixed-bottom-bar" wx:if="{{shop}}">
     <view class="bar-inner">
       <view class="bar-price-area">
@@ -302,8 +283,8 @@
       </view>
       <view class="stylist-profile-name-row">
         <text class="stylist-profile-name">{{selectedStylist.name}}</text>
-        <text wx:if="{{selectedStylist.isGold}}" class="stylist-badge stylist-badge-gold">金牌</text>
-        <text wx:if="{{selectedStylist.isShopManager}}" class="stylist-badge stylist-badge-manager">店长</text>
+        <view wx:if="{{selectedStylist.isGold}}" class="stylist-badge stylist-badge-gold"><image class="stylist-badge-icon" src="/assets/icons/medal.png" mode="aspectFit" /><text>金牌</text></view>
+        <view wx:if="{{selectedStylist.isShopManager}}" class="stylist-badge stylist-badge-manager"><image class="stylist-badge-icon" src="/assets/icons/crown.png" mode="aspectFit" /><text>店长</text></view>
       </view>
       <view class="stylist-profile-title" wx:if="{{selectedStylist.title}}">{{selectedStylist.title}}</view>
       <view class="stylist-profile-rating" wx:if="{{selectedStylist.rating}}">

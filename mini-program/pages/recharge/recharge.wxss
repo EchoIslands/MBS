@@ -46,7 +46,7 @@
 }
 
 .balance-card {
-  background: linear-gradient(135deg, var(--blue-500), var(--blue-700));
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: 32rpx;
   padding: 48rpx 40rpx;
   color: #fff;
@@ -97,8 +97,8 @@
 }
 
 .plan-card--active {
-  border-color: var(--blue-500);
-  background: var(--blue-50);
+  border-color: var(--primary);
+  background: var(--primary-soft);
   box-shadow: 0 4rpx 16rpx rgba(37, 99, 235, 0.12);
 }
 
@@ -118,7 +118,7 @@
   position: absolute;
   top: -2rpx;
   right: -2rpx;
-  background: var(--blue-500);
+  background: var(--primary);
   color: #fff;
   font-size: 20rpx;
   padding: 6rpx 16rpx;
@@ -169,8 +169,8 @@
   max-width: 320rpx;
   height: 88rpx;
   line-height: 88rpx;
-  background: linear-gradient(135deg, var(--blue-500), var(--blue-700));
-  color: #fff;
+  background: linear-gradient(135deg, var(--action-start), var(--action-end));
+  color: var(--on-action);
   font-size: 30rpx;
   font-weight: 700;
   border-radius: 9999rpx;
@@ -217,8 +217,8 @@
 }
 
 .pay-method--active {
-  border-color: var(--blue-500);
-  background: var(--blue-50);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .pay-method__icon {
@@ -261,12 +261,12 @@
 }
 
 .pay-method--active .pay-method__radio {
-  border-color: var(--blue-500);
+  border-color: var(--primary);
 }
 
 .pay-method__radio-dot {
   width: 20rpx;
   height: 20rpx;
-  background: var(--blue-500);
+  background: var(--primary);
   border-radius: 50%;
 }
