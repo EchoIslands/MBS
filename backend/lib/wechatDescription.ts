@@ -2,7 +2,10 @@
 export function wechatPaymentDescription(items: unknown): string {
   if (!Array.isArray(items) || !items.length) throw new Error('原结算缺少商品或服务明细，请先核对原单');
   const names = items.map(item => {
-    const name = typeof item?.name === 'string' ? item.name.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+    const name = typeof item?.name === 'string' ? Array.from(item.name as string, character => {
+      const code = character.codePointAt(0)!;
+      return code < 32 || code === 127 ? ' ' : character;
+    }).join('').replace(/\s+/g, ' ').trim() : '';
     const quantity = Number(item?.quantity);
     if (!name || !Number.isSafeInteger(quantity) || quantity < 1) throw new Error('原结算明细不完整，请先核对原单');
     return `${name}×${quantity}`;

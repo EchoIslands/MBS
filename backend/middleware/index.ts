@@ -5,10 +5,8 @@ import { getJwtSecret } from '../lib/tokens.js';
 import { passwordVersion } from '../lib/password.js';
 
 export interface AuthEmployee { id: string; shopId: string; name: string; role: string; phone: string; }
-declare global {
-  namespace Express {
-    interface Request { employee?: AuthEmployee; customer?: { id: string; shopId: string; passwordVersion: string; mustChangePassword: boolean }; }
-  }
+declare module 'express-serve-static-core' {
+  interface Request { employee?: AuthEmployee; customer?: { id: string; shopId: string; passwordVersion: string; mustChangePassword: boolean }; }
 }
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;

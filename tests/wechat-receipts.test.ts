@@ -13,6 +13,9 @@ test('微信成功时间只取带时区的success_time，校验商户、订单�
   const data={trade_state:'SUCCESS',mchid:'m',appid:'a',out_trade_no:'gateway1',transaction_id:'420000001',amount:{currency:'CNY',total:3364},success_time:'2026-10-22T19:12:34+08:00'};
   const expected={mchid:'m',appid:'a',paymentId:'gateway1'};
   assert.deepEqual(wechatSuccessReceipt(data,expected),{paymentId:'gateway1',transactionId:'420000001',amount:33.64,paidAt:'2026-10-22T11:12:34.000Z'});
+  for (const input of [null, undefined, [], 'SUCCESS', {...data, amount: null}, {...data, amount: []}, {...data, amount: {currency:'CNY', total:'3364'}}]) {
+    assert.throws(() => wechatSuccessReceipt(input, expected), /微信支付/);
+  }
   for(const change of [{mchid:'other'},{appid:'other'},{out_trade_no:'another'},{transaction_id:''},{trade_state:'NOTPAY'},
     {amount:{currency:'USD',total:3364}},{amount:{currency:'CNY',total:33.64}},{success_time:undefined},{success_time:'2026-10-22T19:12:34'},{success_time:'invalid'},
     {success_time:'2999-01-01T12:00:00+08:00'}]) assert.throws(()=>wechatSuccessReceipt({...data,...change},expected));

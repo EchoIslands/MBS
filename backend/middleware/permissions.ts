@@ -42,8 +42,12 @@ export function requireOwnShop(param = 'id') {
   };
 }
 
-export function scopeCustomerQuery<T extends { eq: Function; contains: Function }>(query: T, req: Request): T {
-  let scoped = query.eq('shop_id', req.employee!.shopId);
+interface CustomerScopeQuery {
+  eq(column: string, value: string): CustomerScopeQuery;
+  contains(column: string, value: string[]): CustomerScopeQuery;
+}
+export function scopeCustomerQuery<T>(query: T, req: Request): T {
+  let scoped = (query as CustomerScopeQuery).eq('shop_id', req.employee!.shopId);
   if (getCustomerDataScope(req.employee!.role as UserRole) === 'own') {
     scoped = scoped.contains('served_by_stylist_ids', [req.employee!.id]);
   }

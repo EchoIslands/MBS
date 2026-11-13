@@ -2057,7 +2057,10 @@ customersRouter.put('/:id/self', personalCustomerAccess, async (req: Request, re
   const patch: Record<string, string | null> = {};
   if (Object.prototype.hasOwnProperty.call(body, 'name')) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (!name || name.length > 40 || /[\u0000-\u001f\u007f]/.test(name)) return res.status(400).json({ success: false, error: '称呼需为 1 至 40 个字符' });
+    if (!name || name.length > 40 || Array.from(name as string).some(character => {
+      const code = character.codePointAt(0)!;
+      return code < 32 || code === 127;
+    })) return res.status(400).json({ success: false, error: '称呼需为 1 至 40 个字符' });
     patch.name = name;
   }
   if (Object.prototype.hasOwnProperty.call(body, 'avatar')) {
