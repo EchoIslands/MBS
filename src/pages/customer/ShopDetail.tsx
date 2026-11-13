@@ -5,13 +5,12 @@ import {
   Phone,
   Star,
   Clock,
-  ShoppingBag,
   User,
   MessageSquare,
   MessageCircle,
-  LogOut,
   Scissors,
   Crown,
+  Award,
 } from 'lucide-react';
 import { Shop, Review, UserRole, Employee } from '../../../shared/types';
 import { shopApi } from '../../api';
@@ -21,10 +20,11 @@ import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
 import ProductImage from '../../components/ProductImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 import { sortStylistsByRank } from '../../../shared/lib/stylistOrder';
+import CustomerMembershipBenefits from '../../components/CustomerMembershipBenefits';
 
 const ShopDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { setCurrentShop, logout, currentCustomer } = useAppStore();
+  const { setCurrentShop, currentCustomer } = useAppStore();
   const [shop, setShop] = useState<Shop | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
@@ -87,36 +87,15 @@ const ShopDetail: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#fff9f3]">
       {/* 头部 */}
-      <header className="sticky top-0 bg-white shadow-sm z-50">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <h1 className="font-bold text-lg sm:text-xl text-gray-800 truncate">{shop.name}</h1>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => navigate('/customer/profile')}
-              className="flex items-center gap-1.5 bg-slate-500 hover:bg-slate-600 text-white px-3 sm:px-4 py-2 rounded-xl font-medium text-sm shadow transition-colors"
-            >
-              <User size={16} className="sm:hidden" />
-              <User size={18} className="hidden sm:inline" />
-              <span className="hidden sm:inline">个人中心</span>
-            </button>
-            <button
-              onClick={() => {
-                logout();
-                navigate('/customer/login');
-              }}
-              className="flex items-center gap-1.5 border border-rose-300 text-rose-500 hover:bg-rose-50 px-3 sm:px-4 py-2 rounded-xl font-medium text-sm transition-colors"
-            >
-              <LogOut size={16} className="sm:hidden" />
-              <LogOut size={18} className="hidden sm:inline" />
-              <span className="hidden sm:inline">退出登录</span>
-            </button>
-          </div>
+      <header className="sticky top-0 bg-[#fff9f3] border-b border-[#eadbcf] z-30">
+        <div className="max-w-4xl mx-auto px-4 py-3">
+          <h1 className="font-bold text-lg sm:text-xl text-[#4d4038] truncate">{shop.name}</h1>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 pb-24">
+      <div className="max-w-4xl mx-auto px-4 pb-8 flex flex-col">
         {/* 图片轮播 */}
         <div className="relative mt-4">
           <div className="aspect-video rounded-2xl overflow-hidden bg-gray-200">
@@ -143,44 +122,47 @@ const ShopDetail: React.FC = () => {
 
         {/* 店铺信息 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">{shop.name}</h2>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="flex items-center gap-0.5">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      size={14}
-                      className={
-                        star <= Math.round(shop.rating || 0)
-                          ? 'text-amber-400 fill-amber-400'
-                          : 'text-gray-300'
-                      }
-                    />
-                  ))}
-                </div>
-                <span className="font-medium text-gray-800">{(shop.rating || 0).toFixed(1)}</span>
-                <span className="text-gray-400">({shop.reviewCount || 0} 条评价)</span>
-              </div>
+          {shop.description && <p className="mb-4 text-sm leading-7 text-stone-700 whitespace-pre-wrap">{shop.description}</p>}
+          <div className="flex items-center gap-2 text-sm mb-4">
+            <div className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <Star
+                  key={star}
+                  size={14}
+                  className={star <= Math.round(shop.rating || 0)
+                    ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
+                />
+              ))}
             </div>
+            <span className="font-medium text-gray-800">{(shop.rating || 0).toFixed(1)}</span>
+            <span className="text-gray-400">({shop.reviewCount || 0} 条评价)</span>
           </div>
 
           <div className="space-y-3 text-gray-600">
             <div className="flex items-center gap-3">
-              <MapPin size={20} className="text-slate-500" />
+              <MapPin size={20} className="text-[#a8582f]" />
               <span>{shop.address}</span>
             </div>
             <div className="flex items-center gap-3">
-              <Phone size={20} className="text-slate-500" />
+              <Phone size={20} className="text-[#a8582f]" />
               <span>{shop.phone}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Clock size={20} className="text-slate-500" />
-              <span>营业中 · 09:00-21:00</span>
             </div>
           </div>
         </div>
+
+        <CustomerMembershipBenefits />
+        {currentCustomer && (
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => navigate('/customer/membership')}
+              className="rounded-xl bg-[#f6ae79] px-3 py-3 text-sm font-bold text-[#392719] shadow-sm">
+              办理 / 续费会员
+            </button>
+            <button type="button" onClick={() => navigate('/customer/invite')}
+              className="rounded-xl border border-[#dfa77f] bg-[#fff0e1] px-3 py-3 text-sm font-bold text-[#70452d]">
+              邀请新顾客
+            </button>
+          </div>
+        )}
 
         {/* 发型师团队 */}
         {shop.employees && shop.employees.length > 0 && (
@@ -203,13 +185,13 @@ const ShopDetail: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-gray-800">{employee.name}</div>
                         {(employee.isGoldStylist || employee.role === UserRole.SHOP_MANAGER) && (
-                          <div className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
-                            金牌
+                          <div className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded-full">
+                            <Award size={13} />金牌
                           </div>
                         )}
                         {employee.role === UserRole.SHOP_MANAGER && (
-                          <div className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
-                            店长
+                          <div className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 bg-orange-100 text-orange-800 border border-orange-200 rounded-full">
+                            <Crown size={13} />店长
                           </div>
                         )}
                       </div>
@@ -229,9 +211,9 @@ const ShopDetail: React.FC = () => {
           </div>
         )}
 
-        {/* 商品商城 */}
+        {/* 商品商城置于首页底部 */}
         {shop.products && shop.products.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
+          <div className="order-last bg-white rounded-2xl shadow-sm p-6 mt-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-800">商品商城</h3>
               <button
@@ -400,25 +382,6 @@ const ShopDetail: React.FC = () => {
 
       </div>
 
-      {/* 底部操作栏 */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4">
-        <div className="max-w-4xl mx-auto flex gap-3">
-          <button
-            onClick={() => navigate(`/customer/products/${shop.id}`)}
-            className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-4 px-6 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2 border border-amber-200"
-          >
-            <ShoppingBag size={20} />
-            商品商城
-          </button>
-          <button
-            onClick={() => navigate(`/customer/booking/${shop.id}`)}
-            className="flex-1 bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-          >
-            <Clock size={20} />
-            立即预约
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

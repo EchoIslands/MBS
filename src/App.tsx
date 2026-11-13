@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./store";
+import CustomerMainLayout from './components/CustomerMainLayout';
 
 // 角色选择
 const SelectRole = lazy(() => import('./pages/SelectRole'));
@@ -13,6 +14,7 @@ const Booking = lazy(() => import('./pages/customer/Booking'));
 const HairTryOn = lazy(() => import('./pages/customer/HairTryOn'));
 const Queue = lazy(() => import('./pages/customer/Queue'));
 const Profile = lazy(() => import('./pages/customer/Profile'));
+const CustomerMembership = lazy(() => import('./pages/customer/Membership'));
 const ReviewPage = lazy(() => import('./pages/customer/Review'));
 const RefundPage = lazy(() => import('./pages/customer/Refund'));
 const Feedback = lazy(() => import('./pages/customer/Feedback'));
@@ -182,15 +184,20 @@ export default function App() {
         {/* 顾客端路由 */}
         <Route path="/customer/login" element={<CustomerLogin />} />
         <Route path="/customer" element={<Navigate to={`/customer/shop/${DEFAULT_SHOP_ID}`} replace />} />
-        <Route path="/customer/shop/:id" element={<ShopDetail />} />
-        <Route path="/customer/products/:shopId" element={<ProductList />} />
+        <Route element={<CustomerMainLayout />}>
+          <Route path="/customer/shop/:id" element={<ShopDetail />} />
+          <Route path="/customer/products/:shopId" element={<ProductList />} />
+          <Route path="/customer/booking/:shopId" element={<Booking />} />
+          <Route element={<CustomerRouteGuard />}>
+            <Route path="/customer/profile" element={<Profile />} />
+          </Route>
+        </Route>
         <Route path="/customer/product/:shopId/:productId" element={<ProductDetail />} />
-        <Route path="/customer/booking/:shopId" element={<Booking />} />
         <Route path="/customer/try-on/:shopId" element={<HairTryOn />} />
         <Route path="/customer/queue/:bookingId" element={<Queue />} />
         <Route element={<CustomerRouteGuard />}>
           <Route path="/customer/change-password" element={<ChangePassword />} />
-          <Route path="/customer/profile" element={<Profile />} />
+          <Route path="/customer/membership" element={<CustomerMembership />} />
           <Route path="/customer/packages" element={<CustomerPackages />} />
           <Route path="/customer/invite" element={<CustomerInvite />} />
           <Route path="/customer/cart/:shopId" element={<Cart />} />

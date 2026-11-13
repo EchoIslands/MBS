@@ -12,7 +12,6 @@ import { bookingApi, shopApi } from '../../../src/api';
 import { useAppStore } from '../../store';
 import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../lib/membership';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
-import ProductImage from '../../components/ProductImage';
 
 type SelectionMode = 'specific' | 'fastest';
 
@@ -185,9 +184,8 @@ const BookingPage: React.FC = () => {
       return bkDate.toISOString().split('T')[0] === date;
     });
 
-    // 每位预约大致占用 30 分钟，评分高的技师效率略高，最多扣减 10 分钟
-    const ratingBonus = Math.min(10, ((barber.rating || 4.5) - 4) * 10);
-    const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
+    // 预约数量仅作匹配排序参考，不作为等待分钟数。
+    const waitTime = sameDayBookings.length;
     return { isAvailable: true, waitTime };
   };
 
@@ -205,9 +203,7 @@ const BookingPage: React.FC = () => {
         const bkDate = new Date(bk.scheduledTime);
         return bkDate.toISOString().split('T')[0] === selectedDate;
       });
-
-      const ratingBonus = Math.min(10, ((barber.rating || 4.5) - 4) * 10);
-      const waitTime = Math.max(0, sameDayBookings.length * 30 - Math.floor(ratingBonus));
+      const waitTime = sameDayBookings.length;
 
       if (waitTime < min) {
         min = waitTime;
@@ -301,9 +297,9 @@ const BookingPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-40">
+    <div className="min-h-screen bg-[#fff9f3] pb-40">
       {/* 顶部导航 */}
-      <header className="sticky top-0 bg-white shadow-sm z-40">
+      <header className="sticky top-0 bg-[#fff9f3] border-b border-[#eadbcf] z-30">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <ArrowLeft size={20} className="text-gray-700" />
@@ -314,20 +310,6 @@ const BookingPage: React.FC = () => {
       </header>
 
       <div className="max-w-2xl mx-auto px-4">
-        {/* 店铺信息 */}
-        <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 mt-4">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <ProductImage
-              src={shop.images[0]}
-              alt={shop.name}
-              className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover flex-shrink-0"
-            />
-            <div className="min-w-0">
-              <h2 className="font-bold text-gray-800 truncate">{shop.name}</h2>
-              <p className="text-xs sm:text-sm text-gray-500 truncate">{shop.address}</p>
-            </div>
-          </div>
-        </div>
 
         {/* 股东权益展示 */}
         {stockholderSummary.isStockholder && stockholderSummary.enabled && (
@@ -457,12 +439,13 @@ const BookingPage: React.FC = () => {
           </div>
         </div>
 
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm leading-6 text-gray-700">预约时间为到店时间段，非保证开剪时间。到店由前台确认后排队；暂离请登记，叫号后保留10分钟。实际等待以排队页面和现场确认动态更新。</div>
         {/* 选择时间 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
           <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
             <Clock size={18} className="sm:hidden" />
             <Clock size={20} className="hidden sm:inline" />
-            选择时间
+            选择到店时间
           </h3>
           <div className="grid grid-cols-4 gap-2 sm:gap-3">
             {availableTimeSlots.map((time) => {
@@ -517,11 +500,11 @@ const BookingPage: React.FC = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
-                    <span className="font-bold text-gray-800 text-sm sm:text-base">智能匹配 · 最快服务</span>
+                    <span className="font-bold text-gray-800 text-sm sm:text-base">智能匹配 · 推荐发型师</span>
                     <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-green-600 text-white rounded-full">推荐</span>
                   </div>
                   <div className="text-xs sm:text-sm text-gray-500 mb-2 line-clamp-2">
-                    系统为您匹配当前最空闲的发型师，节省等待时间
+                    按所选服务和时段推荐可预约的发型师，等待以到店现场为准
                   </div>
                   <div className="flex items-center gap-2 text-xs sm:text-sm flex-wrap">
                     {fastest ? (
@@ -530,7 +513,7 @@ const BookingPage: React.FC = () => {
                           <User size={12} /> {fastest.name}
                         </span>
                         <span className="text-green-600 font-medium">
-                          等待 {getBarberAvailability(fastest, selectedDate, selectedTime).waitTime} 分钟
+                          到店后动态更新等待
                         </span>
                       </>
                     ) : (
@@ -670,7 +653,7 @@ const BookingPage: React.FC = () => {
                     <div className={`text-xs sm:text-sm font-semibold ${
                       av.isAvailable ? 'text-green-600' : 'text-rose-500'
                     }`}>
-                      {av.isAvailable ? `预计等待 ${av.waitTime} 分钟` : '当前时段已满'}
+                      {av.isAvailable ? '此时段可预约，到店后确认等待' : '当前时段已满'}
                     </div>
                   </div>
                 </label>
@@ -760,12 +743,12 @@ const BookingPage: React.FC = () => {
       </div>
 
       {/* 底部固定按钮 —— 手机端保持较大的点击区域 */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-3 sm:p-4 z-30">
+      <div className="fixed bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 bg-[#fff9f3] border-t border-[#eadbcf] shadow-lg p-3 sm:p-4 z-30">
         <div className="max-w-2xl mx-auto">
           <button
             onClick={handleBooking}
             disabled={booking}
-            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg transition-all flex items-center justify-center gap-2"
+            className="w-full bg-[#f6ae79] hover:bg-[#ee9c62] disabled:bg-stone-300 text-[#392719] py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg transition-colors flex items-center justify-center gap-2"
           >
             <CheckCircle size={18} className="sm:hidden" />
             <CheckCircle size={20} className="hidden sm:inline" />

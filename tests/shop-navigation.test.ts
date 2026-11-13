@@ -20,8 +20,9 @@ test('CEO sidebar is reduced to seven business modules', () => {
 test('grouping preserves each role permission boundary', () => {
   const customerService = visibleShopSections(UserRole.CUSTOMER_SERVICE);
   assert.deepEqual(customerService.map((section) => section.label), [
-    '首页概览', '客户运营', '收银与售后', '经营分析',
+    '首页概览', '预约服务', '客户运营', '收银与售后', '经营分析',
   ]);
+  assert.deepEqual(customerService.find(section => section.label === '预约服务')?.tabs.map(tab => tab.path), ['/shop/queue-desk']);
   assert.deepEqual(
     customerService.find((section) => section.label === '收银与售后')?.tabs.map((tab) => tab.label),
     ['开单结算'],

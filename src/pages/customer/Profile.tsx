@@ -6,14 +6,16 @@ import {
   X, Phone, Scissors, MapPin, Loader2, Ticket, Share2, Package,
 } from 'lucide-react';
 import { Booking, Review, PurchaseVIPLevel, StoredValueLevel, BenefitType, Shop, MemberBenefitRecord } from '../../../shared/types';
-import { mockShops, mockMemberBenefitRecords, purchaseVIPPlans, storedValuePlans } from '../../../shared/mockData';
+import { mockShops, mockMemberBenefitRecords } from '../../../shared/mockData';
 import {isRealApi} from '../../../shared/api-base';
 import { useAppStore } from '../../store';
-import { bookingApi, reviewApi, shopApi, memberBenefitApi } from '../../api';
+import { bookingApi, reviewApi, shopApi, memberBenefitApi, customerApi } from '../../api';
 import {
   getPurchaseVIPLabel,
   getStoredValueLabel,
   getCustomerEffectiveDiscount,
+  getEffectivePurchaseVIPLevel,
+  getEffectiveStoredValueLevel,
   isVIPExpiringSoon,
   isStoredValueExpiringSoon,
   getStockholderBenefitSummary,
@@ -28,22 +30,6 @@ const purchaseVIPGradient: Record<PurchaseVIPLevel, string> = {
   [PurchaseVIPLevel.GOLD]: 'from-yellow-400 to-yellow-600',
   [PurchaseVIPLevel.DIAMOND]: 'from-purple-500 via-pink-500 to-orange-500',
 };
-
-// 购买 VIP 权益对比表
-const vipBenefits = [
-  { feature: '服务折扣', bronze: '8.8折', silver: '7.8折', gold: '6.8折', diamond: '5.8折' },
-  { feature: '购买价格', bronze: '¥29/年', silver: '¥59/年', gold: '¥79/年', diamond: '¥99/年' },
-  { feature: '满59元赠洗护', bronze: '洗发水', silver: '洗发水+护发素', gold: '洗发水+护发素', diamond: '洗发水+护发素' },
-  { feature: '饮品权益', bronze: '每次消费送', silver: '每次消费送', gold: '每次消费送', diamond: '每次消费送' },
-  { feature: '不满意重做', bronze: '-', silver: '-', gold: '支持', diamond: '支持' },
-  { feature: '免费剪发', bronze: '-', silver: '-', gold: '-', diamond: '1次' },
-];
-
-// 储值会员权益对比表
-const storedBenefits = [
-  { feature: '储值金额', store500: '¥500', store1000: '¥1000', store2000: '¥2000', store5000: '¥5000' },
-  { feature: '折上折折扣', store500: '9折', store1000: '8.5折', store2000: '8折', store5000: '7折' },
-];
 
 const Profile: React.FC = () => {
   const [shop,setShop]=useState<Shop|null>(null);
@@ -61,9 +47,63 @@ const Profile: React.FC = () => {
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduling, setRescheduling] = useState(false);
   const [contactShopId, setContactShopId] = useState<string | null>(null);
+  const [editingSelf, setEditingSelf] = useState(false);
+  const [selfName, setSelfName] = useState('');
+  const [selfAvatar, setSelfAvatar] = useState('');
+  const [selfGender, setSelfGender] = useState('');
+  const [selfBirthday, setSelfBirthday] = useState('');
+  const [selfBusy, setSelfBusy] = useState(false);
+  const [selfError, setSelfError] = useState('');
   
   const navigate = useNavigate();
   const { currentCustomer, setCurrentCustomer, logout } = useAppStore();
+  useEffect(() => {
+    if (!isRealApi() || !currentCustomer?.id) return;
+    let cancelled = false;
+    customerApi.getMyProfile(currentCustomer.id).then(updated => {
+      if (!cancelled && updated) setCurrentCustomer({ ...currentCustomer, ...updated });
+    }).catch(() => { /* 其他信息仍可使用已登录资料。 */ });
+    return () => { cancelled = true; };
+  }, [currentCustomer?.id]);
+  const openSelfEditor = () => {
+    if (!currentCustomer) return;
+    setSelfName(currentCustomer.name || '');
+    setSelfAvatar(currentCustomer.avatar || '');
+    setSelfGender(currentCustomer.gender || '');
+    setSelfBirthday(currentCustomer.birthday ? new Date(currentCustomer.birthday).toISOString().slice(0, 10) : '');
+    setSelfError('');
+    setEditingSelf(true);
+  };
+  const uploadSelfAvatar = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setSelfError('请选择不超过 2MB 的 PNG、JPEG 或 WebP 图片'); return;
+    }
+    setSelfBusy(true); setSelfError('');
+    try {
+      const image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('头像读取失败'));
+        reader.readAsDataURL(file);
+      });
+      setSelfAvatar(await customerApi.uploadMyAvatar(image));
+    } catch (err) { setSelfError(err instanceof Error ? err.message : '头像上传失败'); }
+    finally { setSelfBusy(false); }
+  };
+  const saveSelfProfile = async () => {
+    if (!currentCustomer || selfBusy) return;
+    const name = selfName.trim();
+    if (!name || name.length > 40) { setSelfError('称呼需为 1 至 40 个字符'); return; }
+    setSelfBusy(true); setSelfError('');
+    try {
+      const updated = await customerApi.updateSelf(currentCustomer.id, { name, avatar: selfAvatar || null,
+        gender: (selfGender || null) as typeof currentCustomer.gender | null, birthday: selfBirthday || null });
+      setCurrentCustomer({ ...currentCustomer, ...updated });
+      setEditingSelf(false);
+    } catch (err) { setSelfError(err instanceof Error ? err.message : '资料保存失败'); }
+    finally { setSelfBusy(false); }
+  };
 
   useEffect(()=>{
     if(!currentCustomer) return;
@@ -165,10 +205,8 @@ const Profile: React.FC = () => {
   
 
   // 会员等级
-  const purchaseLevel = currentCustomer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
-  const storedLevel = currentCustomer?.storedValueLevel ?? StoredValueLevel.NONE;
-  const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel);
-  const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
+  const purchaseLevel = currentCustomer ? getEffectivePurchaseVIPLevel(currentCustomer) : PurchaseVIPLevel.REGULAR;
+  const storedLevel = currentCustomer ? getEffectiveStoredValueLevel(currentCustomer) : StoredValueLevel.NONE;
   const effectiveDiscount = currentCustomer ? getCustomerEffectiveDiscount(currentCustomer) : 1;
   const expiringSoon = currentCustomer ? isVIPExpiringSoon(currentCustomer) : false;
   const storedExpiringSoon = currentCustomer ? isStoredValueExpiringSoon(currentCustomer) : false;
@@ -181,8 +219,8 @@ const Profile: React.FC = () => {
   const isMember = !!(
     currentCustomer &&
     (currentCustomer.isStockholder ||
-      currentCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR ||
-      currentCustomer.storedValueLevel !== StoredValueLevel.NONE)
+      purchaseLevel !== PurchaseVIPLevel.REGULAR ||
+      storedLevel !== StoredValueLevel.NONE)
   );
 
   const stockholderSummary=getStockholderBenefitSummary(shop ? currentCustomer:null,shop);
@@ -190,7 +228,7 @@ const Profile: React.FC = () => {
   if (!currentCustomer) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
+    <div className="min-h-screen bg-[#fff9f3] pb-8">
       {loadError && <p role="alert" className="p-4 text-red-600">{loadError}</p>}
       {/* 顶部会员卡（视觉焦点区域 — 让会员一眼看到自己的权益价值） */}
       <div className={`bg-gradient-to-br ${purchaseVIPGradient[purchaseLevel]} text-white relative overflow-hidden`}>
@@ -203,8 +241,8 @@ const Profile: React.FC = () => {
           {/* 基本信息行 */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-                <User size={28} />
+              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm overflow-hidden">
+                {currentCustomer.avatar ? <img src={currentCustomer.avatar} alt="我的头像" className="w-full h-full object-cover" /> : <User size={28} />}
               </div>
               <div>
                 <h1 className="text-xl font-bold">{currentCustomer.name}</h1>
@@ -224,6 +262,10 @@ const Profile: React.FC = () => {
               )}
             </div>
           </div>
+          <div className="flex gap-2 mb-4">
+            <button onClick={openSelfEditor} className="flex-1 rounded-xl border border-white/50 bg-white/15 px-3 py-2 text-sm font-semibold">编辑个人资料</button>
+            <button onClick={() => navigate('/customer/membership')} className="flex-1 rounded-xl bg-orange-100 px-3 py-2 text-sm font-bold text-orange-900">办理 / 续费会员</button>
+          </div>
 
           {/* 核心价值数字：当前综合折扣 */}
           <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 sm:p-5 mb-3 sm:mb-4">
@@ -241,6 +283,12 @@ const Profile: React.FC = () => {
                 : storedLevel !== StoredValueLevel.NONE
                 ? `已开通 ${getStoredValueLabel(storedLevel)}`
                 : '开通会员享受专属折扣'}
+            </div>
+            <div className="mt-2 space-y-0.5 text-xs text-white/85">
+              {currentCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR && currentCustomer.purchaseVIPExpiresAt &&
+                <p>{purchaseLevel === PurchaseVIPLevel.REGULAR ? 'VIP 已于' : 'VIP 有效期至'} {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString('zh-CN')}{purchaseLevel === PurchaseVIPLevel.REGULAR ? ' 到期' : ''}</p>}
+              {currentCustomer.storedValueLevel !== StoredValueLevel.NONE && currentCustomer.storedValueExpiresAt &&
+                <p>{storedLevel === StoredValueLevel.NONE ? '储值权益已于' : '储值权益有效期至'} {new Date(currentCustomer.storedValueExpiresAt).toLocaleDateString('zh-CN')}{storedLevel === StoredValueLevel.NONE ? ' 到期（余额仍保留）' : ''}</p>}
             </div>
           </div>
 
@@ -341,25 +389,6 @@ const Profile: React.FC = () => {
       {/* 主内容区 —— 手机端减少 padding */}
       <div className="max-w-4xl mx-auto px-3 sm:px-4 -mt-2 sm:-mt-3 pb-6">
 
-        <button
-          type="button"
-          onClick={() => {
-            if (!currentCustomer?.shopId) {
-              alert('门店信息未加载，请刷新个人中心后重试');
-              return;
-            }
-            navigate(`/customer/product-orders/${encodeURIComponent(currentCustomer.shopId)}`);
-          }}
-          className="w-full flex items-center gap-3 bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100 text-left hover:bg-orange-50 transition-colors"
-        >
-          <Package size={24} className="text-orange-500 shrink-0" />
-          <span className="flex-1">
-            <span className="block font-bold text-gray-800">我的商品订单</span>
-            <span className="block text-sm text-gray-500 mt-1">查看订单、提货与退款</span>
-          </span>
-          <ChevronRight size={20} className="text-gray-400 shrink-0" />
-        </button>
-
         {/* 股东会员权益说明 */}
         {stockholderSummary.isStockholder && stockholderSummary.enabled && (
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-amber-100">
@@ -413,106 +442,6 @@ const Profile: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* 购买 VIP 权益对比 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
-          <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Crown size={18} className="sm:hidden text-orange-500" />
-            <Crown size={20} className="hidden sm:inline text-orange-500" />
-            购买 VIP 权益
-          </h2>
-
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-xs sm:text-sm min-w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2.5 sm:py-3 text-gray-600 font-medium pl-1">权益</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">普卡</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">银卡</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">金卡</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">钻石</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vipBenefits.map((b, i) => (
-                  <tr key={i} className="border-b border-gray-100 last:border-0">
-                    <td className="py-2.5 sm:py-3 text-gray-700 font-medium pl-1">{b.feature}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.BRONZE ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-gray-500'}`}>{b.bronze}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.SILVER ? 'text-blue-600 font-bold bg-blue-50/50' : 'text-gray-500'}`}>{b.silver}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.GOLD ? 'text-yellow-600 font-bold bg-yellow-50/50' : 'text-gray-500'}`}>{b.gold}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${purchaseLevel === PurchaseVIPLevel.DIAMOND ? 'text-purple-600 font-bold bg-purple-50/50' : 'text-gray-500'}`}>{b.diamond}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {purchasePlan && (
-            <div className="mt-3 sm:mt-4 p-3 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-xl border border-orange-100">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs sm:text-sm font-bold text-orange-700">当前：{purchasePlan.name}</div>
-                  <div className="text-[11px] sm:text-xs text-orange-600/80 mt-0.5">
-                    {purchasePlan.benefits.join(' · ')}
-                  </div>
-                </div>
-                <button
-                  onClick={() => navigate(`/customer/shop/${shop?.id}`)}
-                  className="flex-shrink-0 text-xs sm:text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors"
-                >
-                  了解更多
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 储值会员权益对比 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
-          <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Wallet size={18} className="sm:hidden text-green-500" />
-            <Wallet size={20} className="hidden sm:inline text-green-500" />
-            储值会员权益（折上折）
-          </h2>
-
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-xs sm:text-sm min-w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2.5 sm:py-3 text-gray-600 font-medium pl-1">权益</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">储值卡</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">安心卡</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">顺心卡</th>
-                  <th className="text-center py-2.5 sm:py-3 text-gray-500 font-normal">随心卡</th>
-                </tr>
-              </thead>
-              <tbody>
-                {storedBenefits.map((b, i) => (
-                  <tr key={i} className="border-b border-gray-100 last:border-0">
-                    <td className="py-2.5 sm:py-3 text-gray-700 font-medium pl-1">{b.feature}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_500 ? 'text-green-600 font-bold bg-green-50/50' : 'text-gray-500'}`}>{b.store500}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_1000 ? 'text-cyan-600 font-bold bg-cyan-50/50' : 'text-gray-500'}`}>{b.store1000}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_2000 ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-gray-500'}`}>{b.store2000}</td>
-                    <td className={`py-2.5 sm:py-3 text-center ${storedLevel === StoredValueLevel.STORE_5000 ? 'text-red-600 font-bold bg-red-50/50' : 'text-gray-500'}`}>{b.store5000}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {storedPlan && (
-            <div className="mt-3 sm:mt-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs sm:text-sm font-bold text-green-700">当前：{storedPlan.name}</div>
-                  <div className="text-[11px] sm:text-xs text-green-600/80 mt-0.5">
-                    储值 {storedPlan.amount} 元，折上折再享 {(storedPlan.discount * 10).toFixed(storedPlan.discount === 0.7 ? 1 : 2)} 折
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* 我的预约列表 */}
         <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100">
@@ -604,6 +533,7 @@ const Profile: React.FC = () => {
                         </div>
                         <div className="font-medium text-orange-500">¥{booking.price}</div>
                       </div>
+                      {booking.status === 'confirmed' && <button onClick={e=>{e.stopPropagation();navigate(`/customer/queue/${booking.id}`);}} className="w-full mt-3 rounded-xl bg-orange-100 text-orange-900 py-3 font-bold">查看排队 / 暂离 / 返回 ›</button>}
                       {booking.delayState === 'needs_action' && (
                         <div className="mt-3 sm:mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg">
                           <div className="flex items-start gap-2 text-sm text-amber-700">
@@ -674,6 +604,25 @@ const Profile: React.FC = () => {
             })()
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!currentCustomer?.shopId) {
+              alert('门店信息未加载，请刷新个人中心后重试');
+              return;
+            }
+            navigate(`/customer/product-orders/${encodeURIComponent(currentCustomer.shopId)}`);
+          }}
+          className="w-full flex items-center gap-3 bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100 text-left hover:bg-orange-50 transition-colors"
+        >
+          <Package size={24} className="text-orange-500 shrink-0" />
+          <span className="flex-1">
+            <span className="block font-bold text-gray-800">我的商品订单</span>
+            <span className="block text-sm text-gray-500 mt-1">查看订单、提货与退款</span>
+          </span>
+          <ChevronRight size={20} className="text-gray-400 shrink-0" />
+        </button>
 
         {/* 快捷功能 —— 手机端保持四列，点击区域足够 */}
         <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -883,6 +832,24 @@ const Profile: React.FC = () => {
         </div>
       )}
 
+      {editingSelf && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-[#fffaf5] rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-4"><h2 className="font-bold text-lg">编辑个人资料</h2><button onClick={() => !selfBusy && setEditingSelf(false)} aria-label="关闭"><X size={20} /></button></div>
+            <label className="flex flex-col items-center mb-4 cursor-pointer">
+              <span className="w-16 h-16 rounded-full overflow-hidden bg-orange-100 flex items-center justify-center">{selfAvatar ? <img src={selfAvatar} alt="当前头像" className="w-full h-full object-cover" /> : <User />}</span>
+              <span className="text-xs text-gray-600 mt-2">点击更换头像</span>
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={selfBusy} onChange={e => void uploadSelfAvatar(e.target.files?.[0])} />
+            </label>
+            <label className="block text-sm font-semibold mb-3">称呼 / 昵称<input value={selfName} maxLength={40} onChange={e => setSelfName(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-orange-100 bg-white" /></label>
+            <label className="block text-sm font-semibold mb-3">性别（选填）<select value={selfGender} onChange={e => setSelfGender(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-orange-100 bg-white"><option value="">不展示</option><option value="male">男</option><option value="female">女</option><option value="other">其他</option></select></label>
+            <label className="block text-sm font-semibold mb-3">生日（选填）<input type="date" max={new Date().toISOString().slice(0, 10)} value={selfBirthday} onChange={e => setSelfBirthday(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-orange-100 bg-white" /></label>
+            <p className="text-xs text-gray-600 mb-3">登录手机号：{currentCustomer.phone}。更换手机号请联系门店核实。</p>
+            {selfError && <p role="alert" className="text-red-700 text-sm mb-2">{selfError}</p>}
+            <button onClick={() => void saveSelfProfile()} disabled={selfBusy} className="w-full rounded-xl bg-[#efa66e] text-[#2b2018] font-bold py-3 disabled:opacity-50">{selfBusy ? '处理中…' : '保存资料'}</button>
+          </div>
+        </div>
+      )}
       {/* 延时改时间弹窗 */}
       {rescheduleTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

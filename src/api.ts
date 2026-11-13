@@ -1,3 +1,4 @@
+import type { LiveQueueSnapshot, LiveQueueDesk } from '../shared/lib/liveQueue';
 import { buildFinancialReport, FINANCIAL_TIME_BASIS } from '../shared/lib/financialReport';
 import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, ServiceRefundCandidate, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
@@ -1028,6 +1029,20 @@ const normalizeCustomerDates = (customer: Customer): Customer => {
 
 // 客户相关 API
 export const customerApi = {
+  getMyProfile: async (id: string): Promise<Customer> => {
+    if (!USE_REAL_API) throw new Error('个人资料需要连接正式服务');
+    return normalizeCustomerDates(await httpThrowing<Customer>(API_BASE + '/customers/' + encodeURIComponent(id) + '/public'));
+  },
+  updateSelf: async (id: string, fields: { name: string; avatar?: string | null; gender?: Customer['gender'] | null; birthday?: string | null }): Promise<Customer> => {
+    if (!USE_REAL_API) throw new Error('编辑资料需要连接正式服务');
+    return normalizeCustomerDates(await httpThrowing<Customer>(API_BASE + '/customers/' + encodeURIComponent(id) + '/self', {
+      method: 'PUT', body: JSON.stringify(fields),
+    }));
+  },
+  uploadMyAvatar: async (image: string): Promise<string> => {
+    if (!USE_REAL_API) throw new Error('头像上传需要连接正式服务');
+    return httpThrowing<string>(API_BASE + '/upload/customer-avatar', { method: 'POST', body: JSON.stringify({ image }) }, 60000);
+  },
   changePassword: async (id: string, currentPassword: string, newPassword: string, confirmPassword: string): Promise<void> => {
     const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/password/change', {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -1053,6 +1068,25 @@ export const customerApi = {
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || '身份验证失败');
     return result.setupRequired ? { setupRequired: true } : { setupRequired: false, customer: normalizeCustomerDates(result.data) };
+  },
+  sendSmsCode: async (phone: string): Promise<void> => {
+    if (!USE_REAL_API) throw new Error('短信登录需要连接正式服务');
+    const response = await fetch(API_BASE + '/customers/sms/send', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || '验证码发送失败');
+  },
+  loginWithSms: async (phone: string, code: string): Promise<Customer> => {
+    if (!USE_REAL_API) throw new Error('短信登录需要连接正式服务');
+    const response = await fetch(API_BASE + '/customers/sms/login', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, code }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success || !result.data?.id) throw new Error(result.error || '验证码登录失败');
+    return normalizeCustomerDates(result.data);
   },
   resetPassword: async (id: string): Promise<void> => {
     const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/password/reset', {
@@ -1211,6 +1245,18 @@ export const customerApi = {
 };
 
 // 会员升级/储值 API
+export type CustomerMembershipOrder = { id:string; kind:'vip'|'stored'; level:string; amount:number;
+  channel:'wechat_mini'|'wechat_h5'; status:'pending'|'paid'|'review'|'closed'; paidAt:string|null; createdAt:string };
+export type CustomerMembershipPlans = { vip:PurchaseVIPPlan[]; stored:StoredValuePlan[];
+  currentVip:{level:string;expires:string|null;active:boolean};
+  currentStored:{level:string;expires:string|null;active:boolean}; activeOrder:CustomerMembershipOrder|null };
+export const customerMembershipApi = {
+  plans: () => httpThrowing<CustomerMembershipPlans>(API_BASE+'/customer-membership/plans'),
+  create: (kind:'vip'|'stored',level:string) => httpThrowing<CustomerMembershipOrder & {payUrl?:string}>(API_BASE+'/customer-membership/orders',
+    {method:'POST',body:JSON.stringify({kind,level,channel:'wechat_h5'})}),
+  check: (id:string) => httpThrowing<CustomerMembershipOrder>(API_BASE+'/customer-membership/orders/'+encodeURIComponent(id)),
+};
+
 export const membershipApi = {
   upgrade: async (
     customerId: string,
@@ -2835,4 +2881,14 @@ export const customerPackageApi = {
     }
     return [];
   },
+};
+
+
+// No mock fallback: queue actions and acknowledgement must reflect the database.
+export const liveQueueApi = {
+ availability: (shopId:string,stylistId:string,version:number,minutes:number) => httpThrowing<{recorded:boolean}>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/live/availability`,{method:'POST',headers:{Authorization:`Bearer ${getAuthToken()}`},body:JSON.stringify({stylistId,version,minutes})}),
+ snapshot: (id:string) => httpThrowing<LiveQueueSnapshot>(`${API_BASE}/bookings/${encodeURIComponent(id)}/live-queue`, {credentials:'include'}),
+ desk: (shopId:string) => httpThrowing<LiveQueueDesk>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/live`, {headers:{Authorization:`Bearer ${getAuthToken()}`}}),
+ act: (id:string,action:string,version:number,minutes?:number,note?:string,staff=false) => httpThrowing<{eventId:number;version:number}>(`${API_BASE}/bookings/${encodeURIComponent(id)}/live-queue`, {
+ method:'POST',credentials:'include',headers:staff?{Authorization:`Bearer ${getAuthToken()}`}:{},body:JSON.stringify({action,version,minutes,note})}),
 };

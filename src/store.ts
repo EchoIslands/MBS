@@ -212,13 +212,23 @@ export const restoreCustomerSession = async () => {
   if (isRealApi()) {
     try {
       const response = await fetch(getApiBase() + '/customers/' + encodeURIComponent(customer.id) + '/public', { credentials: 'include' });
-      if (!response.ok) throw new Error('会话失效');
+      if (response.status === 401) {
+        if (loadCustomerSession()?.id !== customer.id) return;
+        saveCustomerSession(null);
+        useAppStore.setState({ currentCustomer: null });
+        return;
+      }
+      if (!response.ok) throw new Error('会话暂时无法核验');
       const result = await response.json();
-      if (!result.success || !result.data) throw new Error('会话失效');
+      if (!result.success || !result.data) throw new Error('会话暂时无法核验');
+      // A late response for a previous account must not replace a newer login.
+      if (loadCustomerSession()?.id !== customer.id) return;
       useAppStore.getState().setCurrentCustomer(result.data);
     } catch {
-      saveCustomerSession(null);
-      useAppStore.setState({ currentCustomer: null });
+      // Cached identity is display state only; server authorization still gates every request.
+      if (loadCustomerSession()?.id === customer.id) {
+        useAppStore.setState({ currentCustomer: customer, userRole: UserRole.CUSTOMER });
+      }
     }
     return;
   }

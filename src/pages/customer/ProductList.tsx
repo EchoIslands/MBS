@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Search, Filter, Star, Loader2, Crown, Ticket, X } from 'lucide-react';
+import { ShoppingCart, Search, Filter, Star, Loader2, Crown, Ticket, X } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory, Coupon, CustomerCoupon } from '../../../shared/types';
 import { productApi, couponApi } from '../../api';
@@ -150,24 +150,18 @@ const ProductList: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#fff9f3]">
       {/* Header */}
-      <header className="sticky top-0 bg-white shadow-sm z-50">
+      <header className="sticky top-0 bg-[#fff9f3] border-b border-[#eadbcf] z-30">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-lg">商品商城</h1>
+          <h1 className="font-bold text-lg text-[#4d4038]">商品商城</h1>
           <button
             onClick={() => navigate(`/customer/cart/${shopId}`)}
             className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ShoppingCart size={20} />
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 bg-[#bf673e] text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
                 {cartCount}
               </span>
             )}
@@ -189,7 +183,7 @@ const ProductList: React.FC = () => {
         {displayCoupons.length > 0 && (
           <div
             onClick={() => setShowCoupons(true)}
-            className="bg-gradient-to-r from-red-500 to-orange-500 rounded-xl p-4 text-white shadow-md cursor-pointer flex items-center justify-between"
+            className="bg-gradient-to-r from-[#e99579] to-[#f5ad78] rounded-xl p-4 text-[#38261d] shadow-md cursor-pointer flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
@@ -197,12 +191,12 @@ const ProductList: React.FC = () => {
               </div>
               <div>
                 <div className="font-bold">领取优惠券</div>
-                <div className="text-xs text-white/80">
+                <div className="text-xs text-[#593d2e]">
                   共 {displayCoupons.length} 张优惠券，已领 {myCoupons.length} 张
                 </div>
               </div>
             </div>
-            <span className="text-sm bg-white text-orange-500 px-3 py-1 rounded-full font-medium">去领取</span>
+            <span className="text-sm bg-white text-[#75411f] px-3 py-1 rounded-full font-bold">去领取</span>
           </div>
         )}
 
@@ -229,7 +223,7 @@ const ProductList: React.FC = () => {
               onClick={() => setSelectedCategory('all')}
               className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition-colors ${
                 selectedCategory === 'all'
-                  ? 'bg-orange-500 text-white'
+                  ? 'bg-[#f6ae79] text-[#392719]'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -241,7 +235,7 @@ const ProductList: React.FC = () => {
                 onClick={() => setSelectedCategory(category)}
                 className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition-colors ${
                   selectedCategory === category
-                    ? 'bg-orange-500 text-white'
+                    ? 'bg-[#f6ae79] text-[#392719]'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -319,7 +313,7 @@ const ProductList: React.FC = () => {
                     {product.tags.slice(0, 2).map((tag, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-0.5 bg-red-500 text-white text-[10px] sm:text-xs rounded-full"
+                        className="px-2 py-0.5 bg-[#c46c4c] text-white text-[10px] sm:text-xs rounded-full"
                       >
                         {tag}
                       </span>
@@ -348,7 +342,7 @@ const ProductList: React.FC = () => {
                       const hasDiscount = memberPrice < product.price;
                       return (
                         <>
-                          <span className="text-base sm:text-lg font-bold text-red-500">
+                          <span className="text-base sm:text-lg font-bold text-[#b65e35]">
                             ¥{memberPrice.toFixed(2)}
                           </span>
                           {hasDiscount ? (
@@ -375,7 +369,7 @@ const ProductList: React.FC = () => {
                     e.stopPropagation();
                     handleAddToCart(product);
                   }}
-                  className="w-full py-2 sm:py-2.5 bg-orange-500 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
+                  className="w-full py-2 sm:py-2.5 bg-[#f6ae79] text-[#392719] text-xs sm:text-sm font-bold rounded-lg hover:bg-[#ee9c62] transition-colors"
                 >
                   加入购物车
                 </button>
