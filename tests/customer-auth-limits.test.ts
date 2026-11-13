@@ -7,9 +7,9 @@ test('043失败限流：隔离PostgreSQL验证占位、失败计数、时间和�
   const db = new PGlite();
   const migration = await readFile(new URL('../migrations/043_customer_auth_failure_limits.sql',import.meta.url),'utf8');
   const key = (n: number) => n.toString(16).padStart(64,'0');
-  const begin = async (n: number) => (await db.query<any>('SELECT * FROM public.begin_customer_auth_attempt_v2($1)',[key(n)])).rows[0];
-  const finish = async (n: number, id: string, outcome: string) => (await db.query<any>('SELECT public.finish_customer_auth_attempt_v2($1,$2,$3) ok',[key(n),id,outcome])).rows[0].ok;
-  const row = async (n: number) => (await db.query<any>('SELECT * FROM customer_auth_limits WHERE ip_hash=$1',[key(n)])).rows[0];
+  const begin = async (n: number) => (await db.query<{allowed:boolean;attempt_id:string;reason:string;retry_after_seconds:number}>('SELECT * FROM public.begin_customer_auth_attempt_v2($1)',[key(n)])).rows[0];
+  const finish = async (n: number, id: string, outcome: string) => (await db.query<Record<string, unknown>>('SELECT public.finish_customer_auth_attempt_v2($1,$2,$3) ok',[key(n),id,outcome])).rows[0].ok;
+  const row = async (n: number) => (await db.query<{locked_until:Date;daily_attempts:number;daily_failures:number;failed_attempts:number}>('SELECT * FROM customer_auth_limits WHERE ip_hash=$1',[key(n)])).rows[0];
   try {
     await db.exec(`CREATE ROLE service_role; CREATE ROLE anon; CREATE ROLE authenticated;
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
@@ -53,7 +53,7 @@ test('043失败限流：隔离PostgreSQL验证占位、失败计数、时间和�
       assert.equal((await row(3)).daily_failures,0);
       await db.query('UPDATE customer_auth_limits SET locked_until=NULL,daily_failures=10 WHERE ip_hash=$1',[key(3)]);
       const daily=await begin(3);
-      const expected=(await db.query<any>("SELECT CEIL(EXTRACT(EPOCH FROM ((((NOW() AT TIME ZONE 'Asia/Shanghai')::DATE+1)::TIMESTAMP AT TIME ZONE 'Asia/Shanghai')-NOW())))::INTEGER seconds")).rows[0].seconds;
+      const expected=(await db.query<{seconds:number}>("SELECT CEIL(EXTRACT(EPOCH FROM ((((NOW() AT TIME ZONE 'Asia/Shanghai')::DATE+1)::TIMESTAMP AT TIME ZONE 'Asia/Shanghai')-NOW())))::INTEGER seconds")).rows[0].seconds;
       assert.ok(Math.abs(daily.retry_after_seconds-expected)<=1);
     });
     await t.test('批量占位只准10次；重复/越IP完成不改计数，过期释放但不接受成功',async()=>{
@@ -71,7 +71,7 @@ test('043失败限流：隔离PostgreSQL验证占位、失败计数、时间和�
       await db.query("UPDATE customer_auth_reservations SET expires_at=NOW()-INTERVAL '1 second' WHERE ip_hash=$1",[key(4)]);
       assert.equal(await finish(4,replacement.attempt_id,'success'),false);
       const recovered=await begin(4); assert.equal(recovered.allowed,true);
-      assert.equal((await db.query<any>('SELECT COUNT(*)::INTEGER n FROM customer_auth_reservations WHERE ip_hash=$1',[key(4)])).rows[0].n,1);
+      assert.equal((await db.query<Record<string, unknown>>('SELECT COUNT(*)::INTEGER n FROM customer_auth_reservations WHERE ip_hash=$1',[key(4)])).rows[0].n,1);
       assert.equal(await finish(4,recovered.attempt_id,'cancelled'),true);
       assert.equal((await row(4)).failed_attempts,1);
     });
@@ -95,7 +95,7 @@ test('043失败限流：隔离PostgreSQL验证占位、失败计数、时间和�
       }
       await assert.rejects(db.query("SELECT * FROM begin_customer_auth_attempt_v2('unknown')"),/INVALID_AUTH_KEY/);
       await assert.rejects(finish(1,'00000000-0000-4000-8000-000000000000','bad'),/INVALID_AUTH_OUTCOME/);
-      assert.equal((await db.query<any>("SELECT has_function_privilege('service_role','public.begin_customer_auth_attempt_v2(text)','EXECUTE') ok")).rows[0].ok,true);
+      assert.equal((await db.query<Record<string, unknown>>("SELECT has_function_privilege('service_role','public.begin_customer_auth_attempt_v2(text)','EXECUTE') ok")).rows[0].ok,true);
     });
   } finally { await db.close(); }
 });

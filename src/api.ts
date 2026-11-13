@@ -2226,7 +2226,7 @@ export const groupBuyApi = {
       const token = getAuthToken();
       const user = getAuthUser() as AuthUser | null;
       const shopId = user?.shopId;
-      const result = await http<{ success: boolean; data: any }>(
+      const result = await http<{ success: boolean; data: { voucher?: GroupBuyVoucher; batch?: GroupBuyBatch; priceInfo?: { price: number; description: string }; availableBatches?: GroupBuyBatch[]; needBind?: boolean } }>(
         `${API_BASE}/group-buy/vouchers/verify`,
         {
           method: 'POST',
@@ -2271,7 +2271,7 @@ export const groupBuyApi = {
       const token = getAuthToken();
       const user = getAuthUser() as AuthUser | null;
       const shopId = user?.shopId;
-      const result = await http<{ success: boolean; data: any }>(
+      const result = await http<{ success: boolean; data: { voucher?: GroupBuyVoucher; batch?: GroupBuyBatch; priceInfo?: { price: number; description: string }; availableBatches?: GroupBuyBatch[]; needBind?: boolean } }>(
         `${API_BASE}/group-buy/vouchers/redeem`,
         {
           method: 'POST',

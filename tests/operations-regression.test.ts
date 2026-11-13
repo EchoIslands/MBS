@@ -7,7 +7,7 @@ import {upgradeOperations} from '../scripts/upgrade-operations.js';
 
 test('033–041真实SQL：领券、退款、会员、库存、奖励、团购与新结算账本防重',async(t)=>{
   const db=new PGlite();
-  const query=async(sql:string,values?:unknown[])=>values?db.query(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []};
+  const query=async(sql:string,values?:unknown[])=>values?db.query<Record<string, unknown>>(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []};
   const scalar=async(sql:string)=>Object.values((await db.query(sql)).rows[0] as object)[0];
   try {
     await db.exec('CREATE ROLE service_role; CREATE ROLE anon; CREATE ROLE authenticated;');
@@ -39,14 +39,14 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
     await t.test('邀请绑定与领券一起提交，重试返回同一张券，不替别人领取',async()=>{
       await db.exec("INSERT INTO coupons(id,shop_id,name,value,remaining_quantity,per_customer_limit) VALUES('invite','s','Synthetic invite',20,-1,1); INSERT INTO referral_records(id,shop_id,referrer_id,coupon_id) VALUES('ref','s','d','invite')");
       await assert.rejects(db.query("SELECT * FROM claim_coupon_atomic('invite','d','s','ref')"),/REFERRAL_UNAVAILABLE/);
-      const first=(await db.query<any>("SELECT * FROM claim_coupon_atomic('invite','c','s','ref')")).rows[0];
-      const again=(await db.query<any>("SELECT * FROM claim_coupon_atomic('invite','c','s','ref')")).rows[0];
+      const first=(await db.query<Record<string, unknown>>("SELECT * FROM claim_coupon_atomic('invite','c','s','ref')")).rows[0];
+      const again=(await db.query<Record<string, unknown>>("SELECT * FROM claim_coupon_atomic('invite','c','s','ref')")).rows[0];
       assert.equal(again.id,first.id);assert.equal(await scalar("SELECT referred_id FROM referral_records WHERE id='ref'"),'c');
       await assert.rejects(db.query("SELECT * FROM claim_coupon_atomic('invite','d','s','ref')"),/REFERRAL_UNAVAILABLE/);
     });
     await t.test('退款申请幂等，订单状态失败时申请整笔回滚',async()=>{
       await db.exec("INSERT INTO product_orders(id,shop_id,customer_id,order_no,status,payment_method,payment_status,payable_amount,total_amount) VALUES('o','s','c','NO1','paid','balance','paid',10,10),('rollback','s','c','NO2','paid','balance','paid',10,10)");
-      const request=()=>db.query<any>("SELECT * FROM request_product_refund_atomic('o','c','s','Synthetic reason')");
+      const request=()=>db.query<Record<string, unknown>>("SELECT * FROM request_product_refund_atomic('o','c','s','Synthetic reason')");
       const [a,b]=await Promise.all([request(),request()]);assert.equal(a.rows[0].id,b.rows[0].id);
       assert.equal(await scalar("SELECT status FROM product_orders WHERE id='o'"),'refunding');
       await db.exec("CREATE FUNCTION reject_refund_status() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='rollback' THEN RAISE EXCEPTION 'SYNTHETIC_STATUS_FAILURE'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_status BEFORE UPDATE ON product_orders FOR EACH ROW EXECUTE FUNCTION reject_refund_status();");
@@ -75,7 +75,7 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
       await db.exec('DROP TRIGGER reject_log ON product_inventory_logs');
     });
     await t.test('会员办理与流水权益同事务；并发余额变化拒绝旧快照覆盖',async()=>{
-      const apply=(expected:any,patch:any,tx:any,benefits:any[]=[])=>db.query("SELECT * FROM apply_membership_atomic('c','s',$1,$2,NULL,$3,$4,NULL)",[expected,patch,tx,benefits]);
+      const apply=(expected:unknown,patch:unknown,tx:unknown,benefits:unknown[]=[])=>db.query("SELECT * FROM apply_membership_atomic('c','s',$1,$2,NULL,$3,$4,NULL)",[expected,patch,tx,benefits]);
       const tx={id:'sv1',type:'recharge',amount:100,note:'Synthetic',created_by:'staff'};
       await apply({balance:0,stored_value_balance:0},{balance:100,stored_value_balance:100,stored_value_level:'store_500'},tx);
       assert.equal(Number(await scalar("SELECT balance FROM customers WHERE id='c'")),100);
@@ -131,7 +131,7 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
       assert.equal(await scalar("SELECT COUNT(*)::integer FROM membership_enrollments WHERE customer_id='d'"),1);
     });
     await t.test('撤销会员记录与客户状态同事务，旧快照不会产生半撤销',async()=>{
-      const call=()=>db.query<any>("SELECT revoke_membership_atomic('d','s',NULL,'staff','Staff','Synthetic') result");
+      const call=()=>db.query<{result:{customer:{purchase_vip_level:string}}}>("SELECT revoke_membership_atomic('d','s',NULL,'staff','Staff','Synthetic') result");
       await db.exec("CREATE FUNCTION reject_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.purchase_vip_level='regular' THEN RAISE EXCEPTION 'SYNTHETIC_REVOKE_FAILURE'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_revoke BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION reject_revoke();");
       await assert.rejects(call(),/SYNTHETIC_REVOKE_FAILURE/);
       assert.equal(await scalar("SELECT status FROM membership_enrollments WHERE customer_id='d'"),'active');
@@ -141,7 +141,7 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
     });
     await t.test('服务退款只取本人实付金额，同单申请防重，未付款拒绝',async()=>{
       await db.exec(`INSERT INTO bookings(id,shop_id,customer_id,scheduled_time) VALUES('refund-booking','s','c',NOW()),('unpaid-booking','s','c',NOW()); INSERT INTO settlements(id,shop_id,customer_id,booking_id,total,payment_method,payment_status,items) VALUES('refund-paid','s','c','refund-booking',33.64,'cash','completed','[{"type":"service","name":"Synthetic"}]')`);
-      const request=()=>db.query<any>("SELECT * FROM request_service_refund_atomic('c','s','refund-booking','Synthetic')");
+      const request=()=>db.query<Record<string, unknown>>("SELECT * FROM request_service_refund_atomic('c','s','refund-booking','Synthetic')");
       const [a,b]=await Promise.all([request(),request()]);assert.equal(a.rows[0].id,b.rows[0].id);assert.equal(Number(a.rows[0].amount),33.64);
       await assert.rejects(db.query("SELECT * FROM request_service_refund_atomic('d','s','refund-booking','Synthetic')"),/ORDER_NOT_FOUND/);
       await assert.rejects(db.query("SELECT * FROM request_service_refund_atomic('c','s','unpaid-booking','Synthetic')"),/ORDER_NOT_REFUNDABLE/);
@@ -149,12 +149,12 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
     await t.test('服务退款完成必须登记回执，金额和时间写入退款记录',async()=>{
       await db.exec("INSERT INTO refund_requests(id,shop_id,customer_id,customer_name,amount,status,reason) VALUES('service-refund-receipt','s','c','Synthetic one',12,'approved','Synthetic');");
       await assert.rejects(db.query("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original',NULL,12,NOW())"),/REFUND_RECEIPT_REQUIRED/);
-      const result=await db.query<any>("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original','receipt-001',12,NOW())");
+      const result=await db.query<Record<string, unknown>>("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original','receipt-001',12,NOW())");
       assert.equal(result.rows[0].status,'completed');
       assert.equal(result.rows[0].refund_receipt_ref,'receipt-001');
       assert.equal(Number(result.rows[0].refund_receipt_amount),12);
       assert.equal(await scalar("SELECT COUNT(*)::integer FROM refund_requests WHERE id='service-refund-receipt' AND status='completed'"),1);
-      const again=await db.query<any>("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original','receipt-001',12,NOW())");
+      const again=await db.query<Record<string, unknown>>("SELECT * FROM complete_service_refund_atomic('service-refund-receipt','s','staff','Staff','original','receipt-001',12,NOW())");
       assert.equal(again.rows[0].refund_receipt_ref,'receipt-001');
     });
     await t.test('结算奖励原子、按单幂等，推荐转化一次；奖励失败结算也回滚',async()=>{

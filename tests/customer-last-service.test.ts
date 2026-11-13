@@ -11,17 +11,17 @@ test('隔离数据库：上次服务资料与正式结算同事务同步',async(
     for(const file of ['001_baseline_schema.sql','007_create_product_tables.sql','010_add_shipping_to_orders.sql','009_create_product_inventory_logs.sql','011_create_product_order_refunds.sql','013_create_group_buy.sql','016_fix_coupon_schema.sql','019_create_customer_packages.sql','020_create_package_usage_logs.sql','021_create_membership_enrollments.sql']) {
       await db.exec((await readFile(new URL('../migrations/'+file,import.meta.url),'utf8')).replace(/^\uFEFF/,''));
     }
-    await setupDatabase({query:async(sql,values)=>values?db.query(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []}},()=>{});
+    await setupDatabase({query:async(sql,values)=>values?db.query<Record<string, unknown>>(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []}},()=>{});
     await db.exec(`INSERT INTO shops(id,name) VALUES('s','Synthetic shop'),('other','Other shop');
       INSERT INTO customers(id,shop_id,name,phone,stored_value_balance,balance,last_stylist,last_service_items,last_visit_at)
         VALUES('c','s','Synthetic customer','13800000001',100,100,'历史发型师',ARRAY['历史服务'],'2020-01-01T03:00:00Z');
       INSERT INTO employees(id,shop_id,name,role) VALUES('stylist','s','预约发型师','stylist');
       INSERT INTO bookings(id,shop_id,customer_id,stylist_id,stylist_name,service_id,scheduled_time,status)
         VALUES('booking','s','c','stylist','预约发型师','svc',NOW(),'pending');`);
-    const snapshot=async()=> (await db.query<any>("SELECT last_stylist,last_service_items,last_visit_at FROM customers WHERE id='c'")).rows[0];
+    const snapshot=async()=> (await db.query<Record<string, unknown>>("SELECT last_stylist,last_service_items,last_visit_at FROM customers WHERE id='c'")).rows[0];
     const before=await snapshot();
-    const payload=(id:string,method='cash',booking:string|null=null,items?:any[])=>({id,shop_id:'s',customer_id:'c',booking_id:booking,items:items||[{id:'svc',type:'service',name:'实际洗剪吹',quantity:1,originalPrice:10,employeeId:'stylist',employeeName:'直接开单发型师'}],total:10,subtotal:10,discount:0,payment_method:method,checkout_request_key:id});
-    const create=(body:any,complete=true)=>db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,$4)',[JSON.stringify(body),'cashier','收银员',complete]);
+    const payload=(id:string,method='cash',booking:string|null=null,items?:{[key:string]:unknown;originalPrice?:number}[])=>({id,shop_id:'s',customer_id:'c',booking_id:booking,items:items||[{id:'svc',type:'service',name:'实际洗剪吹',quantity:1,originalPrice:10,employeeId:'stylist',employeeName:'直接开单发型师'}],total:10,subtotal:10,discount:0,payment_method:method,checkout_request_key:id});
+    const create=(body:unknown,complete=true)=>db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,$4)',[JSON.stringify(body),'cashier','收银员',complete]);
     const finish=(id:string)=>db.query("SELECT * FROM finalize_settlement_atomic($1,'s','cashier','收银员')",[id]);
     await t.test('预约、确认、服务完成、结算草稿均不改历史；正式结算三项一起更新',async()=>{
       await db.exec("UPDATE bookings SET status='confirmed' WHERE id='booking'; UPDATE bookings SET status='completed' WHERE id='booking';");
@@ -32,7 +32,7 @@ test('隔离数据库：上次服务资料与正式结算同事务同步',async(
       const row=await snapshot();
       assert.equal(row.last_stylist,'预约发型师');
       assert.deepEqual(row.last_service_items,['实际洗剪吹']);
-      const visit=(await db.query<any>("SELECT check_in_time FROM customer_visit_records WHERE id='visit_booked'")).rows[0];
+      const visit=(await db.query<Record<string, unknown>>("SELECT check_in_time FROM customer_visit_records WHERE id='visit_booked'")).rows[0];
       assert.deepEqual(row.last_visit_at,visit.check_in_time);
     });
     await t.test('重复完成不覆盖后续人工修正；重装迁移不重放历史',async()=>{
@@ -69,7 +69,7 @@ test('隔离数据库：上次服务资料与正式结算同事务同步',async(
       await db.exec("CREATE FUNCTION reject_service_snapshot() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.last_stylist='触发故障' THEN RAISE EXCEPTION 'SYNTHETIC_SNAPSHOT_FAILURE'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_service_snapshot BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION reject_service_snapshot()");
       await assert.rejects(create(payload('fail','cash',null,[{id:'svc',type:'service',name:'失败项目',employeeName:'触发故障',quantity:1,originalPrice:10}])),/SYNTHETIC_SNAPSHOT_FAILURE/);
       assert.deepEqual(await snapshot(),previous);
-      assert.equal((await db.query<any>("SELECT COUNT(*)::int n FROM settlements WHERE id='fail'")).rows[0].n,0);
+      assert.equal((await db.query<Record<string, unknown>>("SELECT COUNT(*)::int n FROM settlements WHERE id='fail'")).rows[0].n,0);
     });
     await t.test('无可信到店记录、错归属记录不能串写；客户端角色不可直接执行触发函数',async()=>{
       const previous=await snapshot();
@@ -77,7 +77,7 @@ test('隔离数据库：上次服务资料与正式结算同事务同步',async(
       await db.exec("INSERT INTO settlements(id,shop_id,customer_id,items,payment_status) VALUES('foreign','s','c','[{\"type\":\"service\"}]','completed'),('legacy','s','c','[{\"type\":\"service\"}]','completed')");
       assert.deepEqual(await snapshot(),previous);
       for(const role of ['anon','authenticated','service_role']) {
-        const result=await db.query<any>("SELECT has_function_privilege($1,'public.sync_customer_last_service()','EXECUTE') allowed",[role]);
+        const result=await db.query<Record<string, unknown>>("SELECT has_function_privilege($1,'public.sync_customer_last_service()','EXECUTE') allowed",[role]);
         assert.equal(result.rows[0].allowed,role==='service_role');
       }
     });

@@ -11,7 +11,7 @@ import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, isCustomerVerified
 import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { operationError } from '../lib/rpcErrors.js';
-import {businessDayRange,businessDate} from '../lib/businessTime.js';
+import {businessDayRange} from '../lib/businessTime.js';
 import {imageReference,sendStoredImage,restoreImageReference} from '../lib/imageData.js';
 import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
 import { serviceWithStylistRequirements, stylistCanPerformService } from '../../shared/lib/serviceEligibility.js';
@@ -24,7 +24,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
 } from '../../shared/lib/membership.js';
-import { Customer, Coupon, CustomerCoupon, CouponType, CouponScope, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
+import { Customer, Coupon, CustomerCoupon, ProductCategory, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, PurchaseVIPLevel, StoredValueLevel } from '../../shared/types.js';
 import { handleWechatCallback } from '../services/paymentService.js';
 import { recordWechatReceipt } from '../services/settlementReceipt.js';
 import { compareSettlements } from '../../shared/lib/settlementDisplay.js';
@@ -620,7 +620,7 @@ bookingsRouter.get('/', async (req: Request, res: Response) => {
     const bookings = (data || []).map(b => req.employee ? bookingFromDb(b) : {
       scheduledTime: b.scheduled_time, scheduledEndTime: b.scheduled_end_time,
       stylistId: b.stylist_id, barberId: b.stylist_id, serviceId: b.service_id, status: b.status,
-      duration: Math.max(1, Number((slotShop?.services || []).find((service:any) => String(service.id)===String(b.service_id))?.duration) || 30),
+      duration: Math.max(1, Number((slotShop?.services || []).find((service: { id: string; duration?: number }) => String(service.id)===String(b.service_id))?.duration) || 30),
     });
     const total = count || 0;
     const totalPages = Math.ceil(total / size);
@@ -734,7 +734,7 @@ bookingsRouter.get('/:id', async (req: Request, res: Response) => {
 bookingsRouter.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, customerId } = req.body;
+    const { status } = req.body;
     const employee = req.employee;
 
     if (!status || !['pending', 'confirmed', 'completed', 'cancelled'].includes(status)) {
@@ -950,7 +950,7 @@ bookingsRouter.put('/:id/cancel', async (req: Request, res: Response) => {
 bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { stylistId, stylistName } = req.body;
+    const { stylistId } = req.body;
     const employee = req.employee!;
 
     if (!stylistId) {
@@ -1415,7 +1415,7 @@ bookingsRouter.put('/:id/service-time', authMiddleware, async (req: Request, res
 // 创建预约
 bookingsRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const { shopId, customerId, serviceId, scheduledTime, notes, customerName, stylistId, stylistName, serviceName, price } = req.body;
+    const { shopId, customerId, serviceId, scheduledTime, notes, stylistId } = req.body;
 
     if (!shopId || !customerId || !serviceId || !scheduledTime) {
       return res.status(400).json({
@@ -1444,7 +1444,7 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
       stylistId ? supabase.from('employees').select('name, role, is_gold_stylist').eq('id', stylistId).eq('shop_id', shopId).eq('is_active', true).maybeSingle() : Promise.resolve({ data: null, error: null }),
     ]);
     if (customerResult.error || shopResult.error || stylistResult.error) return res.status(503).json({ success: false, error: '预约基础信息暂不可用' });
-    const service = (shopResult.data?.services || []).find((s: any) => String(s.id) === String(serviceId) && s.isActive !== false);
+    const service = (shopResult.data?.services || []).find((s: { id: string; name: string; price: number; duration?: number; isActive?: boolean }) => String(s.id) === String(serviceId) && s.isActive !== false);
     if (!customerResult.data || !service || (stylistId && !stylistResult.data)) return res.status(400).json({ success: false, error: '顾客、服务或设计师不属于本店有效目录' });
     const requiredService = serviceWithStylistRequirements(shopId, service);
     if ((requiredService.requiresGoldStylist || requiredService.requiresShopManager) && !stylistId) return res.status(400).json({ success: false, error: '该服务需选择对应级别的发型师' });
@@ -1459,7 +1459,6 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
     const finalStylistName = stylistResult.data?.name || '';
 
     // 按店铺 + 预约日期 + 同一时段 + 有效状态统计排队人数，用于生成更合理的排队号
-    const {start:scheduledDateStart,end:scheduledDateEnd}=businessDayRange(businessDate(scheduledTimeDate))!;
 
     const slotStart = getBookingTimeSlotStart(scheduledTimeDate);
     const slotEnd = new Date(slotStart);
@@ -3062,7 +3061,6 @@ reviewsRouter.post('/', customerSession, async (req: Request, res: Response) => 
       shopId,
       customerId,
       bookingId,
-      stylistId,
       serviceScore,
       stylistScore,
       serviceComment,
@@ -3666,36 +3664,6 @@ const productInventoryLogFromDb = (r: Record<string, unknown>): Record<string, u
   operatorName: r.operator_name,
   createdAt: r.created_at,
 });
-
-// 写入库存变动记录
-const insertInventoryLog = async (payload: {
-  shopId: string;
-  productId: string;
-  productName: string;
-  changeAmount: number;
-  stockAfter: number;
-  type: 'sale' | 'refund' | 'manual_adjust' | 'init' | 'cancel';
-  orderId?: string;
-  reason?: string;
-  operatorId?: string;
-  operatorName?: string;
-}) => {
-  const id = `pil_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-  await supabase.from('product_inventory_logs').insert({
-    id,
-    shop_id: payload.shopId,
-    product_id: payload.productId,
-    product_name: payload.productName,
-    change_amount: payload.changeAmount,
-    stock_after: payload.stockAfter,
-    type: payload.type,
-    order_id: payload.orderId || null,
-    reason: payload.reason || '',
-    operator_id: payload.operatorId || null,
-    operator_name: payload.operatorName || '',
-    created_at: new Date().toISOString(),
-  });
-};
 
 // 将 products 表数据同步回 shops.products JSONB（保持现有 H5/小程序读取 shop.products 的兼容性）
 const syncShopProductsJsonb = async (shopId: string) => {
@@ -4928,12 +4896,8 @@ async function processSettlementAfterPayment(params: {
 }): Promise<void> {
   const {
     shopId,
-    customerId,
     settlementId,
     bookingId,
-    total,
-    paymentMethod,
-    usedBenefitIds,
     processedByEmployee,
     manualPaidAt,
     logStep,
@@ -4967,14 +4931,8 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     const {
       id,
       customerId,
-      customerName,
       bookingId,
       items,
-      subtotal,
-      discountDetail,
-      discount,
-      tax,
-      total,
       paymentMethod,
       usedBenefitIds,
       paymentStatus,

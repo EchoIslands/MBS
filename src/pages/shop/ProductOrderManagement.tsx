@@ -119,9 +119,9 @@ const ProductOrderManagement: React.FC = () => {
     }
   }, [shopId, activeTab, keyword, page, pageSize]);
 
-  useEffect(() => {
+  useEffect(() => {const cleanupCounter=requestSequence;
     void fetchOrders();
-    return () => { requestSequence.current++; };
+    return () => { cleanupCounter.current++; };
   }, [fetchOrders]);
 
   const totalPages = useMemo(() => Math.ceil(total / pageSize) || 1, [total, pageSize]);

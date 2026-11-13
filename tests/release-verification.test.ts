@@ -12,7 +12,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
   const queries: string[] = [];
   const connection: SetupConnection = { query: async (sql, values) => {
     queries.push(sql);
-    if (values) return db.query(sql, values);
+    if (values) return db.query<Record<string, unknown>>(sql,values);
     return { rows: (await db.exec(sql)).at(-1)?.rows || [] };
   } };
   try {
@@ -87,7 +87,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     assert.ok(queries.every(sql => /^(SELECT|WITH password_states AS|BEGIN READ ONLY|ROLLBACK|SET LOCAL statement_timeout)/.test(sql)));
     assert.equal((await verifyRelease(connection, { expectedPendingPasswords: 0 })).passed, true);
     assert.equal((await verifyRelease(connection, { expectedPendingPasswords: 8 })).passed, false);
-    assert.equal((await db.query<any>('SELECT password_hash FROM customers')).rows[0].password_hash, 'synthetic');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT password_hash FROM customers')).rows[0].password_hash, 'synthetic');
     // 复现旧迁移只撤 PUBLIC 后仍遗留的 20 条有效授权。
     await db.exec('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;');
     const exposed = await verifyRelease(connection);
@@ -121,14 +121,14 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     assert.equal((await verifyRelease(connection)).passed,true);
     await fixRpcPermissions(connection); // 重入不影响数据和有效授权。
     assert.equal((await verifyRelease(connection)).passed, true);
-    assert.equal((await db.query<any>('SELECT password_hash FROM customers')).rows[0].password_hash, 'synthetic');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT password_hash FROM customers')).rows[0].password_hash, 'synthetic');
     await db.exec('SET ROLE anon');
     await assert.rejects(db.query("SELECT public.begin_customer_auth_attempt('synthetic-test')"), /permission denied/i);
     await db.exec('RESET ROLE');
     // 中途缺签名时，前面已经撤销的权限也须回滚。
     await db.exec('GRANT EXECUTE ON FUNCTION public.begin_customer_auth_attempt(TEXT) TO anon; DROP FUNCTION public.finish_customer_auth_attempt(TEXT,BOOLEAN);');
     await assert.rejects(fixRpcPermissions(connection), /RPC_MISSING/);
-    assert.equal((await db.query<any>("SELECT has_function_privilege('anon','public.begin_customer_auth_attempt(text)','EXECUTE') allowed")).rows[0].allowed, true);
+    assert.equal((await db.query<Record<string, unknown>>("SELECT has_function_privilege('anon','public.begin_customer_auth_attempt(text)','EXECUTE') allowed")).rows[0].allowed, true);
     await setupDatabase(connection, () => {}); // 重建缺函数并应用 030，不重置客户。
     await db.exec('GRANT EXECUTE ON FUNCTION public.pay_product_order_atomic(TEXT,TEXT) TO anon; ALTER TABLE customer_auth_limits DISABLE ROW LEVEL SECURITY; ALTER TABLE customers DROP COLUMN password_reset_at;');
     const unsafe = await verifyRelease(connection);

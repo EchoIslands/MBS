@@ -12,7 +12,7 @@ test('微信订单页的状态条件使用动态绑定，并显式包含在小�
   assert.ok(conditions.length >= 6);
   for (const condition of conditions) assert.match(condition, /^\{\{.+\}\}$/, '静态字符串会被当作恒真条件');
   const config = JSON.parse(await readFile(new URL('project.config.json', root), 'utf8'));
-  assert.ok(config.packOptions.include.some((rule: any) => rule.type === 'folder' && rule.value === 'pages/payment-order'));
+  assert.ok(config.packOptions.include.some((rule: {type:string;value:string}) => rule.type === 'folder' && rule.value === 'pages/payment-order'));
 });
 
 test('真实项目说明与微信长度限制；无明细拒绝，不把内部单号伪装为商品', () => {
@@ -31,7 +31,7 @@ test('微信订单详情：真实 HTTP + 本人凭证/同店归属/旧单号/失
   process.env.NODE_ENV = 'test';
   const { supabase } = await import('../backend/db/index.js');
   const { signCustomerToken } = await import('../backend/lib/tokens.js');
-  const tables: Record<string, any[]> = {
+  const tables: Record<string, Record<string, unknown>[]> = {
     customers: [{id:'c1',shop_id:'s1',password_hash:'synthetic-hash',is_weak_password:false},{id:'c2',shop_id:'s1',password_hash:'synthetic-hash',is_weak_password:false}],
     wechat_payment_attempts: [{gateway_order_no:'gateway_123',payment_id:'payment_123',state:'active'},{gateway_order_no:'gateway_old',payment_id:'payment_123',state:'closed'}],
     payments: [{id:'payment_123',settlement_id:'settle1',customer_id:'c1',shop_id:'s1',channel:'wechat_native',amount:33.64,status:'paid',paid_at_source:'wechat_success_time',paid_at:'2026-10-24T07:34:31Z',transaction_id:'420000001',request_body:'PRIVATE',created_at:'2026-10-24T07:28:20Z'}],
@@ -40,27 +40,27 @@ test('微信订单详情：真实 HTTP + 本人凭证/同店归属/旧单号/失
   };
   let fail = '';
   class Query {
-    filters: ((r:any)=>boolean)[] = []; cols = '*'; single = false;
+    filters: ((r:Record<string, unknown>)=>boolean)[] = []; cols = '*'; single = false;
     constructor(public table:string) {}
     select(cols:string){this.cols=cols;return this;}
     eq(k:string,v:unknown){this.filters.push(r=>r[k]===v);return this;}
     maybeSingle(){this.single=true;return this;}
     order(){return this;} limit(){return this;}
-    then(resolve:any,reject:any){
+    then(resolve:(value:{data:unknown;error:unknown;count?:number})=>unknown,reject:(error:unknown)=>unknown){
       if(fail===this.table) return Promise.resolve({data:null,error:{code:'synthetic'}}).then(resolve,reject);
       const data=(tables[this.table]||[]).filter(row=>this.filters.every(f=>f(row))).map(row=>Object.fromEntries(this.cols.split(',').map(k=>k.trim()).map(k=>[k,row[k]])));
       return Promise.resolve({data:this.single?data[0]||null:data,error:null}).then(resolve,reject);
     }
   }
-  (supabase as any).from = (table:string)=>new Query(table);
+  Object.assign(supabase, {from:(table:string)=>new Query(table)});
   const { default: express } = await import('express');
   const { default: router } = await import('../backend/routes/customerPaymentOrders.js');
   const app = express(); app.use('/api/customer-payment-orders', router);
   const server = createServer(app); server.listen(0,'127.0.0.1');
   await new Promise<void>(r=>server.once('listening',()=>r()));
-  const base='http://127.0.0.1:'+(server.address() as any).port;
+  const base='http://127.0.0.1:'+(server.address() as import("node:net").AddressInfo).port;
   const realFetch=globalThis.fetch;
-  globalThis.fetch=((input:any,init:any)=> { assert.ok(String(input).startsWith(base+'/api/'), '禁止外网'); return realFetch(input,init); }) as typeof fetch;
+  globalThis.fetch=((input:Parameters<typeof fetch>[0],init:Parameters<typeof fetch>[1])=> { assert.ok(String(input).startsWith(base+'/api/'), '禁止外网'); return realFetch(input,init); }) as typeof fetch;
   const token=signCustomerToken('c1','s1','synthetic-hash');
   const get=async(no='gateway_123',auth=token)=>{
     const response=await fetch(base+'/api/customer-payment-orders/'+no,{headers:auth?{Authorization:'Bearer '+auth}:{}});
@@ -87,21 +87,21 @@ test('微信订单详情：真实 HTTP + 本人凭证/同店归属/旧单号/失
   } finally { globalThis.fetch=realFetch; await new Promise<void>(r=>server.close(()=>r())); }
 });
 
-async function miniHarness(route='pages/payment-order/payment-order', options:any={outTradeNo:'gateway_123'}) {
-  const redirects:any[]=[];
+async function miniHarness(route='pages/payment-order/payment-order', options:Record<string,unknown>={outTradeNo:'gateway_123'}) {
+  const redirects:{url:string}[]=[];
   const context=vm.createContext({
     console, setTimeout, clearTimeout,
     getCurrentPages:()=>[{route,options}],
-    wx:{reLaunch:(o:any)=>redirects.push(o),showToast(){},getStorageSync:()=>'',setStorageSync(){},removeStorageSync(){}},
+    wx:{reLaunch:(o:{url:string})=>redirects.push(o),showToast(){},getStorageSync:()=>'',setStorageSync(){},removeStorageSync(){}},
     getCustomerId:()=> 'c1', getToken:()=> 'token', getPasswordChangeRequired:()=>false,
     setCustomerId(){}, clearCustomerId(){}, changeCustomerPassword:async()=>{},
     loginCustomer:async()=>({customer:{id:'c1',mustChangePassword:false}}),
-    Page:(page:any)=>{ context.page=page; },
+    Page:(page:vm.Context)=>{ context.page=page; },
   });
   const load=async(file:string)=>{
     const source=(await readFile(new URL('../mini-program/'+file,import.meta.url),'utf8')).replace(/^import[\s\S]*?from ['"][^'"]+['"];?\r?$/gm,'').replace(/^export /gm,'');
     vm.runInContext(source,context,{filename:file});
-    if(context.page)context.page.setData=(patch:any)=>Object.assign(context.page.data,patch);
+    if(context.page)context.page.setData=(patch:Record<string,unknown>)=>Object.assign(context.page.data,patch);
   };
   await load('utils/payment-order-link.js');
   return {context,redirects,load};
@@ -145,7 +145,7 @@ test('订单 Page：金额与北京时间、失败重试、切换账号和离页
   h.context.get=async()=>{throw new Error('合成503');}; await page.loadOrder();
   assert.equal(page.data.order,null); assert.equal(page.data.error,'合成503'); assert.equal(page.data.loading,false);
   h.context.get=async()=>({data}); await page.loadOrder(); assert.equal(page.data.error,'');
-  let finish:any;
+  let finish:(value:unknown)=>void;
   h.context.get=()=>new Promise(resolve=>{finish=resolve;});
   const old=page.loadOrder(); page.onHide(); finish({data}); await old; assert.equal(page.data.order,null);
   const stale=page.loadOrder(); h.context.getCustomerId=()=> 'other'; finish({data}); await stale; assert.equal(page.data.order,null);

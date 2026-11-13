@@ -21,12 +21,12 @@ async function fixture(count: number) {
   const statements: string[] = [];
   let writes = 0;
   let salt = 0;
-  let hook: ((sql: string, values?: any[]) => Promise<{ rows: any[] } | void>) | undefined;
+  let hook: ((sql: string, values?: unknown[]) => Promise<{ rows: Record<string,unknown>[] } | void>) | undefined;
   const connection: PasswordConnection = { query: async (sql, values) => {
     statements.push(sql);
     const intercepted = await hook?.(sql, values);
     if (intercepted) return intercepted;
-    const result = await db.query(sql, values);
+    const result = await db.query<{[key:string]:unknown;password_hash?:string}>(sql,values);
     if (sql.startsWith('UPDATE')) writes++;
     if (sql.startsWith('SELECT id')) batches.push(result.rows.length);
     return result;
@@ -43,14 +43,14 @@ test('真实 SQL：105 条按 50/50/5 无 offset 分批，保留已有密码/余
   try {
     assert.equal((await f.run()).updated, 105);
     assert.deepEqual(f.batches, [50,50,5,0]);
-    const initialized=(await f.db.query<any>("SELECT * FROM customers WHERE id NOT IN ('existing','whitespace')")).rows;
+    const initialized=(await f.db.query<{[key:string]:unknown;password_hash?:string}>("SELECT * FROM customers WHERE id NOT IN ('existing','whitespace')")).rows;
     assert.equal(new Set(initialized.map(row=>row.password_hash)).size,105);
     for(const row of initialized) {
       assert.equal(row.is_weak_password,true);assert.equal(row.identity_verified,false);
       assert.equal(row.identity_verified_at,null);assert.equal(row.identity_verified_by,null);
       assert.ok(row.password_reset_at);assert.equal(Number(row.balance),321);
     }
-    const existing=(await f.db.query<any>("SELECT * FROM customers WHERE id='existing'")).rows[0];
+    const existing=(await f.db.query<{[key:string]:unknown;password_hash?:string}>("SELECT * FROM customers WHERE id='existing'")).rows[0];
     assert.equal(existing.password_hash,'existing-hash');assert.equal(existing.identity_verified,true);
     assert.equal((await f.run()).updated,0);assert.equal(f.writes(),105);
     assert.equal(f.logs.filter(line=>line.startsWith('[进度]')).length,3);
@@ -68,7 +68,7 @@ test('真实 SQL：读取后顾客并发设密，条件 UPDATE 不覆盖新密�
       }
     });
     const result=await f.run();assert.equal(result.updated,2);assert.equal(result.skipped,1);
-    const row=(await f.db.query<any>("SELECT * FROM customers WHERE password_hash='customer-concurrent-password'")).rows[0];
+    const row=(await f.db.query<{[key:string]:unknown;password_hash?:string}>("SELECT * FROM customers WHERE password_hash='customer-concurrent-password'")).rows[0];
     assert.equal(row.identity_verified,true);assert.equal(row.is_weak_password,false);
   }finally{await f.db.close();}
 });
@@ -114,7 +114,7 @@ test('真实 SQL 与 bcrypt：默认 cost12 每条随机盐，核实状态同条
   const f=await fixture(2);
   try{
     await f.run({hash:undefined});
-    const rows=(await f.db.query<any>("SELECT * FROM customers WHERE id NOT IN ('existing','whitespace') ORDER BY id")).rows;
+    const rows=(await f.db.query<{[key:string]:unknown;password_hash?:string}>("SELECT * FROM customers WHERE id NOT IN ('existing','whitespace') ORDER BY id")).rows;
     assert.notEqual(rows[0].password_hash,rows[1].password_hash);
     for(const row of rows){assert.match(row.password_hash,/^\$2[ab]\$12\$/);assert.ok(await bcrypt.compare('123456',row.password_hash));assert.equal(row.identity_verified,false);}
   }finally{await f.db.close();}

@@ -12,8 +12,8 @@ const bundle = await build({
 });
 
 function client(failure?: string, browserGlobals: Record<string, unknown> = {}) {
-  const requests: Record<string, any>[] = [];
-  const module = { exports: {} as any };
+  const requests: Record<string, unknown>[] = [];
+  const module = { exports: {} as typeof import("../src/api.js") };
   const context = vm.createContext({
     module, exports: module.exports, console, AbortController, setTimeout, clearTimeout, ...browserGlobals,
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
@@ -32,7 +32,7 @@ function client(failure?: string, browserGlobals: Record<string, unknown> = {}) 
   return { api: module.exports.customerApi, requests };
 }
 
-const previous = { id: 'synthetic-customer', name: 'Synthetic', phone: '13800000001', age: null, birthday: undefined, storedValueBalance: 10 };
+const previous: import('../shared/types.js').Customer = { id: 'synthetic-customer', name: 'Synthetic', phone: '13800000001', age: null, birthday: undefined, storedValueBalance: 10, tags:[], points:0, visitCount:0, totalSpent:0, purchaseVIPLevel:'regular' as import('../shared/types.js').PurchaseVIPLevel, storedValueLevel:'none' as import('../shared/types.js').StoredValueLevel, withdrawableReferralAmount:0, joinedAt:new Date('2026-01-01'), isStockholder:false };
 
 test('实际客户API：NULL年龄与undefined表单空值不产生空PUT', async () => {
   const { api, requests } = client();

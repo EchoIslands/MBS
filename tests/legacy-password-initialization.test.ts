@@ -27,15 +27,15 @@ test('一次性初始化 SQL：筛选、标记、重入和事务回滚（pgcrypt
   await assert.rejects(db.exec(sql),/SYNTHETIC_FAILURE/);await db.exec('ROLLBACK; DROP TRIGGER reject_init ON customers;');
   assert.equal((await db.query<{n:number}>('SELECT count(*)::integer n FROM customer_password_initialization_runs')).rows[0].n,0);
   await db.exec(sql);
-  const rows=(await db.query<any>('SELECT * FROM customers ORDER BY id')).rows;
+  const rows=(await db.query<Record<string, unknown>>('SELECT * FROM customers ORDER BY id')).rows;
   const initialized=rows.filter(r=>r.id!=='existing');
   assert.equal(initialized.length,2);assert.notEqual(initialized[0].password_hash,initialized[1].password_hash);
   for(const row of initialized){ assert.equal(row.is_weak_password,true);assert.equal(row.identity_verified,false);assert.equal(row.identity_verified_at,null);assert.equal(row.identity_verified_by,null);assert.ok(row.password_reset_at);assert.notEqual(row.password_hash,'123456'); }
   const existing=rows.find(r=>r.id==='existing');assert.equal(existing.password_hash,'preserved-hash');assert.equal(existing.identity_verified,true);assert.equal(existing.is_weak_password,false);
-  assert.equal((await db.query<any>('SELECT affected_count FROM customer_password_initialization_runs')).rows[0].affected_count,2);
+  assert.equal((await db.query<Record<string, unknown>>('SELECT affected_count FROM customer_password_initialization_runs')).rows[0].affected_count,2);
   await db.exec("INSERT INTO customers(id) VALUES ('future');");await db.exec(sql);
-  assert.deepEqual((await db.query<any>("SELECT password_hash,is_weak_password FROM customers WHERE id='future'")).rows[0],{password_hash:null,is_weak_password:false});
-  assert.deepEqual((await db.query<any>("SELECT * FROM customers WHERE id<>'future' ORDER BY id")).rows,rows);
+  assert.deepEqual((await db.query<Record<string, unknown>>("SELECT password_hash,is_weak_password FROM customers WHERE id='future'")).rows[0],{password_hash:null,is_weak_password:false});
+  assert.deepEqual((await db.query<Record<string, unknown>>("SELECT * FROM customers WHERE id<>'future' ORDER BY id")).rows,rows);
   // 同时确认服务端接受 bcrypt 的 2a 格式；实际 pgcrypto 加密需 Supabase 隔离项目验收。
   const hash=await bcrypt.hash('123456',12);assert.ok(await bcrypt.compare('123456',hash.replace('$2b$','$2a$')));
  } finally {await db.close();}

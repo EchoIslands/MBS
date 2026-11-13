@@ -1,3 +1,4 @@
+import type {FixtureRow as Row, FixtureRpcArgs} from './helpers/fixture-types.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
@@ -13,11 +14,11 @@ const { getJwtSecret } = await import('../backend/lib/tokens.js');
 const { default: jwt } = await import('jsonwebtoken');
 const realFetch = globalThis.fetch;
 let base = '';
-globalThis.fetch = ((input: any, init: any) => {
+globalThis.fetch = ((input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
   if (!String(input).startsWith(base + '/api/') || !base) throw new Error('测试禁止外网访问');
   return realFetch(input, init);
 }) as typeof fetch;
-type Row = Record<string, any>;
+
 const tables: Record<string, Row[]> = {
  employees: [
   {id:'ceo',shop_id:'s1',name:'Synthetic CEO',role:'ceo',phone:'synthetic-ceo',is_active:true,password_hash:'old-password'},
@@ -40,20 +41,20 @@ let failDashboardTable = '';
 let failCustomerRead = false;
 let syntheticRowCap: number | undefined;
 class Query {
- filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
+ filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: Row | Row[]; columns='*'; singleRow=false;
  rowStart=0;rowEnd:number|undefined;exactCount=false;
  constructor(public table:string) { calls++; }
  select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
- eq(k:string,v:any) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
- is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
- contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
- in(k:string,v:any[]) {this.filters.push(r=>v.includes(r[k]));return this;}
+ eq(k:string,v:unknown) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
+ is(k:string,v:unknown) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
+ contains(k:string,v:unknown[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
+ in(k:string,v:unknown[]) {this.filters.push(r=>v.includes(r[k]));return this;}
  gte(){return this;} lt(){return this;} order(){return this;} range(start:number,end:number){this.rowStart=start;this.rowEnd=end+1;return this;} limit(n:number){this.maxRows=n;return this;} maxRows?:number;
- update(v:any){this.operation='update';this.payload=v;return this;}
- insert(v:any){this.operation='insert';this.payload=v;return this;}
+ update(v:Row){this.operation='update';this.payload=v;return this;}
+ insert(v:Row | Row[]){this.operation='insert';this.payload=v;return this;}
  delete(){this.operation='delete';return this;}
  single(){this.singleRow=true;return this;} maybeSingle(){this.singleRow=true;return this;}
- then(resolve:any,reject:any){try{
+ then(resolve:(value:{data:unknown;error:unknown;count?:number})=>unknown,reject:(error:unknown)=>unknown){try{
   if(failDashboardTable === this.table) return Promise.resolve({data:null,error:{message:'synthetic dashboard unavailable'}}).then(resolve,reject);
   if(failCustomerRead && this.table==='customers') return Promise.resolve({data:null,error:{message:'synthetic customer unavailable'}}).then(resolve,reject);
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
@@ -68,16 +69,16 @@ class Query {
   return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null,count:this.exactCount?matched.length:null}).then(resolve,reject);
  }catch(e){return Promise.reject(e).then(resolve,reject);}}
 }
-(supabase as any).from=(table:string)=>new Query(table);
+Object.assign(supabase, {from:(table:string)=>new Query(table)});
 let rpcFailures = 0;
-let authDecisionOverride: any;
+let authDecisionOverride: Record<string, unknown>;
 let rejectAuthFinish = false;
 const authOutcomes: string[] = [];
 let failRpc = false;
-let draftDeleteError: any = null;
+let draftDeleteError: {message?:string;code?:string} | null = null;
 let completeCheckout = false;
 let checkoutRpcCalls = 0;
-(supabase as any).rpc = async (name: string, args: any) => {
+Object.assign(supabase, {rpc: async (name: string, args: FixtureRpcArgs) => {
  if (name==='confirm_product_receipt_atomic') {
   const row=(tables.product_orders||[]).find(r=>r.id===args.p_order_id&&r.customer_id===args.p_customer_id&&r.shop_id===args.p_shop_id);
   if(!row) return {data:null,error:{message:'ORDER_NOT_FOUND'}};
@@ -128,14 +129,14 @@ let checkoutRpcCalls = 0;
  if (name === 'begin_customer_auth_attempt_v2') return { data: [authDecisionOverride ?? (rpcFailures < 5 ? {allowed:true,attempt_id:'00000000-0000-4000-8000-000000000001'} : {allowed:false,reason:'temporary_lock',retry_after_seconds:900})], error: null };
  if (name === 'finish_customer_auth_attempt_v2') { authOutcomes.push(args.p_outcome); if(rejectAuthFinish)return {data:false,error:null}; if(args.p_outcome!=='cancelled') rpcFailures = args.p_outcome==='success' ? 0 : rpcFailures+1; return {data:true,error:null}; }
  return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
-};
+}});
 
 // 直接通过生产部署入口执行全部 HTTP 回归，覆盖移动后的动态导入链。
 const {default:handler}=await import('../api/index.js');
-const server=createServer((req,res)=>{ void handler(req as any,res as any); });
+const server=createServer((req,res)=>{ void handler(req as Parameters<typeof handler>[0],res as Parameters<typeof handler>[1]); });
 server.listen(0,'127.0.0.1');
 await new Promise<void>(r=>server.once('listening',()=>r()));
-base='http://127.0.0.1:'+(server.address() as any).port;
+base='http://127.0.0.1:'+(server.address() as import("node:net").AddressInfo).port;
 async function request(path:string, token='', method='GET', body?:unknown, cookie?:string){
  const response=await fetch(base+'/api'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(cookie?{Cookie:cookie}:{}),'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
  return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie'),retryAfter:response.headers.get('retry-after')};
@@ -256,11 +257,11 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   });
   await t.test('无登录与低权限被拒；发型师列表仅返回本人服务且同店客户',async()=>{
    assert.equal((await request('/customers')).status,401);
-   const own=await request('/customers',stylist);assert.equal(own.status,200);assert.deepEqual(own.body.data.map((r:any)=>r.id),['c1']);
+   const own=await request('/customers',stylist);assert.equal(own.status,200);assert.deepEqual(own.body.data.map((r:Record<string, unknown>)=>r.id),['c1']);
    assert.equal((await request('/customers/c2',stylist)).status,404);
    assert.equal((await request('/customers/c2/profile',stylist)).status,404);
    assert.equal((await request('/customers/c3',ceo)).status,404);
-   assert.equal((await request('/customers',ceo)).body.data.length,2);assert.ok((await request('/customers',ceo)).body.data.every((r:any)=>r.passwordHash===undefined));
+   assert.equal((await request('/customers',ceo)).body.data.length,2);assert.ok((await request('/customers',ceo)).body.data.every((r:Record<string, unknown>)=>r.passwordHash===undefined));
    for(const token of [stylist,manager]){
     assert.equal((await request('/customers',token,'POST',{name:'Synthetic',phone:'13800000000'})).status,403);
     assert.equal((await request('/customers/c2',token,'DELETE')).status,403);
@@ -307,8 +308,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/shops/s1',manager,'PUT',{name:'Synthetic updated'})).status,200);
   });
   await t.test('顾客手机号设密、哈希登录、身份隔离和员工重置',async()=>{
-   const before=calls;
-   const setup=await request('/customers/login','','POST',{phone:'13800000001'});
+      const setup=await request('/customers/login','','POST',{phone:'13800000001'});
    assert.equal(setup.status,200);assert.equal(setup.body.setupRequired,true);
    assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'12345',setupPassword:true})).status,400);
    const set=await request('/customers/login','','POST',{phone:'13800000001',password:'123456',setupPassword:true,client:'mini'});
@@ -357,7 +357,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     for(const reason of ['daily_limit','temporary_lock','verification_busy']) {
      authDecisionOverride={allowed:false,reason,retry_after_seconds:120};
      const before=calls;
-     const r=await request('/customers/login','','POST',{phone:'13800000001',password:'000001',client:'mini'});
+          const r=await request('/customers/login','','POST',{phone:'13800000001',password:'000001',client:'mini'});
      assert.equal(r.status,429); assert.equal(r.retryAfter,'120');
      assert.equal(r.body.code,'CUSTOMER_AUTH_'+reason.toUpperCase());
      assert.equal(r.body.retryAfterSeconds,120); assert.ok(Number.isFinite(Date.parse(r.body.retryAt)));
@@ -459,24 +459,24 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
   });
   await t.test('新版微信HTTP：网关超时后原号恢复，不按新目录重算；已付重试返回完成快照',async()=>{
    const {recoveryDependencies:deps}=await import('../backend/services/paymentRecovery.js');
-   const savedDeps={...deps},savedRpc=supabase.rpc,savedTables=[tables.settlements,tables.payments,tables.shops[0].services];
-   let rpcCount=0,gatewayCalls=0,failGateway=true,paid=false,attempt:any;
+   const savedDeps={...deps},savedRpc=supabase.rpc,savedTables=[tables.settlements,tables.payments,tables.shops[0].services] as const;
+   let rpcCount=0,gatewayCalls=0,failGateway=true,paid=false,attempt:Row;
    tables.settlements=[];tables.payments=[];tables.shops[0].services=[{id:'svc',name:'Synthetic',price:58}];
    const body={id:'http_atomic',customerId:'c1',items:[{type:'service',id:'svc',quantity:1}],paymentMethod:'wechat',total:58};
-   (supabase as any).rpc=async(name:string,args:any)=>{
+   Object.assign(supabase, {rpc: async(name:string,args:FixtureRpcArgs)=>{
     if(name!=='create_wechat_settlement_atomic') return savedRpc(name,args);
     rpcCount++;
     const s={...args.p_settlement,checkout_payment_started:true,server_priced:true,payment_status:'pending'};tables.settlements.push(s);
     tables.payments.push({id:args.p_payment_id,settlement_id:s.id,shop_id:s.shop_id,customer_id:s.customer_id,amount:s.total,status:'pending',channel:'wechat_native'});
     attempt={gateway_order_no:args.p_payment_id,payment_id:args.p_payment_id,state:'active'};
     return {data:{settlement:s,paymentCreated:true},error:null};
-   };
-   deps.rpc=(async(name:string,args:any)=>{
+   }});
+   deps.rpc=(async(name:string,args:FixtureRpcArgs)=>{
     if(name==='claim_wechat_recovery')return {data:{settlement:tables.settlements[0],payment:tables.payments[0],attempt},error:null};
     if(args.p_action==='request')attempt.request_body=args.p_data;
     if(args.p_action==='qr'){attempt.qr_updated_at=new Date().toISOString();tables.payments[0].code_url=args.p_data.code_url;}
     return {data:attempt,error:null};
-   }) as any;
+   }) as unknown as typeof deps.rpc;
    deps.request=(id,amount,description)=>({appid:'synthetic',mchid:'synthetic',description,out_trade_no:id,notify_url:'https://synthetic.invalid',amount:{total:Math.round(amount*100),currency:'CNY'}});
    deps.query=async()=>paid?{status:'paid',amount:58,tradeState:'SUCCESS',transactionId:'420000001',paidAt:'2026-10-23T01:02:03Z'}:{status:'pending',tradeState:'NOT_FOUND'};
    deps.create=async(request)=>{gatewayCalls++;assert.equal(request.amount.total,5800);if(failGateway)throw new Error('Synthetic gateway timeout');return {paymentId:request.out_trade_no,status:'pending',amount:58,codeUrl:'weixin://wxpay/synthetic'};};
@@ -491,7 +491,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(completed.status,200);assert.equal(completed.body.data.paymentStatus,'completed');assert.equal(completed.body.data.total,58);assert.equal(completed.body.data.payment,undefined);
     assert.equal((await request('/settlements',ceo,'POST',body)).body.data.paymentStatus,'completed');
     assert.equal(rpcCount,1);assert.equal(gatewayCalls,2);
-   }finally{Object.assign(deps,savedDeps);(supabase as any).rpc=savedRpc;[tables.settlements,tables.payments,tables.shops[0].services]=savedTables;}
+   }finally{Object.assign(deps,savedDeps);supabase.rpc=savedRpc;[tables.settlements,tables.payments,tables.shops[0].services]=savedTables;}
   });
   await t.test('伪造/过期 token、旧员工 token、数据库验证失败均不能放行',async()=>{
    const expired=jwt.sign({id:'c1',shopId:'s1',kind:'customer'},getJwtSecret(),{algorithm:'HS256',audience:'customer',issuer:'mbs',expiresIn:-1});
@@ -500,7 +500,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/customers/c1/public',forged)).status,401);
    assert.equal((await request('/customers',jwt.sign({id:'ceo',role:'ceo'},getJwtSecret()))).status,401);
    failAuthentication=true;assert.equal((await request('/customers',ceo)).status,503);failAuthentication=false;
-   const employees=await request('/employees',ceo);assert.equal(employees.status,200);assert.ok(employees.body.data.every((r:any)=>r.password_hash===undefined));
+   const employees=await request('/employees',ceo);assert.equal(employees.status,200);assert.ok(employees.body.data.every((r:Record<string, unknown>)=>r.password_hash===undefined));
   });
   await t.test('老客户初始密码：受限会话、强制改密、旧会话失效与身份状态独立', async () => {
    rpcFailures=0;
@@ -674,7 +674,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const added=await request('/customers',ceo,'POST',{id,name:'合成服务客户',phone:'13800000101',...fields});
     assert.equal(added.status,200);assert.equal(added.body.data.lastStylist,fields.lastStylist);
     const directory=await request('/customers',ceo);
-    const saved=directory.body.data.find((r:any)=>r.id===id);
+    const saved=directory.body.data.find((r:Record<string, unknown>)=>r.id===id);
     assert.deepEqual(saved.lastServiceItems,fields.lastServiceItems);assert.equal(saved.lastVisitAt,fields.lastVisitAt);
     const edit=await request('/customers/'+id,ceo,'PUT',{lastStylist:'人工修改',lastServiceItems:['护理'],_expected:fields});
     assert.equal(edit.status,200);assert.deepEqual(edit.body.data.lastServiceItems,['护理']);
@@ -735,11 +735,11 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const {signCustomerToken}=await import('../backend/lib/tokens.js');
    const hash=await hashPassword('246810');tables.customers[1].password_hash=hash;tables.customers[1].is_weak_password=false;
    const own=signCustomerToken('c2','s1',hash);
-   const savedRpc=(supabase as any).rpc;
-   const trace:{name:string;args:any}[]=[];
+   const savedRpc=supabase.rpc;
+   const trace:{name:string;args:FixtureRpcArgs}[]=[];
    let mode='ok';
    const rows=Array.from({length:206},(_,i)=>({settlement_id:'candidate-'+String(i).padStart(4,'0'),booking_id:null,amount:33.64,payment_method:'wechat',created_at:'2026-10-24T07:28:20Z',service_name:'Synthetic'}));
-   (supabase as any).rpc=async(name:string,args:any)=>{
+   Object.assign(supabase, {rpc: async(name:string,args:FixtureRpcArgs)=>{
     if(!['get_service_refund_candidates','request_settlement_refund_atomic','request_service_refund_atomic'].includes(name)) return savedRpc(name,args);
     trace.push({name,args});
     if(mode==='missing') return {data:null,error:{code:'PGRST202'}};
@@ -750,7 +750,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     if(args.p_customer_id!=='c2'||args.p_shop_id!=='s1')return {data:null,error:{message:'ORDER_NOT_FOUND'}};
     return {data:[{id:'synthetic-application',settlement_id:args.p_settlement_id || 'old-unique',booking_id:args.p_booking_id || null,
      shop_id:args.p_shop_id,customer_id:args.p_customer_id,amount:33.64,status:'pending',reason:args.p_reason}],error:null};
-   };
+   }});
    try {
     const url='/refunds/customer/c2';
     assert.equal((await request(url+'/candidates')).status,401);
@@ -774,7 +774,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(staff.status,201);assert.equal(trace.at(-1)?.args.p_shop_id,'s1');
     mode='second-page-failure';const failed=await request(url+'/candidates',own);assert.equal(failed.status,503);assert.equal(failed.body.data,undefined);
     mode='missing';assert.equal((await request(url+'/candidates',own)).status,503);assert.equal((await request(url,own,'POST',{settlementId:'walkin',reason:'Unavailable'})).status,503);
-   } finally {(supabase as any).rpc=savedRpc;}
+   } finally {supabase.rpc=savedRpc;}
   });
   await t.test('退款终态防反转、拒绝需原因、重复请求不产生二次处理',async()=>{
    tables.refund_requests=[{id:'refund-cas',shop_id:'s1',status:'pending',amount:10}];
@@ -974,7 +974,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const originalQuery=recoveryDependencies.query;
    const paidAt='2026-10-24T07:34:31.000Z';
    let queries=0;
-   let gateway:any={status:'paid',tradeState:'SUCCESS',amount:33.64,transactionId:'420000001',paidAt:'2026-10-24T15:34:31+08:00'};
+   let gateway:import("../backend/services/paymentService.js").GatewayStatus | Error={status:'paid',tradeState:'SUCCESS',amount:33.64,transactionId:'420000001',paidAt:'2026-10-24T15:34:31+08:00'};
    try {
     tables.settlements=[{id:'recheck',shop_id:'s1',customer_id:'c1',total:33.64,payment_method:'wechat',payment_status:'completed'}];
     tables.payments=[{id:'ledger1',shop_id:'s1',customer_id:'c1',settlement_id:'recheck',amount:33.64,status:'paid',paid_at:paidAt,paid_at_source:'wechat_success_time',transaction_id:'420000001'}];
@@ -991,7 +991,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     }
     assert.equal(queries,2);
     for(const change of [
-      {status:'pending',message:'微信查单暂不可用或验签未通过'},
+      {status:'pending' as const,message:'微信查单暂不可用或验签未通过'},
       {...gateway,amount:0.01}, {...gateway,transactionId:'different'}, {...gateway,paidAt:'2026-10-24T15:35:00+08:00'},
       {...gateway,paidAt:undefined}, new Error('synthetic unavailable'),
     ]) {

@@ -53,7 +53,7 @@ test('verified membership receipt activates exactly once and mismatched receipts
     await db.exec(migration);
     await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level) VALUES('viporder','s','c','vip','bronze',29,'wechat_mini','regular')");
     const paidAt=new Date().toISOString();
-    const finalize=(id:string,shop:string,tx:string,amount:number)=>db.query(
+    const finalize=(id:string,shop:string,tx:string,amount:number)=>db.query<{status:string}>(
       'SELECT status FROM finalize_paid_membership_order($1,$2,$3,$4,$5)',[id,shop,tx,paidAt,amount]);
     await assert.rejects(finalize('viporder','s','420000000001',30),/MEMBERSHIP_RECEIPT_MISMATCH/);
     await assert.rejects(finalize('viporder','other','420000000001',29),/MEMBERSHIP_ORDER_NOT_FOUND/);

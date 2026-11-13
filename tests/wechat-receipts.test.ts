@@ -36,7 +36,7 @@ test('旧单刚支付排第一，未知时间不猜，姓名金额和三种单�
 
 test('037真实SQL：微信凭据、结算、副作用同事务，重试与历史补记不重复扣费',async(t)=>{
   const db=new PGlite();
-  const query=async(sql:string,values?:any[])=>values ? db.query(sql,values) : {rows:(await db.exec(sql)).at(-1)?.rows || []};
+  const query=async(sql:string,values?:unknown[])=>values ? db.query<{[key:string]:unknown;paid_at?:string}>(sql,values) : {rows:(await db.exec(sql)).at(-1)?.rows || []};
   const scalar=async(sql:string)=>Object.values((await db.query(sql)).rows[0] as object)[0];
   try {
     await db.exec('CREATE ROLE service_role;CREATE ROLE anon;CREATE ROLE authenticated;ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon,authenticated;');
@@ -49,7 +49,7 @@ test('037真实SQL：微信凭据、结算、副作用同事务，重试与历�
     await t.test('旧单新付保留创建时间并记录微信时间，迟到/重复回调不改时间或重复统计',async()=>{
       await seed('one'); await finalize('one');
       await Promise.all([finalize('one'),finalize('one')]);
-      const row=(await db.query<any>("SELECT * FROM payments WHERE id='one-pay'")).rows[0];
+      const row=(await db.query<{[key:string]:unknown;paid_at?:string}>("SELECT * FROM payments WHERE id='one-pay'")).rows[0];
       assert.equal(new Date(row.paid_at).toISOString(),'2026-10-22T11:12:34.000Z');assert.equal(row.paid_at_source,'wechat_success_time');
       assert.equal(await scalar("SELECT payment_status FROM settlements WHERE id='one'"),'completed');
       assert.equal(Number(await scalar("SELECT visit_count FROM customers WHERE id='c'")),1);
@@ -102,7 +102,7 @@ test('037真实SQL：微信凭据、结算、副作用同事务，重试与历�
       await db.exec('ALTER TABLE payments RENAME COLUMN transaction_id TO renamed');
       await assert.rejects(upgradePaymentAudit({query}),/支付结构预检不通过/);
       await db.exec('ALTER TABLE payments RENAME COLUMN renamed TO transaction_id');
-      for(const role of ['anon','authenticated']) assert.equal((await db.query<any>("SELECT has_function_privilege($1,'public.finalize_verified_wechat_payment(text,text,text,timestamptz,numeric,text,text)','EXECUTE') AS allowed",[role])).rows[0].allowed,false);
+      for(const role of ['anon','authenticated']) assert.equal((await db.query<{[key:string]:unknown;paid_at?:string}>("SELECT has_function_privilege($1,'public.finalize_verified_wechat_payment(text,text,text,timestamptz,numeric,text,text)','EXECUTE') AS allowed",[role])).rows[0].allowed,false);
     });
   } finally {await db.close();}
 });

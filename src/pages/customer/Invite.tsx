@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Share2, Copy, Loader2, Gift } from 'lucide-react';
 import { useAppStore } from '../../store';
@@ -17,16 +17,7 @@ const CustomerInvite: React.FC = () => {
   const [referrerName, setReferrerName] = useState('会员');
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (!currentCustomer?.id) {
-      setLoading(false);
-      setError('请先登录');
-      return;
-    }
-    generateInvite();
-  }, [currentCustomer?.id]);
-
-  const generateInvite = async () => {
+  const generateInvite = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -52,7 +43,16 @@ const CustomerInvite: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentCustomer?.id]);
+
+  useEffect(() => {
+    if (!currentCustomer?.id) {
+      setLoading(false);
+      setError('请先登录');
+      return;
+    }
+    generateInvite();
+  }, [generateInvite, currentCustomer?.id]);
 
   const handleCopy = async () => {
     if (!inviteUrl) return;

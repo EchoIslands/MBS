@@ -1,12 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Gift,
   Plus,
   Search,
   X,
-  Calendar,
-  User,
-  Scissors,
   Trash2,
   Edit2,
   History,
@@ -56,7 +52,7 @@ const Packages: React.FC = () => {
 
   const canManage = userRole === UserRole.CEO || userRole === UserRole.SHOP_MANAGER;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -74,11 +70,11 @@ const Packages: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentShop?.id]);
 
   useEffect(() => {
     load();
-  }, [currentShop?.id]);
+  }, [load]);
 
   const customerMap = useMemo(() => {
     const map = new Map<string, Customer>();

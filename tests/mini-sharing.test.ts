@@ -4,15 +4,15 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 async function sharingHarness() {
-  let page: any;
-  const menus: any[] = [];
+  let page: vm.Context;
+  const menus: {type:string;menus?:string[]}[] = [];
   let blocked = false;
   const context = vm.createContext({
-    Page: (config: any) => { page = config; }, App: () => {}, console: { warn() {} },
+    Page: (config: vm.Context) => { page = config; }, App: () => {}, console: { warn() {} },
     enforcePasswordChange: () => blocked,
     wx: {
-      showShareMenu: (options: any) => menus.push({ type: 'show', ...options }),
-      hideShareMenu: (options: any) => menus.push({ type: 'hide', ...options }),
+      showShareMenu: (options: {menus?:string[]}) => menus.push({ type: 'show', ...options }),
+      hideShareMenu: (options: {menus?:string[]}) => menus.push({ type: 'hide', ...options }),
     },
   });
   async function load(file: string) {
@@ -23,7 +23,7 @@ async function sharingHarness() {
   await load('utils/share.js'); await load('utils/tab-swipe.js'); await load('app.js');
   return {
     context, menus, load, get page() { return page; },
-    register(config: any) { context.config = config; vm.runInContext('Page(config)', context); return page; },
+    register(config: vm.Context) { context.config = config; vm.runInContext('Page(config)', context); return page; },
     block(value: boolean) { blocked = value; },
   };
 }
@@ -51,8 +51,8 @@ test('分享包装保留 Page 生命周期参数、this、异步结果及强制�
   const instance = { route: 'pages/profile/profile' };
   const promise = Promise.resolve('original result');
   const page = h.register({
-    onShow(this: any, value: string) { shown++; assert.equal(this, instance); assert.equal(value, 'show'); return promise; },
-    onLoad(this: any, value: string) { loaded++; assert.equal(this, instance); assert.equal(value, 'load'); return 'loaded'; },
+    onShow(this: unknown, value: string) { shown++; assert.equal(this, instance); assert.equal(value, 'show'); return promise; },
+    onLoad(this: unknown, value: string) { loaded++; assert.equal(this, instance); assert.equal(value, 'load'); return 'loaded'; },
   });
   assert.equal(page.onLoad.call(instance, 'load'), 'loaded');
   assert.equal(page.onShow.call(instance, 'show'), promise);
@@ -60,7 +60,7 @@ test('分享包装保留 Page 生命周期参数、this、异步结果及强制�
   h.block(true); page.onShow.call(instance, 'show'); page.onLoad.call(instance, 'load');
   assert.equal(shown, 1); assert.equal(loaded, 1);
   h.block(false);
-  (h.context.wx as any).showShareMenu = () => { throw new Error('synthetic unsupported'); };
+  h.context.wx.showShareMenu = () => { throw new Error('synthetic unsupported'); };
   assert.equal(page.onShow.call(instance, 'show'), promise);
 });
 
@@ -89,5 +89,5 @@ test('固定封面为有效小尺寸 PNG，显式打包，不包含网络图片�
   assert.equal(png.readUInt32BE(16), 1000); assert.equal(png.readUInt32BE(20), 800);
   assert.ok(png.length < 200 * 1024);
   const config = JSON.parse(await readFile(new URL('../mini-program/project.config.json', import.meta.url), 'utf8'));
-  assert.ok(config.packOptions.include.some((rule: any) => rule.type === 'folder' && rule.value === 'assets/share'));
+  assert.ok(config.packOptions.include.some((rule: {type:string;value:string}) => rule.type === 'folder' && rule.value === 'assets/share'));
 });

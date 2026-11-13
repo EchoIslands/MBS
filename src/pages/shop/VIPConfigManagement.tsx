@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Save, Crown, Loader2, AlertCircle, CheckCircle, CreditCard, Shield, ArrowLeft, Plus, Trash2, Edit3, X,
@@ -103,11 +103,7 @@ export default function VIPConfigManagement() {
   const [specialModalOpen, setSpecialModalOpen] = useState(false);
   const [editingSpecial, setEditingSpecial] = useState<SpecialVIPConfig | null>(null);
 
-  useEffect(() => {
-    loadConfigs();
-  }, [shopId]);
-
-  const loadConfigs = async () => {
+  const loadConfigs = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -140,7 +136,11 @@ export default function VIPConfigManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [shopId]);
+
+  useEffect(() => {
+    loadConfigs();
+  }, [loadConfigs]);
 
   const handleSave = async () => {
     if (!isCEO) {

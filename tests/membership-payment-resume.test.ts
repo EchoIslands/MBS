@@ -39,6 +39,7 @@ for (const status of ['paid', 'review']) {
     const react = {
       createElement: (type: unknown, props: ElementNode['props'], ...children: unknown[]) => ({ type, props: props || {}, children }),
       useEffect() {},
+      useRef: (value: unknown) => ({ current: value }),
       useState: () => { const index = slot++; return [states[index], (v: unknown) => { if (index === 3) errors.push(v); if (index === 4) notices.push(v); }]; },
     };
     const exports = {} as { default: () => ElementNode };

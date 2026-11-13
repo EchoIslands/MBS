@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Ticket, Calendar, ChevronRight } from 'lucide-react';
 import { CustomerPackage, PackageStatus } from '../../../shared/types';
@@ -31,7 +31,7 @@ const Packages: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPackages = async () => {
+  const loadPackages = useCallback(async () => {
     if (!currentCustomer?.id) return;
     setLoading(true);
     setError(null);
@@ -49,11 +49,11 @@ const Packages: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentCustomer?.id]);
 
   useEffect(() => {
     loadPackages();
-  }, [currentCustomer?.id]);
+  }, [loadPackages]);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">

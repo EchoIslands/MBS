@@ -13,7 +13,7 @@ const REQUIRED_FIELDS = ['id', 'password_hash', 'is_weak_password', 'password_re
 const EMPTY_PASSWORD = "(password_hash IS NULL OR password_hash = '')";
 
 export type PasswordConnection = {
-  query: (sql: string, values?: any[]) => Promise<{ rows: any[]; rowCount?: number | null; command?: string }>;
+  query: (sql: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null; command?: string }>;
 };
 type Options = {
   dryRun?: boolean;
@@ -38,12 +38,14 @@ export function redactDiagnostic(value: unknown, secrets: string[] = []): string
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL REDACTED]');
 }
 
-export function databaseErrorDiagnostic(error: any, secrets: string[] = []): string {
-  const entries: any[] = [];
+export function databaseErrorDiagnostic(error: unknown, secrets: string[] = []): string {
+  const entries: Record<string, unknown>[] = [];
   const seen = new Set();
-  const visit = (item: any, depth: number) => {
-    if (!item || seen.has(item) || depth > 8) return;
-    seen.add(item);
+  const visit = (value: unknown, depth: number) => {
+    if (!value || seen.has(value) || depth > 8) return;
+    seen.add(value);
+    if (typeof value !== 'object') { entries.push({message: String(value)}); return; }
+    const item = value as Record<string, unknown>;
     entries.push({
       name: item.name, message: item.message ?? String(item), code: item.code,
       severity: item.severity, hint: item.hint, position: item.position,
@@ -52,7 +54,7 @@ export function databaseErrorDiagnostic(error: any, secrets: string[] = []): str
       syscall: item.syscall, stack: item.stack,
     });
     visit(item.cause, depth + 1);
-    if (Array.isArray(item.errors)) item.errors.forEach((child: any) => visit(child, depth + 1));
+    if (Array.isArray(item.errors)) item.errors.forEach(child => visit(child, depth + 1));
   };
   visit(error, 0);
   return redactDiagnostic(entries, secrets);
@@ -66,7 +68,7 @@ export async function initializeLegacyPasswords(connection: PasswordConnection, 
   let updated = 0;
   let skipped = 0;
   let batches = 0;
-  const query = async (stage: string, sql: string, values?: any[]) => {
+  const query = async (stage: string, sql: string, values?: unknown[]) => {
     const started = Date.now();
     if (options.dryRun) log(`[SQL 请求] ${stage}: ${sql.replace(/\s+/g, ' ').trim()}（参数值不打印）`);
     try {

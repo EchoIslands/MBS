@@ -1,12 +1,27 @@
 import { supabase } from '../db/index.js';
 import { calcSettlementDiscountDetail, getEffectivePurchaseVIPLevel, getEffectiveStoredValueLevel, getFinalDiscount, getPurchaseVIPDiscount } from '../../shared/lib/membership.js';
-import { Customer, MemberBenefitRecord, ProductCategory, PurchaseVIPLevel, StoredValueLevel, SettlementItem } from '../../shared/types.js';
+import { Customer, MemberBenefitRecord, ProductCategory, PurchaseVIPLevel, StoredValueLevel, SettlementItem, Service } from '../../shared/types.js';
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
 /** 请求中的金额仅作核对；目录、会员级别、权益、次卡、团购均从数据库读取。 */
-export async function priceSettlement(shopId: string, body: Record<string, any>) {
-  const employeeIds = Array.isArray(body.items) ? [...new Set(body.items.map((item: any) => item?.employeeId).filter(Boolean))] : [];
+interface SettlementDraft {
+  id?: string;
+  customerId?: string;
+  customerPackageId?: string;
+  usedBenefitIds?: string[];
+  items?: Partial<SettlementItem>[];
+  total?: number;
+  tax?: number;
+}
+export async function priceSettlement(shopId: string, input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('客户信息不正确');
+  const body = input as SettlementDraft;
+  if (!body || typeof body.customerId !== 'string' || !body.customerId) throw new Error('客户信息不正确');
+  if (!Array.isArray(body.items) || !body.items.length || body.items.length > 100 || body.items.some(item => !item || typeof item !== 'object' || Array.isArray(item))) throw new Error('结算项目数量或格式不正确');
+  const ids = body.usedBenefitIds ?? [];
+  if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !id) || new Set(ids).size !== ids.length) throw new Error('权益不能重复使用或格式不正确');
+  const employeeIds = [...new Set(body.items.map(item => item.employeeId).filter((id): id is string => typeof id === 'string' && Boolean(id)))];
   const [customerResult, shopResult, productResult, benefitResult, packageResult, employeeResult] = await Promise.all([
     supabase.from('customers').select('*').eq('id', body.customerId).eq('shop_id', shopId).maybeSingle(),
     supabase.from('shops').select('services').eq('id', shopId).maybeSingle(),
@@ -19,9 +34,6 @@ export async function priceSettlement(shopId: string, body: Record<string, any>)
   if ((employeeResult.data || []).length !== employeeIds.length) throw new Error('服务设计师不属于本店有效员工');
   const c = customerResult.data;
   if (!c || !shopResult.data) throw new Error('客户或店铺不存在');
-  if (!Array.isArray(body.items) || !body.items.length || body.items.length > 100) throw new Error('结算项目数量不正确');
-  const ids = body.usedBenefitIds || [];
-  if (!Array.isArray(ids) || new Set(ids).size !== ids.length) throw new Error('权益不能重复使用');
   const benefits = benefitResult.data || [];
   if (benefits.length !== ids.length || benefits.some(b => b.status !== 'available' || (b.expires_at && new Date(b.expires_at) <= new Date()))) throw new Error('权益不可用');
   const pkg = packageResult.data;
@@ -36,12 +48,12 @@ export async function priceSettlement(shopId: string, body: Record<string, any>)
   const vouchers = new Set<string>();
   for (const raw of body.items) {
     if (!raw || !['service','product'].includes(raw.type) || !Number.isInteger(raw.quantity) || raw.quantity < 1 || raw.quantity > 100) throw new Error('结算项目或数量不正确');
-    const row = raw.type === 'service' ? (shopResult.data.services || []).find((s: any) => String(s.id) === String(raw.id)) : (productResult.data || []).find(p => p.id === raw.id && p.is_active !== false);
+    const row = raw.type === 'service' ? (shopResult.data.services as Service[] || []).find(s => String(s.id) === String(raw.id)) : (productResult.data || []).find(p => p.id === raw.id && p.is_active !== false);
     if (!row) throw new Error('项目不在本店有效目录中');
     // 价格只取门店目录；旧客户端的 employeeLevel 不作为加价依据。
     let originalPrice = round(Number(row.price));
     if (!Number.isFinite(originalPrice) || originalPrice < 0) throw new Error('目录价格不正确');
-    const category = raw.type === 'service' ? 'service' : row.category;
+    const category = raw.type === 'service' ? 'service' : 'category' in row ? row.category : undefined;
     let final: number | undefined;
     if (pkg && raw.type === 'service' && String(raw.id) === pkg.service_id) {
       if (++packageLines !== 1 || raw.quantity !== 1 || raw.priceOverride !== undefined || raw.groupBuyVoucherId) throw new Error('每次结算次卡仅抵扣一个服务一次，不能叠加特殊价格');

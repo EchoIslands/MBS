@@ -41,18 +41,18 @@ test('live actions enforce ownership, versions, attendance verification, grace p
  await assert.rejects(action(db,'b','arrived',0),/QUEUE_STALE_VERSION/);
  await action(db,'b','left_reported',1,'c','customer',10);
  await action(db,'b','return_requested',2,'c','customer');
- let b=(await db.query<any>("SELECT * FROM bookings WHERE id='b'")).rows[0];assert.equal(b.queue_state,'away');assert.ok(b.return_requested_at);
+ let b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT * FROM bookings WHERE id='b'")).rows[0];assert.equal(b.queue_state,'away');assert.ok(b.return_requested_at);
  await assert.rejects(action(db,'b','service_started',3,'stylist'),/QUEUE_STATE_CONFLICT/);
  await action(db,'b','returned',3);await action(db,'b','ready',4,'stylist');await action(db,'b','called',5,'stylist');
  await assert.rejects(action(db,'b','missed',6),/QUEUE_STATE_CONFLICT/);
  await action(db,'b','acknowledged',6,'c','customer');
- b=(await db.query<any>("SELECT * FROM bookings WHERE id='b'")).rows[0];assert.equal(Date.parse(b.grace_deadline_at)-Date.parse(b.called_at),600000);assert.ok(Number(b.queue_ack_event_id)>0);
+ b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT * FROM bookings WHERE id='b'")).rows[0];assert.equal(Date.parse(b.grace_deadline_at)-Date.parse(b.called_at),600000);assert.ok(Number(b.queue_ack_event_id)>0);
  await action(db,'b','service_started',7,'stylist');
  await action(db,'b2','arrived',0);await assert.rejects(action(db,'b2','service_started',1,'stylist'),/QUEUE_STYLIST_BUSY/);
  await action(db,'b','progress_updated',8,'stylist','staff',20);await action(db,'b','service_finished',9,'stylist');
  await action(db,'b2','service_started',1,'stylist');
  await assert.rejects(action(db,'b','left_reported',10,'c','customer',10),/QUEUE_CLOSED/);
- const count=(await db.query<any>("SELECT count(*)::int n FROM booking_queue_events WHERE booking_id='b'")).rows[0].n;assert.equal(count,10);
+ const count=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT count(*)::int n FROM booking_queue_events WHERE booking_id='b'")).rows[0].n;assert.equal(count,10);
  }finally{await db.close();}
 });
 test('missed return preserves first priority, repeat/long absence goes to tail, duplicate help and stale concurrent actions are rejected',async()=>{
@@ -61,9 +61,9 @@ test('missed return preserves first priority, repeat/long absence goes to tail, 
  await db.exec("UPDATE bookings SET arrived_at=now()-interval '10 minutes',queue_priority_at=now()-interval '10 minutes' WHERE id='b'; UPDATE bookings SET arrived_at=now()-interval '5 minutes',queue_priority_at=now()-interval '5 minutes' WHERE id='b2'");
  await action(db,'b','called',1);await db.exec("UPDATE bookings SET grace_deadline_at=now()-interval '1 minute' WHERE id='b'");
  await action(db,'b','missed',2);await action(db,'b','returned',3);
- let b=(await db.query<any>("SELECT arrived_at,queue_priority_at,missed_count FROM bookings WHERE id='b'")).rows[0];assert.equal(b.missed_count,1);assert.equal(Date.parse(b.queue_priority_at),Date.parse(b.arrived_at));
+ let b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT arrived_at,queue_priority_at,missed_count FROM bookings WHERE id='b'")).rows[0];assert.equal(b.missed_count,1);assert.equal(Date.parse(b.queue_priority_at),Date.parse(b.arrived_at));
  await action(db,'b','called',4);await db.exec("UPDATE bookings SET grace_deadline_at=now()-interval '1 minute' WHERE id='b'");await action(db,'b','missed',5);await action(db,'b','returned',6);
- b=(await db.query<any>("SELECT arrived_at,queue_priority_at,missed_count FROM bookings WHERE id='b'")).rows[0];assert.equal(b.missed_count,2);assert.ok(Date.parse(b.queue_priority_at)>Date.parse(b.arrived_at));
+ b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT arrived_at,queue_priority_at,missed_count FROM bookings WHERE id='b'")).rows[0];assert.equal(b.missed_count,2);assert.ok(Date.parse(b.queue_priority_at)>Date.parse(b.arrived_at));
  await assert.rejects(action(db,'b','service_started',7,'stylist'),/QUEUE_ORDER_REASON_REQUIRED/);
  await action(db,'b','help_requested',7,'c','customer');await assert.rejects(action(db,'b','help_requested',8,'c','customer'),/QUEUE_HELP_PENDING/);
  await action(db,'b','contact_attempted',8);await action(db,'b','help_requested',9,'c','customer');
@@ -72,7 +72,7 @@ test('missed return preserves first priority, repeat/long absence goes to tail, 
  await assert.rejects(action(db,'b','reordered',10,'front','staff',null,'a'),/QUEUE_ORDER_REASON_REQUIRED/);
  await db.exec("UPDATE bookings SET queue_state='missed',missed_count=1,missed_at=now()-interval '61 minutes',arrived_at=now()-interval '90 minutes' WHERE id='b'");
  await action(db,'b','returned',10);
- const longReturn=(await db.query<any>("SELECT queue_priority_at,arrived_at FROM bookings WHERE id='b'")).rows[0];
+ const longReturn=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT queue_priority_at,arrived_at FROM bookings WHERE id='b'")).rows[0];
  assert.ok(Date.parse(longReturn.queue_priority_at)-Date.parse(longReturn.arrived_at)>89*60000);
  }finally{await db.close();}
 });
@@ -86,7 +86,7 @@ test('staff pauses are scoped, versioned and block new service; no automatic fin
  await pause('stylist','stylist',1,0);await action(db,'b','service_started',1,'stylist');
  await assert.rejects(action(db,'b2','called',0),/QUEUE_STYLIST_BUSY/);
  await pause('stylist','stylist',2,20);
- const b=(await db.query<any>("SELECT queue_state FROM bookings WHERE id='b'")).rows[0];assert.equal(b.queue_state,'serving');
+ const b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT queue_state FROM bookings WHERE id='b'")).rows[0];assert.equal(b.queue_state,'serving');
  const mine=row('m',{queue_state:'arrived',arrived_at:'2026-11-12T05:30:00Z'});
  assert.match(describeQueue(mine,[mine],[],now,'2026-11-12T06:20:00Z').estimateLabel,/暂停接客/);
  }finally{await db.close();}
@@ -95,14 +95,14 @@ test('staff pauses are scoped, versioned and block new service; no automatic fin
 test('arrival correction updates default priority and invalidates stale devices, preserving explicit reorders',async()=>{
  const db=await database();try{
  await action(db,'b','arrived',0);
- const event=(await db.query<any>("SELECT id FROM booking_queue_events WHERE booking_id='b' AND event_type='arrived'")).rows[0];
+ const event=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT id FROM booking_queue_events WHERE booking_id='b' AND event_type='arrived'")).rows[0];
  await db.query("SELECT public.correct_booking_queue_event($1,'s','manager',now()-interval '1 minute')",[event.id]);
- let b=(await db.query<any>("SELECT arrived_at,queue_priority_at,queue_version FROM bookings WHERE id='b'")).rows[0];
+ let b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT arrived_at,queue_priority_at,queue_version FROM bookings WHERE id='b'")).rows[0];
  assert.equal(b.queue_version,2);assert.equal(Date.parse(b.arrived_at),Date.parse(b.queue_priority_at));
  await assert.rejects(action(db,'b','left_reported',1,'c','customer',10),/QUEUE_STALE_VERSION/);
  await action(db,'b','reordered',2,'front','staff',null,'现场协商调整');
- const priority=(await db.query<any>("SELECT queue_priority_at FROM bookings WHERE id='b'")).rows[0].queue_priority_at;
+ const priority=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT queue_priority_at FROM bookings WHERE id='b'")).rows[0].queue_priority_at;
  await db.query("SELECT public.correct_booking_queue_event($1,'s','manager',now()-interval '2 minutes')",[event.id]);
- b=(await db.query<any>("SELECT queue_priority_at FROM bookings WHERE id='b'")).rows[0];assert.equal(Date.parse(b.queue_priority_at),Date.parse(priority));
+ b=(await db.query<{[key:string]:unknown;arrived_at?:string;queue_priority_at?:string;grace_deadline_at?:string;called_at?:string}>("SELECT queue_priority_at FROM bookings WHERE id='b'")).rows[0];assert.equal(Date.parse(b.queue_priority_at),Date.parse(priority));
  }finally{await db.close();}
 });

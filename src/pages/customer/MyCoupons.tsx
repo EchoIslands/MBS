@@ -33,7 +33,7 @@ const MyCoupons: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentCustomer?.id, currentCustomer?.shopId, activeTab, defaultShopId]);
+  }, [currentCustomer?.id, activeTab, defaultShopId]);
 
   useEffect(() => {
     if (!currentCustomer?.id) {

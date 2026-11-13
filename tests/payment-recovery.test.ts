@@ -11,27 +11,27 @@ const {recoverWechatPayment,recoveryDependencies}=await import('../backend/servi
 
 test('038恢复：真实SQL事务与合成微信网关，不连接生产或真实微信',async(t)=>{
   const db=new PGlite();
-  const query=async(sql:string,values?:any[])=>values?db.query(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []};
+  const query=async(sql:string,values?:unknown[])=>values?db.query<Record<string, unknown>>(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows || []};
   const scalar=async(sql:string)=>Object.values((await db.query(sql)).rows[0] as object)[0];
-  let sequence=0,current='',events:string[]=[],states:any[]=[],createFailure=false,closeFailure=false;
+  let sequence=0,current='',events:string[]=[],states:import("../backend/services/paymentService.js").GatewayStatus[]=[],createFailure=false,closeFailure=false;
   const rpc=async(name:string,args:Record<string,unknown>)=>{
-    try {const values=Object.values(args);const r=await db.query<any>('SELECT '+name+'('+values.map((_,i)=>'$'+(i+1)).join(',')+') AS value',values);return {data:r.rows[0]?.value,error:null};}
-    catch(error) {return {data:null,error:error as any};}
+    try {const values=Object.values(args);const r=await db.query<Record<string, unknown>>('SELECT '+name+'('+values.map((_,i)=>'$'+(i+1)).join(',')+') AS value',values);return {data:r.rows[0]?.value,error:null};}
+    catch(error) {return {data:null,error:error as Error};}
   };
-  const deps:any={...recoveryDependencies,rpc,now:()=>Date.now(),orderNo:()=> 'new_gateway_'+(++sequence),
+  const deps={...recoveryDependencies,rpc:rpc as unknown as typeof recoveryDependencies.rpc,now:()=>Date.now(),orderNo:()=> 'new_gateway_'+(++sequence),
     request:(orderNo:string,amount:number,description:string)=>({appid:'a',mchid:'m',description,out_trade_no:orderNo,notify_url:'https://synthetic.invalid/notify',amount:{total:Math.round(amount*100),currency:'CNY'}}),
     query:async(id:string)=>{events.push('query:'+id);return states.shift() || {status:'pending',message:'synthetic unknown'};},
     close:async(id:string)=>{events.push('close:'+id);if(closeFailure)throw new Error('synthetic close timeout');},
-    create:async(body:any)=>{
+    create:async(body:Parameters<typeof recoveryDependencies.create>[0])=>{
       events.push('create:'+body.out_trade_no);
-      const saved=(await db.query<any>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[body.out_trade_no])).rows[0];
+      const saved=(await db.query<{request_body:ReturnType<typeof recoveryDependencies.request>}>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[body.out_trade_no])).rows[0];
       assert.deepEqual(saved.request_body,body); // Snapshot MUST commit before gateway POST.
       if(createFailure)throw new Error('synthetic POST timeout');
-      return {paymentId:body.out_trade_no,status:'pending',amount:body.amount.total/100,codeUrl:'weixin://wxpay/synthetic/'+body.out_trade_no};
+      return {paymentId:body.out_trade_no,status:'pending' as const,amount:body.amount.total/100,codeUrl:'weixin://wxpay/synthetic/'+body.out_trade_no};
     },
-    receipt:async(r:any,shop:string,e:string,n:string)=>{
+    receipt:async(r:Parameters<typeof recoveryDependencies.receipt>[0],shop:string,e:string,n:string)=>{
       events.push('receipt:'+r.paymentId);
-      const result=await db.query<any>('SELECT * FROM finalize_wechat_attempt($1,$2,$3,$4,$5,$6,$7)',[r.paymentId,shop,r.transactionId,r.paidAt,r.amount,e,n]);return result.rows[0];
+      const result=await db.query<Record<string, unknown>>('SELECT * FROM finalize_wechat_attempt($1,$2,$3,$4,$5,$6,$7)',[r.paymentId,shop,r.transactionId,r.paidAt,r.amount,e,n]);return result.rows[0];
     },
   };
   async function seed() {
@@ -40,9 +40,9 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
     await db.query("INSERT INTO payments(id,shop_id,customer_id,settlement_id,channel,status,amount) VALUES($1,'s','c',$2,'wechat_native','pending',67.28)",[current+'_pay',current]);
   }
   const recover=(initial=false,shop='s')=>recoverWechatPayment(current,shop,'staff','Synthetic',initial,deps);
-  const pending={status:'pending',tradeState:'NOTPAY',amount:67.28};
-  const closed={status:'failed',tradeState:'CLOSED',amount:67.28};
-  const success=()=>({status:'paid',tradeState:'SUCCESS',amount:67.28,transactionId:'42000000'+(++sequence),paidAt:'2026-10-23T01:02:03.000Z'});
+  const pending:import("../backend/services/paymentService.js").GatewayStatus={status:'pending',tradeState:'NOTPAY',amount:67.28};
+  const closed:import("../backend/services/paymentService.js").GatewayStatus={status:'failed',tradeState:'CLOSED',amount:67.28};
+  const success=()=>({status:'paid' as const,tradeState:'SUCCESS' as const,amount:67.28,transactionId:'42000000'+(++sequence),paidAt:'2026-10-23T01:02:03.000Z'});
   try {
     await db.exec('CREATE ROLE service_role;CREATE ROLE anon;CREATE ROLE authenticated;ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon,authenticated;');
     for(const file of ['001_baseline_schema.sql','019_create_customer_packages.sql','021_create_membership_enrollments.sql','007_create_product_tables.sql','009_create_product_inventory_logs.sql','010_add_shipping_to_orders.sql','011_create_product_order_refunds.sql','016_fix_coupon_schema.sql','013_create_group_buy.sql','020_create_package_usage_logs.sql']) await db.exec((await readFile(new URL('../migrations/'+file,import.meta.url),'utf8')).replace(/^\uFEFF/,''));
@@ -52,7 +52,7 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
       await seed();createFailure=true;
       await assert.rejects(recover(true),/POST timeout/);
       assert.deepEqual(events,['create:'+current+'_pay']);
-      const originalBody = (await db.query<any>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[current+'_pay'])).rows[0].request_body;
+      const originalBody = (await db.query<{request_body:ReturnType<typeof recoveryDependencies.request>}>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[current+'_pay'])).rows[0].request_body;
       assert.equal(originalBody.description,'合成洗剪吹×2');
       // 恢复请求只读已提交快照，即使原结算后来变化也不能悄悄换描述。
       await db.query('UPDATE settlements SET items=$1 WHERE id=$2',[JSON.stringify([{name:'后来变更的合成项目',quantity:1}]),current]);
@@ -61,7 +61,7 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
       events=[];states=[pending];await recover();assert.deepEqual(events,['query:'+current+'_pay']);
       await db.exec("UPDATE wechat_payment_attempts SET qr_updated_at=NOW()-INTERVAL '3 hours'");
       events=[];states=[pending];await recover();assert.deepEqual(events,['query:'+current+'_pay','create:'+current+'_pay']);
-      assert.deepEqual((await db.query<any>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[current+'_pay'])).rows[0].request_body,originalBody);
+      assert.deepEqual((await db.query<Record<string, unknown>>('SELECT request_body FROM wechat_payment_attempts WHERE gateway_order_no=$1',[current+'_pay'])).rows[0].request_body,originalBody);
       assert.equal(Number(await scalar('SELECT COUNT(*) FROM payments')),1);
     });
     await t.test('老单缺快照：查未付、关闭、再查CLOSED才换号；保留原结算和所有尝试，旧回调不串新单',async()=>{
@@ -103,7 +103,7 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
       assert.ok((await rpc('mutate_wechat_recovery',{payment:current+'_pay',shop:'s',token:one,action:'qr',data:{gateway_order_no:current+'_pay',code_url:'weixin://wxpay/forged'}})).error);
     });
     await upgradeAtomicCheckout({query});await upgradeAtomicCheckout({query});
-    const checkout=(payload:any,paymentId:string)=>db.query<any>('SELECT create_wechat_settlement_atomic($1,$2,$3,$4) AS result',[JSON.stringify(payload),'staff','Synthetic',paymentId]);
+    const checkout=(payload:unknown,paymentId:string)=>db.query<{result:{paymentCreated:boolean}}>('SELECT create_wechat_settlement_atomic($1,$2,$3,$4) AS result',[JSON.stringify(payload),'staff','Synthetic',paymentId]);
     const payload=(id:string)=>({id,shop_id:'s',customer_id:'c',items:[{type:'service',id:'svc',name:'Synthetic',quantity:1,originalPrice:67.28,discountedPrice:67.28,total:67.28}],subtotal:67.28,discount:0,total:67.28,payment_method:'wechat',start_payment:true,checkout_request_key:'request_'+id,used_benefit_ids:[]});
     await t.test('040支付映射故障回滚整笔新结算和次卡预占；原草稿失败保留',async()=>{
       await db.exec("INSERT INTO customer_packages(id,shop_id,customer_id,name,service_id,total_times,used_times,expires_at) VALUES('atomic_pkg','s','c','Synthetic','svc',2,0,NOW()+INTERVAL '1 day')");
@@ -144,7 +144,7 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
       assert.equal(Number(await scalar("SELECT count(*) FROM customer_visit_records WHERE id='visit_atomic_paid'")),1);
     });
     await t.test('040客户端无调用权限；升级失败事务回滚',async()=>{
-      for(const role of ['anon','authenticated']) assert.equal((await db.query<any>("SELECT has_function_privilege($1,'create_wechat_settlement_atomic(jsonb,text,text,text)','EXECUTE') allowed",[role])).rows[0].allowed,false);
+      for(const role of ['anon','authenticated']) assert.equal((await db.query<Record<string, unknown>>("SELECT has_function_privilege($1,'create_wechat_settlement_atomic(jsonb,text,text,text)','EXECUTE') allowed",[role])).rows[0].allowed,false);
       await assert.rejects(upgradeAtomicCheckout({query:async(sql,values)=>{if(sql.includes('CREATE OR REPLACE FUNCTION'))throw new Error('synthetic ddl failure');return query(sql,values);}}),/synthetic ddl failure/);
       assert.equal((await checkout(payload('after_rollback'),'after_rollback_payment')).rows[0].result.paymentCreated,true);
     });
@@ -152,10 +152,10 @@ test('038恢复：真实SQL事务与合成微信网关，不连接生产或真�
     await upgradePaymentRecovery({query});
     await t.test('客户端角色不能读支付请求快照或调用任一恢复RPC',async()=>{
       for(const role of ['anon','authenticated']) {
-        assert.equal((await db.query<any>("SELECT has_any_column_privilege($1,'wechat_payment_attempts','SELECT,INSERT,UPDATE') allowed",[role])).rows[0].allowed,false);
-        assert.equal((await db.query<any>("SELECT has_table_privilege($1,'wechat_payment_attempts','SELECT,INSERT,UPDATE,DELETE') allowed",[role])).rows[0].allowed,false);
+        assert.equal((await db.query<Record<string, unknown>>("SELECT has_any_column_privilege($1,'wechat_payment_attempts','SELECT,INSERT,UPDATE') allowed",[role])).rows[0].allowed,false);
+        assert.equal((await db.query<Record<string, unknown>>("SELECT has_table_privilege($1,'wechat_payment_attempts','SELECT,INSERT,UPDATE,DELETE') allowed",[role])).rows[0].allowed,false);
         for(const sig of ['claim_wechat_recovery(text,text,text)','mutate_wechat_recovery(text,text,text,text,jsonb)','finalize_wechat_attempt(text,text,text,timestamptz,numeric,text,text)'])
-          assert.equal((await db.query<any>("SELECT has_function_privilege($1,$2,'EXECUTE') allowed",[role,sig])).rows[0].allowed,false);
+          assert.equal((await db.query<Record<string, unknown>>("SELECT has_function_privilege($1,$2,'EXECUTE') allowed",[role,sig])).rows[0].allowed,false);
       }
     });
   } finally {await db.close();}

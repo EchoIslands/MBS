@@ -57,14 +57,17 @@ const Profile: React.FC = () => {
   
   const navigate = useNavigate();
   const { currentCustomer, setCurrentCustomer, logout } = useAppStore();
+  const customerId = currentCustomer?.id;
+  const customerShopId = currentCustomer?.shopId;
   useEffect(() => {
-    if (!isRealApi() || !currentCustomer?.id) return;
+    if (!isRealApi() || !customerId) return;
     let cancelled = false;
-    customerApi.getMyProfile(currentCustomer.id).then(updated => {
-      if (!cancelled && updated) setCurrentCustomer({ ...currentCustomer, ...updated });
+    customerApi.getMyProfile(customerId).then(updated => {
+      const latest = useAppStore.getState().currentCustomer;
+      if (!cancelled && updated && latest?.id === customerId) setCurrentCustomer({ ...latest, ...updated });
     }).catch(() => { /* 其他信息仍可使用已登录资料。 */ });
     return () => { cancelled = true; };
-  }, [currentCustomer?.id]);
+  }, [customerId, setCurrentCustomer]);
   const openSelfEditor = () => {
     if (!currentCustomer) return;
     setSelfName(currentCustomer.name || '');
@@ -99,17 +102,24 @@ const Profile: React.FC = () => {
     try {
       const updated = await customerApi.updateSelf(currentCustomer.id, { name, avatar: selfAvatar || null,
         gender: (selfGender || null) as typeof currentCustomer.gender | null, birthday: selfBirthday || null });
-      setCurrentCustomer({ ...currentCustomer, ...updated });
+      const latest = useAppStore.getState().currentCustomer;
+      if (latest?.id !== currentCustomer.id) return;
+      setCurrentCustomer({ ...latest, ...updated });
       setEditingSelf(false);
     } catch (err) { setSelfError(err instanceof Error ? err.message : '资料保存失败'); }
     finally { setSelfBusy(false); }
   };
 
   useEffect(()=>{
-    if(!currentCustomer) return;
-    if(!isRealApi()) {setShop(mockShops[0]);setMyBenefits(mockMemberBenefitRecords.filter(b=>b.customerId===currentCustomer.id && b.status==='available'));return;}
-    Promise.all([shopApi.getShop(currentCustomer.shopId),memberBenefitApi.getOwn(currentCustomer.id)]).then(([store,benefits])=>{setShop(store);setMyBenefits(benefits);}).catch(()=>setLoadError('门店或权益信息加载失败，请稍后重试'));
-  },[currentCustomer?.id,currentCustomer?.shopId]);
+    setShop(null);setMyBenefits([]);setLoadError('');
+    if(!customerId || !customerShopId) return;
+    if(!isRealApi()) {setShop(mockShops[0]);setMyBenefits(mockMemberBenefitRecords.filter(b=>b.customerId===customerId && b.status==='available'));return;}
+    let cancelled=false;
+    Promise.all([shopApi.getShop(customerShopId),memberBenefitApi.getOwn(customerId)])
+      .then(([store,benefits])=>{if(!cancelled){setShop(store);setMyBenefits(benefits);}})
+      .catch(()=>{if(!cancelled)setLoadError('门店或权益信息加载失败，请稍后重试');});
+    return()=>{cancelled=true;};
+  },[customerId,customerShopId]);
   const bookingReviewMap = useMemo(() => {
     const map = new Map<string, Review>();
     customerReviews.forEach((r) => map.set(r.bookingId, r));

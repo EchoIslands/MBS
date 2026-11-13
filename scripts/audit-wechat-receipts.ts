@@ -40,7 +40,7 @@ async function main() {
   if(!options['--amount']) throw new Error('必须指定--amount');
   dotenv.config({path:fileURLToPath(new URL('../.env',import.meta.url)),quiet:true});
   const client=new pg.Client(databaseConfig(process.env));client.on('error',()=>{});
-  let candidates:any[]=[];
+  let candidates:Record<string, unknown>[]=[];
   try {await client.connect();candidates=await readReceiptCandidates({query:(sql,values)=>client.query(sql,values)},amount,options['--shop-id'],options['--settlement-id']);}
   finally {await client.end().catch(()=>{});}
   process.env.WECHAT_PAY_MOCK='false';

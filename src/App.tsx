@@ -96,7 +96,7 @@ const ShopRouteGuard = () => {
       if (active) setChecked(true);
     })();
     return ()=>{active=false;};
-  }, [checked]);
+  }, [checked, currentEmployee, currentShop]);
 
   // 等待持久化恢复完成后再判断登录态，避免刷新时误判为未登录
   if (!hasHydrated || !checked) {

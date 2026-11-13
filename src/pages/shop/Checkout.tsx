@@ -154,11 +154,12 @@ const Checkout: React.FC = () => {
   const [groupBuyRedeeming, setGroupBuyRedeeming] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
-  const services = shop?.services || [];
+  const services = useMemo(() => shop?.services || [], [shop?.services]);
   const products = shop?.products || [];
 
-  const cartServiceIds = cart.filter((i) => i.type === 'service').map((i) => i.id);
-  const cartServiceKey = cartServiceIds.join(',');
+  const cartServiceIds = useMemo(() => [...new Set(cart.filter((i) => i.type === 'service').map((i) => i.id))], [cart]);
+  const selectedCustomerId = selectedCustomer?.id;
+  const packageShopId = currentShop?.id || 'shop1';
   const selectedPackage = (selectedPackageId && availablePackages.find((p) => p.id === selectedPackageId)) || null;
 
   // 改价权限：仅收银 + CEO（后续可在 CEO 界面配置角色权限）
@@ -198,6 +199,89 @@ const Checkout: React.FC = () => {
     loadInitialData();
     return () => { cancelled = true; };
   }, [currentShop?.id, initialLoadAttempt]);
+
+  const showCompletedSettlement = useCallback((settlement: Settlement | null) => {
+    if (!settlement || settlement.paymentStatus !== 'completed') throw new Error('原单完成状态暂未确认，请刷新核对，勿重新收款');
+    setCompletedSettlement(settlement);
+    setSuccess(true);
+    setCustomerRefreshFailed(false);
+    void customerApi.getById(settlement.customerId).then(customer => {
+      if (!customer) throw new Error('Customer unavailable');
+      setCustomers(previous => previous.map(row => row.id === customer.id ? customer : row));
+      setSelectedCustomer(previous => previous?.id === customer.id ? customer : previous);
+    }).catch(() => {
+      setCustomerRefreshFailed(true);
+      setCustomers(previous => previous.filter(row => row.id !== settlement.customerId));
+      setSelectedCustomer(previous => previous?.id === settlement.customerId ? null : previous);
+    });
+  }, []);
+
+  const handleContinueSettlement = useCallback(async (s: Settlement) => {
+    if (submissionLock.current) return;
+    if (s.legacyPaymentReviewRequired) {
+      setError('此旧版待支付单已有支付记录，须先在微信商户平台核对；不能继续结算或直接删除。');
+      return;
+    }
+    submissionLock.current = true;
+    setLockedSettlement(s);
+    setPaymentRecoveryBlock('正在核对原单支付状态，请稍候');
+    setWechatPayment(null);
+    setShowWechatModal(false);
+    setActiveBookingId(s.bookingId || null);
+    submissionId.current = s.id;
+    setCurrentDraftId(s.id);
+    const c = customers.find((cust) => cust.id === s.customerId);
+    if (c) setSelectedCustomer(c);
+    const restoredCart: CartItem[] = (s.items || []).map((it) => ({
+      id: it.id,
+      type: it.type,
+      name: it.name,
+      originalPrice: it.type === 'service' ? (services.find(service => String(service.id) === String(it.id))?.price ?? it.originalPrice) : it.originalPrice,
+      quantity: it.quantity,
+      category: it.category,
+      employeeId: it.employeeId,
+      employeeName: it.employeeName,
+      groupBuyInfo: it.groupBuyVoucherId ? { voucherId: it.groupBuyVoucherId, code: '', price: it.discountedPrice, description: '已绑定团购券' } : undefined,
+    }));
+    setCart(restoredCart);
+    setPaymentMethod(s.paymentMethod || 'cash');
+    setManualPaidAtLocal('');
+    // 重置与草稿无关的临时状态，避免上一单的状态串进来
+    setPriceOverrides(Object.fromEntries((s.items || []).flatMap((item, index) => item.priceOverride === undefined ? [] : [[index, item.priceOverride]])));
+    setSelectedPackageId(s.customerPackageId || '');
+    setSelectedBenefits(s.usedBenefitIds || []);
+      try {
+        let state = await settlementApi.getPaymentStatus(s.id);
+        if (state.settlementStatus === 'completed') { showCompletedSettlement(state.settlement || await settlementApi.getById(s.id)); return; }
+        if (state.recoveryState === 'initialization_started') {
+          const released = await settlementApi.releaseUnstartedPayment(s.id);
+          if (released) state = await settlementApi.getPaymentStatus(s.id);
+        }
+        if (state.settlement) setLockedSettlement(state.settlement);
+        if (state.recoveryState === 'editable') {
+          setLockedSettlement(null);
+          setPaymentRecoveryBlock('');
+        } else if (state.recoveryState === 'qr_available' && state.payment?.codeUrl) {
+          setPaymentRecoveryBlock(`原单 ${s.id} 已有支付订单，请使用原二维码，勿再次生成收款单`);
+          setWechatPayment(state.payment);
+          setPendingSettlementId(s.id);
+          setShowWechatModal(true);
+        } else {
+          const reason = state.recoveryState === 'legacy_review'
+            ? '旧版结算未经服务端核价，需人工核对微信商户订单，不能直接恢复或删除'
+            : state.recoveryState === 'initialization_started'
+            ? '支付认领尚未过期或状态不能安全释放，请稍后重试或联系管理员核对'
+            : state.payment ? '已有支付记录，可点击下方按钮向微信核对并恢复原支付'
+            : '无法确认原单是否已发起支付，请核对部署版本与支付状态';
+          setPaymentRecoveryBlock(`原单 ${s.id}：${reason}。请勿重新开单收款。`);
+        }
+      } catch (err) { setPaymentRecoveryBlock(`原单 ${s.id}：${err instanceof Error ? err.message : '支付状态查询失败'}。暂不可再次提交。`); }
+      finally { submissionLock.current = false; }
+    // 滚动到结算表单，让用户能看到已恢复的内容
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }, [customers, services, showCompletedSettlement]);
 
   // 确保预约对应的未完成结算草稿存在（用于中途退出后找回）
   const ensureDraftForBooking = useCallback(
@@ -257,7 +341,7 @@ const Checkout: React.FC = () => {
         setError(e instanceof Error ? e.message : '预约草稿加载失败，请刷新后继续');
       }
     },
-    [currentShop?.id, initialBookingId, shop]
+    [currentShop?.id, handleContinueSettlement]
   );
 
   // 初始化：根据 URL 参数选择客户或预约
@@ -309,7 +393,7 @@ const Checkout: React.FC = () => {
       }
     };
     initFromParams();
-  }, [initialCustomerId, initialBookingId, customers, loadingCustomers, loadingShop, ensureDraftForBooking]);
+  }, [initialCustomerId, initialBookingId, customers, loadingCustomers, loadingShop, ensureDraftForBooking, services]);
 
   // 选中客户后加载可用权益
   useEffect(() => {
@@ -332,14 +416,14 @@ const Checkout: React.FC = () => {
 
   // 选中客户 + 购物车服务确定后，加载可用次卡（用于次卡抵扣选择）
   useEffect(() => {
-    if (lockedSettlement || !selectedCustomer || cartServiceIds.length === 0) {
+    if (lockedSettlement || !selectedCustomerId || cartServiceIds.length === 0) {
       setAvailablePackages([]);
       setSelectedPackageId('');
       return;
     }
     let cancelled = false;
-    const shopId = currentShop?.id || 'shop1';
-    Promise.all(cartServiceIds.map((sid) => packageApi.getAvailable(selectedCustomer.id, sid, shopId)))
+    const shopId = packageShopId;
+    Promise.all(cartServiceIds.map((sid) => packageApi.getAvailable(selectedCustomerId, sid, shopId)))
       .then((lists) => {
         if (cancelled) return;
         const merged = lists.flat();
@@ -351,7 +435,7 @@ const Checkout: React.FC = () => {
         if (!cancelled) setAvailablePackages([]);
       });
     return () => { cancelled = true; };
-  }, [selectedCustomer?.id, cartServiceKey, lockedSettlement]);
+  }, [selectedCustomerId, cartServiceIds, packageShopId, lockedSettlement]);
 
   // 加载未完成结算（草稿 / 待支付）
   const loadPendingSettlements = useCallback(async () => {
@@ -679,72 +763,7 @@ const Checkout: React.FC = () => {
   };
 
   // 继续未完成的结算（草稿 / 待支付），恢复其内容供继续编辑
-  const handleContinueSettlement = async (s: Settlement) => {
-    if (submissionLock.current) return;
-    if (s.legacyPaymentReviewRequired) {
-      setError('此旧版待支付单已有支付记录，须先在微信商户平台核对；不能继续结算或直接删除。');
-      return;
-    }
-    submissionLock.current = true;
-    setLockedSettlement(s);
-    setPaymentRecoveryBlock('正在核对原单支付状态，请稍候');
-    setWechatPayment(null);
-    setShowWechatModal(false);
-    setActiveBookingId(s.bookingId || null);
-    submissionId.current = s.id;
-    setCurrentDraftId(s.id);
-    const c = customers.find((cust) => cust.id === s.customerId);
-    if (c) setSelectedCustomer(c);
-    const restoredCart: CartItem[] = (s.items || []).map((it) => ({
-      id: it.id,
-      type: it.type,
-      name: it.name,
-      originalPrice: it.type === 'service' ? (services.find(service => String(service.id) === String(it.id))?.price ?? it.originalPrice) : it.originalPrice,
-      quantity: it.quantity,
-      category: it.category,
-      employeeId: it.employeeId,
-      employeeName: it.employeeName,
-      groupBuyInfo: it.groupBuyVoucherId ? { voucherId: it.groupBuyVoucherId, code: '', price: it.discountedPrice, description: '已绑定团购券' } : undefined,
-    }));
-    setCart(restoredCart);
-    setPaymentMethod(s.paymentMethod || 'cash');
-    setManualPaidAtLocal('');
-    // 重置与草稿无关的临时状态，避免上一单的状态串进来
-    setPriceOverrides(Object.fromEntries((s.items || []).flatMap((item, index) => item.priceOverride === undefined ? [] : [[index, item.priceOverride]])));
-    setSelectedPackageId(s.customerPackageId || '');
-    setSelectedBenefits(s.usedBenefitIds || []);
-      try {
-        let state = await settlementApi.getPaymentStatus(s.id);
-        if (state.settlementStatus === 'completed') { showCompletedSettlement(state.settlement || await settlementApi.getById(s.id)); return; }
-        if (state.recoveryState === 'initialization_started') {
-          const released = await settlementApi.releaseUnstartedPayment(s.id);
-          if (released) state = await settlementApi.getPaymentStatus(s.id);
-        }
-        if (state.settlement) setLockedSettlement(state.settlement);
-        if (state.recoveryState === 'editable') {
-          setLockedSettlement(null);
-          setPaymentRecoveryBlock('');
-        } else if (state.recoveryState === 'qr_available' && state.payment?.codeUrl) {
-          setPaymentRecoveryBlock(`原单 ${s.id} 已有支付订单，请使用原二维码，勿再次生成收款单`);
-          setWechatPayment(state.payment);
-          setPendingSettlementId(s.id);
-          setShowWechatModal(true);
-        } else {
-          const reason = state.recoveryState === 'legacy_review'
-            ? '旧版结算未经服务端核价，需人工核对微信商户订单，不能直接恢复或删除'
-            : state.recoveryState === 'initialization_started'
-            ? '支付认领尚未过期或状态不能安全释放，请稍后重试或联系管理员核对'
-            : state.payment ? '已有支付记录，可点击下方按钮向微信核对并恢复原支付'
-            : '无法确认原单是否已发起支付，请核对部署版本与支付状态';
-          setPaymentRecoveryBlock(`原单 ${s.id}：${reason}。请勿重新开单收款。`);
-        }
-      } catch (err) { setPaymentRecoveryBlock(`原单 ${s.id}：${err instanceof Error ? err.message : '支付状态查询失败'}。暂不可再次提交。`); }
-      finally { submissionLock.current = false; }
-    // 滚动到结算表单，让用户能看到已恢复的内容
-    setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
-  };
+
 
   const handleRecoverPayment = async () => {
     if(!lockedSettlement || submissionLock.current) return;
@@ -764,21 +783,7 @@ const Checkout: React.FC = () => {
 
   // Receipts are rendered from the committed server snapshot, never today's cart
   // or a locally guessed balance. A refresh failure cannot undo a paid receipt.
-  const showCompletedSettlement = (settlement: Settlement | null) => {
-    if (!settlement || settlement.paymentStatus !== 'completed') throw new Error('原单完成状态暂未确认，请刷新核对，勿重新收款');
-    setCompletedSettlement(settlement);
-    setSuccess(true);
-    setCustomerRefreshFailed(false);
-    void customerApi.getById(settlement.customerId).then(customer => {
-      if (!customer) throw new Error('Customer unavailable');
-      setCustomers(previous => previous.map(row => row.id === customer.id ? customer : row));
-      setSelectedCustomer(previous => previous?.id === customer.id ? customer : previous);
-    }).catch(() => {
-      setCustomerRefreshFailed(true);
-      setCustomers(previous => previous.filter(row => row.id !== settlement.customerId));
-      setSelectedCustomer(previous => previous?.id === settlement.customerId ? null : previous);
-    });
-  };
+
 
   const handleSubmit = async () => {
     if (loadingBooking || error || paymentRecoveryBlock || submissionLock.current) return;
@@ -1051,6 +1056,7 @@ const Checkout: React.FC = () => {
             </div>
           )}
 
+          {loadingPendingSettlements && <p className="mb-4 text-sm text-gray-500" role="status">正在读取待处理结算…</p>}
           {!loadingShop && !loadingCustomers && legacyPendingCount > 0 && (
             <p className="mb-4 rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm text-amber-900" role="status">
               {legacyPendingCount} 笔旧版待支付记录已从继续开单列表移出；存在支付记录，须先核对微信商户订单。可在结算管理查看。

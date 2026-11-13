@@ -11,7 +11,7 @@ test('SMS registration creates once, reuses existing customer and rejects duplic
  const resolve=()=>db.query<{id:string}>("SELECT resolve_sms_customer('13800000000') AS id");
  const first=(await resolve()).rows[0].id;
  assert.equal((await resolve()).rows[0].id,first);
- const row=(await db.query<any>('SELECT * FROM customers')).rows[0];
+ const row=(await db.query<Record<string, unknown>>('SELECT * FROM customers')).rows[0];
  assert.equal(row.identity_verified,false); assert.equal(row.shop_id,'shop1');
  await db.exec("INSERT INTO customers(id,phone) VALUES('duplicate','13800000000')");
  await assert.rejects(resolve,/AMBIGUOUS_CUSTOMER/);

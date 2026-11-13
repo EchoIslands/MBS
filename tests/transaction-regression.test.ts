@@ -36,16 +36,16 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
     });
     await t.test('限流持久化：每日十次、第五次失败锁定、到期解锁且不跨日清除未到期锁', async () => {
       for (let i=0;i<5;i++) {
-        assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,true);
+        assert.equal((await db.query<{allowed:boolean}>('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,true);
         await db.query('SELECT finish_customer_auth_attempt($1,FALSE)',['ip1']);
       }
-      assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,false);
+      assert.equal((await db.query<{allowed:boolean}>('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,false);
       await db.exec("UPDATE customer_auth_limits SET attempt_day=CURRENT_DATE-1 WHERE ip_hash='ip1'");
-      assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,false);
+      assert.equal((await db.query<{allowed:boolean}>('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,false);
       await db.exec("UPDATE customer_auth_limits SET locked_until=NOW()-INTERVAL '1 second' WHERE ip_hash='ip1'");
-      assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,true);
-      for (let i=0;i<10;i++) assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip2'])).rows[0].allowed,true);
-      assert.equal((await db.query('SELECT * FROM begin_customer_auth_attempt($1)',['ip2'])).rows[0].allowed,false);
+      assert.equal((await db.query<{allowed:boolean}>('SELECT * FROM begin_customer_auth_attempt($1)',['ip1'])).rows[0].allowed,true);
+      for (let i=0;i<10;i++) assert.equal((await db.query<{allowed:boolean}>('SELECT * FROM begin_customer_auth_attempt($1)',['ip2'])).rows[0].allowed,true);
+      assert.equal((await db.query<{allowed:boolean}>('SELECT * FROM begin_customer_auth_attempt($1)',['ip2'])).rows[0].allowed,false);
     });
     await t.test('余额、次卡、日志、结算同事务；重复完成不重复扣费', async () => {
       await create('one',30,true,'p');
@@ -84,7 +84,7 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
         INSERT INTO bookings(id,shop_id,customer_id,stylist_id,stylist_name,service_id,scheduled_time,status) VALUES('booking','s','c','designer','Actual designer','svc',NOW(),'confirmed');
         INSERT INTO customer_packages(id,shop_id,customer_id,name,service_id,total_times,used_times,expires_at) VALUES('last','s','c','Last time','svc',1,0,NOW()+INTERVAL '1 day');`);
       const payload = {id:'draft',shop_id:'s',customer_id:'c',booking_id:'booking',items:[{type:'service',id:'svc',name:'Service',quantity:1,originalPrice:10}],subtotal:10,discount:0,total:10,payment_method:'cash',used_benefit_ids:[],checkout_request_key:'draft'};
-      const submit = (value: any, complete=true) => db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,$4)',[JSON.stringify(value),'staff','Cashier',complete]);
+      const submit = (value:unknown, complete=true) => db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,$4)',[JSON.stringify(value),'staff','Cashier',complete]);
       await submit(payload,false);
       const before = await scalar("SELECT visit_count FROM customers WHERE id='c'");
       const spent = Number(await scalar("SELECT total_spent FROM customers WHERE id='c'"));
@@ -110,7 +110,7 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
     await t.test('取消/错归属拒绝；异步支付初始化只能认领一次；预约服务统计不提前写入', async () => {
       await db.exec("INSERT INTO bookings(id,shop_id,customer_id,service_id,scheduled_time,status) VALUES('cancelled','s','c','svc',NOW(),'cancelled'),('async','s','c','svc',NOW(),'confirmed');");
       const payload={id:'async-draft',shop_id:'s',customer_id:'c',booking_id:'async',items:[{type:'service',id:'svc',name:'Service',quantity:1,originalPrice:10}],subtotal:10,total:10,discount:0,payment_method:'wechat',used_benefit_ids:[],start_payment:true,checkout_request_key:'async'};
-      const submit=(value:any)=>db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,FALSE)',[JSON.stringify(value),'staff','Cashier']);
+      const submit=(value:unknown)=>db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,FALSE)',[JSON.stringify(value),'staff','Cashier']);
       await assert.rejects(submit({...payload,booking_id:'cancelled'}),/BOOKING_CANCELLED/);
       await assert.rejects(submit({...payload,booking_id:'missing'}),/BOOKING_OWNER_MISMATCH/);
       await submit(payload);
@@ -177,15 +177,15 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
       await manualCreate('cash-time','cash',selected);
       await manualCreate('card-time','card',null);
       await manualCreate('balance-time','balance',null);
-      const cash = (await db.query<any>("SELECT * FROM settlements WHERE id='cash-time'")).rows[0];
+      const cash = (await db.query<{[key:string]:unknown;created_at?:string;manual_paid_at?:string}>("SELECT * FROM settlements WHERE id='cash-time'")).rows[0];
       assert.equal(new Date(cash.manual_paid_at).toISOString(), new Date(selected).toISOString());
       assert.ok(cash.manual_paid_recorded_at);
       assert.equal(cash.manual_paid_recorded_by, 'cashier-id');
-      const card = (await db.query<any>("SELECT * FROM settlements WHERE id='card-time'")).rows[0];
+      const card = (await db.query<{[key:string]:unknown;created_at?:string;manual_paid_at?:string}>("SELECT * FROM settlements WHERE id='card-time'")).rows[0];
       assert.ok(card.manual_paid_at);
       assert.ok(card.manual_paid_recorded_at);
       assert.equal(card.manual_paid_recorded_by, 'cashier-id');
-      const balance = (await db.query<any>("SELECT * FROM settlements WHERE id='balance-time'")).rows[0];
+      const balance = (await db.query<{[key:string]:unknown;created_at?:string;manual_paid_at?:string}>("SELECT * FROM settlements WHERE id='balance-time'")).rows[0];
       assert.ok(balance.manual_paid_at);
       assert.ok(balance.manual_paid_recorded_at);
       assert.equal(balance.manual_paid_recorded_by, 'cashier-id');

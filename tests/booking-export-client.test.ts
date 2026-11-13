@@ -12,7 +12,7 @@ const bundle = await build({
 
 function client(failSecondPage = false) {
   const pages: number[] = [];
-  const module = { exports: {} as any };
+  const module = { exports: {} as typeof import("../src/api.js") };
   const context = vm.createContext({
     module, exports: module.exports, console, AbortController, URLSearchParams, setTimeout, clearTimeout,
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },

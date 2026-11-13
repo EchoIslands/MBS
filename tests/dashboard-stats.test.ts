@@ -6,7 +6,7 @@ const now = new Date('2026-10-23T12:00:00+08:00');
 const row = (overrides: Partial<Settlement> = {}): Settlement => ({
  id:'old-paid',shopId:'s1',customerId:'c1',customerName:'合成顾客',createdAt:new Date('2024-01-01T00:00:00Z'),total:33.64,
  paymentMethod:'wechat',paymentStatus:'completed',paymentId:'pay',transactionId:'wx',paymentAmount:33.64,paymentRecordStatus:'paid',
- paidAt:'2026-10-23T00:01:00+08:00',paidAtSource:'wechat_success_time',subtotal:58,discount:24.36,tax:0,discountDetail:{} as Settlement['discountDetail'],
+ paidAt:'2026-10-23T00:01:00+08:00',paidAtSource:'wechat_success_time',subtotal:58,couponDiscount:0,discount:24.36,tax:0,discountDetail:{} as Settlement['discountDetail'],
  items:[{id:'svc',name:'洗剪吹',type:'service',quantity:2,originalPrice:58,discountedPrice:16.82,total:33.64,employeeId:'stylist',employeeName:'合成设计师'}],...overrides,
 });
 const emp = [{id:'stylist',name:'合成设计师',title:'设计师'},{id:'other',name:'其他设计师'}];
@@ -23,7 +23,7 @@ test('经营看板：旧单今天付款跨北京时间午夜，金额和本月�
  assert.equal(businessDateKey('2026-10-22T16:01:00Z'),'2026-10-23');assert.equal(businessDateKey('bad'),'');
 });
 test('经营看板：各周期明细与排名同步切换，预约人数有结束边界且排除取消/他店/空客户',()=>{
- const booking=(date:string,status='confirmed',customerId='c1',shopId='s1')=>({scheduledTime:date,status,customerId,shopId}) as Booking;
+ const booking=(date:string,status='confirmed',customerId='c1',shopId='s1')=>({id:"synthetic",serviceId:"svc",scheduledTime:new Date(date),status:status as Booking["status"],customerId,shopId}) as Booking;
  const bookings=[booking('2026-10-23T20:00:00+08:00'),booking('2026-10-23T21:00:00+08:00'),booking('2026-10-24T09:00:00+08:00','confirmed','c2'),
  booking('2026-11-01T00:00:00+08:00','confirmed','future'),booking('2026-10-23T09:00:00+08:00','cancelled','cancelled'),
  booking('2026-10-23T09:00:00+08:00','confirmed','foreign','s2'),booking('2026-10-23T09:00:00+08:00','confirmed','')];

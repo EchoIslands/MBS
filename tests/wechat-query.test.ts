@@ -15,11 +15,11 @@ test('真实查单代码：签名GET、响应验签、精确success_time；缺�
   const {queryPaymentStatus}=await import('../backend/services/paymentService.js');
   const original=globalThis.fetch;
   let overrides:Record<string,unknown>={},tamper=false,stale=false,noHeaders=false,calls=0;
-  globalThis.fetch=(async(url:any,init:any)=>{
+  globalThis.fetch=(async(url:Parameters<typeof fetch>[0],init:Parameters<typeof fetch>[1])=>{
     calls++;
     assert.equal(String(url),'https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/gateway1?mchid=synthetic-mch');
     assert.equal(init.body,undefined);assert.ok(init.signal);
-    const auth=init.headers.Authorization;
+    const auth=new Headers(init.headers).get('Authorization')!;
     const timestamp=auth.match(/timestamp="([^"]+)"/)[1],nonce=auth.match(/nonce_str="([^"]+)"/)[1],signature=auth.match(/signature="([^"]+)"/)[1];
     const verifier=createVerify('RSA-SHA256');verifier.update('GET\n/v3/pay/transactions/out-trade-no/gateway1?mchid=synthetic-mch\n'+timestamp+'\n'+nonce+'\n\n');
     assert.equal(verifier.verify(merchant.publicKey,signature,'base64'),true);
@@ -32,6 +32,14 @@ test('真实查单代码：签名GET、响应验签、精确success_time；缺�
     assert.deepEqual(await queryPaymentStatus('gateway1'),{status:'paid',tradeState:'SUCCESS',amount:33.64,transactionId:'420000001',paidAt:'2026-10-22T11:12:34.000Z',message:'支付成功'});
     for(const change of [{success_time:undefined},{out_trade_no:'gateway2'},{mchid:'other'},{transaction_id:''},{amount:{currency:'CNY',total:33.64}}]) {
       overrides=change;assert.notEqual((await queryPaymentStatus('gateway1')).status,'paid');
+    }
+    for (const trade_state of ['NOTPAY','CLOSED']) {
+      for (const total of [0,-1,'3364',Number.MAX_SAFE_INTEGER+1]) {
+        overrides={trade_state,amount:{currency:'CNY',total}};
+        const result=await queryPaymentStatus('gateway1');
+        assert.equal(result.tradeState,undefined);
+        assert.equal(result.amount,undefined);
+      }
     }
     overrides={};tamper=true;assert.notEqual((await queryPaymentStatus('gateway1')).status,'paid');
     tamper=false;stale=true;assert.notEqual((await queryPaymentStatus('gateway1')).status,'paid');
@@ -49,16 +57,16 @@ test('Native恢复协议：POST签名和原参数、二维码响应验签、查�
   const {createNativePayment,nativePaymentRequest,queryPaymentStatus,closeNativePayment}=await import('../backend/services/paymentService.js');
   const original=globalThis.fetch;let operation='native',tamper=false,state='NOTPAY',mismatch=false;
   const request=nativePaymentRequest('gateway1',67.28,'Synthetic');
-  globalThis.fetch=(async(url:any,init:any)=>{
+  globalThis.fetch=(async(url:Parameters<typeof fetch>[0],init:Parameters<typeof fetch>[1])=>{
     const path=new URL(String(url)).pathname+new URL(String(url)).search;
     assert.equal(new URL(String(url)).hostname,'api.mch.weixin.qq.com');assert.ok(init.signal);
-    const auth=init.headers.Authorization;
+    const auth=new Headers(init.headers).get('Authorization')!;
     const ts=auth.match(/timestamp="([^"]+)"/)[1],nonce=auth.match(/nonce_str="([^"]+)"/)[1],signature=auth.match(/signature="([^"]+)"/)[1];
     const verifier=createVerify('RSA-SHA256');verifier.update((init.method || 'GET')+'\n'+path+'\n'+ts+'\n'+nonce+'\n'+(init.body || '')+'\n');
     assert.equal(verifier.verify(merchant.publicKey,signature,'base64'),true);
-    if(operation==='close') {assert.equal(init.method,'POST');assert.match(path,/gateway1\/close$/);assert.deepEqual(JSON.parse(init.body),{mchid:'synthetic-mch'});return new Response(null,{status:204});}
-    let value:any,status=200;
-    if(operation==='native') {assert.equal(path,'/v3/pay/transactions/native');assert.deepEqual(JSON.parse(init.body),request);value={code_url:'weixin://wxpay/synthetic'};}
+    if(operation==='close') {assert.equal(init.method,'POST');assert.match(path,/gateway1\/close$/);assert.deepEqual(JSON.parse(String(init.body)),{mchid:'synthetic-mch'});return new Response(null,{status:204});}
+    let value:unknown,status=200;
+    if(operation==='native') {assert.equal(path,'/v3/pay/transactions/native');assert.deepEqual(JSON.parse(String(init.body)),request);value={code_url:'weixin://wxpay/synthetic'};}
     else if(state==='NOT_FOUND') {status=404;value={code:'ORDER_NOT_EXIST'};}
     else value={appid:'synthetic-app',mchid:'synthetic-mch',out_trade_no:mismatch?'other':'gateway1',trade_state:state,amount:{total:6728,currency:'CNY'}};
     const body=JSON.stringify(value),responseTs=String(Math.floor(Date.now()/1000));

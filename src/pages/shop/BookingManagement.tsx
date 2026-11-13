@@ -209,7 +209,7 @@ const BookingManagement: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [viewingBooking?.customerId, viewingBooking?.serviceId, viewingBooking?.status, viewingBooking?.id]);
+  }, [viewingBooking]);
 
 // 完成服务
   const handleCompleteBooking = async () => {
@@ -415,17 +415,7 @@ const BookingManagement: React.FC = () => {
   };
 
   // 快捷按钮：完成服务
-  const handleFinishService = async () => {
-    if (!viewingBooking) return;
-    if (!window.confirm('确认标记顾客已完成服务吗？')) return;
-    try {
-      const updated = await bookingApi.updateBookingServiceTime(viewingBooking.id, undefined, new Date());
-      setViewingBooking(updated);
-      fetchBookings();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '标记完成服务失败');
-    }
-  };
+
 
   // 兼容 API 返回的 stylistName/stylistId 与 mock 使用的 barberName/barberId
   const getBarberName = (booking: Booking) =>

@@ -28,7 +28,7 @@ import {
   MapPin,
   AlertCircle,
 } from 'lucide-react';
-import { Customer, CustomerTag, MembershipLevel, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
+import { Customer, CustomerTag, PurchaseVIPLevel, StoredValueLevel } from '../../../shared/types';
 import {
   HaircutStylePreference,
   HairColorPreference,

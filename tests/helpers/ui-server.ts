@@ -1,3 +1,4 @@
+import type {FixtureRow as Row, FixtureRpcArgs} from './fixture-types.js';
 import { createServer } from 'node:http';
 // 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
 process.env.SUPABASE_URL = 'https://synthetic.invalid';
@@ -5,16 +6,16 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
 process.env.JWT_SECRET = 'synthetic-test-secret-only-01234567890123456789';
 process.env.NODE_ENV = 'test';
 const { supabase } = await import('../../backend/db/index.js');
-const { hashPassword, verifyPassword, isPasswordHash } = await import('../../backend/lib/password.js');
-const { getJwtSecret } = await import('../../backend/lib/tokens.js');
-const { default: jwt } = await import('jsonwebtoken');
+const { hashPassword } = await import('../../backend/lib/password.js');
+
+
 const realFetch = globalThis.fetch;
 let base = '';
-globalThis.fetch = ((input: any, init: any) => {
+globalThis.fetch = ((input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
   if (!String(input).startsWith(base + '/api/') || !base) throw new Error('测试禁止外网访问');
   return realFetch(input, init);
 }) as typeof fetch;
-type Row = Record<string, any>;
+
 const tables: Record<string, Row[]> = {
  employees: [
   {id:'ceo',shop_id:'s1',name:'Synthetic CEO',role:'ceo',phone:'synthetic-ceo',is_active:true,password_hash:'old-password'},
@@ -29,25 +30,25 @@ const tables: Record<string, Row[]> = {
  ],
  customer_profiles: [], customer_visit_records: [], customer_packages: [], shops:[{id:'s1',name:'Synthetic shop'}], settlements:[],settlement_items:[],
 };
-let calls = 0;
-let failMigration = false;
-let failAuthentication = false;
-let failPaymentQuery = false;
+
+const failMigration = false;
+const failAuthentication = false;
+const failPaymentQuery = false;
 class Query {
- filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: any; columns='*'; singleRow=false;
+ filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: Row | Row[]; columns='*'; singleRow=false;
  rowStart=0;rowEnd:number|undefined;exactCount=false;
- constructor(public table:string) { calls++; }
+ constructor(public table:string) { }
  select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
- eq(k:string,v:any) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
- is(k:string,v:any) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
- contains(k:string,v:any[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
- in(k:string,v:any[]) {this.filters.push(r=>v.includes(r[k]));return this;}
+ eq(k:string,v:unknown) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
+ is(k:string,v:unknown) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
+ contains(k:string,v:unknown[]) {this.filters.push(r=>v.every(x=>Array.isArray(r[k])&&r[k].includes(x)));return this;}
+ in(k:string,v:unknown[]) {this.filters.push(r=>v.includes(r[k]));return this;}
  gt(){return this;} or(){return this;} gte(){return this;} lt(){return this;} order(){return this;} range(start:number,end:number){this.rowStart=start;this.rowEnd=end+1;return this;} limit(n:number){this.maxRows=n;return this;} maxRows?:number;
- update(v:any){this.operation='update';this.payload=v;return this;}
- insert(v:any){this.operation='insert';this.payload=v;return this;}
+ update(v:Row){this.operation='update';this.payload=v;return this;}
+ insert(v:Row | Row[]){this.operation='insert';this.payload=v;return this;}
  delete(){this.operation='delete';return this;}
  single(){this.singleRow=true;return this;} maybeSingle(){this.singleRow=true;return this;}
- then(resolve:any,reject:any){try{
+ then(resolve:(value:{data:unknown;error:unknown;count?:number})=>unknown,reject:(error:unknown)=>unknown){try{
   if(failPaymentQuery && this.table==='payments') return Promise.resolve({data:null,error:{message:'synthetic query failure'}}).then(resolve,reject);
   if(failAuthentication && this.table==='employees') return Promise.resolve({data:null,error:{message:'synthetic unavailable'}}).then(resolve,reject);
   const matched=(tables[this.table]||[]).filter(r=>this.filters.every(f=>f(r)));
@@ -60,17 +61,17 @@ class Query {
   return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null,count:this.exactCount?matched.length:null}).then(resolve,reject);
  }catch(e){return Promise.reject(e).then(resolve,reject);}}
 }
-(supabase as any).from=(table:string)=>new Query(table);
+Object.assign(supabase, {from:(table:string)=>new Query(table)});
 let rpcFailures = 0;
-let failRpc = false;
-let draftDeleteError: any = null;
+const failRpc = false;
+const draftDeleteError: {message?:string;code?:string} | null = null;
 let completeCheckout = false;
-let checkoutRpcCalls = 0;
+
 const newCheckoutMode=process.env.MBS_UI_NEW_CHECKOUT==='1';
 const customerSaveMode=process.env.MBS_UI_CUSTOMER_SAVE==='1';
 const productListMode=process.env.MBS_UI_PRODUCT_LIST==='1';
 const authLimitMode=process.env.MBS_UI_AUTH_LIMIT;
-(supabase as any).rpc = async (name: string, args: any) => {
+Object.assign(supabase, {rpc: async (name: string, args: FixtureRpcArgs) => {
  if(customerSaveMode && name==='adjust_customer_balance_atomic') {
   const row=tables.customers.find(r=>r.id===args.p_customer_id&&r.shop_id===args.p_shop_id);
   if(!row || row.stored_value_balance!==args.p_expected_balance)return {data:null,error:{message:'BALANCE_CONFLICT'}};
@@ -148,7 +149,7 @@ const authLimitMode=process.env.MBS_UI_AUTH_LIMIT;
   if(s.checkout_payment_started_at || !s.created_at || Date.now()-new Date(s.created_at).getTime()<5*60_000) return {data:false,error:null};
   s.checkout_payment_started=false;s.checkout_request_key=null;return {data:true,error:null};
  }
- if (name === 'create_settlement_with_manual_time_atomic') checkoutRpcCalls++;
+ if (name === 'create_settlement_with_manual_time_atomic')
  if (name === 'create_settlement_with_manual_time_atomic' && completeCheckout) {
   const row={...args.p_settlement,payment_status:'completed',created_at:new Date().toISOString(),manual_paid_at:args.p_manual_paid_at || new Date().toISOString(),manual_paid_recorded_at:new Date().toISOString(),manual_paid_recorded_by:'ceo'};
   tables.settlements.push(row);
@@ -161,7 +162,7 @@ const authLimitMode=process.env.MBS_UI_AUTH_LIMIT;
  ], error: null };
  if (name === 'finish_customer_auth_attempt_v2') { if(args.p_outcome!=='cancelled') rpcFailures = args.p_outcome==='success' ? 0 : rpcFailures+1; return {data:true,error:null}; }
  return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
-};
+}});
 
 
 tables.shops[0]={id:'shop1',name:'本地合成测试门店',phone:'13800000000',services:[{id:'svc',name:'设计师洗剪吹',price:58,duration:30}],is_active:true};
@@ -218,7 +219,7 @@ const server=createServer((req,res)=>{
   res.end(JSON.stringify({balance:tables.customers[0].stored_value_balance,adjustments:tables.stored_value_transactions||[],lastVisitAt:tables.customers[0].last_visit_at,sharedFund:tables.customers[0].shared_fund,customerCount:tables.customers.filter(c=>c.shop_id==="shop1").length}));return;
  }
  res.once('finish',()=>console.log('[合成HTTP]',req.method,req.url?.split('?')[0],res.statusCode));
- void handler(req as any,res as any);
+ void handler(req as Parameters<typeof handler>[0],res as Parameters<typeof handler>[1]);
 });
 const uiPort=Number(process.env.MBS_UI_TEST_PORT || 31371);
 server.listen(uiPort,'127.0.0.1',()=>{base='http://127.0.0.1:'+uiPort;console.log('合成界面测试 API: '+base+'；禁止外网请求，无生产数据库连接');});

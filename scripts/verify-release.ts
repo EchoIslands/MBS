@@ -100,9 +100,9 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
     const refundSettlement = await connection.query("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='refund_requests' AND column_name='settlement_id'");
     if (!refundSettlement.rows.some(row => row.data_type==='text')) issues.push('缺少或不兼容042退款原结算字段');
     const refundIndex = await connection.query("SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='refund_requests' AND indexname='service_refund_active_settlement_unique'");
-    if (!refundIndex.rows.some(row => /CREATE UNIQUE INDEX/.test(row.indexdef) && row.indexdef.includes('(settlement_id)') && row.indexdef.includes('WHERE') && ['pending','approved','completed'].every(status=>row.indexdef.includes("'"+status+"'")))) issues.push('缺少042退款原单防重索引');
+    if (!refundIndex.rows.some(row => typeof row.indexdef === 'string' && /CREATE UNIQUE INDEX/.test(row.indexdef) && row.indexdef.includes('(settlement_id)') && row.indexdef.includes('WHERE') && ['pending','approved','completed'].every(status=>String(row.indexdef).includes("'"+status+"'")))) issues.push('缺少042退款原单防重索引');
     const refundReference = await connection.query("SELECT pg_get_constraintdef(oid) AS definition,convalidated FROM pg_constraint WHERE conrelid='public.refund_requests'::regclass AND conname='refund_requests_settlement_fk' AND contype='f'");
-    if (!refundReference.rows.some(row=>row.convalidated===true && /FOREIGN KEY \(settlement_id\) REFERENCES settlements\(id\) ON DELETE RESTRICT/.test(row.definition))) issues.push('缺少042退款原单保留约束');
+    if (!refundReference.rows.some(row=>row.convalidated===true && typeof row.definition==='string' && /FOREIGN KEY \(settlement_id\) REFERENCES settlements\(id\) ON DELETE RESTRICT/.test(row.definition))) issues.push('缺少042退款原单保留约束');
     for (const signature of [
       'public.adjust_customer_balance_atomic(text,text,numeric,numeric,text,text,text)',
       'public.complete_service_refund_atomic(text,text,text,text,text,text,numeric,timestamp with time zone)',
@@ -165,7 +165,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
         COUNT(*) FILTER (WHERE is_weak_password IS TRUE)::text AS must_change_password,
         COUNT(*) FILTER (WHERE identity_verified IS NOT TRUE)::text AS unverified
         FROM password_states`);
-      counts = result.rows[0];
+      counts = Object.fromEntries(Object.entries(result.rows[0]).map(([key,value]) => [key,String(value)]));
       if (counts.empty_password !== '0' && options.expectedPendingPasswords === undefined) {
         issues.push('仍有空密码记录；须核对新增来源，确认待首次设密数量后使用 --expected-pending-passwords；不自动初始化');
       }

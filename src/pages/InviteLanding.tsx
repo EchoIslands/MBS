@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, Gift, User, Phone } from 'lucide-react';
 import { getApiBase } from '../../shared/api-base';
@@ -43,16 +43,7 @@ export default function InviteLanding() {
   const [claimed, setClaimed] = useState(false);
   const [claimedCoupon, setClaimedCoupon] = useState<ClaimedCoupon | null>(null);
 
-  useEffect(() => {
-    if (!ref) {
-      setLoading(false);
-      setError('无效的邀请链接');
-      return;
-    }
-    loadInviteInfo();
-  }, [ref]);
-
-  const loadInviteInfo = async () => {
+  const loadInviteInfo = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -63,12 +54,21 @@ export default function InviteLanding() {
       } else {
         setError(data.error || '邀请信息加载失败');
       }
-    } catch (err) {
+    } catch {
       setError('邀请信息加载失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [ref]);
+
+  useEffect(() => {
+    if (!ref) {
+      setLoading(false);
+      setError('无效的邀请链接');
+      return;
+    }
+    loadInviteInfo();
+  }, [loadInviteInfo, ref]);
 
   const handleClaim = async () => {
     if (claiming) return;
@@ -92,7 +92,7 @@ export default function InviteLanding() {
       } else {
         alert(data.error || '领取失败');
       }
-    } catch (err) {
+    } catch {
       alert('领取失败');
     } finally {
       setClaiming(false);

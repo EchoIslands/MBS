@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
@@ -15,7 +15,6 @@ import {
   Phone,
   Loader2,
   CheckCircle,
-  ArrowRight,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { customerAnalyticsApi, couponApi } from '../../api';
@@ -73,7 +72,7 @@ const CustomerInsightsPage: React.FC = () => {
   const [toast, setToast] = useState('');
   const [sendingCustomerId, setSendingCustomerId] = useState<string | null>(null);
 
-  const fetchInsights = async () => {
+  const fetchInsights = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -86,7 +85,7 @@ const CustomerInsightsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentShop?.id]);
 
   useEffect(() => {
     if (![UserRole.CEO, UserRole.SHOP_OWNER, UserRole.CUSTOMER_SERVICE].includes(userRole as UserRole)) {
@@ -94,7 +93,7 @@ const CustomerInsightsPage: React.FC = () => {
       return;
     }
     fetchInsights();
-  }, [userRole, navigate, currentShop]);
+  }, [userRole, navigate, fetchInsights]);
 
   // 等待布局稳定后再渲染图表，避免 ResponsiveContainer 读取到 0/-1 尺寸
   useLayoutEffect(() => {

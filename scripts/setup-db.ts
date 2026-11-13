@@ -51,7 +51,7 @@ const EXPECTED_COLUMNS: Record<string, string> = {
 };
 
 // pg 与隔离引擎共用相同 runner，测试不创建真实数据库连接。
-export type SetupConnection = { query: (sql: string, values?: any[]) => Promise<{ rows: any[] }> };
+export type SetupConnection = { query: (sql: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
 
 export async function setupDatabase(connection: SetupConnection, log = console.log) {
   // 先加载全部文件；029 自带事务边界，由 runner 统一管理全部文件的事务。

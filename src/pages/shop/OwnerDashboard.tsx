@@ -54,7 +54,7 @@ const OwnerDashboardPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  useEffect(() => {const cleanupCounter=requestVersion;
     // 老板数据看板只有 CEO 和老板角色可以访问
     if (![UserRole.CEO, UserRole.SHOP_OWNER].includes(userRole as UserRole)) {
       navigate('/shop');
@@ -62,7 +62,7 @@ const OwnerDashboardPage: React.FC = () => {
     }
 
     fetchDashboard();
-    return () => { requestVersion.current++; };
+    return () => { cleanupCounter.current++; };
   }, [userRole, navigate, currentShop?.id]);
 
   // 等待布局稳定后再渲染图表，避免 ResponsiveContainer 读取到 0/-1 尺寸

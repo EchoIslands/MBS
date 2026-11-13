@@ -8,8 +8,8 @@ test('图片地址取代截断base64，完整图片可读，编辑回写保留�
   assert.equal(imageReference(original,url),url);
   assert.equal(restoreImageReference(url,original,url),original);
   assert.equal(imageReference('https://images.example/test.png',url),'https://images.example/test.png');
-  const headers:Record<string,string>={};let body:any;let status=200;
-  const res:any={setHeader(k:string,v:string){headers[k]=v},send(b:any){body=b;return this},status(n:number){status=n;return this},end(){return this}};
-  sendStoredImage(res,original);assert.equal(headers['Content-Type'],'image/png');assert.ok(Buffer.isBuffer(body));assert.equal(body.toString('base64'),original.split(',')[1]);
-  sendStoredImage(res,'data:image/svg+xml;base64,PHN2Zz4=');assert.equal(status,404);
+  const headers:Record<string,string>={};let body:unknown;let status=200;
+  const res={setHeader(k:string,v:string){headers[k]=v},send(b:unknown){body=b;return this},status(n:number){status=n;return this},end(){return this}};
+  sendStoredImage(res as Parameters<typeof sendStoredImage>[0],original);assert.equal(headers['Content-Type'],'image/png');assert.ok(Buffer.isBuffer(body));assert.equal(body.toString('base64'),original.split(',')[1]);
+  sendStoredImage(res as Parameters<typeof sendStoredImage>[0],'data:image/svg+xml;base64,PHN2Zz4=');assert.equal(status,404);
 });

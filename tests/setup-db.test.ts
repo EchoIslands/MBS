@@ -13,7 +13,7 @@ async function fixture() {
   for (const file of baseline) await db.exec((await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')).replace(/^\uFEFF/, ''));
   await db.exec("INSERT INTO shops(id,name) VALUES ('s','Synthetic'); INSERT INTO customers(id,shop_id,name,phone,balance,stored_value_balance) VALUES ('c','s','Synthetic','13800000000',100,100);");
   const connection: SetupConnection = { query: async (sql, values) => {
-    if (values) return db.query(sql, values);
+    if (values) return db.query<Record<string, unknown>>(sql,values);
     const results = await db.exec(sql);
     return { rows: results.at(-1)?.rows || [] };
   } };
@@ -26,17 +26,17 @@ test('真实引擎：无 025–029 时完整安装、重复执行、已有数据
   try {
     await setupDatabase(connection, line => logs.push(line));
     assert.equal(logs.filter(line => line.includes('等待统一提交')).length, SETUP_MIGRATIONS.length);
-    const row = (await db.query<any>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
+    const row = (await db.query<Record<string, unknown>>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
     assert.equal(row.password_hash, null); assert.equal(row.is_weak_password, false); assert.equal(row.identity_verified, false); assert.equal(Number(row.balance), 100);
     await db.exec("UPDATE customers SET password_hash='synthetic-preserved',is_weak_password=true,identity_verified=true WHERE id='c';");
     await setupDatabase(connection, () => {});
     await upgradeCheckout(connection);
     await upgradeCheckout(connection);
-    const again = (await db.query<any>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
+    const again = (await db.query<Record<string, unknown>>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
     assert.equal(again.password_hash, 'synthetic-preserved'); assert.equal(again.is_weak_password, true); assert.equal(again.identity_verified, true); assert.equal(Number(again.balance), 100);
-    const functionBody = (await db.query<any>("SELECT pg_get_functiondef('public.pay_product_order_atomic(text,text)'::regprocedure) definition")).rows[0].definition;
+    const functionBody = (await db.query<{definition:string}>("SELECT pg_get_functiondef('public.pay_product_order_atomic(text,text)'::regprocedure) definition")).rows[0].definition;
     assert.match(functionBody, /c.is_weak_password/);
-    assert.equal((await db.query<any>("SELECT COUNT(*)::integer n FROM customer_password_initialization_runs")).rows[0].n, 0);
+    assert.equal((await db.query<Record<string, unknown>>("SELECT COUNT(*)::integer n FROM customer_password_initialization_runs")).rows[0].n, 0);
   } finally { await db.close(); }
 });
 
@@ -53,9 +53,9 @@ test('部分迁移已存在可补齐；模拟 028 失败回滚所有本轮 DDL�
     await assert.rejects(setupDatabase(fault, () => {}), error => {
       assert.match(String(error), /028_.*42703/); assert.doesNotMatch(String(error), /PRIVATE/); return true;
     });
-    assert.equal((await db.query<any>("SELECT COUNT(*)::integer n FROM information_schema.columns WHERE table_schema='public' AND table_name='customers' AND column_name='identity_verified'")).rows[0].n, 0);
+    assert.equal((await db.query<Record<string, unknown>>("SELECT COUNT(*)::integer n FROM information_schema.columns WHERE table_schema='public' AND table_name='customers' AND column_name='identity_verified'")).rows[0].n, 0);
     await setupDatabase(connection, () => {});
-    assert.equal((await db.query<any>("SELECT password_hash FROM customers WHERE id='c'")).rows[0].password_hash, 'synthetic-existing');
+    assert.equal((await db.query<Record<string, unknown>>("SELECT password_hash FROM customers WHERE id='c'")).rows[0].password_hash, 'synthetic-existing');
   } finally { await db.close(); }
 });
 
@@ -63,17 +63,17 @@ test('缺历史基础表在 DDL 前停止；缺陷列类型不兼容则回滚', 
   const db = new PGlite();
   try {
     const connection: SetupConnection = { query: async (sql, values) => {
-      if (values) return db.query(sql, values);
+      if (values) return db.query<Record<string, unknown>>(sql,values);
       return { rows: (await db.exec(sql)).at(-1)?.rows || [] };
     } };
     await assert.rejects(setupDatabase(connection, () => {}), /缺少 001–024/);
-    assert.equal((await db.query<any>("SELECT COUNT(*)::integer n FROM information_schema.tables WHERE table_schema='public'")).rows[0].n, 0);
+    assert.equal((await db.query<Record<string, unknown>>("SELECT COUNT(*)::integer n FROM information_schema.tables WHERE table_schema='public'")).rows[0].n, 0);
   } finally { await db.close(); }
   const f = await fixture();
   try {
     await f.db.exec('ALTER TABLE customers ADD COLUMN password_hash integer;');
     await assert.rejects(setupDatabase(f.connection, () => {}), /客户字段缺失或类型不兼容：password_hash/);
-    assert.equal((await f.db.query<any>("SELECT COUNT(*)::integer n FROM information_schema.columns WHERE table_name='customers' AND column_name='is_weak_password'")).rows[0].n, 0);
+    assert.equal((await f.db.query<Record<string, unknown>>("SELECT COUNT(*)::integer n FROM information_schema.columns WHERE table_name='customers' AND column_name='is_weak_password'")).rows[0].n, 0);
   } finally { await f.db.close(); }
 });
 

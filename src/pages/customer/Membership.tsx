@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { customerApi, customerMembershipApi, type CustomerMembershipOrder, type CustomerMembershipPlans } from '../../api';
 import { useAppStore } from '../../store';
@@ -29,20 +29,23 @@ const Membership: React.FC = () => {
       if(result.status==='paid'&&currentCustomer){
         try {
           const updated=await customerApi.getMyProfile(currentCustomer.id);
-          if(updated)setCurrentCustomer({...currentCustomer,...updated});
+          const latest=useAppStore.getState().currentCustomer;
+          if(updated&&latest?.id===currentCustomer.id)setCurrentCustomer({...latest,...updated});
         } catch { /* 收款核对已完成；资料可稍后刷新。 */ }
       }
     }catch(e){setError(e instanceof Error?e.message:'查单暂不可用，请勿重复付款');}
     finally{setBusy(false);}
   };
+  const checkRef=useRef(check);
+  checkRef.current=check;
   useEffect(()=>{
     if(order?.status!=='pending')return;
-    const onReturn=()=>{if(document.visibilityState==='visible')void check();};
+    const onReturn=()=>{if(document.visibilityState==='visible')void checkRef.current();};
     window.addEventListener('focus',onReturn);
     document.addEventListener('visibilitychange',onReturn);
-    void check();
+    void checkRef.current();
     return()=>{window.removeEventListener('focus',onReturn);document.removeEventListener('visibilitychange',onReturn);};
-  },[order?.id]);
+  },[order?.id,order?.status]);
   const resume=async()=>{
     if(!order||order.status!=='pending'||busy)return;
     if(order.channel!=='wechat_h5'){setError('原订单在小程序创建，请返回小程序继续支付');return;}
