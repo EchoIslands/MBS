@@ -34,7 +34,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     const beforePending = (await db.query('SELECT * FROM customers ORDER BY id')).rows;
     queries.length = 0;
     const confirmedPending = await verifyRelease(connection, { expectedPendingPasswords: 8 });
-    assert.equal(confirmedPending.passed, true);
+    assert.equal(confirmedPending.passed, true, confirmedPending.issues.join(' | '));
     assert.equal(confirmedPending.counts?.empty_password, '8');
     assert.equal(confirmedPending.counts?.pending_password_setup, '8');
     assert.equal(confirmedPending.counts?.empty_password_requires_review, '0');
@@ -78,7 +78,7 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     assert.deepEqual(report.issues, []);
     assert.equal(report.passed, true);
     assert.equal(report.counts?.must_change_password, '1');
-    assert.equal(report.checkedFunctions, 41);
+    assert.equal(report.checkedFunctions, 55);
     await db.exec('DROP INDEX service_refund_active_settlement_unique');
     assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('042退款原单防重索引')));
     await db.exec(await readFile(new URL('../migrations/042_service_refunds_by_settlement.sql',import.meta.url),'utf8'));
@@ -91,11 +91,11 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     // 复现旧迁移只撤 PUBLIC 后仍遗留的 20 条有效授权。
     await db.exec('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;');
     const exposed = await verifyRelease(connection);
-    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 90);
+    assert.equal(exposed.issues.filter(issue => issue.includes('函数权限')).length, 118);
     await fixRpcPermissions(connection);
     const after030=await verifyRelease(connection);
     assert.equal(after030.passed,false);
-    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,70);
+    assert.equal(after030.issues.filter(issue=>issue.includes('函数权限')).length,98);
     await db.exec(await readFile(new URL('../migrations/032_recover_unstarted_settlement_payment.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/033_atomic_customer_operations.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../migrations/035_membership_and_shipping_atomic.sql', import.meta.url), 'utf8'));
@@ -108,7 +108,10 @@ test('只读发布检查：缺迁移、空密码、危险授权、RLS和字段�
     await db.exec(await readFile(new URL('../migrations/042_service_refunds_by_settlement.sql',import.meta.url),'utf8'));
     await db.exec(await readFile(new URL('../migrations/043_customer_auth_failure_limits.sql',import.meta.url),'utf8'));
     await db.exec(await readFile(new URL('../migrations/044_customer_last_service.sql',import.meta.url),'utf8'));
-    assert.equal((await verifyRelease(connection)).passed, true);
+    // Reapply the complete installed sequence so later 045–050 function grants are restored too.
+    await setupDatabase(connection, () => {});
+    const afterReplay = await verifyRelease(connection);
+    assert.equal(afterReplay.passed, true, afterReplay.issues.join(' | '));
     await db.exec('ALTER TABLE settlements DISABLE TRIGGER sync_customer_last_service');
     assert.ok((await verifyRelease(connection)).issues.some(issue=>issue.includes('044上次服务资料同步触发器')));
     await db.exec('ALTER TABLE settlements ENABLE TRIGGER sync_customer_last_service');

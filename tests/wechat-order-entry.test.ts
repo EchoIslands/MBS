@@ -92,7 +92,7 @@ async function miniHarness(route='pages/payment-order/payment-order', options:an
   const context=vm.createContext({
     console, setTimeout, clearTimeout,
     getCurrentPages:()=>[{route,options}],
-    wx:{reLaunch:(o:any)=>redirects.push(o),showToast(){}},
+    wx:{reLaunch:(o:any)=>redirects.push(o),showToast(){},getStorageSync:()=>'',setStorageSync(){},removeStorageSync(){}},
     getCustomerId:()=> 'c1', getToken:()=> 'token', getPasswordChangeRequired:()=>false,
     setCustomerId(){}, clearCustomerId(){}, changeCustomerPassword:async()=>{},
     loginCustomer:async()=>({customer:{id:'c1',mustChangePassword:false}}),

@@ -34,10 +34,20 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
   const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
   const signatures = new Set<string>();
+  const serviceExecutables = new Set<string>();
+  const normalizeSignature = (value: string) => 'public.' + value.replace(/^public\./i, '').replace(/\s/g, '').toLowerCase();
   for (const file of SETUP_MIGRATIONS) {
     const sql = await readFile(new URL('../migrations/' + file, import.meta.url), 'utf8');
     for (const match of sql.matchAll(/REVOKE ALL ON FUNCTION\s+((?:public\.)?[\w]+\([^)]*\))\s+FROM PUBLIC/gi)) {
-      signatures.add('public.' + match[1].replace(/^public\./i,'').replace(/\s/g, '').toLowerCase());
+      signatures.add(normalizeSignature(match[1]));
+    }
+    for (const change of sql.matchAll(/\b(GRANT|REVOKE) EXECUTE ON FUNCTION\s+([^;]*?)\s+(?:TO|FROM)\s+service_role\s*;/gi)) {
+      for (const match of change[2].matchAll(/(?:public\.)?[\w]+\([^)]*\)/gi)) {
+        const signature = normalizeSignature(match[0]);
+        signatures.add(signature);
+        if (change[1].toUpperCase() === 'GRANT') serviceExecutables.add(signature);
+        else serviceExecutables.delete(signature);
+      }
     }
   }
   await connection.query('BEGIN READ ONLY');
@@ -116,7 +126,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
       if (!found.rows[0]?.name) { issues.push('缺少函数 ' + signature); continue; }
       for (const role of roleNames) {
         const result = await connection.query('SELECT has_function_privilege($1, $2, \'EXECUTE\') AS allowed', [role, signature]);
-        if (result.rows[0]?.allowed !== (role === 'service_role')) issues.push('函数权限不合格 ' + signature + ' / ' + role);
+        if (result.rows[0]?.allowed !== (role === 'service_role' && serviceExecutables.has(signature))) issues.push('函数权限不合格 ' + signature + ' / ' + role);
       }
     }
     for (const table of protectedTables) {
