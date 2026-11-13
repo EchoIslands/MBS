@@ -1,6 +1,7 @@
 import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, liveQueueAction } from '../services/liveQueue.js';
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import customerPaymentOrdersRouter from './customerPaymentOrders.js';
+import customerMembershipRouter from './customerMembership.js';
 import { Router, Request, Response } from 'express';
 import { smsReady, generateSmsCode, reserveSmsCode, cancelSmsCode, verifySmsCode, sendSmsCode } from '../services/customerSms.js';
 import jwt from 'jsonwebtoken';
@@ -32,12 +33,13 @@ import type { Settlement } from '../../shared/types.js';
 import QRCode from 'qrcode';
 import { priceSettlement } from '../lib/settlementPricing.js';
 import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
-import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS } from '../lib/tokens.js';
+import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS, CUSTOMER_RESTRICTED_SESSION_SECONDS } from '../lib/tokens.js';
 import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
 const mainRouter = Router();
 mainRouter.use('/customer-payment-orders', customerPaymentOrdersRouter);
+mainRouter.use('/customer-membership', customerMembershipRouter);
 const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
@@ -1969,7 +1971,7 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
     const mustChangePassword = weakPassword === true;
     const verifiedCustomer = mustChangePassword ? { id: customer.id, shop_id: customer.shop_id, must_change_password: true, identity_verified: false } : { ...safeCustomer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) };
     const token = signCustomerToken(customer.id, customer.shop_id, passwordHash, mustChangePassword);
-    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
+    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: (mustChangePassword ? CUSTOMER_RESTRICTED_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS) * 1000 });
     return res.json({ success: true, data: toCamelCase(verifiedCustomer), ...(req.body?.client === 'mini' ? { token } : {}) });
   } catch (error) {
     return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '身份验证暂不可用' });
@@ -2463,10 +2465,10 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
 
       updatePayload.stored_value_level = storedValueLevel;
       updatePayload.stored_value_balance = newBalance;
-      updatePayload.balance = newBalance;
+      updatePayload.balance = storedValueLevel === 'none' ? customer.balance : newBalance;
       updatePayload.has_recharged = storedValueLevel !== 'none';
       updatePayload.recharge_level = storedValueLevel;
-      updatePayload.stored_value_expires_at = new Date(Date.now() + 2 * 365 * 86400000).toISOString();
+      updatePayload.stored_value_expires_at = storedValueLevel === 'none' ? null : new Date(Date.now() + 2 * 365 * 86400000).toISOString();
 
       if (storedAddAmount > 0) {
         storedValueTx = {
@@ -2579,6 +2581,24 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
  * GET /api/customers/:id/membership-enrollments
  * 查询顾客的会员入会记录（入会时间 / 次数 / 状态）
  */
+// Same-shop CEO/customer-service renewal contact log; no outbound messages are sent.
+customersRouter.get('/membership-followups', requirePermission('customer:edit'), async(req:Request,res:Response)=>{
+ try {
+  const {data,error}=await supabase.from('membership_followups').select('*').eq('shop_id',req.employee!.shopId).order('id',{ascending:false}).limit(5000);
+  if(error || data?.length===5000)return res.status(503).json({success:false,error:'跟进记录暂不可用或超出读取范围，请勿按未联系重复通知'});
+  return res.json({success:true,data:data||[]});
+ }catch{return res.status(503).json({success:false,error:'跟进记录读取失败'});}
+});
+customersRouter.post('/:id/membership-followups',requirePermission('customer:edit'),requireCustomerScope,async(req:Request,res:Response)=>{
+ const {type,expiry,outcome,nextAt,note}=req.body||{};
+ if(!['vip','stored'].includes(type)||!['contacted','unreachable','declined','scheduled'].includes(outcome)||typeof expiry!=='string'||!Number.isFinite(Date.parse(expiry))||(nextAt!=null&&(!Number.isFinite(Date.parse(nextAt))||Date.parse(nextAt)<=Date.now()))||(['unreachable','scheduled'].includes(outcome)&&!nextAt)||typeof note!=='string'||note.length>300)return res.status(400).json({success:false,error:'请填写有效联系结果和未来跟进时间'});
+ try {
+ const {error}=await supabase.rpc('record_membership_followup',{p_customer_id:req.params.id,p_shop_id:req.employee!.shopId,p_employee_id:req.employee!.id,p_type:type,p_expiry:expiry,p_outcome:outcome,p_next:nextAt||null,p_note:note});
+ if(error)return res.status(409).json({success:false,error:'会员期限已变化或记录未保存，请刷新核对后重试'});
+ return res.json({success:true,data:{recorded:true}});
+ }catch{return res.status(503).json({success:false,error:'跟进记录未确认，请刷新核对'});}
+});
+
 customersRouter.get('/:id/membership-enrollments', requirePermission('customer:read'), requireCustomerScope, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -6245,6 +6265,20 @@ mainRouter.post('/webhook/wechat-pay', async (req: Request, res: Response) => {
     // Only the authenticated gateway receipt supplies transaction ID, amount and success_time.
     if(result.paymentId && result.transactionId) {
       if(!result.paidAt || result.amount===undefined) return res.status(400).json({code:'FAIL',message:'支付成功时间缺失'});
+      const memberLookup=await supabase.from('membership_payment_orders').select('id,shop_id,channel').eq('id',result.paymentId).maybeSingle();
+      if(memberLookup.data) {
+        const expectedAppId=memberLookup.data.channel==='wechat_mini' ? process.env.WECHAT_MINI_APP_ID || process.env.WECHAT_APP_ID : process.env.WECHAT_APP_ID;
+        if(result.appId!==expectedAppId) return res.status(400).json({code:'FAIL',message:'会员支付应用不匹配'});
+        const {data:finalized,error:memberError}=await supabase.rpc('finalize_paid_membership_order',{
+          p_order_id:result.paymentId,p_shop_id:memberLookup.data.shop_id,p_transaction_id:result.transactionId,
+          p_paid_at:result.paidAt,p_amount:result.amount,
+        });
+        if(memberError || !finalized?.[0]) return res.status(503).json({code:'FAIL',message:'会员收款已核验，入账暂未完成'});
+        return res.status(200).json({code:'SUCCESS',message:'OK'});
+      }
+      if(memberLookup.error && !['42P01','PGRST205'].includes(memberLookup.error.code || ''))
+        return res.status(503).json({code:'FAIL',message:'会员订单映射暂不可用'});
+      if(result.appId!==process.env.WECHAT_APP_ID) return res.status(400).json({code:'FAIL',message:'门店支付应用不匹配'});
       const {data:payment,error}=await supabase.from('payments').select('shop_id').eq('id',await ledgerPaymentId(result.paymentId)).single();
       if(error || !payment?.shop_id) return res.status(503).json({code:'FAIL',message:'支付映射暂不可用'});
       await recordWechatReceipt({paymentId:result.paymentId,transactionId:result.transactionId,amount:result.amount,paidAt:result.paidAt},String(payment.shop_id),'system_wechat','微信支付');

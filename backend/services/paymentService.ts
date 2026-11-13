@@ -21,6 +21,7 @@ export interface CreatePaymentInput {
   description?: string;
   // 小程序/JSAPI 支付需要 openid
   openid?: string;
+  clientIp?: string;
 }
 
 export interface PaymentResult {
@@ -257,7 +258,10 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
     throw new Error('缺少微信支付回调地址，请设置 WECHAT_NOTIFY_URL 环境变量');
   }
 
-  const appid = process.env.WECHAT_APP_ID!;
+  const appid = channel === 'wechat_mini'
+    ? process.env.WECHAT_MINI_APP_ID || process.env.WECHAT_APP_ID
+    : process.env.WECHAT_APP_ID;
+  if (!appid) throw new Error('缺少微信应用 AppID');
   const mchid = process.env.WECHAT_MCH_ID!;
   const cert = process.env.WECHAT_API_CERT!;
   const key = process.env.WECHAT_API_KEY!;
@@ -281,13 +285,29 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
       return await createNativePayment(requestBody);
     }
 
+    if (channel === 'wechat_mini') {
+      if (!input.openid || !/^[A-Za-z0-9_-]{8,128}$/.test(input.openid)) throw new Error('缺少当前小程序用户身份');
+      const response = await signedWechatRequest('POST', '/v3/pay/transactions/jsapi', {
+        ...requestBody, payer: { openid: input.openid },
+      });
+      if (response.status !== 200 || typeof response.data.prepay_id !== 'string') {
+        throw new Error('微信预支付订单未创建，请核对原单后重试');
+      }
+      return { paymentId, status: 'pending', amount, prepayId: response.data.prepay_id,
+        miniProgramParams: miniPaymentParams(response.data.prepay_id) };
+    }
+
     if (channel === 'wechat_h5') {
-      // H5 支付：返回跳转链接
+      // H5 支付只能在已开通 H5 产品权限的外部手机浏览器使用。
+      const appUrl = process.env.WECHAT_H5_APP_URL || '';
+      if (!input.clientIp || !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(input.clientIp) || !/^https:\/\/[^/]+/.test(appUrl)) {
+        throw new Error('H5 支付 IP 或站点地址尚未配置');
+      }
       const h5Body = {
         ...requestBody,
         scene_info: {
-          payer_client_ip: '0.0.0.0',
-          h5_info: { type: 'Wap', app_name: 'MBS', app_url: 'https://mbs.vercel.app' },
+          payer_client_ip: input.clientIp,
+          h5_info: { type: 'Wap', app_name: 'MBS', app_url: appUrl },
         },
       };
       const result = await wxpay.transactions_h5(h5Body);
@@ -303,17 +323,28 @@ export async function createPayment(input: CreatePaymentInput): Promise<PaymentR
         status: 'pending',
         amount,
         codeUrl: h5Url,
-        message: '请顾客在微信浏览器或手机浏览器中完成支付',
+        message: '请在外部手机浏览器完成微信支付，返回后核对订单状态',
       };
     }
 
-    // JSAPI / 小程序支付暂未实现
-    throw new Error('JSAPI/小程序支付暂未实现，请先使用 Native 支付');
+    throw new Error('不支持的支付场景');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[wechatpay] 创建支付订单失败:', message);
     throw new Error(`微信支付下单失败: ${message}`);
   }
+}
+
+/** 微信小程序调起支付的四行 RSA-SHA256 签名。 */
+export function miniPaymentParams(prepayId: string): NonNullable<PaymentResult['miniProgramParams']> {
+  const appId = process.env.WECHAT_MINI_APP_ID || process.env.WECHAT_APP_ID || '';
+  const key = process.env.WECHAT_API_KEY || '';
+  if (!appId || !key || !/^[-_A-Za-z0-9]{10,128}$/.test(prepayId)) throw new Error('小程序支付参数无效');
+  const timeStamp = String(Math.floor(Date.now() / 1000));
+  const nonceStr = randomBytes(16).toString('hex');
+  const packageValue = 'prepay_id=' + prepayId;
+  const paySign = createSign('RSA-SHA256').update(appId + '\n' + timeStamp + '\n' + nonceStr + '\n' + packageValue + '\n').sign(key, 'base64');
+  return { timeStamp, nonceStr, package: packageValue, signType: 'RSA', paySign };
 }
 
 /**
@@ -373,7 +404,7 @@ export async function closeNativePayment(orderNo:string) {
   if(response.status!==204) throw new Error('微信原单关闭未确认，请核对原单');
 }
 
-export async function queryPaymentStatus(paymentId:string):Promise<GatewayStatus> {
+export async function queryPaymentStatus(paymentId:string, expectedAppId=process.env.WECHAT_APP_ID):Promise<GatewayStatus> {
   if(WECHAT_PAY_MOCK) return {status:'pending',message:'mock 模式不提供真实支付证明'};
   try {
     if(!/^[A-Za-z0-9_-]{6,32}$/.test(paymentId)) throw new Error('微信商户单号无效');
@@ -381,10 +412,10 @@ export async function queryPaymentStatus(paymentId:string):Promise<GatewayStatus
     const data=response.data;
     if(response.status===404 && data.code==='ORDER_NOT_EXIST') return {status:'pending',tradeState:'NOT_FOUND',message:'微信尚无此商户单'};
     if(response.status!==200) return {status:'pending',message:'微信查单暂未成功（HTTP '+response.status+'），请核对原单'};
-    if(data.mchid!==process.env.WECHAT_MCH_ID || data.appid!==process.env.WECHAT_APP_ID || data.out_trade_no!==paymentId ||
+    if(data.mchid!==process.env.WECHAT_MCH_ID || data.appid!==expectedAppId || data.out_trade_no!==paymentId ||
        data.amount?.currency!=='CNY' || !Number.isInteger(data.amount?.total)) throw new Error('微信订单商户或金额不匹配');
     if(data.trade_state==='SUCCESS') {
-      const receipt=wechatSuccessReceipt(data,{mchid:process.env.WECHAT_MCH_ID,appid:process.env.WECHAT_APP_ID,paymentId});
+      const receipt=wechatSuccessReceipt(data,{mchid:process.env.WECHAT_MCH_ID,appid:expectedAppId,paymentId});
       return {status:'paid',tradeState:'SUCCESS',amount:receipt.amount,transactionId:receipt.transactionId,paidAt:receipt.paidAt,message:'支付成功'};
     }
     if(data.trade_state==='NOTPAY' || data.trade_state==='CLOSED') return {
@@ -409,7 +440,7 @@ export async function handleWechatCallback(params: {
   signature: string;
   timestamp: string;
   nonce: string;
-}): Promise<{ success: boolean; message: string; paymentId?: string; transactionId?: string; amount?: number; paidAt?: string }> {
+}): Promise<{ success: boolean; message: string; paymentId?: string; transactionId?: string; amount?: number; paidAt?: string; appId?: string }> {
   if (WECHAT_PAY_MOCK) {
     return { success: true, message: 'mock 回调已忽略' };
   }
@@ -468,14 +499,19 @@ export async function handleWechatCallback(params: {
       return { success: true, message: `交易状态: ${decrypted.trade_state}` };
     }
 
+    const appId = String(decrypted.appid || '');
+    if (!appId || ![process.env.WECHAT_APP_ID, process.env.WECHAT_MINI_APP_ID].includes(appId)) {
+      throw new Error('回调 AppID 不属于已配置应用');
+    }
     const receipt = wechatSuccessReceipt(decrypted, {
-      mchid: process.env.WECHAT_MCH_ID, appid: process.env.WECHAT_APP_ID,
+      mchid: process.env.WECHAT_MCH_ID, appid: appId,
     });
 
     return {
       success: true,
       message: 'OK',
       ...receipt,
+      appId,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
