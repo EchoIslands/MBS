@@ -605,7 +605,7 @@ const BookingManagement: React.FC = () => {
 
   return (
     <ShopLayout title="预约管理">
-      <div className="flex justify-end mb-4"><button type="button" onClick={() => navigate('/shop/queue-desk')} className="px-4 py-3 bg-orange-600 text-white rounded-md font-semibold">今日到店快记</button></div>
+      <div className="flex justify-end mb-4"><button type="button" onClick={() => navigate('/shop/queue-desk')} className="px-4 py-3 bg-orange-600 text-white rounded-md font-semibold">实时排队工作台</button></div>
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {stats.map((stat, index) => (

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
 import {
   TrendingUp,
@@ -199,6 +200,7 @@ const StylistDashboard: React.FC = () => {
     return (
       <ShopLayout title="发型师看板">
         {basisNotice}
+      <Link to="/shop/queue-desk" className="block mb-5 rounded-xl bg-orange-200 text-gray-900 text-center py-4 font-bold">打开实时排队工作台 · 叫号 / 开始服务 / 更新进度</Link>
         {/* 汇总数据卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-5 text-white shadow-md">
@@ -417,6 +419,7 @@ const StylistDashboard: React.FC = () => {
   return (
     <ShopLayout title="发型师看板">
       {basisNotice}
+      <Link to="/shop/queue-desk" className="block mb-5 rounded-xl bg-orange-200 text-gray-900 text-center py-4 font-bold">打开实时排队工作台 · 叫号 / 开始服务 / 更新进度</Link>
       {/* 发型师个人信息卡片 */}
       <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
         <div className="flex items-center gap-4">

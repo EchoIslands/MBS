@@ -472,22 +472,8 @@ bookingsRouter.use(bookingAccess);
 bookingsRouter.get('/:id/live-queue', customerQueueSnapshot);
 bookingsRouter.post('/:id/live-queue', liveQueueAction);
 
-// Staff-only queue pilot actions. The database function serializes each booking and its event.
-bookingsRouter.post('/:id/queue-event', authMiddleware, async (req: Request, res: Response) => {
-  const employee = req.employee!;
-  if (!['ceo', 'shop_manager', 'customer_service', 'stylist'].includes(employee.role)) return res.status(403).json({success:false,error:'无权记录排队事件'});
-  const eventType = String(req.body?.eventType || '');
-  if (!['arrived','left_reported','returned','called','missed','service_started','service_finished'].includes(eventType)) return res.status(400).json({success:false,error:'无效的排队操作'});
-  try {
-    const {data:booking,error:lookupError}=await supabase.from('bookings').select('stylist_id').eq('id',req.params.id).eq('shop_id',employee.shopId).maybeSingle();
-    if(lookupError) return res.status(503).json({success:false,error:'预约查询暂不可用'});
-    if(!booking) return res.status(404).json({success:false,error:'预约不存在'});
-    if(employee.role==='stylist' && (booking.stylist_id!==employee.id || !['service_started','service_finished'].includes(eventType))) return res.status(403).json({success:false,error:'无权操作该预约'});
-    const {data,error}=await supabase.rpc('record_booking_queue_event',{p_booking_id:req.params.id,p_shop_id:employee.shopId,p_event_type:eventType,p_actor_id:employee.id});
-    if(error) return res.status(error.message.includes('QUEUE_')?409:503).json({success:false,error:error.message.includes('QUEUE_')?'当前状态不允许此操作，请刷新后重试':'记录失败，请稍后重试'});
-    res.json({success:true,data});
-  } catch(error) { console.error('[queue-pilot] action failed',error); res.status(503).json({success:false,error:'记录失败'}); }
-});
+// Legacy mutation is closed: all clients must send a version to the serialized live action.
+bookingsRouter.post('/:id/queue-event', authMiddleware, (_req:Request,res:Response) => res.status(409).json({success:false,error:'请刷新前台排队工作台后操作，旧版快记已升级'}));
 
 bookingsRouter.get('/:id/queue-events', authMiddleware, async (req: Request, res: Response) => {
   const employee=req.employee!;
