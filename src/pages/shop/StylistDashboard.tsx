@@ -156,7 +156,7 @@ const StylistDashboard: React.FC = () => {
   const basisNotice = <div className="mb-5 rounded-xl bg-blue-50 text-blue-900 text-sm p-4 space-y-2">
     <p>{FINANCIAL_BASIS_NOTE}</p>
     <p>金额为当前在职设计师的归属项目产值，整单优惠尚未分摊，不代表全店实收；服务次数和类型仅统计本月。评分为历史评价均分，0表示暂无有效评价。</p>
-    <p>数据截止：{settlementDateLabel(shownPerformances[0]?.generatedAt)}　<button className="underline" onClick={() => setRefresh(n => n+1)}>刷新数据</button></p>
+    <p>数据截止：{settlementDateLabel(shownPerformances[0]?.generatedAt)} <button className="underline" onClick={() => setRefresh(n => n+1)}>刷新数据</button></p>
     {excludedCount > 0 && <p>有 {excludedCount} 条设计师关联的已完成结算待核对，未计入业绩和服务次数；多人共同服务的订单可能重复计数。</p>}
   </div>;
 

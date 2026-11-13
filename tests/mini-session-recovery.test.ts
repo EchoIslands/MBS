@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
+type MiniRequest = {method:string;header:Record<string,string>;success:(result:{statusCode:number;data:object})=>void;fail:(error:{errMsg:string})=>void};
+
 async function load(context: vm.Context, file: string) {
   const source = (await readFile(new URL('../mini-program/' + file, import.meta.url), 'utf8'))
     .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\r?$/gm, '')
@@ -12,8 +14,8 @@ async function load(context: vm.Context, file: string) {
 
 async function harness(route = 'pages/index/index') {
   const storage = new Map<string, unknown>();
-  const requests: any[] = [];
-  const redirects: any[] = [];
+  const requests: MiniRequest[] = [];
+  const redirects: {url:string}[] = [];
   const context = vm.createContext({
     console: { warn() {}, error() {} },
     setTimeout: () => 1,
@@ -23,11 +25,11 @@ async function harness(route = 'pages/index/index') {
       getStorageSync: (key: string) => storage.get(key),
       setStorageSync: (key: string, value: unknown) => storage.set(key, value),
       removeStorageSync: (key: string) => storage.delete(key),
-      reLaunch: (options: any) => redirects.push(options),
-      request: (options: any) => { requests.push(options); return { abort() {} }; },
+      reLaunch: (options: {url:string}) => redirects.push(options),
+      request: (options: MiniRequest) => { requests.push(options); return { abort() {} }; },
       showModal() {}, showToast() {},
     },
-    Page: (config: any) => { context.page = config; },
+    Page: (config: vm.Context) => { context.page = config; },
   });
   for (const file of ['utils/storage.js', 'utils/payment-order-link.js', 'utils/password-gate.js', 'utils/auth.js', 'utils/api.js', 'utils/tab-swipe.js']) await load(context, file);
   const setSession = (token = 'synthetic-old', id = 'synthetic-customer') => {
@@ -40,7 +42,7 @@ test('登录按钮并发点击仅发一次请求；429原因原样展示且不�
   const h = await harness('pages/login/login');
   await load(h.context, 'api/customer.js');
   await load(h.context, 'pages/login/login.js');
-  const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
+  const page = h.context.page; page.setData = (patch: object) => Object.assign(page.data, patch);
   Object.assign(page.data,{phone:'13900000001',password:'246810'});
   const first=page.onLogin(); const second=page.onLogin();
   assert.equal(h.requests.length,1);
@@ -116,22 +118,22 @@ test('个人资料只提交实际变更，头像提示文字可点击', async ()
     purchaseVIPPlans: [], storedValuePlans: [], getPurchaseVIPLabel: () => '', getStoredValueLabel: () => '',
   });
   await load(h.context, 'pages/profile/profile.js');
-  const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
+  const page = h.context.page; page.setData = (patch: object) => Object.assign(page.data, patch);
   page.loadProfile = async () => {};
   page.data.customer = { id: 'synthetic-customer', name: '旧昵称', avatar: 'https://old.example/avatar.jpg', gender: 'female', birthday: '1990-01-01' };
   page.openProfileEdit();
   page.onEditName({ detail: { value: '新昵称' } });
-  let sent: any;
-  h.context.updateMyProfile = async (id: string, fields: any) => { sent = { id, fields }; return {}; };
+  let sent!: {id:string;fields:Record<string,unknown>};
+  h.context.updateMyProfile = async (id: string, fields: Record<string,unknown>) => { sent = { id, fields }; return {}; };
   await page.saveProfileEdit();
   assert.equal(sent.id, 'synthetic-customer');
   assert.deepEqual(Object.keys(sent.fields), ['name']);
   assert.equal(sent.fields.name, '新昵称');
   const view = await readFile(new URL('../mini-program/pages/profile/profile.wxml', import.meta.url), 'utf8');
   assert.match(view, /class="profile-edit-avatar-hint" bindtap="chooseProfileAvatar"/);
-  let picker: any; let uploadedImage = '';
-  h.context.wx.chooseMedia = (options: any) => { picker = options; };
-  h.context.wx.getFileSystemManager = () => ({ readFile: ({ success }: any) => success({ data: '/9j/AA==' }) });
+  let picker!: {mediaType:string[];success:(result:{tempFiles:{tempFilePath:string;size:number}[]})=>void}; let uploadedImage = '';
+  h.context.wx.chooseMedia = (options: typeof picker) => { picker = options; };
+  h.context.wx.getFileSystemManager = () => ({ readFile: ({ success }: {success:(result:{data:string})=>void}) => success({ data: '/9j/AA==' }) });
   h.context.uploadMyAvatar = async (image: string) => { uploadedImage = image; return 'https://avatars.example/new.jpg'; };
   page.openProfileEdit(); page.chooseProfileAvatar();
   assert.equal(picker.mediaType[0], 'image');
@@ -160,7 +162,7 @@ test('密码独立显隐保留六位输入，首次设密和离开页面恢复�
   h.context.loginCustomer = async () => ({ setupRequired: true });
   await load(h.context, 'pages/login/login.js');
   const page = h.context.page;
-  page.setData = (patch: any) => Object.assign(page.data, patch);
+  page.setData = (patch: object) => Object.assign(page.data, patch);
   assert.equal(page.data.showPassword, false); assert.equal(page.data.showConfirmPassword, false);
   page.onPasswordInput({ detail: { value: '24x6810' } });
   page.onConfirmPasswordInput({ detail: { value: '246810' } });
@@ -178,7 +180,7 @@ test('登录页恢复遇网络错误保留凭证；401显示重新登录提示',
   const h = await harness('pages/login/login'); h.setSession();
   h.context.restoreCustomerSession = async () => { throw new Error('网络超时'); };
   await load(h.context, 'pages/login/login.js');
-  const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
+  const page = h.context.page; page.setData = (patch: object) => Object.assign(page.data, patch);
   await page.onLoad();
   assert.equal(h.context.getToken(), 'synthetic-old'); assert.match(page.data.error, /超时/);
   assert.equal(page.data.restoringSession, false);
@@ -196,9 +198,9 @@ test('首页店铺失败结束loading，本人资料请求不等待慢店铺', a
   });
   await load(h.context, 'utils/stylist-order.js');
   await load(h.context, 'pages/index/index.js');
-  const page = h.context.page; page.setData = (patch: any) => Object.assign(page.data, patch);
+  const page = h.context.page; page.setData = (patch: object) => Object.assign(page.data, patch);
   await page.loadShop(); assert.equal(page.data.loading, false); assert.match(page.data.error, /合成店铺故障/);
-  let finishShop: (value: any) => void = () => {};
+  let finishShop: (value: unknown) => void = () => {};
   let customerStarted = false;
   h.context.getShop = () => new Promise(resolve => { finishShop = resolve; });
   h.context.getCustomerPublic = async () => { customerStarted = true; throw Object.assign(new Error('expired'), { statusCode: 401 }); };
@@ -220,7 +222,7 @@ test('个人中心保持登录门槛，门店与通用权益集中在首页', as
   });
   await load(h.context, 'pages/profile/profile.js');
   const page = h.context.page;
-  page.setData = (patch: any) => Object.assign(page.data, patch);
+  page.setData = (patch: object) => Object.assign(page.data, patch);
   await page.onLoad();
   assert.equal(h.redirects.length, 1);
   assert.equal(h.redirects[0].url, '/pages/login/login');
@@ -252,10 +254,10 @@ test('短信复制填充：仅当前请求空输入框可自动填入，不覆�
   const h = await harness('pages/login/login');
   await load(h.context, 'pages/login/login.js');
   const page = h.context.page;
-  page.setData = (patch: any) => Object.assign(page.data, patch);
-  let clipboard: any;
+  page.setData = (patch: object) => Object.assign(page.data, patch);
+  let clipboard!: {success:(result:{data:string})=>void;complete:()=>void;fail:()=>void};
   let reads = 0;
-  h.context.wx.getClipboardData = (options: any) => { reads++; clipboard = options; };
+  h.context.wx.getClipboardData = (options: typeof clipboard) => { reads++; clipboard = options; };
   Object.assign(page.data, { loginMode: 'sms', phone: '13900000001' });
   page.onShow(); assert.equal(reads, 0);
   page.smsRequestedPhone = page.data.phone; page.smsRequestedAt = Date.now();

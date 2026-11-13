@@ -2,6 +2,7 @@ import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, live
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import customerPaymentOrdersRouter from './customerPaymentOrders.js';
 import customerMembershipRouter from './customerMembership.js';
+import { membershipConfigRate } from '../lib/membershipConfigRate.js';
 import { Router, Request, Response } from 'express';
 import { smsReady, generateSmsCode, reserveSmsCode, cancelSmsCode, verifySmsCode, sendSmsCode } from '../services/customerSms.js';
 import jwt from 'jsonwebtoken';
@@ -5700,8 +5701,8 @@ const purchasePlanFromDb = (r: DbRecord): PurchaseVIPPlan => {
     name: String(value.name || ''),
     price: Number(value.price) || 0,
     period: String(value.period || '1年'),
-    discount: Number(value.discount) ?? 1,
-    pointsRate: Number(value.pointsRate) ?? 1,
+    discount: membershipConfigRate(value.discount),
+    pointsRate: membershipConfigRate(value.pointsRate),
     benefits: Array.isArray(value.benefits) ? (value.benefits as string[]) : [],
     color: String(value.color || 'gray'),
   };
@@ -5714,8 +5715,8 @@ const storedPlanFromDb = (r: DbRecord): StoredValuePlan => {
     level: value.level as StoredValueLevel,
     name: String(value.name || ''),
     amount: Number(value.amount) || 0,
-    discount: Number(value.discount) ?? 1,
-    pointsRate: Number(value.pointsRate) ?? 1,
+    discount: membershipConfigRate(value.discount),
+    pointsRate: membershipConfigRate(value.pointsRate),
     benefits: Array.isArray(value.benefits) ? (value.benefits as string[]) : [],
     color: String(value.color || 'gray'),
   };

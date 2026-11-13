@@ -60,7 +60,7 @@ test('小程序切换限定服务重置旧人选，智能匹配及提交只用�
   assert.deepEqual(Array.from(page.data.stylists.filter((s: any) => s.eligible).map((s: any) => s.id)), ['manager']);
   assert.equal(page.data.fastest.id, 'manager');
   await page.doBooking();
-  assert.equal((calls[0] as any).stylistId, 'manager');
+  assert.equal((calls[0] as {stylistId:string}).stylistId, 'manager');
   assert.deepEqual(navigation, ['/pages/queue/queue']);
   assert.equal(notifications.length, 1);
 });

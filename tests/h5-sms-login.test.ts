@@ -7,11 +7,11 @@ import ts from 'typescript';
 test('H5短信接口使用Cookie会话；错误不得伪装登录成功或回退演示用户', async () => {
   const source = await readFile(new URL('../src/api.ts', import.meta.url), 'utf8');
   const methods = source.slice(source.indexOf('  sendSmsCode: async'), source.indexOf('  resetPassword: async'));
-  const calls: any[] = [];
-  let payload: any = { success: true };
+  const calls: {url:string;options:{credentials:string;body:string}}[] = [];
+  let payload: {success:boolean;data?:{id?:string;name?:string};error?:string} = { success: true };
   let ok = true;
-  const context = vm.createContext({ USE_REAL_API: true, API_BASE: '/api', normalizeCustomerDates: (v: any) => v,
-    fetch: async (url: string, options: any) => { calls.push({ url, options }); return { ok, json: async () => payload }; },
+  const context = vm.createContext({ USE_REAL_API: true, API_BASE: '/api', normalizeCustomerDates: (v: unknown) => v,
+    fetch: async (url: string, options: {credentials:string;body:string}) => { calls.push({ url, options }); return { ok, json: async () => payload }; },
   });
   const js = ts.transpile(`globalThis.smsApi = {${methods}}`, { target: ts.ScriptTarget.ES2022 });
   vm.runInContext(js, context);

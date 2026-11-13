@@ -26,6 +26,7 @@ Page({
       this.setData({ vip: data.vip.map((p) => ({ ...p, benefitText: p.benefits.join(' · ') })),
         stored: data.stored.map((p) => ({ ...p, benefitText: p.benefits.join(' · ') })), currentVip: data.currentVip,
         currentStored: data.currentStored, activeOrder: data.activeOrder, error: '' });
+      if (data.activeOrder?.status === 'pending') await this.checkActive();
     } catch (err) { this.setData({ error: err.message || '会员方案加载失败' }); }
   },
   async checkActive() {
@@ -34,7 +35,7 @@ Page({
     this.setData({ checking: true });
     try {
       const updated = await checkMembershipOrder(order.id);
-      this.setData({ activeOrder: updated.status === 'paid' || updated.status === 'closed' ? null : updated,
+      this.setData({ error: '', activeOrder: updated.status === 'paid' || updated.status === 'closed' ? null : updated,
         notice: updated.status === 'paid' ? '支付已确认，会员权益已生效'
           : updated.status === 'review' ? '微信已收款，会员资料有变动，请联系门店核对，勿重复支付'
           : updated.status === 'closed' ? '原订单已关闭，可以重新选择方案' : '尚未查到支付成功，请稍后重试' });

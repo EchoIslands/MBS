@@ -17,7 +17,7 @@ export default function QueueQuickDesk(){
  const manager=role==='ceo'||role==='shop_manager',front=role!=='stylist';
  const list=data?.bookings||[];
  const attention=list.filter(b=>b.returnRequestedAt||b.needsHelp||b.unacknowledged||b.overWait);
- useEffect(()=>{const signature=attention.map(b=>b.id+':'+b.latestEventId).join('|');if(signature&&signature!==lastAttention.current&&sound&&audio.current){try{const c=audio.current;void c.resume();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);g.gain.value=.1;o.frequency.value=550;o.start();o.stop(c.currentTime+.3);}catch{}}lastAttention.current=signature;},[attention,sound]);
+ useEffect(()=>{const signature=attention.map(b=>b.id+':'+b.latestEventId).join('|');if(signature&&signature!==lastAttention.current&&sound&&audio.current){try{const c=audio.current;void c.resume();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.gain.value=.1;o.frequency.value=550;o.start();o.stop(c.currentTime+.3);}catch{/* 音频未获授权时保留视觉提示。 */}}lastAttention.current=signature;},[attention,sound]);
  useEffect(()=>()=>{void audio.current?.close();},[]);
  const act=async(b:Item,action:string,minutes?:number,note?:string)=>{
  if(stale||acting.current)return;

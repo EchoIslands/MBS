@@ -6,6 +6,11 @@ const TAB_PATHS = [
 ];
 let pendingTransition = null;
 
+function tabSwipeBlocked(data) {
+  return !!(data?.viewingBooking || data?.rescheduleTarget || data?.showLogin || data?.showCoupons ||
+    data?.selectedStylist || data?.editVisible || data?.editSaving || data?.editAvatarUploading || data?.booking);
+}
+
 export function syncTabBarSelected(page, index) {
   const tabBar = typeof page.getTabBar === 'function' ? page.getTabBar() : null;
   if (tabBar && tabBar.data?.selected !== index) tabBar.setData({ selected: index });
@@ -22,7 +27,7 @@ export function syncTabBarSelected(page, index) {
 export function createTabSwipeHandlers(tabIndex) {
   return {
     onTabSwipeStart(event) {
-      if (this.data?.viewingBooking || this.data?.rescheduleTarget || this.data?.showLogin || this.data?.showCoupons || this.data?.selectedStylist) {
+      if (tabSwipeBlocked(this.data)) {
         this._tabSwipeStart = null;
         return;
       }
@@ -36,7 +41,7 @@ export function createTabSwipeHandlers(tabIndex) {
       const start = this._tabSwipeStart;
       this._tabSwipeStart = null;
       const touch = event.changedTouches && event.changedTouches[0];
-      if (!start || !touch) return;
+      if (!start || !touch || tabSwipeBlocked(this.data)) return;
       const dx = touch.pageX - start.x;
       const dy = touch.pageY - start.y;
       if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - start.time > 850) return;

@@ -59,17 +59,17 @@ test('verified membership receipt activates exactly once and mismatched receipts
     await assert.rejects(finalize('viporder','other','420000000001',29),/MEMBERSHIP_ORDER_NOT_FOUND/);
     assert.equal((await finalize('viporder','s','420000000001',29)).rows[0].status,'paid');
     assert.equal((await finalize('viporder','s','420000000001',29)).rows[0].status,'paid');
-    assert.equal((await db.query<any>("SELECT count(*) n FROM membership_enrollments WHERE customer_id='c'")).rows[0].n,1);
-    assert.equal((await db.query<any>("SELECT purchase_vip_level FROM customers WHERE id='c'")).rows[0].purchase_vip_level,'bronze');
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM membership_enrollments WHERE customer_id='c'")).rows[0].n,1);
+    assert.equal((await db.query<{purchase_vip_level:string}>("SELECT purchase_vip_level FROM customers WHERE id='c'")).rows[0].purchase_vip_level,'bronze');
     await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level) VALUES('storedorder','s','c','stored','store_500',500,'wechat_h5','none')");
     assert.equal((await finalize('storedorder','s','420000000002',500)).rows[0].status,'paid');
     assert.equal((await finalize('storedorder','s','420000000002',500)).rows[0].status,'paid');
-    assert.equal(Number((await db.query<any>("SELECT stored_value_balance FROM customers WHERE id='c'")).rows[0].stored_value_balance),500);
-    assert.equal((await db.query<any>("SELECT count(*) n FROM stored_value_transactions WHERE customer_id='c'")).rows[0].n,1);
-    assert.equal((await db.query<any>("SELECT count(*) n FROM payments WHERE customer_id='c' AND status='paid'")).rows[0].n,2);
+    assert.equal(Number((await db.query<{stored_value_balance:string}>("SELECT stored_value_balance FROM customers WHERE id='c'")).rows[0].stored_value_balance),500);
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM stored_value_transactions WHERE customer_id='c'")).rows[0].n,1);
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM payments WHERE customer_id='c' AND status='paid'")).rows[0].n,2);
     await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level) VALUES('changed','s','c','vip','bronze',29,'wechat_mini','regular')");
     assert.equal((await finalize('changed','s','420000000003',29)).rows[0].status,'review');
-    assert.equal((await db.query<any>("SELECT count(*) n FROM membership_enrollments WHERE customer_id='c'")).rows[0].n,1);
-    assert.equal((await db.query<any>("SELECT count(*) n FROM payments WHERE customer_id='c' AND status='paid'")).rows[0].n,3);
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM membership_enrollments WHERE customer_id='c'")).rows[0].n,1);
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM payments WHERE customer_id='c' AND status='paid'")).rows[0].n,3);
   } finally { await db.close(); }
 });

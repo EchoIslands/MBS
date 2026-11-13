@@ -51,6 +51,7 @@ const Membership: React.FC = () => {
     try{
       const result=await customerMembershipApi.create(order.kind,order.level);
       setOrder(result);
+      if(result.status==='paid'||result.status==='review'){await check();return;}
       if(!result.payUrl||!/^https:\/\//.test(result.payUrl))throw new Error('原单支付链接暂不可用，请先核对支付结果');
       window.location.assign(result.payUrl);
     }catch(e){setError(e instanceof Error?e.message:'原单暂无法继续支付');}

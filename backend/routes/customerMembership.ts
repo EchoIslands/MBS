@@ -9,6 +9,8 @@ const router = Router();
 router.use(customerSession);
 
 type Kind = 'vip' | 'stored';
+type CustomerTier = { purchase_vip_level?:string|null; purchase_vip_expires_at?:string|null;
+  stored_value_level?:string|null; stored_value_expires_at?:string|null };
 type Order = { id:string; shop_id:string; customer_id:string; kind:Kind; level:string; amount:number;
   channel:'wechat_mini'|'wechat_h5'; status:string; expected_level:string; expected_expires_at:string|null;
   payer_openid:string|null; prepay_id:string|null; h5_url:string|null; transaction_id:string|null;
@@ -40,7 +42,7 @@ function paymentPreflight(channel:'wechat_mini'|'wechat_h5',clientIp:string|unde
     throw new Error('H5 支付未开通或当前网络地址不支持，请使用小程序办理');
 }
 
-function currentTier(c:Record<string,any>,kind:Kind) {
+function currentTier(c:CustomerTier,kind:Kind) {
   const level=kind==='vip' ? c.purchase_vip_level || 'regular' : c.stored_value_level || 'none';
   const expires=kind==='vip' ? c.purchase_vip_expires_at : c.stored_value_expires_at;
   const defaultLevel=kind==='vip'?'regular':'none';

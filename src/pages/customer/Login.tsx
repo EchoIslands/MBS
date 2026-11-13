@@ -196,7 +196,7 @@ const CustomerLogin: React.FC = () => {
             <button type="button" disabled={smsSending || loading || smsSeconds > 0} onClick={() => void sendSmsCode()} className="w-full p-3 rounded-xl border border-[#ecd5c0] text-[#75411f] bg-[#fff2e5] disabled:opacity-50">{smsSending ? '发送中...' : smsSeconds > 0 ? `${smsSeconds} 秒后重发` : '获取验证码'}</button>
             <p className="text-xs text-gray-500">新用户验证手机号后自动注册，老用户直接登录。</p>
           </div>}
-          <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={rememberPhone} onChange={e => { setRememberPhone(e.target.checked); if (!e.target.checked) { try { localStorage.removeItem(REMEMBERED_PHONE_KEY); } catch {} } }} />记住手机号（不保存密码）</label>
+          <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={rememberPhone} onChange={e => { setRememberPhone(e.target.checked); if (!e.target.checked) { try { localStorage.removeItem(REMEMBERED_PHONE_KEY); } catch { /* 浏览器禁用存储时仍允许继续登录。 */ } } }} />记住手机号（不保存密码）</label>
 
           {error && (
             <div className="bg-red-50 text-red-600 p-3 sm:p-4 rounded-xl text-xs sm:text-sm">
