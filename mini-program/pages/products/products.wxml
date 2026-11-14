@@ -96,7 +96,7 @@
         bindtap="goToDetail"
       >
         <view class="product-image-wrap">
-          <image
+          <image lazy-load
             wx:if="{{item.images && item.images.length > 0}}"
             class="product-image"
             src="{{item.images[0]}}"

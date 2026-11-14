@@ -79,6 +79,7 @@ const CustomerLogin: React.FC = () => {
   };
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  useEffect(() => { if (params.get('mode') === 'sms' || params.get('returnTo')?.startsWith('/invite?ref=')) setLoginMode('sms'); }, [params]);
   const back = params.get('returnTo');
   const returnTo = customerLoginRedirect(params.get('redirect')) || (back?.startsWith('/invite?ref=') ? back : null);
 

@@ -21,9 +21,9 @@ const Membership: React.FC = () => {
     setBusy(true);setError('');
     try{
       const result=await customerMembershipApi.check(order.id);
-      setOrder(result.status==='paid'||result.status==='closed'?null:result);
+      setOrder(result.status==='paid'||result.status==='closed'||result.status==='refunded'?null:result);
       setNotice(result.status==='paid'?'支付已核实，会员权益已生效':result.status==='review'
-        ?'微信已收款，会员资料有变动，请联系门店核对，勿重复支付':result.status==='closed'
+        ?'微信已收款，会员资料有变动，请联系门店核对，勿重复支付':result.status==='refunded'?'门店已登记实际退款凭据，请核对微信账单':result.status==='closed'
           ?'原订单已关闭，可重新选择方案':'尚未查到支付成功，请稍后核对原订单');
       if(result.status==='paid'||result.status==='closed')await load();
       if(result.status==='paid'&&currentCustomer){
@@ -63,12 +63,14 @@ const Membership: React.FC = () => {
   const buy=async(kind:'vip'|'stored',level:string,price:number)=>{
     if(busy||order)return;
     const current=kind==='vip'?plans?.currentVip:plans?.currentStored;
-    if(current?.active&&current.level!==level){setError('有效期内仅可原档续费；调整档位请联系门店');return;}
-    if(!window.confirm('微信支付 ¥'+price+'；经微信收款核验后自动生效。确认办理？'))return;
+    const quote=kind==='vip'?plans?.vip.find(p=>p.level===level)?.operationQuote:null;
+    if(quote?.action==='downgrade'||kind==='stored'&&current?.active&&current.level!==level){setError('降档或储值跨档调整请联系门店，不会自动退款');return;}
+    price=quote?.amount??price;
+    if(!window.confirm('微信支付 ¥'+price+'；经微信收款核验后自动生效。'+(quote?.action==='upgrade'?'升档保持原到期日，只补新增权益。':'')+'确认办理？'))return;
     if(/MicroMessenger/i.test(navigator.userAgent)){setError('微信内浏览器请打开小程序办理；H5 支付请使用手机外部浏览器');return;}
     setBusy(true);setError('');setNotice('');
     try{
-      const result=await customerMembershipApi.create(kind,level);
+      const result=await customerMembershipApi.create(kind,level,price);
       setOrder(result);
       if(result.status==='paid'||result.status==='review'){setNotice('订单已处理，请核对支付结果');return;}
       if(!result.payUrl||!/^https:\/\//.test(result.payUrl))throw new Error('微信支付链接暂不可用，请核对原订单');
@@ -84,12 +86,12 @@ const Membership: React.FC = () => {
       {notice&&<p role="status" className="rounded-xl bg-green-50 p-4 text-green-800">{notice}</p>}
       {order&&<section className="rounded-2xl bg-amber-50 p-4"><p className="font-semibold">原订单：{order.kind==='vip'?'VIP':'储值'} {order.level} · ¥{order.amount}</p><p className="my-2 text-sm">{order.status==='review'?'微信已收款，待门店核对；请勿重复付款':'付款状态待确认，请先核对原单'}</p><div className="flex flex-wrap gap-2"><button disabled={busy} onClick={()=>void check()} className="rounded-xl bg-[#f6ae79] px-4 py-2 font-semibold text-[#392719]">核对支付结果</button>{order.status==='pending'&&order.channel==='wechat_h5'&&<button disabled={busy} onClick={()=>void resume()} className="rounded-xl border border-orange-300 bg-white px-4 py-2 font-semibold">继续支付原订单</button>}</div>{order.status==='pending'&&order.channel==='wechat_mini'&&<p className="mt-2 text-sm">原订单在小程序创建，请返回小程序继续支付。</p>}</section>}
       <section className="rounded-2xl border border-stone-200 bg-[#fffaf5] p-4"><h2 className="text-lg font-bold">购买 VIP</h2><p className="my-2 text-sm text-stone-600">原档续费按完整年费收取，从原到期日顺延 365 天。</p>
-        {plans?.vip.map(p=><article key={p.level} className="my-3 rounded-xl border border-stone-200 bg-white p-4"><div className="flex justify-between font-bold"><span>{p.name}</span><span className="text-orange-800">¥{p.price} / 年</span></div><p className="my-3 text-sm leading-6 text-stone-600">{p.benefits.join(' · ')}</p><button disabled={busy||!!order} onClick={()=>void buy('vip',p.level,p.price)} className="w-full rounded-xl bg-[#f6ae79] py-2.5 font-bold text-[#392719] disabled:opacity-50">{plans.currentVip.active&&plans.currentVip.level===p.level?'原档续费':'微信支付办理'}</button></article>)}
+        {plans?.vip.map(p=><article key={p.level} className="my-3 rounded-xl border border-stone-200 bg-white p-4"><div className="flex justify-between font-bold"><span>{p.name}</span><span className="text-orange-800">¥{p.price} / 年</span></div><p className="my-3 text-sm leading-6 text-stone-600">{p.benefits.join(' · ')}</p><button disabled={busy||!!order||p.operationQuote?.action==='downgrade'} onClick={()=>void buy('vip',p.level,p.price)} className="w-full rounded-xl bg-[#f6ae79] py-2.5 font-bold text-[#392719] disabled:opacity-50">{p.operationQuote?.action==='downgrade'?'降档请联系门店':p.operationQuote?.action==='upgrade'?'补差价升档 ¥'+p.operationQuote.amount:plans.currentVip.active&&plans.currentVip.level===p.level?'原档续费':'微信支付办理'}</button></article>)}
       </section>
       <section className="rounded-2xl border border-stone-200 bg-[#fffaf5] p-4"><h2 className="text-lg font-bold">储值会员</h2><p className="my-2 text-sm text-stone-600">储值本金全额到账，原档续期顺延 730 天。</p>
         {plans?.stored.map(p=><article key={p.level} className="my-3 rounded-xl border border-stone-200 bg-white p-4"><div className="flex justify-between font-bold"><span>{p.name}</span><span className="text-orange-800">¥{p.amount}</span></div><p className="my-3 text-sm leading-6 text-stone-600">{p.benefits.join(' · ')}</p><button disabled={busy||!!order} onClick={()=>void buy('stored',p.level,p.amount)} className="w-full rounded-xl bg-[#f6ae79] py-2.5 font-bold text-[#392719] disabled:opacity-50">{plans.currentStored.active&&plans.currentStored.level===p.level?'原档续费':'微信支付办理'}</button></article>)}
       </section>
-      <p className="text-sm leading-6 text-stone-600">有效期内跨档调整及支付异常请联系门店。付款后如未即时显示权益，请先核对支付结果，不要重复付款。</p>
+      <p className="text-sm leading-6 text-stone-600">有效期内升档仅收差价，不延长有效期，只补新增权益；降档、储值跨档调整及支付异常请联系门店。付款后如未即时显示权益，请先核对支付结果，不要重复付款。</p>
     </main>
   </div>;
 };

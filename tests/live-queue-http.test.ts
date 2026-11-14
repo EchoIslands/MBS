@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
-import { describeQueue, queueOrder, QUEUE_RULES } from '../shared/lib/liveQueue';
+import { createDurationEstimator, describeQueue, queueOrder, QUEUE_RULES } from '../shared/lib/liveQueue';
 // Real HTTP exercises handler scoping/serialization. Credential validation is covered by security-regression;
 // these synthetic identities deliberately never touch production credentials or data.
 test('live HTTP snapshots expose only own customer details, scope stylist work and reject bad mutations',async()=>{
@@ -24,7 +24,7 @@ test('live HTTP snapshots expose only own customer details, scope stylist work a
  }
  const supabase={from:(t:string)=>new Query(t),rpc:async(name:string,args:Record<string,unknown>)=>{rpcs.push({name,args});return {data:{eventId:9},error:args.p_actor_type==='customer'&&args.p_action==='arrived'?{message:'QUEUE_FORBIDDEN'}:null};}};
  const source=(await readFile(new URL('../backend/services/liveQueue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'');const exports={} as typeof import("../backend/services/liveQueue.js");
- vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,supabase,describeQueue,queueOrder,QUEUE_RULES,console,Date});
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,supabase,createDurationEstimator,describeQueue,queueOrder,QUEUE_RULES,console,Date,dispatchQueueNotifications:async()=>0});
  const app=express();app.use(express.json());app.use((req,res,next)=>{const key=String(req.headers['x-test-identity'] || '');if(!key)return res.status(401).json({success:false});if(key==='customer')req.customer={id:'c',shopId:'s',passwordVersion:'synthetic',mustChangePassword:false};else req.employee={id:key==='stylist'?'stylist':'front',shopId:'s',role:key,name:'Synthetic',phone:'synthetic'};next();});
  app.get('/bookings/:id/live',exports.customerQueueSnapshot);app.post('/bookings/:id/live',exports.liveQueueAction);app.get('/queues/:shopId/live',exports.staffQueueSnapshot);
  const server=app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',()=>r()));const base='http://127.0.0.1:'+(server.address() as AddressInfo).port;

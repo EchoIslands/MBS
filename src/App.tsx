@@ -1,3 +1,4 @@
+const OperationsWorkbench = lazy(() => import('./pages/shop/OperationsWorkbench'));
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./store";
@@ -229,6 +230,7 @@ export default function App() {
           <Route path="/shop/customers" element={<CustomerManagement />} />
           <Route path="/shop/customers-table" element={<CustomerTableManagement />} />
           <Route path="/shop/bookings" element={<BookingManagement />} />
+          <Route path="/shop/operations" element={<OperationsWorkbench />} />
           <Route path="/shop/queue-desk" element={<QueueQuickDesk />} />
           <Route path="/shop/checkout" element={<Checkout />} />
           <Route path="/shop/settlement" element={<SettlementManagement />} />

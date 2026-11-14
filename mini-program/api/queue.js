@@ -19,3 +19,6 @@ export async function getLiveQueue(bookingId) {
 export async function actOnQueue(bookingId,action,version,minutes) {
  return post(`/bookings/${encodeURIComponent(bookingId)}/live-queue`,{action,version,minutes});
 }
+
+export async function notificationConfig(){ const r=await get('/queue-notifications/config');return r.data; }
+export async function subscribeQueue(code,templateId){ return post('/queue-notifications/consent',{code,templateId}); }

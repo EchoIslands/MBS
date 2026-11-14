@@ -102,7 +102,7 @@
           data-id="{{item.id}}"
         >
           <view class="stylist-avatar">
-            <image wx:if="{{item.avatar}}" class="stylist-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
+            <image lazy-load wx:if="{{item.avatar}}" class="stylist-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
             <mbs-icon wx:else name="user" size="36" color="var(--text-tertiary)" />
           </view>
           <view class="stylist-info">
@@ -211,7 +211,7 @@
           >
             <view class="product-image">
               <mbs-icon wx:if="{{!item.images || item.images.length === 0}}" name="shoppingBag" size="48" color="var(--text-tertiary)" />
-              <image wx:else class="product-image-img" src="{{item.images[0]}}" mode="aspectFill" />
+              <image lazy-load wx:else class="product-image-img" src="{{item.images[0]}}" mode="aspectFill" />
             </view>
             <view class="product-name">{{item.name}}</view>
             <view class="product-price-row">

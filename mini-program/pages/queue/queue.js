@@ -1,10 +1,18 @@
-import { getLiveQueue, actOnQueue } from '../../api/queue';
+import { getLiveQueue, actOnQueue, notificationConfig, subscribeQueue } from '../../api/queue';
 import { takeRouteParams } from '../../utils/storage';
 const time=(v)=>{if(!v)return '—';const d=new Date(Date.parse(v)+8*3600000);return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');};
 Page({
- data:{snapshot:null,booking:null,notices:[],loading:true,error:'',message:'',busy:false,stale:true,lastSyncLabel:'尚未同步',lastSync:0,contactPhone:'',deadlineLabel:'',returnLabel:'',rules:''},
+ data:{notificationTemplate:'',notificationBusy:false,snapshot:null,booking:null,notices:[],loading:true,error:'',message:'',busy:false,stale:true,lastSyncLabel:'尚未同步',lastSync:0,contactPhone:'',deadlineLabel:'',returnLabel:'',rules:''},
+ enableNotifications(){
+  const templateId=this.data.notificationTemplate;if(!templateId||this.data.notificationBusy)return;
+  this.setData({notificationBusy:true});
+  wx.requestSubscribeMessage({tmplIds:[templateId],success:r=>{
+   if(r[templateId]!=='accept'){this.setData({notificationBusy:false,message:'您未授权微信通知，请保持电话畅通'});return;}
+   wx.login({success:async result=>{try{await subscribeQueue(result.code,templateId);this.setData({message:'已开启一次微信排队提醒；微信失败时转短信，请保持电话畅通'});}catch(e){this.setData({message:e.message||'授权保存失败，请重试'});}finally{this.setData({notificationBusy:false});}},fail:()=>this.setData({notificationBusy:false,message:'微信身份获取失败，请重试'})});
+  },fail:()=>this.setData({notificationBusy:false,message:'订阅未完成，请保持电话畅通'})});
+ },
  bookingId:'',visible:false,flight:false,sequence:0,lastAlert:0,
- onLoad(options={}){const params=takeRouteParams();this.bookingId=options.bookingId||options.id||(params&&params.bookingId)||'';if(!this.bookingId)this.setData({loading:false,error:'缺少预约信息，请从个人中心的预约进入'});},
+ onLoad(options={}){notificationConfig().then(c=>this.setData({notificationTemplate:c.templateId||''})).catch(()=>{});const params=takeRouteParams();this.bookingId=options.bookingId||options.id||(params&&params.bookingId)||'';if(!this.bookingId)this.setData({loading:false,error:'缺少预约信息，请从个人中心的预约进入'});},
  onShow(){this.visible=true;this.setData({stale:true});this.startPolling();this.refresh(true);},
  onHide(){this.visible=false;this.sequence++;this.flight=false;this.stopPolling();},
  onUnload(){this.visible=false;this.sequence++;this.stopPolling();},

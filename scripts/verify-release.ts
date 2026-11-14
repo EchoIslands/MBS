@@ -32,7 +32,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
   const issues: string[] = [];
   const warnings: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
-  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts'];
+  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts','membership_operation_audit','queue_notification_consent','queue_notification_outbox','membership_payment_resolutions'];
   const signatures = new Set<string>();
   const serviceExecutables = new Set<string>();
   const normalizeSignature = (value: string) => 'public.' + value.replace(/^public\./i, '').replace(/\s/g, '').toLowerCase();

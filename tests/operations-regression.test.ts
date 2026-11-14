@@ -190,6 +190,26 @@ test('033–041真实SQL：领券、退款、会员、库存、奖励、团购�
       await db.query("UPDATE group_buy_vouchers SET status='unused' WHERE id=$1",[v1]);
       assert.equal(await scalar("SELECT used_quantity FROM group_buy_batches WHERE name='Synthetic'"),0);
     });
+    await t.test('会员操作编号防重放、金额变更不能复用、线上待支付阻止线下改档',async()=>{
+      await db.exec(await readFile(new URL('../migrations/051_membership_operation_audit.sql',import.meta.url),'utf8'));
+      await db.exec("INSERT INTO employees(id,shop_id,name,role) VALUES('audit-front','s','Synthetic','customer_service')");
+      const args=['operation-synthetic-0001','audit-front',JSON.stringify({membershipAction:'renew',confirmedAmount:29}),'c','s','{}',JSON.stringify({purchase_vip_level:'bronze'}),null,null,'[]',null];
+      const sql='SELECT * FROM apply_membership_operation($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)';
+      const first=await db.query(sql,args),second=await db.query(sql,args);
+      assert.deepEqual(first.rows,second.rows);
+      assert.equal(await scalar("SELECT count(*) FROM membership_operation_audit"),1);
+      await assert.rejects(db.query(sql,[...args.slice(0,2),JSON.stringify({confirmedAmount:99}),...args.slice(3)]),/OPERATION_ID_REUSED/);
+      await assert.rejects(db.query(sql,[args[0],'missing',...args.slice(2)]),/MEMBERSHIP_FORBIDDEN/);
+      await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level) VALUES('pending-audit','s','c','vip','bronze',29,'wechat_mini','bronze')");
+      await assert.rejects(db.query(sql,['operation-synthetic-0002',...args.slice(1)]),/MEMBERSHIP_PAYMENT_PENDING/);
+      await assert.rejects(db.query("SELECT revoke_membership_atomic('c','s',NULL,'audit-front','Synthetic','test')"),/MEMBERSHIP_PAYMENT_PENDING/);
+      await db.exec("DELETE FROM membership_payment_orders WHERE id='pending-audit'");
+      const cancel=['operation-synthetic-0003','audit-front',JSON.stringify({membershipAction:'cancel',confirmedAmount:0}),'c','s','{}',JSON.stringify({purchase_vip_level:'regular',purchase_vip_expires_at:null}),null,null,'[]',null];
+      await db.query(sql,cancel);await db.query(sql,cancel);
+      assert.equal(await scalar("SELECT purchase_vip_level FROM customers WHERE id='c'"),'regular');
+      assert.equal(await scalar("SELECT count(*) FROM membership_enrollments WHERE customer_id='c' AND status='active'"),0);
+      assert.equal(await scalar("SELECT count(*) FROM membership_operation_audit WHERE operation_id='operation-synthetic-0003'"),1);
+    });
     await t.test('匿名和authenticated不能直接读写业务表或执行新增业务函数',async()=>{
       for(const role of ['anon','authenticated']) {
         await db.exec('SET ROLE '+role);

@@ -1,3 +1,4 @@
+import { membershipOperation } from '../shared/lib/membershipOperation';
 import type { LiveQueueSnapshot, LiveQueueDesk } from '../shared/lib/liveQueue';
 import { buildFinancialReport, FINANCIAL_TIME_BASIS } from '../shared/lib/financialReport';
 import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, ServiceRefundCandidate, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
@@ -1246,14 +1247,14 @@ export const customerApi = {
 
 // 会员升级/储值 API
 export type CustomerMembershipOrder = { id:string; kind:'vip'|'stored'; level:string; amount:number;
-  channel:'wechat_mini'|'wechat_h5'; status:'pending'|'paid'|'review'|'closed'; paidAt:string|null; createdAt:string };
-export type CustomerMembershipPlans = { vip:PurchaseVIPPlan[]; stored:StoredValuePlan[];
+  channel:'wechat_mini'|'wechat_h5'; status:'pending'|'paid'|'review'|'closed'|'refunded'; paidAt:string|null; createdAt:string };
+export type CustomerMembershipPlans = { vip:(PurchaseVIPPlan & {operationQuote?:{action:string;label:string;amount:number;expiresAt:string|null;grantedBenefits:string[]}})[]; stored:StoredValuePlan[];
   currentVip:{level:string;expires:string|null;active:boolean};
   currentStored:{level:string;expires:string|null;active:boolean}; activeOrder:CustomerMembershipOrder|null };
 export const customerMembershipApi = {
   plans: () => httpThrowing<CustomerMembershipPlans>(API_BASE+'/customer-membership/plans'),
-  create: (kind:'vip'|'stored',level:string) => httpThrowing<CustomerMembershipOrder & {payUrl?:string}>(API_BASE+'/customer-membership/orders',
-    {method:'POST',body:JSON.stringify({kind,level,channel:'wechat_h5'})}),
+  create: (kind:'vip'|'stored',level:string,confirmedAmount?:number) => httpThrowing<CustomerMembershipOrder & {payUrl?:string}>(API_BASE+'/customer-membership/orders',
+    {method:'POST',body:JSON.stringify({kind,level,confirmedAmount,channel:'wechat_h5'})}),
   check: (id:string) => httpThrowing<CustomerMembershipOrder>(API_BASE+'/customer-membership/orders/'+encodeURIComponent(id)),
 };
 
@@ -1264,6 +1265,9 @@ export const membershipApi = {
       purchaseVIPLevel?: string;
       storedValueLevel?: string;
       paymentMethod?: string;
+      operationId?: string;
+      membershipAction?: string;
+      confirmedAmount?: number;
     }
   ): Promise<{ customer: Customer; vipAddAmount?: number; storedAddAmount?: number } | null> => {
     if (USE_REAL_API) {
@@ -1272,7 +1276,7 @@ export const membershipApi = {
         `${API_BASE}/customers/${customerId}/membership`,
         {
           method: 'PUT',
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, operationId: payload.operationId || crypto.randomUUID() }),
           headers: { Authorization: `Bearer ${token}` },
         }
       );
@@ -1285,16 +1289,11 @@ export const membershipApi = {
     let vipAddAmount = 0;
     let storedAddAmount = 0;
     if (payload.purchaseVIPLevel) {
-      const vipPrices: Record<string, number> = {
-        regular: 0, bronze: 29, silver: 59, gold: 79, diamond: 99,
-      };
-      const currentPrice = vipPrices[customer.purchaseVIPLevel] || 0;
-      const targetPrice = vipPrices[payload.purchaseVIPLevel] || 0;
-      vipAddAmount = Math.max(0, targetPrice - currentPrice);
+      const quote = membershipOperation(customer.purchaseVIPLevel, customer.purchaseVIPExpiresAt, payload.purchaseVIPLevel);
+      if (payload.membershipAction !== quote.action || payload.confirmedAmount !== quote.amount) throw new Error('会员报价已变化，请刷新核对');
+      vipAddAmount = quote.amount;
       customer.purchaseVIPLevel = payload.purchaseVIPLevel as PurchaseVIPLevel;
-      const currentExpiry = customer.purchaseVIPExpiresAt ? new Date(customer.purchaseVIPExpiresAt).getTime() : 0;
-      const baseTime = currentExpiry > Date.now() ? currentExpiry : Date.now();
-      customer.purchaseVIPExpiresAt = new Date(baseTime + 365 * 86400000);
+      customer.purchaseVIPExpiresAt = quote.expiresAt ? new Date(quote.expiresAt) : undefined;
     }
     if (payload.storedValueLevel) {
       const planAmounts: Record<string, number> = {
@@ -2891,4 +2890,19 @@ export const liveQueueApi = {
  desk: (shopId:string) => httpThrowing<LiveQueueDesk>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/live`, {headers:{Authorization:`Bearer ${getAuthToken()}`}}),
  act: (id:string,action:string,version:number,minutes?:number,note?:string,staff=false) => httpThrowing<{eventId:number;version:number}>(`${API_BASE}/bookings/${encodeURIComponent(id)}/live-queue`, {
  method:'POST',credentials:'include',headers:staff?{Authorization:`Bearer ${getAuthToken()}`}:{},body:JSON.stringify({action,version,minutes,note})}),
+};
+
+export type OperationsWorkbenchData = {
+ serverTime:string;truncated:boolean;
+ memberships:{id:string;amount:number;status:string;level:string;created_at:string}[];
+ settlements:{id:string;total:number;payment_method:string}[];
+ refunds:{id:string}[];productRefunds:{id:string}[];
+ metrics:{periodDays:number;bookings:number;waitSamples:number;waitMedian:number|null;waitP90:number|null;missedBookings:number;waitingCancelled:number;renewalOperations:number;phoneFallbacks:number;pendingNotifications:number};
+};
+export type MembershipReview = {order:{id:string;kind:string;level:string;amount:number;operation_kind:string};expected:{purchase_vip_level:string;purchase_vip_expires_at:string|null;stored_value_level:string;stored_value_expires_at:string|null;stored_value_balance:number}};
+export const operationsApi = {
+ review:(id:string)=>httpThrowing<MembershipReview>(API_BASE+'/operations-workbench/membership/'+encodeURIComponent(id)+'/review',{headers:{Authorization:'Bearer '+getAuthToken()}}),
+ resolve:(id:string,request:{decision:'apply'|'refund';reason:string;expected:MembershipReview['expected'];refundRef?:string;refundAmount?:number;refundAt?:string})=>httpThrowing<{status:string}>(API_BASE+'/operations-workbench/membership/'+encodeURIComponent(id)+'/resolve',{method:'POST',headers:{Authorization:'Bearer '+getAuthToken()},body:JSON.stringify(request)}),
+ read:()=>httpThrowing<OperationsWorkbenchData>(API_BASE+'/operations-workbench',{headers:{Authorization:'Bearer '+getAuthToken()}}),
+ checkMembership:(id:string)=>httpThrowing<{status:string;tradeState:string}>(API_BASE+'/operations-workbench/membership/'+encodeURIComponent(id)+'/check',{method:'POST',headers:{Authorization:'Bearer '+getAuthToken()}}),
 };

@@ -1,3 +1,4 @@
+import { membershipOperation } from '../shared/lib/membershipOperation';
 import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
@@ -944,6 +945,9 @@ export const membershipApi = {
       purchaseVIPLevel?: string;
       storedValueLevel?: string;
       paymentMethod?: string;
+      operationId?: string;
+      membershipAction?: string;
+      confirmedAmount?: number;
     }
   ): Promise<{ customer: Customer; vipAddAmount?: number; storedAddAmount?: number } | null> => {
     if (USE_REAL_API) {
@@ -952,7 +956,7 @@ export const membershipApi = {
         `${API_BASE}/customers/${customerId}/membership`,
         {
           method: 'PUT',
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, operationId: payload.operationId || crypto.randomUUID() }),
           headers: { Authorization: `Bearer ${token}` },
         }
       );
@@ -965,16 +969,11 @@ export const membershipApi = {
     let vipAddAmount = 0;
     let storedAddAmount = 0;
     if (payload.purchaseVIPLevel) {
-      const vipPrices: Record<string, number> = {
-        regular: 0, bronze: 29, silver: 59, gold: 79, diamond: 99,
-      };
-      const currentPrice = vipPrices[customer.purchaseVIPLevel] || 0;
-      const targetPrice = vipPrices[payload.purchaseVIPLevel] || 0;
-      vipAddAmount = Math.max(0, targetPrice - currentPrice);
+      const quote = membershipOperation(customer.purchaseVIPLevel, customer.purchaseVIPExpiresAt, payload.purchaseVIPLevel);
+      if (payload.membershipAction !== quote.action || payload.confirmedAmount !== quote.amount) throw new Error('会员报价已变化，请刷新核对');
+      vipAddAmount = quote.amount;
       customer.purchaseVIPLevel = payload.purchaseVIPLevel as PurchaseVIPLevel;
-      const currentExpiry = customer.purchaseVIPExpiresAt ? new Date(customer.purchaseVIPExpiresAt).getTime() : 0;
-      const baseTime = currentExpiry > Date.now() ? currentExpiry : Date.now();
-      customer.purchaseVIPExpiresAt = new Date(baseTime + 365 * 86400000);
+      customer.purchaseVIPExpiresAt = quote.expiresAt ? new Date(quote.expiresAt) : undefined;
     }
     if (payload.storedValueLevel) {
       const planAmounts: Record<string, number> = {

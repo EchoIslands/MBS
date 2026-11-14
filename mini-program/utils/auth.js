@@ -17,8 +17,16 @@ export function handleExpiredCustomerSession(requestToken, requestCustomerId) {
   if (pages[pages.length - 1]?.route === LOGIN_PAGE.slice(1) || sessionRedirecting) return;
   sessionRedirecting = true;
   const orderNo = currentPaymentOrderNumber();
+  let inviteRef = '';
+  try {
+    const page = pages[pages.length - 1];
+    const options = page?.options || {};
+    const value = options.inviteRef || (['pages/invite/claim','pages/invite/invite'].includes(page?.route) ? options.ref || options.scene : '');
+    const decoded = decodeURIComponent(value || '');
+    if (/^ref_[A-Za-z0-9_]{1,28}$/.test(decoded) && decoded.length <= 32) inviteRef = decoded;
+  } catch (_) { /* Invalid external scene is not forwarded. */ }
   wx.reLaunch({
-    url: LOGIN_PAGE + '?reason=session_expired' + (orderNo ? '&returnOrderNo=' + orderNo : ''),
+    url: LOGIN_PAGE + '?reason=session_expired' + (orderNo ? '&returnOrderNo=' + orderNo : '') + (inviteRef ? '&inviteRef=' + encodeURIComponent(inviteRef) : ''),
     complete() { sessionRedirecting = false; },
   });
 }

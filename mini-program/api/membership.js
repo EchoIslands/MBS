@@ -5,8 +5,8 @@ export async function getMembershipPlans() {
   return result.data;
 }
 
-export async function createMembershipOrder(kind, level, code) {
-  const result = await post('/customer-membership/orders', { kind, level, code, channel: 'wechat_mini' });
+export async function createMembershipOrder(kind, level, code, confirmedAmount) {
+  const result = await post('/customer-membership/orders', { kind, level, code, confirmedAmount, channel: 'wechat_mini' });
   return result.data;
 }
 

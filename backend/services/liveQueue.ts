@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { supabase } from '../db/index.js';
-import { describeQueue, queueOrder, QUEUE_RULES, type QueueRow } from '../../shared/lib/liveQueue.js';
+import { createDurationEstimator, describeQueue, queueOrder, QUEUE_RULES, type QueueRow } from '../../shared/lib/liveQueue.js';
 const allowed=['ceo','shop_manager','customer_service','stylist'];
 const eventMessages:Record<string,string>={ready:'请准备返回门店，即将轮到您。',called:'已正式叫号，请在10分钟内到服务位；收到后请点“我已看到”。',missed:'叫号宽限已结束，前台已确认过号。返回后请联系前台补位。',returned:'前台已确认您返回，排队顺序已更新。',service_started:'发型师已开始为您服务。',service_finished:'本次服务已结束。',progress_updated:'前序服务进度已更新，请查看最新等待范围。',reordered:'前台按现场情况调整了顺序，如有疑问请联系门店。'};
 async function readQueue(shopId:string,date:string) {
@@ -10,7 +10,7 @@ async function readQueue(shopId:string,date:string) {
  supabase.from('bookings').select('id,shop_id,customer_id,status,scheduled_time,stylist_id,service_id,actual_start_time,actual_end_time').eq('shop_id',shopId).not('actual_end_time','is',null).gte('actual_end_time',new Date(Date.now()-90*86400000).toISOString()).order('actual_end_time',{ascending:false}).limit(1000),
  supabase.from('shops').select('phone').eq('id',shopId).maybeSingle(),
  supabase.from('employees').select('id,name,queue_pause_until,queue_availability_version').eq('shop_id',shopId).eq('is_active',true).in('role',['stylist','shop_manager'])]);
- if(a.error||h.error||s.error||staff.error)throw new Error('QUEUE_READ_FAILED');
+ if((a.data?.length||0)>=500||a.error||h.error||s.error||staff.error)throw new Error('QUEUE_READ_FAILED');
  if((a.data||[]).length===500)throw new Error('QUEUE_CAPACITY');
  return {rows:(a.data||[]) as QueueRow[],history:(h.data||[]) as QueueRow[],phone:s.data?.phone||'',availability:(staff.data||[]).map(e=>({id:e.id,name:e.name,pausedUntil:e.queue_pause_until,version:e.queue_availability_version||0}))};
 }
@@ -37,11 +37,12 @@ export async function staffQueueSnapshot(req:Request,res:Response){
  const staff=req.employee!;if(!allowed.includes(staff.role)||req.params.shopId!==staff.shopId)return res.status(403).json({success:false,error:'无权访问此门店排队'});
  try{
  const date=String(req.query.date||new Date(Date.now()+8*3600000).toISOString().slice(0,10));
- const {rows,history,availability}=await readQueue(staff.shopId,date);const visible=rows.filter(b=>staff.role!=='stylist'||b.stylist_id===staff.id).sort(queueOrder);
+ const notices=await supabase.from('queue_notification_outbox').select('id,booking_id,status,channel,reason,created_at').eq('shop_id',staff.shopId).gte('created_at',new Date(Date.now()-86400000).toISOString()).order('id',{ascending:false}).limit(2000);
+ const {rows,history,availability}=await readQueue(staff.shopId,date);const snapshotNow=Date.now(),estimate=createDurationEstimator(history,snapshotNow);const visible=rows.filter(b=>staff.role!=='stylist'||b.stylist_id===staff.id).sort(queueOrder);
 
  res.setHeader('Cache-Control','no-store');res.json({success:true,data:{serverTime:new Date().toISOString(),rules:QUEUE_RULES,availability:availability.filter(e=>staff.role!=='stylist'||e.id===staff.id),bookings:visible.map(b=>{
 
- return {...describeQueue(b,rows,history,Date.now(),availability.find(e=>e.id===b.stylist_id)?.pausedUntil),customerName:b.customer_name||'顾客',customerPhone:b.customer_phone||'',stylistId:b.stylist_id,latestEventId:Number(b.queue_version||0),
+ return {...describeQueue(b,rows,history,snapshotNow,availability.find(e=>e.id===b.stylist_id)?.pausedUntil,estimate),notification:staff.role==='stylist'?null:(notices.error||(notices.data?.length||0)>=1000)?{status:'phone',reason:'通知状态不可用或达到上限，请电话核实'}:(notices.data||[]).find(n=>n.booking_id===b.id)||null,customerName:b.customer_name||'顾客',customerPhone:b.customer_phone||'',stylistId:b.stylist_id,latestEventId:Number(b.queue_version||0),
  unacknowledged:b.queue_state==='called'&&Number(b.queue_call_event_id||0)>Number(b.queue_ack_event_id||0),needsHelp:!!b.queue_help_requested_at&&(!b.queue_contacted_at||Date.parse(b.queue_help_requested_at)>Date.parse(b.queue_contacted_at))};})}});
  }catch(e){return fail(res,e);}
 }
@@ -54,6 +55,7 @@ export async function liveQueueAction(req:Request,res:Response){
  try{
  const {data,error}=await supabase.rpc('live_queue_action',{p_booking_id:req.params.id,p_shop_id:staff?.shopId||customer!.shopId,p_actor_id:staff?.id||customer!.id,p_actor_type:staff?'staff':'customer',p_action:action,p_version:version,p_minutes:minutes??null,p_note:note??null});
  if(error){const code=error.message;const messages:Record<string,string>={QUEUE_HELP_PENDING:'已有待处理协助请求，请保持电话畅通，紧急时可直接致电门店',QUEUE_STALE_VERSION:'现场状态已变化，已为您刷新，请核对后重新操作',QUEUE_FORBIDDEN:'无权执行此操作',QUEUE_STYLIST_PAUSED:'这位发型师暂停接客，请先确认恢复接客',QUEUE_STYLIST_BUSY:'这位发型师仍在服务，先结束当前服务',QUEUE_ORDER_REASON_REQUIRED:'前方还有等候顾客，调整顺序需填写至少4字原因',QUEUE_CLOSED:'仅能操作今天有效的排队记录',QUEUE_STATE_CONFLICT:'当前状态不允许该操作，请刷新核对',QUEUE_NOT_FOUND:'预约不存在'};const key=Object.keys(messages).find(k=>code.includes(k));return res.status(key==='QUEUE_FORBIDDEN'?403:key?409:503).json({success:false,code:key||'QUEUE_UNAVAILABLE',error:key?messages[key]:'排队操作暂不可用，请联系前台'});}
+ // Notification is committed by the SQL outbox; the trusted worker sends it without delaying the queue action.
  res.setHeader('Cache-Control','no-store');return res.json({success:true,data});
  }catch(e){return fail(res,e);}
 }

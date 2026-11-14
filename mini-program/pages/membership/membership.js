@@ -35,10 +35,10 @@ Page({
     this.setData({ checking: true });
     try {
       const updated = await checkMembershipOrder(order.id);
-      this.setData({ error: '', activeOrder: updated.status === 'paid' || updated.status === 'closed' ? null : updated,
+      this.setData({ error: '', activeOrder: updated.status === 'paid' || updated.status === 'closed' || updated.status === 'refunded' ? null : updated,
         notice: updated.status === 'paid' ? '支付已确认，会员权益已生效'
           : updated.status === 'review' ? '微信已收款，会员资料有变动，请联系门店核对，勿重复支付'
-          : updated.status === 'closed' ? '原订单已关闭，可以重新选择方案' : '尚未查到支付成功，请稍后重试' });
+          : updated.status === 'refunded' ? '门店已登记实际退款凭据，如有疑问请核对微信账单' : updated.status === 'closed' ? '原订单已关闭，可以重新选择方案' : '尚未查到支付成功，请稍后重试' });
       if (updated.status === 'paid' || updated.status === 'closed') await this.loadPlans();
     } catch (err) { this.setData({ error: err.message || '查单暂不可用，请勿重复支付' }); }
     finally { this.setData({ checking: false }); }
@@ -63,7 +63,7 @@ Page({
     if (this.data.busy) return;
     const { kind, level } = e.currentTarget.dataset;
     const current = kind === 'vip' ? this.data.currentVip : this.data.currentStored;
-    if (current?.active && current.level !== level) {
+    if ((kind === 'vip' && this.data.vip.find(p=>p.level===level)?.operationQuote?.action === 'downgrade') || (kind === 'stored' && current?.active && current.level !== level)) {
       wx.showModal({ title: '暂不能自助改档', content: '有效期内可原档续费，调整档位请联系门店确认价格和权益。', showCancel: false });
       return;
     }
@@ -72,17 +72,17 @@ Page({
       return;
     }
     const plan = (kind === 'vip' ? this.data.vip : this.data.stored).find((p) => p.level === level);
-    const price = kind === 'vip' ? plan?.price : plan?.amount;
+    const price = kind === 'vip' ? (plan?.operationQuote?.amount ?? plan?.price) : plan?.amount;
     const confirmed = await new Promise((resolve) => wx.showModal({
       title: kind === 'vip' ? '确认办理 / 续费 VIP' : '确认储值办理 / 续费',
-      content: '微信支付 ¥' + price + '；付款成功并经微信核验后自动生效。原档续费自原到期日顺延，储值金额全额到账。',
+      content: '微信支付 ¥' + price + '；付款成功并经微信核验后自动生效。'+(plan?.operationQuote?.action==='upgrade'?'升档不延期，只补新增权益。':'原档续费自原到期日顺延，储值金额全额到账。'),
       confirmText: '确认支付', success: (r) => resolve(r.confirm), fail: () => resolve(false),
     }));
     if (!confirmed) return;
     this.setData({ busy: true, error: '', notice: '' });
     try {
       const code = await wxLoginCode();
-      const order = await createMembershipOrder(kind, level, code);
+      const order = await createMembershipOrder(kind, level, code, price);
       this.setData({ activeOrder: order });
       if (order.status === 'paid' || order.status === 'review') { await this.checkActive(); return; }
       if (!order.payParams) throw new Error('微信支付参数暂不可用，请核对原订单，勿重复付款');

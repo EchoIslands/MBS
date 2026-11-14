@@ -17,8 +17,9 @@ Page({
   },
 
   async onLoad(options) {
-    const ref = options.ref || options.scene;
-    if (!ref) {
+    let ref;
+    try { ref = decodeURIComponent(options.ref || options.scene || ''); } catch { ref = ''; }
+    if (!/^ref_[A-Za-z0-9_]{1,28}$/.test(ref) || ref.length > 32) {
       this.setData({ loading: false, error: '无效的邀请链接' });
       return;
     }
@@ -57,12 +58,7 @@ Page({
     const { ref, phone, name, alreadyClaimed, claiming } = this.data;
     if (alreadyClaimed || claiming) return;
     if (!getToken()) {
-      wx.showModal({title:'请先登录',content:'请登录本人账号领取，尚未建档请联系门店。',success:({confirm})=>{if(confirm)wx.navigateTo({url:'/pages/login/login?inviteRef='+encodeURIComponent(ref)});}});
-      return;
-    }
-
-    if (!phone || !/^1[3-9]\d{9}$/.test(phone.trim())) {
-      wx.showToast({ title: '请输入正确的手机号', icon: 'none' });
+      wx.showModal({title:'请先登录',content:'使用本人手机号接收验证码即可登录，新顾客无需先到门店建档。',success:({confirm})=>{if(confirm)wx.navigateTo({url:'/pages/login/login?inviteRef='+encodeURIComponent(ref)});}});
       return;
     }
 

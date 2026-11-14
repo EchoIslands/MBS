@@ -7,7 +7,14 @@ export function enforcePasswordChange(route, options = {}) {
   if (!redirecting) {
     redirecting = true;
     const orderNo = paymentOrderNumber(options) || currentPaymentOrderNumber();
-    wx.reLaunch({ url: CHANGE_PASSWORD_PAGE + (orderNo ? '?returnOrderNo=' + orderNo : ''), complete() { redirecting = false; } });
+    let inviteRef = '';
+    try {
+      const value = options.inviteRef || (['pages/invite/claim','pages/invite/invite'].includes(route) ? options.ref || options.scene : '');
+      const decoded = decodeURIComponent(value || '');
+      if (/^ref_[A-Za-z0-9_]{1,28}$/.test(decoded) && decoded.length <= 32) inviteRef = decoded;
+    } catch (_) { /* Ignore malformed external scene. */ }
+    const query = [orderNo ? 'returnOrderNo=' + orderNo : '', inviteRef ? 'inviteRef=' + encodeURIComponent(inviteRef) : ''].filter(Boolean).join('&');
+    wx.reLaunch({ url: CHANGE_PASSWORD_PAGE + (query ? '?' + query : ''), complete() { redirecting = false; } });
   }
   return true;
 }

@@ -72,6 +72,7 @@ export const SHOP_NAVIGATION: ShopNavigationSection[] = [
     icon: 'credit-card',
     tabs: [
       { label: '开单结算', path: '/shop/checkout', roles: ALL_STAFF },
+      { label: '收款异常与运营核对', path: '/shop/operations', roles: MANAGEMENT },
       { label: '结算管理', path: '/shop/settlement', roles: MANAGEMENT },
       { label: '退款管理', path: '/shop/refunds', roles: MANAGEMENT },
     ],

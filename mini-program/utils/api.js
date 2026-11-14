@@ -1,3 +1,10 @@
+// In-memory coarse metrics only: no phone, customer ID, URL parameters, token or response contents.
+const requestTimings=[];
+function recordTiming(url,start,status,bytes=0){
+ const group=/^\/([a-z-]+)/.exec(url)?.[1]||'other';
+ requestTimings.push({group,ms:Date.now()-start,status,bytes});if(requestTimings.length>200)requestTimings.shift();
+}
+export function getRequestPerformance(){return requestTimings.map(item=>({...item}));}
 import { enforcePasswordChange } from './password-gate';
 import { handleExpiredCustomerSession } from './auth';
 import { getToken, getCustomerId, setPasswordChangeRequired } from './storage';
@@ -31,6 +38,7 @@ function resolveMedia(value, base) {
 }
 
 export function request(url, options = {}) {
+  const started=Date.now();
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
   const timeout = options.timeout || DEFAULT_TIMEOUT;
@@ -58,6 +66,7 @@ export function request(url, options = {}) {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
+        recordTiming(url,started,res.statusCode,JSON.stringify(res.data||null).length);
 
         // 微信返回 200 但后端可能返回错误信息
         if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -103,6 +112,7 @@ export function request(url, options = {}) {
         if (timeoutId) clearTimeout(timeoutId);
 
         console.warn(`[mini-api] ${fullUrl} 请求失败（${err.errMsg}）`);
+        recordTiming(url,started,'network_error');
         const friendly = err.errMsg || '网络请求失败';
         const error = new Error(friendly.includes('timeout') ? '请求超时，请稍后重试' : friendly);
         error.original = err;
@@ -114,6 +124,7 @@ export function request(url, options = {}) {
       if (completed) return;
       completed = true;
       requestTask.abort();
+      recordTiming(url,started,'timeout');
       console.warn(`[mini-api] ${fullUrl} 请求超时`);
       const err = new Error('请求超时，请稍后重试');
       err.isTimeout = true;

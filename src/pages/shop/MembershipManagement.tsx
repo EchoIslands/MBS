@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { membershipOperation } from '../../../shared/lib/membershipOperation';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Crown,
   Star,
@@ -264,7 +265,10 @@ const MembershipManagement: React.FC = () => {
     }
   };
 
+  const submittingMembership = useRef(false);
+  const membershipOperationId = useRef(crypto.randomUUID());
   const openPurchaseModal = (customer: Customer) => {
+    membershipOperationId.current = crypto.randomUUID();
     setModalCustomer(customer);
     setSelectedPurchaseLevel(
       customer.purchaseVIPLevel === PurchaseVIPLevel.REGULAR
@@ -275,6 +279,7 @@ const MembershipManagement: React.FC = () => {
   };
 
   const openStoredModal = (customer: Customer) => {
+    membershipOperationId.current = crypto.randomUUID();
     setModalCustomer(customer);
     setSelectedStoredLevel(
       customer.storedValueLevel === StoredValueLevel.NONE
@@ -285,11 +290,17 @@ const MembershipManagement: React.FC = () => {
   };
 
   const confirmPurchaseUpgrade = async () => {
-    if (!modalCustomer || !selectedPurchaseLevel) return;
+    if (!modalCustomer || !selectedPurchaseLevel || submittingMembership.current) return;
 
+    const quote = membershipOperation(modalCustomer.purchaseVIPLevel, modalCustomer.purchaseVIPExpiresAt, selectedPurchaseLevel);
+    if (!window.confirm(quote.label + '：确认已收款 ¥' + quote.amount + '。办理后有效期：' + (quote.expiresAt ? new Date(quote.expiresAt).toLocaleDateString() : '长期') + '。降档不自动退款，不扣储值余额。确认继续？')) return;
+    submittingMembership.current = true;
     try {
       const result = await membershipApi.upgrade(modalCustomer.id, {
+        operationId: membershipOperationId.current,
         purchaseVIPLevel: selectedPurchaseLevel,
+        membershipAction: quote.action,
+        confirmedAmount: quote.amount,
       });
       if (result?.customer) {
         const updated: Customer = {
@@ -308,24 +319,26 @@ const MembershipManagement: React.FC = () => {
           fetchBenefits(updated.id);
         }
       } else {
-        alert('办理 VIP 失败，请重试');
+        alert('办理 VIP 失败，请核对原操作后重试');
+        return;
       }
+      setModalMode(null);setModalCustomer(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? (err as Error).message : '未知错误';
       console.error('[MembershipManagement] 更新 VIP 失败:', msg);
       alert('更新 VIP 失败：' + msg);
     } finally {
-      setModalMode(null);
-      setModalCustomer(null);
+      submittingMembership.current = false;
     }
   };
 
   const confirmStoredUpgrade = async () => {
-    if (!modalCustomer || !selectedStoredLevel) return;
-
+    if (!modalCustomer || !selectedStoredLevel || submittingMembership.current) return;
+    submittingMembership.current = true;
     try {
       const result = await membershipApi.upgrade(modalCustomer.id, {
         storedValueLevel: selectedStoredLevel,
+        operationId: membershipOperationId.current,
       });
       if (result?.customer) {
         const updated: Customer = {
@@ -344,38 +357,39 @@ const MembershipManagement: React.FC = () => {
           fetchBenefits(updated.id);
         }
       } else {
-        alert('办理储值失败，请重试');
+        alert('办理储值失败，请核对原操作后重试');
+        return;
       }
+      setModalMode(null);setModalCustomer(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? (err as Error).message : '未知错误';
       console.error('[MembershipManagement] 更新储值失败:', msg);
       alert('更新储值失败：' + msg);
     } finally {
-      setModalMode(null);
-      setModalCustomer(null);
+      submittingMembership.current = false;
     }
   };
 
   const cancelCurrentMembership = async () => {
-    if (!modalCustomer || revoking || !canRevokeMembership) return;
+    if (!modalCustomer || revoking || submittingMembership.current || !canRevokeMembership) return;
     const vip = modalMode === 'purchase';
     if (!window.confirm('确定取消' + (vip ? '购买型VIP' : '储值会员折扣资格') + '？不会自动退款，不清空储值余额，不删除次卡和历史记录。')) return;
-    setRevoking(true);
+    submittingMembership.current=true;setRevoking(true);
     try {
       const result = vip
-        ? await membershipApi.revoke(modalCustomer.id, { note: '会员管理调整窗口取消VIP' })
-        : await membershipApi.upgrade(modalCustomer.id, { storedValueLevel: StoredValueLevel.NONE });
+        ? await membershipApi.upgrade(modalCustomer.id, { purchaseVIPLevel: PurchaseVIPLevel.REGULAR, operationId: membershipOperationId.current, membershipAction: 'cancel', confirmedAmount: 0 })
+        : await membershipApi.upgrade(modalCustomer.id, { storedValueLevel: StoredValueLevel.NONE,operationId:membershipOperationId.current });
       if (!result?.customer) throw new Error('取消未完成，请刷新核对');
       const updated = { ...modalCustomer, ...result.customer };
       setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
       if (viewingCustomer?.id === updated.id) { setViewingCustomer(updated); await fetchEnrollments(updated.id); }
       setModalMode(null); setModalCustomer(null);
     } catch (e) { alert(e instanceof Error ? e.message : '取消失败'); }
-    finally { setRevoking(false); }
+    finally { submittingMembership.current=false;setRevoking(false); }
   };
 
   const handleRevoke = async (enrollment: MembershipEnrollment) => {
-    if (!viewingCustomer) return;
+    if (!viewingCustomer || submittingMembership.current) return;
     const levelLabel = getPurchaseVIPLabel(enrollment.level);
     if (
       !window.confirm(
@@ -384,6 +398,7 @@ const MembershipManagement: React.FC = () => {
     ) {
       return;
     }
+    submittingMembership.current = true;
     setRevoking(true);
     try {
       const result = await membershipApi.revoke(viewingCustomer.id, { enrollmentId: enrollment.id });
@@ -409,6 +424,7 @@ const MembershipManagement: React.FC = () => {
       console.error('[MembershipManagement] 撤销会员失败:', msg);
       alert('撤销会员失败：' + msg);
     } finally {
+      submittingMembership.current = false;
       setRevoking(false);
     }
   };
@@ -1013,9 +1029,9 @@ const MembershipManagement: React.FC = () => {
     const selectedPrice = isPurchase
       ? (selectedPlan as typeof purchaseVIPPlans[0])?.price || 0
       : (selectedPlan as typeof storedValuePlans[0])?.amount || 0;
-    // VIP 按目标价与当前已付价补差；储值按目标档位与当前余额补差，与后端一致
+    const quote = isPurchase ? membershipOperation(modalCustomer.purchaseVIPLevel, modalCustomer.purchaseVIPExpiresAt, selectedPurchaseLevel) : null;
     const diff = isPurchase
-      ? Math.max(0, selectedPrice - currentPrice)
+      ? quote!.amount
       : Math.max(0, selectedPrice - modalCustomer.storedValueBalance);
 
     return (
@@ -1099,6 +1115,11 @@ const MembershipManagement: React.FC = () => {
               {revoking ? '处理中…' : isPurchase ? '取消VIP资格' : '取消储值会员资格（保留余额）'}
             </button>
           )}
+          {quote && <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-gray-800">
+            <strong>{quote.label} · 应收 ¥{quote.amount}</strong>
+            <p>办理后到期：{quote.expiresAt ? new Date(quote.expiresAt).toLocaleDateString() : '长期'}</p>
+            <p>{quote.action === 'upgrade' ? '仅补新增权益，有效期不延长。' : quote.action === 'downgrade' ? '不赠新权益，不自动退款，储值余额保留。' : '收完整年费，延长一年并发放本期权益。'}</p>
+          </div>}
           <div className="bg-gray-50 rounded-xl p-4 mb-4">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500">当前{isPurchase ? '已付' : '已储'}金额</span>

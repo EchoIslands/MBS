@@ -1,3 +1,4 @@
+import { membershipOperation } from '../../shared/lib/membershipOperation.js';
 import { randomUUID } from 'crypto';
 import { Router, type Request, type Response } from 'express';
 import { supabase } from '../db/index.js';
@@ -11,7 +12,7 @@ router.use(customerSession);
 type Kind = 'vip' | 'stored';
 type CustomerTier = { purchase_vip_level?:string|null; purchase_vip_expires_at?:string|null;
   stored_value_level?:string|null; stored_value_expires_at?:string|null };
-type Order = { id:string; shop_id:string; customer_id:string; kind:Kind; level:string; amount:number;
+export type Order = { id:string; shop_id:string; customer_id:string; kind:Kind; level:string; amount:number;
   channel:'wechat_mini'|'wechat_h5'; status:string; expected_level:string; expected_expires_at:string|null;
   payer_openid:string|null; prepay_id:string|null; h5_url:string|null; transaction_id:string|null;
   paid_at:string|null; created_at:string };
@@ -57,7 +58,7 @@ async function ownCustomer(req:Request) {
   return data;
 }
 
-async function exchangeMiniCode(code:string):Promise<string> {
+export async function exchangeMiniCode(code:string):Promise<string> {
   const appid=process.env.WECHAT_MINI_APP_ID || process.env.WECHAT_APP_ID,secret=process.env.WECHAT_MINI_APP_SECRET;
   if(!appid || !secret) throw new Error('小程序支付尚未配置，请联系门店');
   if(!/^[A-Za-z0-9_-]{8,256}$/.test(code)) throw new Error('微信登录凭证无效，请重试');
@@ -75,7 +76,7 @@ async function ownOrder(req:Request,id:string):Promise<Order|null> {
   return data as Order|null;
 }
 
-async function refreshOrder(o:Order) {
+export async function refreshOrder(o:Order) {
   if(o.status!=='pending') return {order:o,tradeState:o.status};
   const expectedAppId=o.channel==='wechat_mini' ? process.env.WECHAT_MINI_APP_ID || process.env.WECHAT_APP_ID : process.env.WECHAT_APP_ID;
   const gateway=await queryPaymentStatus(o.id,expectedAppId);
@@ -103,7 +104,7 @@ router.get('/plans',async(req:Request,res:Response)=>{
     const {data:orders,error}=await supabase.from('membership_payment_orders').select('id,kind,level,amount,status,channel,created_at')
       .eq('customer_id',c.id).eq('shop_id',c.shop_id).in('status',['pending','review']).limit(1);
     if(error) throw new Error('会员订单暂不可用，请确认 050 迁移已部署');
-    return res.json({success:true,data:{vip:purchaseVIPPlans.filter(p=>p.price>0),stored:storedValuePlans.filter(p=>p.amount>0),
+    return res.json({success:true,data:{vip:purchaseVIPPlans.filter(p=>p.price>0).map(p=>({...p,operationQuote:membershipOperation(c.purchase_vip_level||'regular',c.purchase_vip_expires_at,p.level)})),stored:storedValuePlans.filter(p=>p.amount>0),
       currentVip:currentTier(c,'vip'),currentStored:currentTier(c,'stored'),activeOrder:orders?.[0]||null}});
   }catch(err){return res.status(503).json({success:false,error:err instanceof Error?err.message:'会员方案暂不可用'});}
 });
@@ -112,7 +113,7 @@ router.post('/orders',async(req:Request,res:Response)=>{
   const {kind,level,channel}=req.body||{};
   if(!['vip','stored'].includes(kind) || typeof level!=='string' || !['wechat_mini','wechat_h5'].includes(channel))
     return res.status(400).json({success:false,error:'请选择有效的会员方案和支付方式'});
-  const amount=priceFor(kind,level);
+  let amount=priceFor(kind,level);
   if(!amount) return res.status(400).json({success:false,error:'会员方案无效'});
   try {
     const forwarded=process.env.VERCEL==='1' ? req.headers['x-vercel-forwarded-for'] : undefined;
@@ -122,7 +123,9 @@ router.post('/orders',async(req:Request,res:Response)=>{
     const openid=channel==='wechat_mini' ? await exchangeMiniCode(req.body?.code) : null;
     const c=await ownCustomer(req);
     const tier=currentTier(c,kind);
-    if(tier.active && tier.level!==level) return res.status(409).json({success:false,error:'当前有效会员仅可原档续费；调整档位请联系门店'});
+    const quote=kind==='vip'?membershipOperation(c.purchase_vip_level||'regular',c.purchase_vip_expires_at,level):null;
+    if(quote?.action==='downgrade'||kind==='stored'&&tier.active&&tier.level!==level) return res.status(409).json({success:false,error:'降档或储值跨档调整请联系门店，不会自动退款'});
+    if(quote)amount=quote.amount;
     const {data:active,error:activeError}=await supabase.from('membership_payment_orders').select('*')
       .eq('customer_id',c.id).eq('shop_id',c.shop_id).in('status',['pending','review']).limit(1);
     if(activeError) throw new Error('会员订单暂不可用，请确认 050 迁移已部署');
@@ -143,14 +146,16 @@ router.post('/orders',async(req:Request,res:Response)=>{
       }
     }
     if(!order || order.status==='closed') {
+      if(quote && (quote.action==='upgrade' || req.body.confirmedAmount!==undefined) && req.body.confirmedAmount!==amount) return res.status(409).json({success:false,error:'会员报价已变化，请刷新方案后确认应付金额'});
       const id=randomUUID().replace(/-/g,'');
       const {data,error}=await supabase.from('membership_payment_orders').insert({id,shop_id:c.shop_id,customer_id:c.id,kind,level,amount,
-        channel,status:'pending',expected_level:tier.level,expected_expires_at:tier.expires,payer_openid:openid}).select('*').single();
+        channel,status:'pending',operation_kind:quote?.action||'legacy',expected_level:tier.level,expected_expires_at:tier.expires,payer_openid:openid}).select('*').single();
       if(error || !data) throw new Error('会员订单创建失败，请先核对是否已有待支付订单');
       order=data as Order;
     }
     if(channel==='wechat_mini' && order.prepay_id) return res.json({success:true,data:{...publicOrder(order),payParams:miniPaymentParams(order.prepay_id)}});
     if(channel==='wechat_h5' && order.h5_url) return res.json({success:true,data:{...publicOrder(order),payUrl:order.h5_url}});
+    amount=Number(order.amount);
     const payment=await createPayment({paymentId:order.id,shopId:c.shop_id,customerId:c.id,settlementId:'',amount,
       channel,openid:openid||undefined,clientIp,description:kind==='vip'?'会员开通/续费 '+level:'储值会员 '+level});
     if(payment.paymentId!==order.id || payment.amount!==amount || payment.status!=='pending' ||

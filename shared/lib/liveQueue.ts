@@ -15,23 +15,34 @@ const time=(v?:string)=>v?Date.parse(v):0;
 const day=(v:string)=>new Date(Date.parse(v)+8*3600000).toISOString().slice(0,10);
 const waiting=(b:QueueRow)=>b.status==='confirmed'&&['arrived','returned','called'].includes(b.queue_state||'');
 export const queueOrder=(a:QueueRow,b:QueueRow)=>time(a.queue_priority_at||a.arrived_at||a.scheduled_time)-time(b.queue_priority_at||b.arrived_at||b.scheduled_time)||a.id.localeCompare(b.id);
-function duration(b:QueueRow,history:QueueRow[]) {
- const samples=history.filter(h=>h.stylist_id===b.stylist_id&&h.service_id===b.service_id&&h.actual_start_time&&h.actual_end_time)
- .map(h=>(time(h.actual_end_time)-time(h.actual_start_time))/60000).filter(n=>n>=5&&n<=480).sort((a,b)=>a-b);
- const base=Math.min(480,Math.max(10,Number(b.planned_duration_minutes)||30));
- if(samples.length<8)return {low:Math.round(base*.75),high:Math.ceil(base*1.5),source:'服务参考时长，历史样本不足',samples:samples.length};
- return {low:Math.floor(samples[Math.floor((samples.length-1)*.5)]),high:Math.ceil(samples[Math.ceil((samples.length-1)*.85)]),source:'该发型师同类服务历史范围',samples:samples.length};
+export function createDurationEstimator(history:QueueRow[],now=Date.now()) {
+ const groups=new Map<string,number[]>();
+ for(const h of history){
+  if(!h.stylist_id||!h.service_id||h.status==='cancelled'||!h.actual_start_time||!h.actual_end_time)continue;
+  const end=time(h.actual_end_time),minutes=(end-time(h.actual_start_time))/60000;
+  if(!Number.isFinite(end)||!Number.isFinite(minutes)||end>now||end<now-90*86400000||minutes<5||minutes>480)continue;
+  const key=JSON.stringify([h.stylist_id,h.service_id]);const group=groups.get(key)||[];group.push(minutes);groups.set(key,group);
+ }
+ for(const group of groups.values())group.sort((a,b)=>a-b);
+ return (b:QueueRow)=>{
+  const samples=groups.get(JSON.stringify([b.stylist_id,b.service_id]))||[];
+  const base=Math.min(480,Math.max(10,Number(b.planned_duration_minutes)||30));
+  if(samples.length<8)return {low:Math.round(base*.75),high:Math.ceil(base*1.5),source:'服务参考时长，历史样本不足',samples:samples.length};
+  return {low:Math.floor(samples[Math.floor((samples.length-1)*.5)]),high:Math.ceil(samples[Math.ceil((samples.length-1)*.85)]),source:'该发型师同类服务历史范围',samples:samples.length};
+ };
 }
-export function describeQueue(b:QueueRow,all:QueueRow[],history:QueueRow[],now=Date.now(),pausedUntil?:string) {
+export function duration(b:QueueRow,history:QueueRow[],now=Date.now()){return createDurationEstimator(history,now)(b);}
+
+export function describeQueue(b:QueueRow,all:QueueRow[],history:QueueRow[],now=Date.now(),pausedUntil?:string,estimate=createDurationEstimator(history,now)) {
  const today=day(new Date(now).toISOString());
  const isToday=day(b.scheduled_time)===today;
  const lane=all.filter(q=>q.stylist_id===b.stylist_id&&day(q.scheduled_time)===day(b.scheduled_time));
  const before=lane.filter(q=>q.id!==b.id&&waiting(q)&&queueOrder(q,b)<0).sort(queueOrder);
  const active=lane.filter(q=>q.id!==b.id&&q.queue_state==='serving'&&!q.actual_end_time&&q.status!=='cancelled');
  let low=0,high=0,uncertain=false;
- for(const q of before){const d=duration(q,history);low+=d.low;high+=d.high;}
+ for(const q of before){const d=estimate(q);low+=d.low;high+=d.high;}
  for(const q of active){
-  const d=duration(q,history); const elapsed=Math.max(0,(now-time(q.actual_start_time))/60000);
+  const d=estimate(q); const elapsed=Math.max(0,(now-time(q.actual_start_time))/60000);
   if(q.progress_updated_at&&q.progress_remaining_minutes!=null){
    const age=Math.max(0,(now-time(q.progress_updated_at))/60000); const remaining=q.progress_remaining_minutes-age;
    low+=Math.max(0,Math.floor(remaining-5)); high+=Math.max(10,Math.ceil(remaining+10));
@@ -55,10 +66,10 @@ export function describeQueue(b:QueueRow,all:QueueRow[],history:QueueRow[],now=D
   overWait:eligible&&waitMinutes>=QUEUE_RULES.overWaitMinutes,
   canLeave:isToday&&['arrived','returned'].includes(state),canReturn:isToday&&['away','missed'].includes(state)&&!b.return_requested_at,
   canAcknowledge:isToday&&state==='called',canAskHelp:isToday&&['reserved','arrived','returned','away','missed','called'].includes(state),
-  duration:duration(b,history),progressStale:state==='serving'&&(!b.progress_updated_at||now-time(b.progress_updated_at)>15*60000),progressUpdatedAt:b.progress_updated_at,progressRemainingMinutes:b.progress_remaining_minutes};
+  duration:estimate(b),progressStale:state==='serving'&&(!b.progress_updated_at||now-time(b.progress_updated_at)>15*60000),progressUpdatedAt:b.progress_updated_at,progressRemainingMinutes:b.progress_remaining_minutes};
 }
 export type LiveQueueBooking=ReturnType<typeof describeQueue>;
 export type QueueNotice={id:number;type:string;at:string;message:string;acknowledged:boolean};
 export type LiveQueueSnapshot={serverTime:string;rules:typeof QUEUE_RULES;booking:LiveQueueBooking;notices:QueueNotice[];contactPhone:string;latestEventId:number};
 export type QueueAvailability={id:string;name:string;pausedUntil:string|null;version:number};
-export type LiveQueueDesk={serverTime:string;rules:typeof QUEUE_RULES;availability:QueueAvailability[];bookings:(LiveQueueBooking&{customerName:string;customerPhone:string;stylistId?:string;latestEventId:number;unacknowledged:boolean;needsHelp:boolean})[]};
+export type LiveQueueDesk={serverTime:string;rules:typeof QUEUE_RULES;availability:QueueAvailability[];bookings:(LiveQueueBooking&{notification?:{status:string;reason:string;channel?:string;created_at?:string}|null;customerName:string;customerPhone:string;stylistId?:string;latestEventId:number;unacknowledged:boolean;needsHelp:boolean})[]};

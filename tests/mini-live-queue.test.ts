@@ -6,7 +6,7 @@ type Snapshot={booking:{id:string;state?:string;version?:number;scheduledTime?:s
 async function harness(){
  let page!:vm.Context;let data:Snapshot={booking:{id:'b',state:'arrived',version:2,scheduledTime:'2026-11-12T06:00:00Z'},notices:[],rules:{text:'rules'},contactPhone:'123'};
  const calls:unknown[][]=[];const intervals=new Map<number,()=>void>();let timer=0;let read:()=>Promise<Snapshot>=async()=>structuredClone(data);
- const ctx=vm.createContext({console,Date,setInterval:(fn:()=>void)=>{intervals.set(++timer,fn);return timer;},clearInterval:(id:number)=>intervals.delete(id),takeRouteParams:()=>({bookingId:'b'}),getLiveQueue:()=>read(),actOnQueue:async(...args:unknown[])=>calls.push(args),wx:{vibrateLong(){},showToast(){},makePhoneCall(){}},Page:(p:vm.Context)=>{page=p;}});
+ const ctx=vm.createContext({console,Date,setInterval:(fn:()=>void)=>{intervals.set(++timer,fn);return timer;},clearInterval:(id:number)=>intervals.delete(id),notificationConfig:async()=>({templateId:''}),subscribeQueue:async()=>({subscribed:true}),takeRouteParams:()=>({bookingId:'b'}),getLiveQueue:()=>read(),actOnQueue:async(...args:unknown[])=>calls.push(args),wx:{vibrateLong(){},showToast(){},makePhoneCall(){}},Page:(p:vm.Context)=>{page=p;}});
  const code=(await readFile(new URL('../mini-program/pages/queue/queue.js',import.meta.url),'utf8')).replace(/^import .*;$/gm,'');vm.runInContext(code,ctx);
  page.setData=(patch:object)=>Object.assign(page.data,patch);page.onLoad({});page.visible=true;
  return {page,calls,intervals,setRead:(fn:()=>Promise<Snapshot>)=>read=fn,setSnapshot:(s:Snapshot)=>data=s};

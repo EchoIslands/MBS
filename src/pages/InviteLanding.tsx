@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Loader2, Gift, User, Phone } from 'lucide-react';
+import { Loader2, Gift } from 'lucide-react';
+import { useAppStore } from '../store';
 import { getApiBase } from '../../shared/api-base';
 
 const API_BASE_URL = getApiBase();
@@ -37,8 +38,7 @@ export default function InviteLanding() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [info, setInfo] = useState<InviteInfo | null>(null);
-  const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
+  const currentCustomer = useAppStore(state => state.currentCustomer);
   const [claiming, setClaiming] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const [claimedCoupon, setClaimedCoupon] = useState<ClaimedCoupon | null>(null);
@@ -72,21 +72,17 @@ export default function InviteLanding() {
 
   const handleClaim = async () => {
     if (claiming) return;
-    if (!phone || !/^1[3-9]\d{9}$/.test(phone.trim())) {
-      alert('请输入正确的手机号');
-      return;
-    }
+    if (!currentCustomer) { navigate('/customer/login?mode=sms&returnTo=' + encodeURIComponent('/invite?ref=' + encodeURIComponent(ref || ''))); return; }
     try {
       setClaiming(true);
       const res = await fetch(`${API_BASE_URL}/referrals/claim`, {
-        method: 'POST',
+        method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref, phone: phone.trim(), name: name.trim() }),
+        body: JSON.stringify({ ref }),
       });
       const data = await res.json();
-      if (res.status === 401) { navigate('/customer/login?returnTo=' + encodeURIComponent('/invite?ref=' + encodeURIComponent(ref || ''))); return; }
+      if (res.status === 401) { navigate('/customer/login?mode=sms&returnTo=' + encodeURIComponent('/invite?ref=' + encodeURIComponent(ref || ''))); return; }
       if (data.success) {
-        localStorage.setItem('mbs_customer_id', data.data.customerId);
         setClaimed(true);
         setClaimedCoupon(data.data as ClaimedCoupon);
       } else {
@@ -166,35 +162,14 @@ export default function InviteLanding() {
             <div className="text-center text-red-500 py-4">该优惠券已被领取</div>
           ) : (
             <>
-              <div className="space-y-3"><p className="text-sm text-gray-500">请登录本人账号领取；尚未建档请先联系门店。</p>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm sm:text-base"
-                    type="tel"
-                    placeholder="请输入手机号"
-                    maxLength={11}
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                </div>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm sm:text-base"
-                    placeholder="称呼（选填）"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-              </div>
+              <p className="text-sm text-gray-500">用本人手机号接收验证码即可登录领取，新顾客无需提前到店建档。</p>
               <button
                 className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-colors flex items-center justify-center"
                 onClick={handleClaim}
                 disabled={claiming}
               >
                 {claiming ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                {claiming ? '领取中...' : '立即领取'}
+                {claiming ? '领取中...' : currentCustomer ? '立即领取' : '验证码登录领取'}
               </button>
             </>
           )}

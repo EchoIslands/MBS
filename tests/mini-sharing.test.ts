@@ -68,7 +68,7 @@ test('实际商城、商品与邀请分享保持原路径及邀请码，所有�
   const h = await sharingHarness();
   for (const file of ['pages/products/products.js', 'pages/product-detail/product-detail.js', 'pages/invite/invite.js', 'pages/invite/claim.js']) {
     await h.load(file);
-    const instance = { data: { shopId: 'shop1', productId: 'p1', product: { name: '合成商品' }, ref: 'synthetic_ref', inviteUrl: 'https://example.invalid/?ref=synthetic_ref', referrerName: '合成邀请人', qrCodeDataUrl: '' } };
+    const instance = { data: { shopId: 'shop1', productId: 'p1', product: { name: '合成商品' }, ref: 'synthetic_ref', referralId: 'synthetic_ref', inviteUrl: 'https://example.invalid/?ref=synthetic_ref', referrerName: '合成邀请人', qrCodeDataUrl: '' } };
     const card = h.page.onShareAppMessage.call(instance);
     const timeline = h.page.onShareTimeline.call(instance);
     assert.equal(card.imageUrl, '/assets/share/shop-card.png');

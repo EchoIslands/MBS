@@ -132,7 +132,7 @@ const CustomerInvite: React.FC = () => {
 
               {/* 链接复制 */}
               <div className="bg-gray-50 rounded-2xl p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">邀请链接</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">备用网页版链接</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -152,7 +152,7 @@ const CustomerInvite: React.FC = () => {
 
               {/* 提示 */}
               <p className="text-xs text-gray-400 text-center px-4">
-                提示：你可以截图保存二维码，或直接复制链接发送给好友。
+                微信扫描上方小程序码直接进入小程序；复制的备用链接会打开网页版。
               </p>
             </>
           )}

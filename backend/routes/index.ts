@@ -1,3 +1,6 @@
+import operationsWorkbenchRouter from './operationsWorkbench.js';
+import queueNotificationsRouter from './queueNotifications.js';
+import { membershipOperation } from '../../shared/lib/membershipOperation.js';
 import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, liveQueueAction } from '../services/liveQueue.js';
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import customerPaymentOrdersRouter from './customerPaymentOrders.js';
@@ -31,7 +34,7 @@ import { compareSettlements } from '../../shared/lib/settlementDisplay.js';
 import { buildFinancialReport } from '../../shared/lib/financialReport.js';
 import { buildOwnerDashboard, buildStylistPerformances } from '../../shared/lib/dashboardStats.js';
 import type { Settlement } from '../../shared/types.js';
-import QRCode from 'qrcode';
+import { invitationMiniProgramCode } from '../services/miniProgramCode.js';
 import { priceSettlement } from '../lib/settlementPricing.js';
 import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
 import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS, CUSTOMER_RESTRICTED_SESSION_SECONDS } from '../lib/tokens.js';
@@ -39,6 +42,8 @@ import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
 const mainRouter = Router();
+mainRouter.use('/operations-workbench', operationsWorkbenchRouter);
+mainRouter.use('/queue-notifications', queueNotificationsRouter);
 mainRouter.use('/customer-payment-orders', customerPaymentOrdersRouter);
 mainRouter.use('/customer-membership', customerMembershipRouter);
 const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
@@ -2394,7 +2399,14 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
     const { id } = req.params;
     const shopId = req.employee!.shopId;
     const { purchaseVIPLevel, storedValueLevel } = req.body || {};
-    if ((!purchaseVIPLevel && !storedValueLevel) || (purchaseVIPLevel && !['regular','bronze','silver','gold','diamond'].includes(purchaseVIPLevel)) || (storedValueLevel && !['none','store_500','store_1000','store_2000','store_5000'].includes(storedValueLevel))) return res.status(400).json({success:false,error:'请选择有效的会员或储值档位'});
+    if (typeof req.body.operationId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(req.body.operationId)) return res.status(400).json({success:false,error:'缺少有效操作编号，请更新页面后重试'});
+    const prior = await supabase.from('membership_operation_audit').select('operation,after_state,customer_id,actor_id').eq('shop_id',shopId).eq('operation_id',req.body.operationId).maybeSingle();
+    if (prior.error) return res.status(503).json({success:false,error:'会员操作审计暂不可用，请核对数据库升级'});
+    if (prior.data) {
+      if (prior.data.customer_id!==id || prior.data.actor_id!==req.employee!.id || canonicalJson(prior.data.operation) !== canonicalJson(req.body)) return res.status(409).json({success:false,error:'操作编号已使用，请刷新后核对'});
+      return res.json({success:true,data:{customer:toCamelCase(prior.data.after_state),replayed:true}});
+    }
+    if ((purchaseVIPLevel && storedValueLevel) || (!purchaseVIPLevel && !storedValueLevel) || (purchaseVIPLevel && !['regular','bronze','silver','gold','diamond'].includes(purchaseVIPLevel)) || (storedValueLevel && !['none','store_500','store_1000','store_2000','store_5000'].includes(storedValueLevel))) return res.status(400).json({success:false,error:'请选择有效的会员或储值档位'});
 
     const { data: customer, error: fetchError } = await supabase
       .from('customers')
@@ -2415,23 +2427,13 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
     // 购买型 VIP 升级/续费
     let vipAddAmount = 0;
     if (purchaseVIPLevel && typeof purchaseVIPLevel === 'string') {
-      const vipPrices: Record<string, number> = {
-        regular: 0,
-        bronze: 29,
-        silver: 59,
-        gold: 79,
-        diamond: 99,
-      };
+      const quote = membershipOperation(customer.purchase_vip_level || 'regular', customer.purchase_vip_expires_at, purchaseVIPLevel);
+      if (req.body.membershipAction !== quote.action || req.body.confirmedAmount !== quote.amount) {
+        return res.status(409).json({ success: false, error: '会员办理规则或金额已变化，请刷新后确认收款及有效期', data: quote });
+      }
       updatePayload.purchase_vip_level = purchaseVIPLevel;
-      // 续费逻辑：当前未过期则延长一年，否则从当前时间起一年
-      const currentExpiry = customer.purchase_vip_expires_at
-        ? new Date(customer.purchase_vip_expires_at).getTime()
-        : 0;
-      const baseTime = currentExpiry > Date.now() ? currentExpiry : Date.now();
-      updatePayload.purchase_vip_expires_at = new Date(baseTime + 365 * 86400000).toISOString();
-      // 计算补差金额（目标价格 - 当前已付价格）
-      const currentVIPPrice = vipPrices[customer.purchase_vip_level || 'regular'] || 0;
-      vipAddAmount = Math.max(0, (vipPrices[purchaseVIPLevel] || 0) - currentVIPPrice);
+      updatePayload.purchase_vip_expires_at = quote.expiresAt;
+      vipAddAmount = quote.amount;
     }
 
     // 储值会员升级/办理
@@ -2491,8 +2493,9 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
     let giftPackage: Record<string,unknown> | null=null;
     let benefits: Record<string,unknown>[]=[];
     if (purchaseVIPLevel && purchaseVIPLevel !== 'regular') {
-      enrollment={id:'enr_'+randomUUID(),level:purchaseVIPLevel,source:'manual',enrolled_at:now,expires_at:updatePayload.purchase_vip_expires_at,note:'店铺端办理 '+purchaseVIPLevel+' 会员'};
-      if (purchaseVIPLevel==='diamond' && customer.purchase_vip_level!=='diamond') {
+      const quote = membershipOperation(customer.purchase_vip_level || 'regular', customer.purchase_vip_expires_at, purchaseVIPLevel);
+      enrollment={id:'enr_'+randomUUID(),level:purchaseVIPLevel,source:'manual',enrolled_at:now,expires_at:updatePayload.purchase_vip_expires_at,note:'店铺端'+quote.label+' '+purchaseVIPLevel+' 会员；确认收款 '+quote.amount+' 元'};
+      if (purchaseVIPLevel==='diamond' && quote.grantedBenefits.includes('free_haircut') && (quote.action==='open'||quote.action==='upgrade')) {
         const service=await findDiamondHaircutService(shopId);
         if(service) giftPackage={id:'pkg_'+randomUUID(),name:'钻石会员赠送·'+service.name+'3次',service_id:service.id,total_times:3,expires_at:new Date(Date.now()+365*86400000).toISOString()};
       }
@@ -2528,7 +2531,8 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
         free_haircut: 365,
       };
 
-      const benefitsToInsert = benefitConfigs.map((b) => ({
+      const quote = membershipOperation(customer.purchase_vip_level || 'regular', customer.purchase_vip_expires_at, purchaseVIPLevel);
+      const benefitsToInsert = benefitConfigs.filter(b => quote.grantedBenefits.includes(b.type)).map((b) => ({
         id: `benefit_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         shop_id: shopId,
         customer_id: id,
@@ -2545,7 +2549,8 @@ customersRouter.put('/:id/membership', requirePermission('customer:edit'), requi
     }
     // 比较读到的资金/会员快照；有并发扣款或变更则整笔拒绝，要求刷新。
     const expected=Object.fromEntries(['balance','stored_value_balance','purchase_vip_level','purchase_vip_expires_at','stored_value_level','stored_value_expires_at','is_stockholder'].map(key=>[key,customer[key] ?? null]));
-    const {data:result,error:membershipError}=await supabase.rpc('apply_membership_atomic',{
+    const {data:result,error:membershipError}=await supabase.rpc('apply_membership_operation',{
+      p_operation_id:req.body.operationId,p_actor_id:req.employee!.id,p_operation:req.body,
       p_customer_id:id,p_shop_id:shopId,p_expected:expected,p_patch:updatePayload,
       p_enrollment:enrollment,p_transaction:storedValueTx,p_benefits:benefits,p_package:giftPackage,
     });
@@ -5525,10 +5530,14 @@ referralsRouter.post('/invite', customerSession, async (req: Request, res: Respo
     const coupon = await ensureDefaultReferralCoupon(shopId);
     const couponId = coupon ? coupon.id : null;
 
-    // 创建推荐记录
+    // 先确认微信能生成原生小程序码；失败时不返回网页二维码冒充。
     const referralId = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const baseUrl = process.env.H5_BASE_URL || `https://www.hsxx8888.cn`;
     const inviteUrl = `${baseUrl}/invite?ref=${referralId}`;
+
+    let qrCodeDataUrl: string;
+    try { qrCodeDataUrl = await invitationMiniProgramCode(referralId); }
+    catch (error) { return res.status(503).json({ success: false, error: (error as Error).message }); }
 
     const { error: insertError } = await supabase.from('referral_records').insert({
       id: referralId,
@@ -5545,19 +5554,13 @@ referralsRouter.post('/invite', customerSession, async (req: Request, res: Respo
       return res.status(500).json({ success: false, error: '创建邀请记录失败，请稍后重试' });
     }
 
-    // 生成二维码图片（Data URL）
-    const qrCodeDataUrl = await QRCode.toDataURL(inviteUrl, {
-      width: 280,
-      margin: 2,
-      color: { dark: '#1a1a2e', light: '#ffffff' },
-    });
-
     res.json({
       success: true,
       data: {
         referralId,
         inviteUrl,
         qrCodeDataUrl,
+        codeType: 'miniprogram',
         referrerName: customer.name || '会员',
       },
     });

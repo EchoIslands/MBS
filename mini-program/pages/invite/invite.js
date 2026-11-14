@@ -8,12 +8,19 @@ Page({
     error: '',
     customerId: '',
     qrCodeDataUrl: '',
+    qrCodePath: '',
+    referralId: '',
     inviteUrl: '',
     referrerName: '会员',
   },
 
   async onLoad(options) {
-    const customerId = options.customerId || getCustomerId();
+    if (options.ref || options.scene) {
+      const ref = options.ref || options.scene;
+      wx.redirectTo({ url: '/pages/invite/claim?' + (options.scene ? 'scene=' : 'ref=') + encodeURIComponent(ref) });
+      return;
+    }
+    const customerId = getCustomerId();
     if (!customerId) {
       this.setData({ loading: false, error: '' });
       ensureLogin({ content: '登录后即可查看邀请码' });
@@ -28,7 +35,11 @@ Page({
       this.setData({ loading: true, error: '' });
       const res = await generateInviteCode(this.data.customerId);
       if (res.success) {
+        const filePath = `${wx.env.USER_DATA_PATH}/invite_qrcode.png`;
+        wx.getFileSystemManager().writeFileSync(filePath, res.data.qrCodeDataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
         this.setData({
+          referralId: res.data.referralId,
+          qrCodePath: filePath,
           qrCodeDataUrl: res.data.qrCodeDataUrl,
           inviteUrl: res.data.inviteUrl,
           referrerName: res.data.referrerName || '会员',
@@ -47,11 +58,11 @@ Page({
   },
 
   onPreviewQrCode() {
-    const { qrCodeDataUrl } = this.data;
-    if (!qrCodeDataUrl) return;
+    const { qrCodePath } = this.data;
+    if (!qrCodePath) return;
     wx.previewImage({
-      urls: [qrCodeDataUrl],
-      current: qrCodeDataUrl,
+      urls: [qrCodePath],
+      current: qrCodePath,
     });
   },
 
@@ -87,18 +98,15 @@ Page({
   },
 
   onShareAppMessage() {
-    const { inviteUrl, referrerName, qrCodeDataUrl } = this.data;
-    const ref = inviteUrl ? inviteUrl.split('ref=')[1] : '';
+    const { referralId: ref, referrerName } = this.data;
     return {
       title: `${referrerName || '会员'} 邀请你体验 MBS 美发服务`,
       path: ref ? `/pages/invite/claim?ref=${ref}` : '/pages/invite/claim',
-      imageUrl: qrCodeDataUrl || '',
     };
   },
 
   onShareTimeline() {
-    const { inviteUrl, referrerName } = this.data;
-    const ref = inviteUrl ? inviteUrl.split('ref=')[1] : '';
+    const { referralId: ref, referrerName } = this.data;
     return {
       title: `${referrerName || '会员'} 邀请你加入 MBS`,
       query: ref ? `ref=${ref}` : '',

@@ -23,5 +23,6 @@
   </view>
  </view>
  <view wx:if="{{booking}}" class="queue-panel"><view class="queue-section-title">现场消息</view><view wx:if="{{!notices.length}}" class="queue-muted">暂无新的叫号消息</view><view wx:for="{{notices}}" wx:key="id" class="queue-notice"><view class="queue-muted">{{item.timeLabel}} · {{item.acknowledged ? '已确认' : '现场更新'}}</view><view>{{item.message}}</view></view></view>
+ <view wx:if="{{notificationTemplate}}" class="queue-panel"><button class="queue-primary" loading="{{notificationBusy}}" disabled="{{notificationBusy}}" bindtap="enableNotifications">开启微信排队提醒</button><view class="queue-muted">每次授权可发送一次提醒；微信不可用时转短信，未确认时前台电话联系。</view></view>
  <view class="queue-panel"><view class="queue-section-title">等待与过号规则</view><view>{{rules || '到店请先到前台确认，预约时间为到店时间段。'}}</view><view class="queue-muted queue-footnote">离开小程序、锁屏或断网时无法保证页面提醒及时送达。请保持电话畅通，临近轮到时返回门店。</view></view>
 </view>

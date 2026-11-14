@@ -51,6 +51,9 @@ test('verified membership receipt activates exactly once and mismatched receipts
     const migration=fs.readFileSync('migrations/050_customer_membership_payments.sql','utf8');
     await db.exec(migration);
     await db.exec(migration);
+    await db.exec("CREATE TABLE employees(id text,shop_id text,is_active boolean,role text);INSERT INTO employees VALUES('manager','s',true,'shop_manager');");
+    await db.exec(fs.readFileSync('migrations/053_membership_upgrade_quotes.sql','utf8'));
+    await db.exec(fs.readFileSync('migrations/054_membership_payment_resolution.sql','utf8'));
     await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level) VALUES('viporder','s','c','vip','bronze',29,'wechat_mini','regular')");
     const paidAt=new Date().toISOString();
     const finalize=(id:string,shop:string,tx:string,amount:number)=>db.query<{status:string}>(
@@ -71,5 +74,23 @@ test('verified membership receipt activates exactly once and mismatched receipts
     assert.equal((await finalize('changed','s','420000000003',29)).rows[0].status,'review');
     assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM membership_enrollments WHERE customer_id='c'")).rows[0].n,1);
     assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM payments WHERE customer_id='c' AND status='paid'")).rows[0].n,3);
+    const snapshot=async()=> (await db.query<{snapshot:object}>("SELECT jsonb_build_object('purchase_vip_level',purchase_vip_level,'purchase_vip_expires_at',purchase_vip_expires_at,'stored_value_level',stored_value_level,'stored_value_expires_at',stored_value_expires_at,'stored_value_balance',stored_value_balance) snapshot FROM customers WHERE id='c'")).rows[0].snapshot;
+    const request={decision:'apply',reason:'顾客确认按原单补开权益',expected:await snapshot()};
+    const resolve=()=>db.query<{status:string}>("SELECT status FROM resolve_membership_payment_review('changed','s','manager',$1)",[JSON.stringify(request)]);
+    assert.equal((await resolve()).rows[0].status,'paid');assert.equal((await resolve()).rows[0].status,'paid');
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM payments WHERE customer_id='c'")).rows[0].n,3);
+    assert.equal((await db.query<{n:number}>("SELECT count(*) n FROM membership_payment_resolutions")).rows[0].n,1);
+    await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level,expected_expires_at,operation_kind) SELECT 'upgrade','s','c','vip','gold',50,'wechat_mini',purchase_vip_level,purchase_vip_expires_at,'upgrade' FROM customers WHERE id='c'");
+    const before=(await db.query<{purchase_vip_expires_at:Date}>("SELECT purchase_vip_expires_at FROM customers WHERE id='c'")).rows[0].purchase_vip_expires_at;
+    assert.equal((await finalize('upgrade','s','420000000004',50)).rows[0].status,'paid');
+    assert.equal(String((await db.query<{purchase_vip_expires_at:Date}>("SELECT purchase_vip_expires_at FROM customers WHERE id='c'")).rows[0].purchase_vip_expires_at),String(before));
+    const rights=(await db.query<{type:string}>("SELECT type FROM member_benefit_records WHERE id LIKE 'benefit_upgrade_%' ORDER BY type")).rows.map(x=>x.type);
+    assert.deepEqual(rights,['conditioner','drink','redo']);
+    await db.exec("INSERT INTO membership_payment_orders(id,shop_id,customer_id,kind,level,amount,channel,expected_level) VALUES('refund-review','s','c','vip','bronze',29,'wechat_mini','regular')");
+    assert.equal((await finalize('refund-review','s','420000000005',29)).rows[0].status,'review');
+    const refund={decision:'refund',reason:'顾客选择原路退款处理',expected:await snapshot(),refundRef:'synthetic-refund-001',refundAmount:29,refundAt:new Date().toISOString()};
+    await assert.rejects(db.query("SELECT * FROM resolve_membership_payment_review('refund-review','s','manager',$1)",[JSON.stringify({...refund,refundAmount:28})]),/INVALID_REFUND_RECEIPT/);
+    const refunded=await db.query<{status:string}>("SELECT status FROM resolve_membership_payment_review('refund-review','s','manager',$1)",[JSON.stringify(refund)]);assert.equal(refunded.rows[0].status,'refunded');
+    assert.equal((await finalize('refund-review','s','420000000005',29)).rows[0].status,'refunded');
   } finally { await db.close(); }
 });

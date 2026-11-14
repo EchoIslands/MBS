@@ -89,7 +89,7 @@ Page({
   },
 
   afterLoginPath(customer) {
-    if (customer.mustChangePassword) return '/pages/change-password/change-password' + (this.returnOrderNo ? '?returnOrderNo=' + this.returnOrderNo : '');
+    if (customer.mustChangePassword) return '/pages/change-password/change-password' + (this.returnOrderNo ? '?returnOrderNo=' + this.returnOrderNo : '') + (this.inviteRef ? (this.returnOrderNo ? '&' : '?') + 'inviteRef=' + encodeURIComponent(this.inviteRef) : '');
     return paymentOrderPath(this.returnOrderNo) || (this.inviteRef ? '/pages/invite/claim?ref='+encodeURIComponent(this.inviteRef) : '/pages/index/index');
   },
 
