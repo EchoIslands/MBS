@@ -24,7 +24,7 @@ const CustomerLogin: React.FC = () => {
   const [setupRequired, setSetupRequired] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState<'password' | 'sms'>('password');
+  const [loginMode, setLoginMode] = useState<'password' | 'sms'>('sms');
   const [smsCode, setSmsCode] = useState('');
   const [smsSending, setSmsSending] = useState(false);
   const [smsUntil, setSmsUntil] = useState(0);
@@ -155,7 +155,7 @@ const CustomerLogin: React.FC = () => {
         
         <form onSubmit={handleLogin} autoComplete="on" className="space-y-5 sm:space-y-6">
           <div className="flex gap-2">
-            {(['password', 'sms'] as const).map(mode => <button key={mode} type="button" disabled={loading || smsSending} aria-pressed={loginMode === mode} onClick={() => { setLoginMode(mode); setSetupRequired(false); setPassword(''); setConfirmPassword(''); setSmsCode(''); setError(''); }} className={`flex-1 rounded-xl border p-3 text-sm font-semibold transition-colors ${loginMode === mode ? 'border-[#e5ab7a] bg-[#fff0df] text-[#75411f]' : 'border-[#eee6df] bg-[#faf8f5] text-[#665b52]'}`}>{mode === 'sms' ? '短信验证码登录' : '密码登录'}</button>)}
+            {(['sms', 'password'] as const).map(mode => <button key={mode} type="button" disabled={loading || smsSending} aria-pressed={loginMode === mode} onClick={() => { setLoginMode(mode); setSetupRequired(false); setPassword(''); setConfirmPassword(''); setSmsCode(''); setError(''); }} className={`flex-1 rounded-xl border p-3 text-sm font-semibold transition-colors ${loginMode === mode ? 'border-[#e5ab7a] bg-[#fff0df] text-[#75411f]' : 'border-[#eee6df] bg-[#faf8f5] text-[#665b52]'}`}>{mode === 'sms' ? '短信验证码登录' : '密码登录'}</button>)}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

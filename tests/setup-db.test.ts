@@ -34,6 +34,13 @@ test('真实引擎：无 025–029 时完整安装、重复执行、已有数据
     await upgradeCheckout(connection);
     const again = (await db.query<Record<string, unknown>>("SELECT password_hash,is_weak_password,identity_verified,balance FROM customers WHERE id='c'")).rows[0];
     assert.equal(again.password_hash, 'synthetic-preserved'); assert.equal(again.is_weak_password, true); assert.equal(again.identity_verified, true); assert.equal(Number(again.balance), 100);
+    // Exercise new RPCs against the actual historical baseline, not just a hand-built table.
+    await db.exec("UPDATE shops SET services='[{\"id\":\"svc\",\"duration\":30}]' WHERE id='s'");
+    await db.query("SELECT create_booking_once(jsonb_build_object('id','rpc-book','shop_id','s','customer_id','c','service_id','svc','scheduled_time',clock_timestamp()+interval '3 hours','status','confirmed','price',29,'booking_request_key','baseline_booking_request'))");
+    await db.query("SELECT change_own_booking('rpc-book','c','reschedule',clock_timestamp()+interval '4 hours')");
+    await db.query("SELECT change_own_booking('rpc-book','c','cancel')");
+    const changed=(await db.query<{status:string;updated_at:string}>("SELECT status,updated_at FROM bookings WHERE id='rpc-book'")).rows[0];
+    assert.equal(changed.status,'cancelled');assert.ok(changed.updated_at);
     const functionBody = (await db.query<{definition:string}>("SELECT pg_get_functiondef('public.pay_product_order_atomic(text,text)'::regprocedure) definition")).rows[0].definition;
     assert.match(functionBody, /c.is_weak_password/);
     assert.equal((await db.query<Record<string, unknown>>("SELECT COUNT(*)::integer n FROM customer_password_initialization_runs")).rows[0].n, 0);

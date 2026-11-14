@@ -647,7 +647,10 @@ function normalizeBooking(b: unknown): Booking {
 }
 
 // 预约相关 API
+let pendingBookingRequest: {signature:string;key:string;at:number}|null=null;
 export const bookingApi = {
+  attendanceDesk: () => httpThrowing<{due:{id:string;customer_name:string;customer_phone:string;service_name:string;scheduled_time:string}[];decisions:{id:number;booking_id:string;reason:string;created_at:string;reversed_at:string|null}[];truncated:boolean}>(API_BASE+'/bookings/attendance-desk',{headers:{Authorization:'Bearer '+getAuthToken()}}),
+  attendance: (id:string,action:'no_show'|'reverse',reason:string) => httpThrowing<boolean>(API_BASE+'/bookings/'+encodeURIComponent(id)+'/attendance',{method:'POST',headers:{Authorization:'Bearer '+getAuthToken()},body:JSON.stringify({action,reason})}),
   recordQueueEvent: (id: string, eventType: string) => httpThrowing<unknown>(
     API_BASE + '/bookings/' + encodeURIComponent(id) + '/queue-event',
     {method:'POST',headers:{Authorization:'Bearer ' + getAuthToken()},body:JSON.stringify({eventType})}),
@@ -671,12 +674,15 @@ export const bookingApi = {
     },
   ): Promise<Booking> => {
     if (USE_REAL_API) {
+      const signature=JSON.stringify(data);
+      if(!pendingBookingRequest||pendingBookingRequest.signature!==signature||Date.now()-pendingBookingRequest.at>600000) pendingBookingRequest={signature,key:'booking_'+Date.now()+'_'+Math.random().toString(36).slice(2),at:Date.now()};
       const result = await httpThrowing<Booking>(`${API_BASE}/bookings`, {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({...data,requestKey:pendingBookingRequest.key}),
         headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
       });
       if (!result?.id) throw new Error('预约结果暂不可用，请核对预约列表，勿重复提交');
+      pendingBookingRequest=null;
       return normalizeBooking(result);
     }
     await new Promise((r) => setTimeout(r, 300));
@@ -967,7 +973,7 @@ export const bookingApi = {
   ): Promise<Booking> => {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Booking; error?: string }>(
-        `${API_BASE}/bookings/${id}/delay-respond`,
+        `${API_BASE}/bookings/${id}/reschedule`,
         {
           method: 'PUT',
           body: JSON.stringify({
@@ -978,7 +984,7 @@ export const bookingApi = {
         }
       );
       if (result?.data && result.data.id) return normalizeBooking(result.data);
-      if (result && !result.success) throw new Error(result.error || '处理失败');
+      throw new Error(result?.error || '预约修改结果未确认，请刷新核对');
     }
     await new Promise((r) => setTimeout(r, 200));
     const idx = mockBookings.findIndex((b) => b.id === id);

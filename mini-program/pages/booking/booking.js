@@ -16,7 +16,7 @@ const SHOP_MANAGER_ROLE = 'shop_manager';
 function generateDates() {
   const arr = [];
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 15; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
     const dateStr = new Date(d.getTime()+8*3600000).toISOString().slice(0,10);

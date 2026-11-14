@@ -1,3 +1,4 @@
+import AttendanceDesk from './AttendanceDesk';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Calendar,
@@ -595,6 +596,7 @@ const BookingManagement: React.FC = () => {
 
   return (
     <ShopLayout title="预约管理">
+      {['ceo','shop_manager','customer_service'].includes(userRole||'')&&<AttendanceDesk key={String(currentShop?.id)+':'+String(currentEmployee?.id)} canReverse={['ceo','shop_manager'].includes(userRole||'')} onChanged={()=>void fetchBookings()} />}
       <div className="flex justify-end mb-4"><button type="button" onClick={() => navigate('/shop/queue-desk')} className="px-4 py-3 bg-orange-600 text-white rounded-md font-semibold">实时排队工作台</button></div>
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

@@ -77,7 +77,7 @@ const BookingPage: React.FC = () => {
   const dates = useMemo(() => {
     const arr: { value: string; label: string; weekDay: string }[] = [];
     const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 15; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
       const dateStr = new Date(d.getTime()+8*3600000).toISOString().slice(0,10);
@@ -738,6 +738,7 @@ const BookingPage: React.FC = () => {
           </div>
         )}
 
+        <p className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-stone-700">每人最多保留2个未完成预约，同一天1个。提前2小时可正常取消或改期；临时变更单独记录，不等于爽约。未到店由门店联系核实后确认，多次爽约将限制预约，不影响会员、余额和售后。预约为到店时段，不保证准时开始服务。</p>
         {/* 底部按钮占位 —— 防止底部固定按钮遮挡内容 */}
         <div className="h-24" />
       </div>

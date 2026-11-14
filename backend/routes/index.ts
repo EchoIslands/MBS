@@ -1,3 +1,4 @@
+import {changeOwnBooking,attendanceDesk,bookingFailure} from '../services/bookingSelfService.js';
 import operationsWorkbenchRouter from './operationsWorkbench.js';
 import queueNotificationsRouter from './queueNotifications.js';
 import { membershipOperation } from '../../shared/lib/membershipOperation.js';
@@ -475,6 +476,7 @@ mainRouter.use('/employees', employeesRouter);
 // 结算奖励在036触发器内与结算同事务提交；不在响应后异步更新余额。
 const bookingsRouter = Router();
 bookingsRouter.use(bookingAccess);
+bookingsRouter.get('/attendance-desk', authMiddleware, attendanceDesk);
 bookingsRouter.get('/:id/live-queue', customerQueueSnapshot);
 bookingsRouter.post('/:id/live-queue', liveQueueAction);
 
@@ -893,63 +895,9 @@ bookingsRouter.put('/:id/package', authMiddleware, async (req: Request, res: Res
 });
 
 // 顾客自主取消：路由统一中间件已验证本人会话及预约归属。
-bookingsRouter.put('/:id/cancel', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { customerId } = req.body;
-
-    if (!customerId) {
-      return res.status(400).json({ success: false, error: '缺少顾客信息' });
-    }
-
-    const { data: originalBooking, error: fetchError } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (fetchError) {
-      console.error('[bookings] 查询预约失败:', fetchError.message);
-      return res.status(500).json({ success: false, error: '查询预约失败' });
-    }
-
-    if (!originalBooking) {
-      return res.status(404).json({ success: false, error: '预约不存在' });
-    }
-
-    if (originalBooking.customer_id !== customerId) {
-      return res.status(403).json({ success: false, error: '无权取消该预约' });
-    }
-
-    if (originalBooking.status === 'cancelled') {
-      return res.status(400).json({ success: false, error: '预约已取消' });
-    }
-
-    if (originalBooking.status === 'completed') {
-      return res.status(400).json({ success: false, error: '已完成的服务无法取消' });
-    }
-
-    const { data, error } = await supabase
-      .from('bookings')
-      .update({ status: 'cancelled' })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[bookings] 取消预约失败:', error.message);
-      return res.status(500).json({ success: false, error: '取消预约失败' });
-    }
-
-    res.json({
-      success: true,
-      data: bookingFromDb(data),
-    });
-  } catch (error) {
-    console.error('[bookings] 取消预约异常:', (error as Error).message);
-    res.status(500).json({ success: false, error: '取消预约失败' });
-  }
-});
+bookingsRouter.put('/:id/cancel', changeOwnBooking);
+bookingsRouter.put('/:id/reschedule', changeOwnBooking);
+bookingsRouter.post('/:id/attendance', authMiddleware, attendanceDesk);
 
 // 调配预约发型师（仅店长/CEO，需登录）
 bookingsRouter.put('/:id/barber', authMiddleware, async (req: Request, res: Response) => {
@@ -1248,98 +1196,7 @@ bookingsRouter.post('/:id/delay', authMiddleware, async (req: Request, res: Resp
 });
 
 // 顾客处理延时通知：v1 仅支持改时间
-bookingsRouter.put('/:id/delay-respond', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { customerId, action, scheduledTime } = req.body;
-
-    if (!customerId || !action) {
-      return res.status(400).json({ success: false, error: '参数不完整' });
-    }
-
-    const { data: booking, error: fetchError } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (fetchError || !booking) {
-      return res.status(404).json({ success: false, error: '预约不存在' });
-    }
-
-    // 仅顾客本人可操作
-    if (booking.customer_id !== customerId) {
-      return res.status(403).json({ success: false, error: '无权操作该预约' });
-    }
-
-    if (booking.delay_state !== 'needs_action') {
-      return res.status(409).json({ success: false, error: '该预约已不在待处理状态' });
-    }
-
-    if (action !== 'reschedule') {
-      return res.status(400).json({ success: false, error: '暂不支持的响应类型' });
-    }
-
-    if (!scheduledTime) {
-      return res.status(400).json({ success: false, error: '缺少预约时间' });
-    }
-
-    const startTime = parseLocalDateTime(scheduledTime);
-    if (isNaN(startTime.getTime())) {
-      return res.status(400).json({ success: false, error: '预约时间格式无效' });
-    }
-
-    // 复用原有服务时长推算结束时间
-    let finalEndTime: Date | null = null;
-    if (booking.scheduled_time && booking.scheduled_end_time) {
-      const os = new Date(booking.scheduled_time);
-      const oe = new Date(booking.scheduled_end_time);
-      if (oe.getTime() > os.getTime()) {
-        const duration = oe.getTime() - os.getTime();
-        finalEndTime = new Date(startTime.getTime() + duration);
-      }
-    }
-    if (!finalEndTime) {
-      finalEndTime = new Date(startTime.getTime() + 60 * 60 * 1000);
-    }
-
-    // 冲突检查：同一发型师在新时间段内是否有其他非取消预约
-    if (booking.stylist_id) {
-      const { data: conflicts, error: conflictError } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('stylist_id', booking.stylist_id)
-        .neq('status', 'cancelled')
-        .neq('id', id)
-        .lt('scheduled_time', finalEndTime.toISOString())
-        .gt('scheduled_end_time', startTime.toISOString());
-
-      if (!conflictError && conflicts && conflicts.length > 0) {
-        return res.status(409).json({ success: false, error: '该时间段与发型师其他预约冲突，请换一个时间' });
-      }
-    }
-
-    const { data: updated, error: updError } = await supabase
-      .from('bookings')
-      .update({
-        scheduled_time: startTime.toISOString(),
-        scheduled_end_time: finalEndTime.toISOString(),
-        delay_state: 'rescheduled',
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (updError) {
-      return res.status(500).json({ success: false, error: '修改预约时间失败' });
-    }
-
-    res.json({ success: true, data: bookingFromDb(updated) });
-  } catch (error) {
-    console.error('[bookings] 处理延时通知异常:', error);
-    res.status(500).json({ success: false, error: '处理失败' });
-  }
-});
+bookingsRouter.put('/:id/delay-respond', changeOwnBooking);
 
 // 记录/修改实际服务时间（发型师/客服/店长/CEO）
 bookingsRouter.put('/:id/service-time', authMiddleware, async (req: Request, res: Response) => {
@@ -1499,17 +1356,13 @@ bookingsRouter.post('/', async (req: Request, res: Response) => {
       created_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
-      .from('bookings')
-      .insert(newBooking)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('create_booking_once', {p_booking:{...newBooking,booking_request_key:typeof req.body.requestKey==='string'?req.body.requestKey:null}});
 
     if (error) {
       console.error('[bookings] 创建预约失败:', error.message);
-      return res.status(500).json({
+      return res.status(error.message?.includes('BOOKING_') ? 409 : 503).json({
         success: false,
-        error: error.message?.includes('BOOKING_SLOT_TAKEN') ? '该设计师的时段已被预约，请刷新预约列表或选择其他时间' : '预约未确认成功，请查看我的预约后再操作',
+        error: bookingFailure(error.message || ''),
       });
     }
 

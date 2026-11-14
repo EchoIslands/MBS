@@ -32,7 +32,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
   const issues: string[] = [];
   const warnings: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
-  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts','membership_operation_audit','queue_notification_consent','queue_notification_outbox','membership_payment_resolutions'];
+  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts','membership_operation_audit','queue_notification_consent','queue_notification_outbox','membership_payment_resolutions','booking_changes','booking_attendance_decisions'];
   const signatures = new Set<string>();
   const serviceExecutables = new Set<string>();
   const normalizeSignature = (value: string) => 'public.' + value.replace(/^public\./i, '').replace(/\s/g, '').toLowerCase();
@@ -71,6 +71,10 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
     if (checkoutColumns.rows.length !== 2) issues.push('缺少 031 预约结算闭环迁移字段');
     const recoveryColumn = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='settlements' AND column_name='checkout_payment_started_at'");
     if (!recoveryColumn.rows.length) issues.push('缺少 032 支付认领时间字段');
+    const bookingPolicy = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='bookings' AND column_name IN ('booking_request_key','booking_policy_enforced')");
+    if(bookingPolicy.rows.length!==2)issues.push('缺少055预约限制字段');
+    const policyTrigger=await connection.query("SELECT tgname FROM pg_trigger WHERE tgrelid='public.bookings'::regclass AND NOT tgisinternal AND tgenabled='O' AND tgname='booking_occupancy_guard'");
+    if(!policyTrigger.rows.length)issues.push('缺少或禁用055预约防占位触发器');
     const checkoutTriggers = await connection.query("SELECT tgname FROM pg_trigger WHERE tgrelid='public.bookings'::regclass AND NOT tgisinternal AND tgenabled='O' AND tgname IN ('booking_slot_guard','booking_checkout_state_guard')");
     if (checkoutTriggers.rows.length !== 2) issues.push('缺少或禁用 031 预约档期/结算状态触发器');
     const manualPaymentColumns = await connection.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='settlements' AND column_name IN ('manual_paid_at','manual_paid_recorded_at','manual_paid_recorded_by')");

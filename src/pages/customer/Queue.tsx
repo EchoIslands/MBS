@@ -36,7 +36,8 @@ export default function Queue(){
  {b.returnRequestedAt&&<p className="bg-amber-50 p-3 rounded-xl">已报返回，请到前台确认；确认前不自动插回现场队列。</p>}
  {b.expectedReturnAt&&<p>登记预计返回：{fmt(b.expectedReturnAt)}</p>}
  {b.overWait&&<p role="alert" className="text-orange-800">等待已超过45分钟，可一键请前台协助换人、改约或确认进度。</p>}
- <div className="grid grid-cols-2 gap-3">{b.canLeave&&<><button disabled={stale||busy} onClick={()=>void act('left_reported',10)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离10分钟</button><button disabled={stale||busy} onClick={()=>void act('left_reported',20)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离20分钟</button></>}
+ <div className="grid grid-cols-2 gap-3">
+ {['reserved','pending','arrived','away','called','returned','missed'].includes(b.state)&&<button className="col-span-2 rounded-xl bg-orange-200 p-4 font-bold" onClick={()=>navigate('/customer/profile?editBookingId='+encodeURIComponent(b.id))}>修改 / 取消预约</button>}{b.canLeave&&<><button disabled={stale||busy} onClick={()=>void act('left_reported',10)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离10分钟</button><button disabled={stale||busy} onClick={()=>void act('left_reported',20)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离20分钟</button></>}
  {b.canReturn&&<button disabled={stale||busy} onClick={()=>void act('return_requested')} className="col-span-2 rounded-xl bg-orange-200 text-gray-900 p-4 font-bold disabled:opacity-40">我已返回，请前台确认</button>}
  {b.canAskHelp&&<button disabled={stale||busy} onClick={()=>void act('help_requested')} className="rounded-xl border border-orange-200 p-4 font-bold disabled:opacity-40">请前台协助</button>}
  {data.contactPhone&&<a href={`tel:${data.contactPhone}`} className="text-center rounded-xl border border-orange-200 p-4 font-bold">直接致电门店</a>}

@@ -1,3 +1,5 @@
+import {getCustomerId,setRouteParams} from '../../utils/storage';
+import {cancelBooking} from '../../api/booking';
 import { getLiveQueue, actOnQueue, notificationConfig, subscribeQueue } from '../../api/queue';
 import { takeRouteParams } from '../../utils/storage';
 const time=(v)=>{if(!v)return '—';const d=new Date(Date.parse(v)+8*3600000);return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');};
@@ -11,6 +13,8 @@ Page({
    wx.login({success:async result=>{try{await subscribeQueue(result.code,templateId);this.setData({message:'已开启一次微信排队提醒；微信失败时转短信，请保持电话畅通'});}catch(e){this.setData({message:e.message||'授权保存失败，请重试'});}finally{this.setData({notificationBusy:false});}},fail:()=>this.setData({notificationBusy:false,message:'微信身份获取失败，请重试'})});
   },fail:()=>this.setData({notificationBusy:false,message:'订阅未完成，请保持电话畅通'})});
  },
+ editBooking(){setRouteParams({bookingId:this.bookingId,editBookingId:this.bookingId});wx.switchTab({url:'/pages/profile/profile'});},
+ async cancelMyBooking(){if(this.data.busy||this.data.stale)return;const r=await wx.showModal({title:'取消预约',content:'取消后释放名额；临时取消单独记录，不等于爽约。确认取消？'});if(!r.confirm)return;this.setData({busy:true});try{await cancelBooking(this.bookingId,getCustomerId());await this.refresh(true);this.setData({message:'预约已取消，名额已释放'});}catch(e){this.setData({message:e.message||'取消未确认，请刷新核对'});}finally{this.setData({busy:false});}},
  bookingId:'',visible:false,flight:false,sequence:0,lastAlert:0,
  onLoad(options={}){notificationConfig().then(c=>this.setData({notificationTemplate:c.templateId||''})).catch(()=>{});const params=takeRouteParams();this.bookingId=options.bookingId||options.id||(params&&params.bookingId)||'';if(!this.bookingId)this.setData({loading:false,error:'缺少预约信息，请从个人中心的预约进入'});},
  onShow(){this.visible=true;this.setData({stale:true});this.startPolling();this.refresh(true);},

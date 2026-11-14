@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   User, Calendar, Star, LogOut, Clock, CheckCircle, AlertCircle, MessageSquare,
   Crown, Gift, Sparkles, Wallet, ChevronRight, Award,
@@ -126,6 +126,10 @@ const Profile: React.FC = () => {
     return map;
   }, [customerReviews]);
 
+  const [bookingParams,setBookingParams]=useSearchParams();
+  const editBookingId=bookingParams.get('editBookingId');
+  useEffect(()=>{if(!editBookingId||!bookings.length)return;const target=bookings.find(b=>b.id===editBookingId);if(target){setViewingBooking(target);setBookingParams({}, {replace:true});}},[editBookingId,bookings,setBookingParams]);
+
   const loadBookings = React.useCallback(async () => {
     if (!currentCustomer) return;
     setLoading(true);
@@ -162,13 +166,13 @@ const Profile: React.FC = () => {
     loadCustomerReviews();
   }, [currentCustomer, navigate, loadBookings, loadCustomerReviews]);
 
-  const handleCancelBooking = async () => {
-    if (!viewingBooking || !currentCustomer) return;
-    if (!window.confirm('确定要取消这次预约吗？')) return;
+  const handleCancelBooking = async (target = viewingBooking) => {
+    if (cancelling || !target || !currentCustomer) return;
+    if (!window.confirm('确定取消？名额将立即释放。提前2小时取消不计失信；临时取消单独记录，不等于爽约。')) return;
 
     setCancelling(true);
     try {
-      await bookingApi.updateBookingStatus(viewingBooking.id, 'cancelled', currentCustomer.id);
+      await bookingApi.updateBookingStatus(target.id, 'cancelled', currentCustomer.id);
       setViewingBooking(null);
       await loadBookings();
     } catch (error) {
@@ -190,7 +194,7 @@ const Profile: React.FC = () => {
   };
 
   const submitReschedule = async () => {
-    if (!rescheduleTarget || !currentCustomer || !rescheduleTime) return;
+    if (rescheduling || !rescheduleTarget || !currentCustomer || !rescheduleTime) return;
     setRescheduling(true);
     try {
       await bookingApi.respondDelay(rescheduleTarget.id, {
@@ -544,6 +548,10 @@ const Profile: React.FC = () => {
                         <div className="font-medium text-orange-500">¥{booking.price}</div>
                       </div>
                       {booking.status === 'confirmed' && <button onClick={e=>{e.stopPropagation();navigate(`/customer/queue/${booking.id}`);}} className="w-full mt-3 rounded-xl bg-orange-100 text-orange-900 py-3 font-bold">查看排队 / 暂离 / 返回 ›</button>}
+                      {['pending','confirmed'].includes(booking.status)&&!booking.actualStartTime&& !['serving','finished'].includes(booking.queueState||'')&&<div className="flex gap-3 mt-3">
+                        {!booking.arrivedAt&&!booking.queueState&&<button className="flex-1 py-3 rounded-xl bg-orange-200 font-bold" onClick={e=>{e.stopPropagation();openReschedule(booking);}}>修改时间</button>}
+                        <button className="flex-1 py-3 rounded-xl border border-orange-200 font-bold" onClick={e=>{e.stopPropagation();void handleCancelBooking(booking);}}>取消预约</button>
+                      </div>}
                       {booking.delayState === 'needs_action' && (
                         <div className="mt-3 sm:mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg">
                           <div className="flex items-start gap-2 text-sm text-amber-700">
@@ -771,6 +779,7 @@ const Profile: React.FC = () => {
             </div>
 
             {/* 延时处理 */}
+            {['pending','confirmed'].includes(viewingBooking.status)&&!viewingBooking.actualStartTime&&!viewingBooking.arrivedAt&&!viewingBooking.queueState&&<button onClick={()=>{openReschedule(viewingBooking);setViewingBooking(null);}} className="w-full rounded-xl bg-orange-200 py-3 font-bold">修改预约时间</button>}
             {viewingBooking.delayState === 'needs_action' && (
               <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700">
                 <div className="font-medium">发型师临时延时，请选择处理方式</div>
@@ -821,9 +830,9 @@ const Profile: React.FC = () => {
                   店铺确认后生成排队信息
                 </div>
               )}
-              {(viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && (
+              {(viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed') && !viewingBooking.actualStartTime && !['serving','finished'].includes(viewingBooking.queueState||'') && (
                 <button
-                  onClick={handleCancelBooking}
+                  onClick={()=>void handleCancelBooking()}
                   disabled={cancelling}
                   className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
@@ -870,7 +879,7 @@ const Profile: React.FC = () => {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-3">请选择新的预约时间（避开发型师已有预约）</p>
+            <p className="text-sm text-gray-500 mb-3">请选择未来14天内的到店时间；新时段确认成功才释放原时段。更换服务或发型师请联系门店。</p>
             <input
               type="datetime-local"
               value={rescheduleTime}

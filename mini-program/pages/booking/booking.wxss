@@ -869,3 +869,5 @@
 }
 
 .booking-queue-rules { margin:20rpx 24rpx; padding:20rpx; border:1rpx solid var(--primary-border); background:#fff5e9; color:var(--text-secondary); border-radius:16rpx; font-size:24rpx; line-height:1.7; }
+
+.booking-policy { margin: 24rpx 0; padding: 24rpx; border: 1rpx solid #eadbcf; border-radius: 20rpx; background: #fff6eb; color: #715846; font-size: 24rpx; line-height: 1.8; }

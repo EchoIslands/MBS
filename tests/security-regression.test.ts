@@ -79,6 +79,9 @@ let draftDeleteError: {message?:string;code?:string} | null = null;
 let completeCheckout = false;
 let checkoutRpcCalls = 0;
 Object.assign(supabase, {rpc: async (name: string, args: FixtureRpcArgs) => {
+ if (name==='create_booking_once') {
+  const row=args.p_booking as Row;tables.bookings.push({...row});return {data:row,error:null};
+ }
  if (name==='confirm_product_receipt_atomic') {
   const row=(tables.product_orders||[]).find(r=>r.id===args.p_order_id&&r.customer_id===args.p_customer_id&&r.shop_id===args.p_shop_id);
   if(!row) return {data:null,error:{message:'ORDER_NOT_FOUND'}};

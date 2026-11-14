@@ -3,8 +3,12 @@ import { get, post, put } from '../utils/api';
 /**
  * 创建预约
  */
+let pendingRequest=null;
 export async function createBooking(data) {
-  const result = await post('/bookings', data);
+  const signature=JSON.stringify(data);
+  if(!pendingRequest||pendingRequest.signature!==signature||Date.now()-pendingRequest.at>600000)pendingRequest={signature,key:'booking_'+Date.now()+'_'+Math.random().toString(36).slice(2),at:Date.now()};
+  const result = await post('/bookings', {...data,requestKey:pendingRequest.key});
+  pendingRequest=null;
   return result?.data || null;
 }
 
@@ -32,7 +36,7 @@ export async function cancelBooking(id, customerId) {
  * @param {object} payload { customerId, action: 'reschedule', scheduledTime }
  */
 export async function respondDelay(id, payload) {
-  const result = await put(`/bookings/${id}/delay-respond`, payload);
+  const result = await put(`/bookings/${id}/reschedule`, payload);
   return result?.data || null;
 }
 

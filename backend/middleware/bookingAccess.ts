@@ -15,7 +15,9 @@ export async function bookingAccess(req: Request, res: Response, next: NextFunct
   const authorizeResource = async () => {
     try {
       const shopId = req.employee?.shopId || req.customer?.shopId;
-      if (req.path === '/') {
+      if (req.path === '/attendance-desk') {
+        if (!req.employee) { res.status(403).json({success:false,error:'仅限门店人员'}); return; }
+      } else if (req.path === '/') {
         if (req.method !== 'GET' && (req.body?.shopId !== shopId || (req.customer && req.body?.customerId !== req.customer.id))) {
           res.status(403).json({ success: false, error: '无权为其他顾客或门店预约' }); return;
         }

@@ -2,7 +2,7 @@ import { getCustomerPublic, getCustomerBookings, updateMyProfile, uploadMyAvatar
 import { getShop } from '../../api/shop';
 import { cancelBooking, respondDelay } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
-import { getCustomerId, getToken, clearCustomerId, setRouteParams } from '../../utils/storage';
+import { getCustomerId, getToken, clearCustomerId, setRouteParams, takeRouteParams } from '../../utils/storage';
 import { ensureLogin } from '../../utils/auth';
 import { createTabSwipeHandlers, syncTabBarSelected } from '../../utils/tab-swipe';
 import {
@@ -75,6 +75,8 @@ function slimCustomer(raw) {
           type: b.type,
           name: truncate(b.name, 40),
           status: b.status,
+    canChange: ['pending','confirmed'].includes(b.status)&&!b.actualStartTime&&!b.actual_start_time&&!b.arrivedAt&&!b.arrived_at&&!b.queueState&&!b.queue_state,
+    canCancel: ['pending','confirmed'].includes(b.status)&&!b.actualStartTime&&!b.actual_start_time&&!['serving','finished'].includes(b.queueState||b.queue_state),
           expiresAt: b.expiresAt || b.expires_at,
         }))
       : Array.isArray(raw.benefits)
@@ -96,6 +98,9 @@ function slimBookings(list) {
     shopName: truncate(b.shopName || b.shop_name, 40) || 'MBS 理发店',
     serviceName: truncate(b.serviceName || b.service_name, 60) || '未知服务',
     status: b.status,
+    canChange: ['pending','confirmed'].includes(b.status)&&!b.actualStartTime&&!b.actual_start_time&&!b.arrivedAt&&!b.arrived_at&&!b.queueState&&!b.queue_state,
+    canCancel: ['pending','confirmed'].includes(b.status)&&!b.actualStartTime&&!b.actual_start_time&&!['serving','finished'].includes(b.queueState||b.queue_state),
+
     scheduledTime: b.scheduledTime || b.scheduled_time,
     price: b.price,
     barberName: truncate(b.barberName || b.barber_name || b.stylistName || b.stylist_name, 30) || '待安排',
@@ -213,6 +218,8 @@ Page({
       ]);
       const customer = slimCustomer(rawCustomer);
       const allBookings = slimBookings(rawBookings);
+      const route=takeRouteParams();
+      if(route&&route.editBookingId){const target=allBookings.find(b=>b.id===route.editBookingId);if(target&&target.canChange){const local=new Date(Date.parse(target.scheduledTime)+8*3600000).toISOString();this.setData({rescheduleTarget:target,rescheduleDate:local.slice(0,10),rescheduleTime:local.slice(11,16)});}}
 
       // 加载顾客评价，构建 bookingId → review 映射（三端协同，对齐H5 Profile的bookingReviewMap）
       const bookingReviewMap = {};
@@ -429,7 +436,7 @@ Page({
 
   async submitReschedule() {
     const { rescheduleTarget, rescheduleDate, rescheduleTime, customer } = this.data;
-    if (!rescheduleTarget || !customer || !rescheduleDate || !rescheduleTime) return;
+    if (this.data.rescheduling || !rescheduleTarget || !customer || !rescheduleDate || !rescheduleTime) return;
     this.setData({ rescheduling: true });
     try {
       await respondDelay(rescheduleTarget.id, {
@@ -461,9 +468,13 @@ Page({
 
   stopPropagation() {},
 
+  cancelFromList(e) {
+    const booking=this.data.bookings.find(b=>b.id===e.currentTarget.dataset.id);
+    if(!booking)return;this.setData({viewingBooking:booking});this.handleCancelBooking();
+  },
   async handleCancelBooking() {
     const { viewingBooking, customer } = this.data;
-    if (!viewingBooking || !customer) return;
+    if (this.data.cancelling || !viewingBooking || !customer) return;
 
     const res = await wx.showModal({
       title: '取消预约',

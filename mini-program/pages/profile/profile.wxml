@@ -242,7 +242,11 @@
 
             <view wx:if="{{booking.status === 'confirmed'}}" class="profile-queue-direct" catchtap="goToQueue" data-id="{{booking.id}}">查看排队 / 暂离 / 返回 ›</view>
 
-            <!-- 延时警示 -->
+            <view wx:if="{{booking.canChange || booking.canCancel}}" class="booking-delay-actions">
+  <button wx:if="{{booking.canChange}}" class="booking-delay-btn booking-delay-btn-primary" catchtap="openReschedule" data-id="{{booking.id}}">修改时间</button>
+  <button wx:if="{{booking.canCancel}}" class="booking-delay-btn" catchtap="cancelFromList" data-id="{{booking.id}}">取消预约</button>
+</view>
+<!-- 延时警示 -->
             <view wx:if="{{booking.delayState === 'needs_action'}}" class="booking-delay-banner">
               <view class="booking-delay-banner-text">
                 <mbs-icon name="alertCircle" size="24" color="#b45309" />
@@ -422,7 +426,7 @@
           </view>
         </block>
 
-        <view wx:if="{{viewingBooking.status === 'pending' || viewingBooking.status === 'confirmed'}}" class="btn btn-danger {{cancelling ? 'btn-disabled' : ''}}" bindtap="handleCancelBooking">
+        <view wx:if="{{viewingBooking.canCancel}}" class="btn btn-danger {{cancelling ? 'btn-disabled' : ''}}" bindtap="handleCancelBooking">
           {{cancelling ? '取消中...' : '取消预约'}}
         </view>
         <view class="btn btn-secondary" bindtap="closeBookingModal">关闭</view>
@@ -440,7 +444,7 @@
         </view>
       </view>
       <view class="modal-body">
-        <view class="reschedule-hint">请选择新的预约时间（避开发型师已有预约）</view>
+        <view class="reschedule-hint">可改未来14天内的到店时间。新时段确认成功才释放原时段；更换服务或发型师请联系门店。</view>
         <view class="reschedule-pickers">
           <picker mode="date" value="{{rescheduleDate}}" bindchange="onRescheduleDateChange">
             <view class="reschedule-picker">{{rescheduleDate || '选择日期'}}</view>
