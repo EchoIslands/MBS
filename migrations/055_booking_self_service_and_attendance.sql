@@ -132,3 +132,5 @@ REVOKE ALL ON FUNCTION create_booking_once(jsonb) FROM PUBLIC,anon,authenticated
 REVOKE ALL ON FUNCTION change_own_booking(text,text,text,timestamptz) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION decide_booking_attendance(text,text,text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION create_booking_once(jsonb),change_own_booking(text,text,text,timestamptz),decide_booking_attendance(text,text,text,text) TO service_role;
+-- Also refresh RPC discovery when this file is applied directly in the SQL editor.
+NOTIFY pgrst, 'reload schema';
