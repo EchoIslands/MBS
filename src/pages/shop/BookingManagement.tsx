@@ -861,41 +861,21 @@ const BookingManagement: React.FC = () => {
                           onClick={() => setViewingBooking(booking)}
                           className={`bg-white rounded-xl p-3 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer ${expired ? 'ring-1 ring-red-200' : ''}`}
                         >
-                          <div className="flex items-start justify-between mb-2">
-                            <span className="font-bold text-sm text-gray-800">{booking.customerName}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusConfig[status].bgColor} ${statusConfig[status].color}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate font-bold text-sm text-gray-800">{booking.customerName}</span>
+                            <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusConfig[status].bgColor} ${statusConfig[status].color}`}>
                               #{booking.queueNumber || '-'}
                             </span>
                           </div>
-                          <div className="space-y-1 text-xs text-gray-500">
-                            <div className="flex items-center gap-1">
-                              <Scissors size={12} />
-                              {booking.serviceName}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Clock size={12} />
-                              {new Date(booking.scheduledTime).toLocaleString('zh-CN', {
-                                month: 'numeric',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                            {getBarberName(booking) && (
-                              <div className="flex items-center gap-1">
-                                <User size={12} />
-                                {getBarberName(booking)}
-                              </div>
-                            )}
-                            {booking.price && (
-                              <div className="text-orange-600 font-medium">¥{booking.price}</div>
-                            )}
+                          <div className="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
+                            <span className="min-w-0 truncate">{booking.serviceName}</span>
+                            <span className="shrink-0 font-medium text-gray-700">{new Date(booking.scheduledTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-                          {expired && (
-                            <div className="mt-2 text-[10px] text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                              已过期
-                            </div>
-                          )}
+                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                            <span className="min-w-0 truncate">{getBarberName(booking) || '待分配发型师'}</span>
+                            {booking.price ? <span className="shrink-0 text-orange-600">¥{booking.price}</span> : null}
+                          </div>
+                          {expired && <div className="mt-1 text-[10px] text-red-600">已过期</div>}
                         </div>
                       );
                     })
