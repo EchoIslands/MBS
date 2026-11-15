@@ -849,7 +849,7 @@ const BookingManagement: React.FC = () => {
                 </div>
 
                 {/* 卡片列表 */}
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 min-h-0 max-h-[calc(100vh-22rem)] space-y-2 overflow-y-auto pr-1">
                   {columnBookings.length === 0 ? (
                     <div className="text-center py-8 text-xs text-gray-400">暂无</div>
                   ) : (
