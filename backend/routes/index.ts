@@ -5202,8 +5202,13 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
       loadDashboardRows('employees', 'id,name,title,role,is_active', shopId),
       loadCompletedSettlementRecords(shopId), loadDashboardReviews(shopId),
     ]);
-    const eligible = employees.filter(emp => ['stylist', 'STYLIST'].includes(emp.role) && emp.is_active === true &&
-      (req.employee!.role !== 'stylist' || emp.id === req.employee!.id));
+    const eligible = employees.filter(emp => {
+      const role = String(emp.role || '').toLowerCase();
+      const title = String(emp.title || '');
+      const isStylistOrManager = role === 'stylist' || role === 'shop_manager' || /发型师|造型师|金牌|店长/.test(title);
+      return isStylistOrManager && emp.is_active === true &&
+      (req.employee!.role !== 'stylist' || emp.id === req.employee!.id);
+    });
     // 只返回汇总，禁止向发型师返回全店原始交易。
     res.json({ success: true, data: buildStylistPerformances(records, eligible.map(e => ({ id:e.id, name:e.name, title:e.title })), reviews) });
   } catch {
