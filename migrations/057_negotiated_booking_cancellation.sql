@@ -1,4 +1,5 @@
 -- 协商取消：记录门店与顾客达成的取消结果，不写入爽约记录。
+ALTER TABLE booking_changes ADD COLUMN IF NOT EXISTS reason text;
 CREATE OR REPLACE FUNCTION decide_booking_attendance(p_id text,p_actor text,p_action text,p_reason text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE b bookings; role_name text;
@@ -15,8 +16,8 @@ BEGIN
  ELSIF p_action='negotiated_cancel' THEN
   IF b.status NOT IN ('pending','confirmed') OR b.actual_start_time IS NOT NULL THEN RAISE EXCEPTION 'BOOKING_ALREADY_STARTED'; END IF;
   UPDATE bookings SET status='cancelled',updated_at=clock_timestamp() WHERE id=p_id;
-  INSERT INTO booking_changes(booking_id,shop_id,customer_id,action,old_time,late,actor_id)
-  VALUES(b.id,b.shop_id,b.customer_id,'negotiated_cancel',b.scheduled_time,false,p_actor);
+  INSERT INTO booking_changes(booking_id,shop_id,customer_id,action,old_time,late,actor_id,reason)
+  VALUES(b.id,b.shop_id,b.customer_id,'negotiated_cancel',b.scheduled_time,false,p_actor,p_reason);
  ELSIF p_action='no_show' THEN
   IF EXISTS(SELECT 1 FROM booking_attendance_decisions WHERE booking_id=p_id AND reversed_at IS NULL) THEN RETURN; END IF;
   IF b.status<>'confirmed' OR b.arrived_at IS NOT NULL OR b.queue_state IS NOT NULL OR b.actual_start_time IS NOT NULL OR b.scheduled_time>clock_timestamp()-interval '60 minutes' OR b.delay_state IN ('needs_action','no_response') THEN RAISE EXCEPTION 'BOOKING_NOT_NO_SHOW'; END IF;
