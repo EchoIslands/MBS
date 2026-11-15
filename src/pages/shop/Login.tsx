@@ -29,7 +29,7 @@ const ShopLogin: React.FC = () => {
     setShowPassword(false);
   };
 
-  const handleLogin = async (e?: React.FormEvent | React.MouseEvent) => {
+  const handleLogin = async (e?: React.SyntheticEvent) => {
     e?.preventDefault();
     if (loading) return;
     setError('');
@@ -184,6 +184,12 @@ const ShopLogin: React.FC = () => {
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleLogin(e);
+                  }
+                }}
                 placeholder={current.placeholder}
                 autoComplete="off"
                 disabled={loading}
@@ -203,6 +209,12 @@ const ShopLogin: React.FC = () => {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleLogin(e);
+                  }
+                }}
                 placeholder="请输入密码"
                 autoComplete="new-password"
                 disabled={loading}
