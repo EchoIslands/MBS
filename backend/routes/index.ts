@@ -1,5 +1,6 @@
 import {changeOwnBooking,attendanceDesk,bookingFailure} from '../services/bookingSelfService.js';
 import operationsWorkbenchRouter from './operationsWorkbench.js';
+import commissionsRouter from './commissions.js';
 import queueNotificationsRouter from './queueNotifications.js';
 import { membershipOperation } from '../../shared/lib/membershipOperation.js';
 import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, liveQueueAction } from '../services/liveQueue.js';
@@ -43,6 +44,7 @@ import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
 const mainRouter = Router();
+mainRouter.use('/commissions',commissionsRouter);
 mainRouter.use('/operations-workbench', operationsWorkbenchRouter);
 mainRouter.use('/queue-notifications', queueNotificationsRouter);
 mainRouter.use('/customer-payment-orders', customerPaymentOrdersRouter);

@@ -17,6 +17,7 @@ import { Booking, Customer, UserRole, Settlement, Employee } from '../../../shar
 import { useAppStore } from '../../store';
 import { customerApi, bookingApi, settlementApi, employeeApi } from '../../api';
 import ShopLayout from './ShopLayout';
+import CommissionPanel from './CommissionPanel';
 import { businessDateKey } from '../../../shared/lib/dashboardStats';
 import { financialTime, FINANCIAL_BASIS_NOTE } from '../../../shared/lib/financialReport';
 
@@ -200,6 +201,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <ShopLayout title="首页概览">
+      <CommissionPanel />
       <div className="bg-blue-50 text-blue-900 text-sm p-4 rounded-xl mb-4 space-y-2">
         <p>{FINANCIAL_BASIS_NOTE}</p>
         <p>数据截止：{generatedAt} <button onClick={() => setRefresh(n => n+1)} className="underline">刷新数据</button></p>
