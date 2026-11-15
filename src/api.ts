@@ -649,8 +649,8 @@ function normalizeBooking(b: unknown): Booking {
 // 预约相关 API
 let pendingBookingRequest: {signature:string;key:string;at:number}|null=null;
 export const bookingApi = {
-  attendanceDesk: () => httpThrowing<{due:{id:string;customer_name:string;customer_phone:string;service_name:string;scheduled_time:string}[];decisions:{id:number;booking_id:string;reason:string;created_at:string;reversed_at:string|null}[];truncated:boolean}>(API_BASE+'/bookings/attendance-desk',{headers:{Authorization:'Bearer '+getAuthToken()}}),
-  attendance: (id:string,action:'no_show'|'reverse',reason:string) => httpThrowing<boolean>(API_BASE+'/bookings/'+encodeURIComponent(id)+'/attendance',{method:'POST',headers:{Authorization:'Bearer '+getAuthToken()},body:JSON.stringify({action,reason})}),
+  attendanceDesk: () => httpThrowing<{due:{id:string;customer_name:string;customer_phone:string;service_name:string;scheduled_time:string}[];decisions:{id:number;booking_id:string;reason:string;created_at:string;reversed_at:string|null}[];changes:{id:number;booking_id:string;reason:string;created_at:string;action:string}[];truncated:boolean}>(API_BASE+'/bookings/attendance-desk',{headers:{Authorization:'Bearer '+getAuthToken()}}),
+  attendance: (id:string,action:'no_show'|'reverse'|'negotiated_cancel',reason:string) => httpThrowing<boolean>(API_BASE+'/bookings/'+encodeURIComponent(id)+'/attendance',{method:'POST',headers:{Authorization:'Bearer '+getAuthToken()},body:JSON.stringify({action,reason})}),
   recordQueueEvent: (id: string, eventType: string) => httpThrowing<unknown>(
     API_BASE + '/bookings/' + encodeURIComponent(id) + '/queue-event',
     {method:'POST',headers:{Authorization:'Bearer ' + getAuthToken()},body:JSON.stringify({eventType})}),

@@ -36,11 +36,12 @@ export async function attendanceDesk(req:Request,res:Response){
    if(result.error)return res.status(409).json({success:false,error:bookingFailure(result.error.message)});
    return res.json({success:true,data:true});
   }
-  const [due,decisions]=await Promise.all([
+  const [due,decisions,changes]=await Promise.all([
    supabase.from('bookings').select('id,customer_name,customer_phone,service_name,scheduled_time').eq('shop_id',staff.shopId).eq('status','confirmed').or('delay_state.is.null,delay_state.eq.rescheduled,delay_state.eq.reassigned').is('arrived_at',null).is('queue_state',null).is('actual_start_time',null).lt('scheduled_time',new Date(Date.now()-3600000).toISOString()).gte('scheduled_time',new Date(Date.now()-7*86400000).toISOString()).order('scheduled_time',{ascending:false}).limit(100),
    supabase.from('booking_attendance_decisions').select('id,booking_id,reason,created_at,reversed_at').eq('shop_id',staff.shopId).gte('created_at',new Date(Date.now()-90*86400000).toISOString()).order('created_at',{ascending:false}).limit(100),
+   supabase.from('booking_changes').select('id,booking_id,reason,created_at,action').eq('shop_id',staff.shopId).eq('action','negotiated_cancel').gte('created_at',new Date(Date.now()-90*86400000).toISOString()).order('created_at',{ascending:false}).limit(100),
   ]);
-  if(due.error||decisions.error)return res.status(503).json({success:false,error:'到店核实列表暂不可用'});
-  return res.json({success:true,data:{due:due.data,decisions:decisions.data,truncated:due.data.length===100||decisions.data.length===100}});
+  if(due.error||decisions.error||changes.error)return res.status(503).json({success:false,error:'到店核实列表暂不可用'});
+  return res.json({success:true,data:{due:due.data,decisions:decisions.data,changes:changes.data,truncated:due.data.length===100||decisions.data.length===100||changes.data.length===100}});
  }catch{return res.status(503).json({success:false,error:'到店核实暂不可用'});}
 }
