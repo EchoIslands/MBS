@@ -36,3 +36,17 @@ test('mini profile preserves booking action eligibility instead of dropping serv
  const template=await readFile(new URL('../mini-program/pages/profile/profile.wxml',import.meta.url),'utf8');
  assert.ok(template.includes('catchtap="openReschedule"')&&template.includes('catchtap="cancelFromList"'));
 });
+
+test('attendance history failure preserves core list with explicit warning; core failure stays 503',async()=>{
+ let failed='booking_changes';
+ const supabase={from:(table:string)=>{const q={select(){return q;},eq(){return q;},or(){return q;},is(){return q;},lt(){return q;},gte(){return q;},order(){return q;},limit(){return Promise.resolve(table===failed?{data:null,error:{code:'42703'}}:{data:[{id:table}],error:null});}};return q;}};
+ const handlers:Record<string,express.RequestHandler>={};
+ const source=(await readFile(new URL('../backend/services/bookingSelfService.ts',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'');
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports:handlers,supabase,startsDuringOpening,console,Date});
+ const app=express();app.use((req,_res,next)=>{req.employee={id:'boss',shopId:'s',role:'ceo'} as typeof req.employee;next();});app.get('/desk',handlers.attendanceDesk);
+ const server=app.listen(0);await new Promise<void>(resolve=>server.once('listening',resolve));const url='http://127.0.0.1:'+(server.address() as AddressInfo).port+'/desk';
+ try{let res=await fetch(url);assert.equal(res.status,200);const body=await res.json();assert.equal(body.data.changesUnavailable,true);assert.equal(body.data.due.length,1);assert.equal(body.data.decisions.length,1);assert.deepEqual(body.data.changes,[]);
+ failed='';res=await fetch(url);assert.equal((await res.json()).data.changesUnavailable,false);
+ failed='bookings';res=await fetch(url);assert.equal(res.status,503);
+ }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
+});

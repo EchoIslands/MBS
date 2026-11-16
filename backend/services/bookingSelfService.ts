@@ -41,7 +41,9 @@ export async function attendanceDesk(req:Request,res:Response){
    supabase.from('booking_attendance_decisions').select('id,booking_id,reason,created_at,reversed_at').eq('shop_id',staff.shopId).gte('created_at',new Date(Date.now()-90*86400000).toISOString()).order('created_at',{ascending:false}).limit(100),
    supabase.from('booking_changes').select('id,booking_id,reason,created_at,action').eq('shop_id',staff.shopId).eq('action','negotiated_cancel').gte('created_at',new Date(Date.now()-90*86400000).toISOString()).order('created_at',{ascending:false}).limit(100),
   ]);
-  if(due.error||decisions.error||changes.error)return res.status(503).json({success:false,error:'到店核实列表暂不可用'});
-  return res.json({success:true,data:{due:due.data,decisions:decisions.data,changes:changes.data,truncated:due.data.length===100||decisions.data.length===100||changes.data.length===100}});
+  if(due.error||decisions.error)return res.status(503).json({success:false,error:'到店核实列表暂不可用'});
+  const changesUnavailable=!!changes.error;
+  if(changesUnavailable)console.error('[attendance-desk] negotiated history unavailable:',changes.error?.code);
+  return res.json({success:true,data:{due:due.data,decisions:decisions.data,changes:changesUnavailable?[]:changes.data,changesUnavailable,truncated:due.data.length===100||decisions.data.length===100||(!changesUnavailable&&changes.data.length===100)}});
  }catch{return res.status(503).json({success:false,error:'到店核实暂不可用'});}
 }
