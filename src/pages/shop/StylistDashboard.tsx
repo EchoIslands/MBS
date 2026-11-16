@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import {sortStylistsByRank} from '../../../shared/lib/stylistOrder';
 import React, { useState, useEffect } from 'react';
 import {
   TrendingUp,
@@ -66,6 +67,7 @@ const StylistDashboard: React.FC = () => {
               stylistId: item.stylistId || '',
               stylistName: item.stylistName || '',
               title: item.title || '发型师',
+              role: (p as {role?:string}).role, isGoldStylist: (p as {isGoldStylist?:boolean}).isGoldStylist,
               averageRating: item.averageRating || 0,
               revenue: {
                 today: item.revenue?.today || 0,
@@ -78,11 +80,10 @@ const StylistDashboard: React.FC = () => {
                 byType: item.services?.byType || {},
               },
               estimatedCommission: item.estimatedCommission || 0,
-            } as StylistPerformance;
-          })
-          .sort((a, b) => b.revenue.month - a.revenue.month);
+            } as StylistPerformance & {role?:string;isGoldStylist?:boolean};
+          });
 
-        setAllPerformances(allPerf);
+        setAllPerformances(sortStylistsByRank(allPerf));
         setOwnPerformance(null);
 
         // 当前发型师自己的业绩
@@ -192,10 +193,8 @@ const StylistDashboard: React.FC = () => {
     const rated = allPerformances.filter(p => p.averageRating > 0);
     const avgRating = (rated.reduce((sum,p) => sum+p.averageRating,0) / (rated.length || 1)).toFixed(1);
 
-    // 按本月产值排序
-    const sorted = [...allPerformances].sort(
-      (a, b) => b.revenue.month - a.revenue.month,
-    );
+    // 人员固定按店长、金牌、普通排列
+    const sorted = allPerformances;
 
     return (
       <ShopLayout title="发型师看板">
@@ -241,21 +240,21 @@ const StylistDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* 发型师业绩排行榜 */}
+        {/* 发型师业绩一览榜 */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-5 border-b border-gray-100">
             <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
               <Users size={18} className="text-orange-500" />
               发型师业绩排行
               <span className="text-sm font-normal text-gray-500">
-                （按本月产值排序）
+                （店长 → 金牌 → 普通发型师）
               </span>
             </h2>
           </div>
 
           {/* 表头 */}
           <div className="grid grid-cols-12 gap-2 px-5 py-3 bg-gray-50 text-xs text-gray-500 font-medium">
-            <div className="col-span-1 text-center">排名</div>
+            <div className="col-span-1 text-center">序号</div>
             <div className="col-span-2">发型师</div>
             <div className="col-span-1 text-center">评分</div>
             <div className="col-span-2 text-right">今日产值</div>
@@ -267,14 +266,7 @@ const StylistDashboard: React.FC = () => {
           {/* 排名行 */}
           {sorted.map((perf, index) => {
             const rank = index + 1;
-            const rankColor =
-              rank === 1
-                ? 'bg-yellow-100 text-yellow-700'
-                : rank === 2
-                ? 'bg-gray-100 text-gray-600'
-                : rank === 3
-                ? 'bg-orange-100 text-orange-700'
-                : 'bg-gray-50 text-gray-500';
+            const rankColor = 'bg-gray-100 text-gray-600';
 
             return (
               <div

@@ -1,8 +1,8 @@
-type StylistRank = { role?: string; isGoldStylist?: boolean };
+type StylistRank = { role?: string; isGoldStylist?: boolean; is_gold_stylist?: boolean; title?: string };
 
 export function stylistRank(person: StylistRank): number {
-  if (person.role === 'shop_manager') return 0;
-  if (person.isGoldStylist === true) return 1;
+  if (person.role?.toLowerCase() === 'shop_manager' || /店长/.test(person.title || '')) return 0;
+  if (person.isGoldStylist === true || person.is_gold_stylist === true || /金牌/.test(person.title || '')) return 1;
   return 2;
 }
 

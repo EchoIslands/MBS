@@ -1,3 +1,4 @@
+import {sortStylistsByRank} from '../../shared/lib/stylistOrder.js';
 import type { Request, Response } from 'express';
 import { supabase } from '../db/index.js';
 import { createDurationEstimator, describeQueue, queueOrder, QUEUE_RULES, type QueueRow } from '../../shared/lib/liveQueue.js';
@@ -9,10 +10,10 @@ async function readQueue(shopId:string,date:string) {
  supabase.from('bookings').select('*').eq('shop_id',shopId).gte('scheduled_time',start.toISOString()).lt('scheduled_time',new Date(+start+86400000).toISOString()).order('scheduled_time').limit(500),
  supabase.from('bookings').select('id,shop_id,customer_id,status,scheduled_time,stylist_id,service_id,actual_start_time,actual_end_time').eq('shop_id',shopId).not('actual_end_time','is',null).gte('actual_end_time',new Date(Date.now()-90*86400000).toISOString()).order('actual_end_time',{ascending:false}).limit(1000),
  supabase.from('shops').select('phone').eq('id',shopId).maybeSingle(),
- supabase.from('employees').select('id,name,queue_pause_until,queue_availability_version').eq('shop_id',shopId).eq('is_active',true).in('role',['stylist','shop_manager'])]);
+ supabase.from('employees').select('id,name,role,title,is_gold_stylist,queue_pause_until,queue_availability_version').eq('shop_id',shopId).eq('is_active',true).in('role',['stylist','shop_manager'])]);
  if((a.data?.length||0)>=500||a.error||h.error||s.error||staff.error)throw new Error('QUEUE_READ_FAILED');
  if((a.data||[]).length===500)throw new Error('QUEUE_CAPACITY');
- return {rows:(a.data||[]) as QueueRow[],history:(h.data||[]) as QueueRow[],phone:s.data?.phone||'',availability:(staff.data||[]).map(e=>({id:e.id,name:e.name,pausedUntil:e.queue_pause_until,version:e.queue_availability_version||0}))};
+ return {rows:(a.data||[]) as QueueRow[],history:(h.data||[]) as QueueRow[],phone:s.data?.phone||'',availability:sortStylistsByRank(staff.data||[]).map(e=>({id:e.id,name:e.name,pausedUntil:e.queue_pause_until,version:e.queue_availability_version||0}))};
 }
 async function readEvents(ids:string[],shopId:string){
  if(!ids.length)return [];

@@ -7,10 +7,10 @@ import { sortStylistsByRank as sortH5 } from '../shared/lib/stylistOrder';
 test('小程序与 H5 同样按店长、金牌、普通排序且保留同级原顺序', async () => {
   const people = [
     { id: 'normal-a', role: 'stylist' },
-    { id: 'gold-a', role: 'stylist', isGoldStylist: true },
+    { id: 'gold-a', role: 'stylist', is_gold_stylist: true },
     { id: 'manager', role: 'shop_manager', isGoldStylist: true },
     { id: 'normal-b', role: 'stylist' },
-    { id: 'gold-b', role: 'stylist', isGoldStylist: true },
+    { id: 'gold-b', role: 'stylist', title: '金牌发型师' },
   ];
   const expected = ['manager', 'gold-a', 'gold-b', 'normal-a', 'normal-b'];
   const source = await readFile(new URL('../mini-program/utils/stylist-order.js', import.meta.url), 'utf8');

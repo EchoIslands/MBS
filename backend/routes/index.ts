@@ -1,3 +1,4 @@
+import {sortStylistsByRank} from '../../shared/lib/stylistOrder.js';
 import {changeOwnBooking,attendanceDesk,bookingFailure} from '../services/bookingSelfService.js';
 import operationsWorkbenchRouter from './operationsWorkbench.js';
 import queueNotificationsRouter from './queueNotifications.js';
@@ -245,7 +246,7 @@ employeesRouter.get('/', authMiddleware, async (req: Request, res: Response) => 
       return;
     }
 
-    res.json({ success: true, data: (data || []).map(({ password_hash: _password, ...employee }) => employee) });
+    res.json({ success: true, data: sortStylistsByRank(data || []).map(({ password_hash: _password, ...employee }) => employee) });
   } catch (err: unknown) {
     console.error('[employees] 查询异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -5199,7 +5200,7 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
   try {
     const shopId = req.employee!.shopId;
     const [employees, records, reviews] = await Promise.all([
-      loadDashboardRows('employees', 'id,name,title,role,is_active', shopId),
+      loadDashboardRows('employees', 'id,name,title,role,is_active,is_gold_stylist', shopId),
       loadCompletedSettlementRecords(shopId), loadDashboardReviews(shopId),
     ]);
     const eligible = employees.filter(emp => {
@@ -5210,7 +5211,7 @@ stylistsRouter.get('/performance', authMiddleware, async (req: Request, res: Res
       (req.employee!.role !== 'stylist' || emp.id === req.employee!.id);
     });
     // 只返回汇总，禁止向发型师返回全店原始交易。
-    res.json({ success: true, data: buildStylistPerformances(records, eligible.map(e => ({ id:e.id, name:e.name, title:e.title })), reviews) });
+    res.json({ success: true, data: sortStylistsByRank(buildStylistPerformances(records, eligible.map(e => ({ id:e.id, name:e.name, title:e.title })), reviews).map(p=>({...p,role:eligible.find(e=>e.id===p.stylistId)?.role,isGoldStylist:eligible.find(e=>e.id===p.stylistId)?.is_gold_stylist===true}))) });
   } catch {
     res.status(503).json({ success: false, error: '发型师业绩数据读取不完整，请重试并检查支付迁移与数据库连接' });
   }

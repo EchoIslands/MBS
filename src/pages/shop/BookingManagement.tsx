@@ -1,3 +1,4 @@
+import {sortStylistsByRank} from '../../../shared/lib/stylistOrder';
 import AttendanceDesk from './AttendanceDesk';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
@@ -516,8 +517,9 @@ const BookingManagement: React.FC = () => {
       const name = getBarberName(b);
       if (name) names.add(name);
     });
-    return Array.from(names).sort();
-  }, [bookings]);
+    const ordered=sortStylistsByRank(stylists).map(e=>e.name);
+    return [...new Set([...ordered,...names])];
+  }, [bookings, stylists]);
 
   // 筛选（列表视图用：包含状态和发型师筛选）
   const filteredBookings = useMemo(() => {
