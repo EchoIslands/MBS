@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-async function bookingPage() {
+async function bookingPage(now?: string) {
   const notifications: string[] = [];
   const calls: unknown[] = [];
   const navigation: string[] = [];
@@ -15,6 +15,7 @@ async function bookingPage() {
     createBooking(options: unknown) { calls.push(options); return Promise.resolve({ id: 'booking' }); },
     setRouteParams() {}, trackBookingComplete() {}, console,
   });
+  if (now) vm.runInContext(`const RealDate = Date; Date = class extends RealDate { constructor(...args) { if(args.length) super(...args); else super('${now}'); } static now() { return new RealDate('${now}').getTime(); } };`, context);
   const order = (await readFile(new URL('../mini-program/utils/stylist-order.js', import.meta.url), 'utf8')).replace(/^export /gm, '');
   vm.runInContext(order, context);
   const swipe = (await readFile(new URL('../mini-program/utils/tab-swipe.js', import.meta.url), 'utf8')).replace(/^export /gm, '');
@@ -37,7 +38,7 @@ async function bookingPage() {
   page.data.selectedDate = '2026-11-01';
   page.data.selectedTime = '10:00';
   page.data.customerId = 'customer';
-  return { page, calls, notifications, navigation };
+  return { page, calls, notifications, navigation, context };
 }
 
 test('小程序切换限定服务重置旧人选，智能匹配及提交只用对应级别', async () => {
@@ -63,4 +64,33 @@ test('小程序切换限定服务重置旧人选，智能匹配及提交只用�
   assert.equal((calls[0] as {stylistId:string}).stylistId, 'manager');
   assert.deepEqual(navigation, ['/pages/queue/queue']);
   assert.equal(notifications.length, 1);
+});
+
+
+test('未来日期含跨年北京时间，日历切换刷新对应档期，迟到请求不能覆盖新日期', async () => {
+ const {page, context} = await bookingPage('2026-12-31T16:30:00Z');
+ assert.equal(page.data.dates[0].value,'2027-01-01');
+ assert.equal(page.data.dates[0].label,'1月1日');
+ assert.equal(page.data.dates[0].weekDay,'周五');
+ assert.equal(page.data.dates[14].value,'2027-01-15');
+ const requests: {date:string;resolve:(rows:unknown[])=>void}[]=[];
+ context.getBookingsByShop=(_shop:string,date:string)=>new Promise(resolve=>requests.push({date,resolve}));
+ page.data.selectedService='ordinary';
+ const first=page.onCalendarChange({detail:{value:'2027-01-02'}});
+ assert.equal(page.data.selectedDate,'2027-01-02');assert.equal(page.data.bookingsError,true);
+ const second=page.onDateSelect({currentTarget:{dataset:{value:'2027-01-03'}}});
+ assert.deepEqual(requests.map(r=>r.date),['2027-01-02','2027-01-03']);
+ requests[1].resolve([]); await second;
+ assert.equal(page.data.bookingsError,false);
+ requests[0].resolve([{id:'old',status:'confirmed',stylistId:'normal',scheduledTime:'2027-01-02T02:00:00Z'}]);await first;
+ assert.equal(page.data.selectedDate,'2027-01-03');assert.equal(page.data.existingBookings.length,0);
+ assert.equal(page.data.timeSlots.length,2);
+ page.onCalendarChange({detail:{value:'2027-01-16'}});assert.equal(requests.length,2);
+});
+
+test('未来日期预约按北京时间提交，不随设备时区偏移', async()=>{
+ const {page,calls}=await bookingPage('2026-12-31T16:30:00Z');
+ page.data.selectedDate='2027-01-02';page.data.selectedTime='10:00';page.data.selectedService='ordinary';
+ page.updateStylists(page.data.shop.employees);await page.doBooking();
+ assert.equal((calls[0] as {scheduledTime:string}).scheduledTime,'2027-01-02T02:00:00.000Z');
 });

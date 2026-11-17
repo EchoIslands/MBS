@@ -101,7 +101,9 @@
         <view class="card-header">
           <mbs-icon name="calendar" size="36" color="var(--primary)" />
           <text class="card-header-text">选择日期</text>
+          <picker mode="date" value="{{selectedDate}}" start="{{minDate}}" end="{{maxDate}}" bindchange="onCalendarChange" catchtouchstart="ignoreTabSwipe"><view class="date-calendar-button">日历选择 ▾</view></picker>
         </view>
+        <view class="date-selection-summary">已选 {{selectedDate}} · 可预约今天起未来14天，日期条可左右滑动</view>
         <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false" enhanced="true" catchtouchstart="ignoreTabSwipe">
           <view class="date-scroll-inner">
             <view

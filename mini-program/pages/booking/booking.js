@@ -12,18 +12,17 @@ import { createTabSwipeHandlers, syncTabBarSelected } from '../../utils/tab-swip
 const STYLIST_ROLE = 'stylist';
 const SHOP_MANAGER_ROLE = 'shop_manager';
 
-// 生成未来7天日期
+// 按北京时间生成今天至未来14天日期
 function generateDates() {
   const arr = [];
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   for (let i = 0; i < 15; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    const dateStr = new Date(d.getTime()+8*3600000).toISOString().slice(0,10);
+    const d = new Date(Date.now() + 8 * 3600000 + i * 86400000);
+    const dateStr = d.toISOString().slice(0,10);
     arr.push({
       value: dateStr,
-      label: `${d.getMonth() + 1}月${d.getDate()}日`,
-      weekDay: weekDays[d.getDay()],
+      label: `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`,
+      weekDay: weekDays[d.getUTCDay()],
     });
   }
   return arr;
@@ -35,8 +34,8 @@ function generateTimeSlots(selectedDate, hours) {
   const today = new Date();
   const todayStr = new Date(today.getTime()+8*3600000).toISOString().slice(0,10);
   if (selectedDate === todayStr) {
-    const currentHour = today.getHours();
-    const currentMinute = today.getMinutes();
+    const currentHour = new Date(today.getTime()+8*3600000).getUTCHours();
+    const currentMinute = new Date(today.getTime()+8*3600000).getUTCMinutes();
     return arr.filter((time) => {
       const [h, m] = time.split(':').map(Number);
       if (h > currentHour) return true;
@@ -117,6 +116,8 @@ Page({
     error: '',
     dates: generateDates(),
     selectedDate: generateDates()[0].value,
+    minDate: generateDates()[0].value,
+    maxDate: generateDates()[14].value,
     timeSlots: [],
     selectedTime: '',
     selectedService: '',
@@ -153,6 +154,8 @@ Page({
 
     this.setData({
       dates,
+      minDate: dates[0].value,
+      maxDate: dates[dates.length - 1].value,
       selectedDate,
       timeSlots: timeSlots.map((t) => ({ time: t, full: false })),
       selectedTime: timeSlots[0] || '',
@@ -205,9 +208,9 @@ Page({
     if (this._bookingShown && this.data.shop) {
       const dates = generateDates();
       if (!dates.some((day) => day.value === this.data.selectedDate)) {
-        this.setData({ dates, selectedDate: dates[0].value, selectedTime: '' });
+        this.setData({ dates, minDate: dates[0].value, maxDate: dates[dates.length - 1].value, selectedDate: dates[0].value, selectedTime: '' });
       } else {
-        this.setData({ dates });
+        this.setData({ dates, minDate: dates[0].value, maxDate: dates[dates.length - 1].value });
       }
       await Promise.all([this.loadCustomer(), this.loadBookings()]);
       this.refreshServicesWithCustomer();
@@ -394,12 +397,17 @@ Page({
   async loadBookings() {
     const { shop, selectedDate } = this.data;
     if (!shop?.id || !selectedDate) return;
+    const requestId = (this._bookingsRequestId || 0) + 1;
+    this._bookingsRequestId = requestId;
+    this.setData({ bookingsError: true });
     try {
       const data = await getBookingsByShop(shop.id, selectedDate);
+      if (requestId !== this._bookingsRequestId || selectedDate !== this.data.selectedDate) return;
       this.setData({ existingBookings: data || [], bookingsError:false });
       this.updateStylists((shop.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
       this.updateTimeSlots();
     } catch (error) {
+      if (requestId !== this._bookingsRequestId || selectedDate !== this.data.selectedDate) return;
       console.error('加载店铺预约失败:', error);
       this.setData({ existingBookings: [], bookingsError:true });
       wx.showToast({title:'档期加载失败，请稍后重试',icon:'none'});
@@ -438,15 +446,20 @@ Page({
     this.updateTimeSlots();
   },
 
+  onCalendarChange(e) {
+    return this.onDateSelect({ currentTarget: { dataset: { value: e.detail.value } } });
+  },
+
   onDateSelect(e) {
     const selectedDate = e.currentTarget.dataset.value;
+    if (!generateDates().some(day => day.value === selectedDate)) return;
     const timeSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
     this.setData({
       selectedDate,
       timeSlots: timeSlots.map((t) => ({ time: t, full: false })),
       selectedTime: timeSlots[0] || '',
     });
-    this.loadBookings();
+    return this.loadBookings();
   },
 
   onTimeSelect(e) {
@@ -524,7 +537,7 @@ Page({
 
     this.setData({ booking: true });
 
-    const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
+    const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00+08:00`);
 
     try {
       const newBooking = await createBooking({
