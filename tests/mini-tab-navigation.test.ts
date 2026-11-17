@@ -91,3 +91,31 @@ test('编辑资料、上传头像或提交预约期间不横滑切页，手势�
     }
   } finally {miniGlobal.wx=oldWx;}
 });
+
+test('日期条的触摸冒泡不会切页，下一次在页面空白处横滑仍可切页', () => {
+  const destinations: string[] = [];
+  const miniGlobal = globalThis as typeof globalThis & {wx?:{switchTab:(options:{url:string})=>void}};
+  const oldWx = miniGlobal.wx;
+  miniGlobal.wx = { switchTab: ({url}) => { destinations.push(url); } };
+  try {
+    const page: vm.Context = { data: {}, ...createTabSwipeHandlers(2) };
+    const start = { touches: [{ pageX: 280, pageY: 350 }] };
+    const end = { changedTouches: [{ pageX: 100, pageY: 355 }] };
+    // 日期栏先收到事件，然后冒泡到页面；不能把日期条滚动识别成切换到“我的”。
+    page.onTabSwipeStart(start);
+    page.ignoreTabSwipe();
+    page.onTabSwipeStart(start);
+    page.onTabSwipeEnd(end);
+    assert.deepEqual(destinations, []);
+    // 轻点日期也不会跳页，隔离只对当前手势有效。
+    page.ignoreTabSwipe();
+    page.onTabSwipeStart(start);
+    page.onTabSwipeEnd({ changedTouches: [{pageX: 280, pageY: 350}] });
+    assert.deepEqual(destinations, []);
+    page.onTabSwipeStart(start);
+    page.onTabSwipeEnd(end);
+    assert.deepEqual(destinations, ['/pages/profile/profile']);
+  } finally {
+    miniGlobal.wx = oldWx;
+  }
+});

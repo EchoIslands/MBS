@@ -23,11 +23,13 @@ export function syncTabBarSelected(page, index) {
   }
 }
 
-// 只识别明确的横向手势。轮播图和横向滚动区在 WXML 中拦截 touchstart。
+// 横向滚动区用 bindtouchstart 标记本次手势，不拦截原生滚动或点击。
 export function createTabSwipeHandlers(tabIndex) {
   return {
     onTabSwipeStart(event) {
-      if (tabSwipeBlocked(this.data)) {
+      const ignored = this._ignoreTabSwipe;
+      this._ignoreTabSwipe = false;
+      if (ignored || tabSwipeBlocked(this.data)) {
         this._tabSwipeStart = null;
         return;
       }
@@ -55,6 +57,9 @@ export function createTabSwipeHandlers(tabIndex) {
       this._tabSwipeStart = null;
     },
 
-    ignoreTabSwipe() {},
+    ignoreTabSwipe() {
+      this._tabSwipeStart = null;
+      this._ignoreTabSwipe = true;
+    },
   };
 }
