@@ -57,9 +57,9 @@ Page({
 
   onUnload() { if (this.smsTimer) clearInterval(this.smsTimer); },
 
-  onShow() { this.fillSmsCodeFromClipboard(); },
+  onShow() { /* 不在页面恢复时读取剪贴板，避免打断真机键盘。 */ },
 
-  onSmsCodeFocus() { this.fillSmsCodeFromClipboard(); },
+  onSmsCodeFocus() { /* 聚焦只负责输入；读取剪贴板由用户点击粘贴触发。 */ },
 
   onPasteSmsCode() { this.fillSmsCodeFromClipboard(true); },
 

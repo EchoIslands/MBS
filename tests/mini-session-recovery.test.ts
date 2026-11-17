@@ -261,11 +261,11 @@ test('短信复制填充：仅当前请求空输入框可自动填入，不覆�
   Object.assign(page.data, { loginMode: 'sms', phone: '13900000001' });
   page.onShow(); assert.equal(reads, 0);
   page.smsRequestedPhone = page.data.phone; page.smsRequestedAt = Date.now();
-  page.onSmsCodeFocus();
+  page.onSmsCodeFocus(); assert.equal(reads, 0); page.onPasteSmsCode();
   clipboard.success({ data: ' 246810 ' }); clipboard.complete();
   assert.equal(page.data.smsCode, '246810');
   page.onShow(); assert.equal(reads, 1);
-  page.setData({ smsCode: '' }); page.onShow();
+  page.setData({ smsCode: '' }); page.onPasteSmsCode();
   page.onSmsCodeInput({ detail: { value: '12' } });
   clipboard.success({ data: '246810' }); clipboard.complete();
   assert.equal(page.data.smsCode, '12');
