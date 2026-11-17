@@ -1757,7 +1757,7 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
     const { data: customer, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('id', customerId).single();
     if (error || !customer) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
     // 临时弱密码账户仍需完成原改密流程，短信登录不可绕过强制改密。
-    if (customer.is_weak_password === true) return res.status(403).json({ success: false, error: '此账户须先使用原密码登录并修改临时密码' });
+    if (customer.is_weak_password === true) return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', error: '该手机号已有临时密码档案，请切换密码登录，使用门店提供的临时密码登录后修改；不知道密码请联系门店重置' });
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
     const { password_hash: passwordHash, is_weak_password: _weak, ...safe } = customer;
     const token = signCustomerToken(customer.id, customer.shop_id, passwordHash || '');

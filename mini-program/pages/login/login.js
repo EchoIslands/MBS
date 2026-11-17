@@ -103,7 +103,8 @@ Page({
 
   setLoginMode(e) {
     const loginMode = e.currentTarget.dataset.mode;
-    if (loginMode !== 'password' && loginMode !== 'sms') return;
+    if (loginMode !== 'password' && loginMode !== 'sms' || this.data.loggingIn || this.data.smsSending) return;
+    if (typeof wx.hideKeyboard === 'function') wx.hideKeyboard();
     this.setData({ loginMode, error: '', password: '', confirmPassword: '', smsCode: '', setupRequired: false });
   },
 

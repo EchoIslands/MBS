@@ -15,20 +15,20 @@
     <block wx:if="{{loginMode === 'password'}}">
       <view class="login-hint" wx:if="{{setupRequired}}">首次使用，请设置六位数字密码。</view>
       <view class="login-field"><view class="login-input-wrap">
-        <input class="login-input" password="{{!showPassword}}" type="number" maxlength="6" placeholder="{{setupRequired ? '设置六位数字密码' : '六位数字密码'}}" value="{{password}}" bindinput="onPasswordInput" />
+        <input class="login-input" password="{{!showPassword}}" type="text" maxlength="6" placeholder="{{setupRequired ? '设置六位数字密码' : '六位数字密码'}}" value="{{password}}" bindinput="onPasswordInput" />
         <button class="password-toggle" size="mini" aria-label="{{showPassword ? '隐藏密码' : '显示密码'}}" bindtap="togglePasswordVisibility" hover-class="password-toggle-active">
           <image class="password-visibility-icon" src="/assets/icons/{{showPassword ? 'eye' : 'eye-off'}}.png" mode="aspectFit" aria-hidden="true" />
         </button>
       </view></view>
       <view class="login-field" wx:if="{{setupRequired}}"><view class="login-input-wrap">
-        <input class="login-input" password="{{!showConfirmPassword}}" type="number" maxlength="6" placeholder="确认密码" value="{{confirmPassword}}" bindinput="onConfirmPasswordInput" />
+        <input class="login-input" password="{{!showConfirmPassword}}" type="text" maxlength="6" placeholder="确认密码" value="{{confirmPassword}}" bindinput="onConfirmPasswordInput" />
         <button class="password-toggle" size="mini" aria-label="{{showConfirmPassword ? '隐藏确认密码' : '显示确认密码'}}" bindtap="toggleConfirmPasswordVisibility" hover-class="password-toggle-active">
           <image class="password-visibility-icon" src="/assets/icons/{{showConfirmPassword ? 'eye' : 'eye-off'}}.png" mode="aspectFit" aria-hidden="true" />
         </button>
       </view></view>
       <view class="login-hint">忘记密码？请联系门店重置，重置密码为手机号后六位。</view>
     </block>
-    <block wx:else>
+    <block wx:if="{{loginMode === 'sms'}}">
       <view class="login-field"><view class="login-input-wrap">
         <input class="login-input" type="number" maxlength="6" placeholder="请输入六位短信验证码" value="{{smsCode}}" bindinput="onSmsCodeInput" bindfocus="onSmsCodeFocus" />
         <button class="sms-paste" size="mini" bindtap="onPasteSmsCode">粘贴</button>
