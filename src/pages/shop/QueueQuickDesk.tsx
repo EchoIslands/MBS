@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { liveQueueApi, bookingApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -35,7 +36,7 @@ export default function QueueQuickDesk(){
  const filtered=list.filter(b=>(filter==='all'||filter==='attention'?(filter==='all'||attention.includes(b)):active(b))&&(stylist==='all'||b.stylistId===stylist)&&`${b.customerName} ${b.customerPhone} ${b.stylistName}`.includes(search));
  const button=(b:Item,action:string,title:string,minutes?:number,primary=false)=><button key={action+title} disabled={stale||!!busy||(['called','service_started'].includes(action)&&!!data?.availability.some(a=>a.id===b.stylistId&&a.pausedUntil&&Date.parse(a.pausedUntil)>Date.now()))} onClick={()=>void act(b,action,minutes)} className={`min-h-14 rounded-xl px-3 py-3 text-base font-bold border disabled:opacity-40 ${primary?'bg-orange-200 border-orange-300 text-gray-900':'bg-white border-orange-200 text-gray-800'}`}>{title}</button>;
  return <ShopLayout title="实时排队工作台"><main className="max-w-6xl mx-auto p-4 space-y-4 bg-orange-50/40">
- <header className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">今日排队工作台</h1><p className="text-sm text-gray-500">到店确认后进入队列 · 结束服务计时与收银结算分开</p></div><div className="flex gap-2"><button className="border rounded-xl p-3 bg-white" onClick={()=>{try{audio.current ||= new AudioContext();void audio.current.resume();setSound(true);}catch{setMessage('浏览器不支持提示音，请关注待处理提示');}}}>{sound?'页面提示音已开启':'开启提示音'}</button><button onClick={()=>void refresh(true)} className="rounded-xl p-3 bg-orange-200 font-bold">立即刷新</button></div></header>
+ <header className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">今日排队工作台</h1><Link to="/shop/queue-display" className="inline-block my-2 rounded-xl bg-orange-200 px-4 py-3 font-bold">打开店内显示屏</Link><p className="text-sm text-gray-500">到店确认后进入队列 · 结束服务计时与收银结算分开</p></div><div className="flex gap-2"><button className="border rounded-xl p-3 bg-white" onClick={()=>{try{audio.current ||= new AudioContext();void audio.current.resume();setSound(true);}catch{setMessage('浏览器不支持提示音，请关注待处理提示');}}}>{sound?'页面提示音已开启':'开启提示音'}</button><button onClick={()=>void refresh(true)} className="rounded-xl p-3 bg-orange-200 font-bold">立即刷新</button></div></header>
  <div role="status" className={`rounded-xl p-3 ${stale?'bg-red-50 text-red-700':'bg-white text-gray-600'}`}>{stale?'同步异常/尚未完成：操作暂停，请核对现场':'每5秒自动同步'} · 上次成功 {lastSync?new Date(lastSync).toLocaleTimeString('zh-CN'):'尚未同步'}</div>
  <section className="grid gap-3 md:grid-cols-2" aria-label="发型师当前服务和下一位">
  {(data?.availability||[]).filter(e=>stylist==='all'||e.id===stylist).map(e=>{

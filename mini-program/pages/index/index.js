@@ -150,6 +150,7 @@ Page({
     const startTime = Date.now();
     this.setData({ loading: true, error: '' });
     try {
+      const reviewsRequest = this.loadReviews('shop1');
       const rawShop = await getShop('shop1');
       if (!rawShop) {
         this.setData({ error: '店铺信息加载失败', loading: false });
@@ -202,7 +203,8 @@ Page({
           originalPrice: p.originalPrice,
           images: limitImageList(p.images, 1),
         }));
-      const reviews = (await this.loadReviews(shop.id)).slice(0, 3).map((r) => ({
+      this.setData({ shop, stylists, displayTags, products, ratingStars: this.buildStars(shop.rating || 4.8), loading: false });
+      const reviews = (await reviewsRequest).slice(0, 3).map((r) => ({
         id: r.id,
         customerName: truncate(r.customerName, 20) || '匿名用户',
         comment: truncate(r.comment, 200),
