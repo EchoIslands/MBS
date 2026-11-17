@@ -1754,12 +1754,10 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
     if (!(await verifySmsCode(phone, code))) { await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined; return res.status(401).json({ success: false, error: '验证码错误或已过期' }); }
     const { data: customerId, error: resolveError } = await supabase.rpc('resolve_sms_customer', { p_phone: phone });
     if (resolveError || !customerId) return res.status(503).json({ success: false, error: '客户档案暂不可用或存在重复，请联系门店' });
-    const { data: customer, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('id', customerId).single();
+    const { data: customer, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash`).eq('id', customerId).single();
     if (error || !customer) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
-    // 临时弱密码账户仍需完成原改密流程，短信登录不可绕过强制改密。
-    if (customer.is_weak_password === true) return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', error: '该手机号已有临时密码档案，请切换密码登录，使用门店提供的临时密码登录后修改；不知道密码请联系门店重置' });
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
-    const { password_hash: passwordHash, is_weak_password: _weak, ...safe } = customer;
+    const { password_hash: passwordHash, ...safe } = customer;
     const token = signCustomerToken(customer.id, customer.shop_id, passwordHash || '');
     res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
     return res.json({ success: true, data: toCamelCase({ ...safe, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...(req.body?.client === 'mini' ? { token } : {}) });
