@@ -24,13 +24,15 @@
     <view class="detail-image-card">
       <view class="detail-image-wrap">
         <image
-          wx:if="{{product.images && product.images.length > 0}}"
+          wx:if="{{product.images && product.images.length > 0 && !imageFailed}}"
           class="detail-image"
-          src="{{product.images[0]}}"
+          src="{{product.images[imageIndex]}}"
+          binderror="onProductImageError"
           mode="aspectFill"
         />
-        <view wx:else class="detail-image-placeholder">
+        <view wx:else class="detail-image-placeholder" bindtap="retryProductImage">
           <mbs-icon name="shoppingBag" size="96" color="var(--text-tertiary)" />
+          <text wx:if="{{imageFailed}}">图片加载失败，点击重试</text>
         </view>
         <view wx:if="{{product.tags && product.tags.length > 0}}" class="detail-tags">
           <text wx:for="{{product.tags}}" wx:key="*this" class="detail-tag">{{item}}</text>

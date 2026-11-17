@@ -7,6 +7,7 @@ import {
 } from '../../shared/permissions.js';
 import { CUSTOMER_COOKIE, verifyCustomerToken } from '../lib/tokens.js';
 import { passwordVersion } from '../lib/password.js';
+import { CUSTOMER_SELF_FIELDS } from '../lib/customerFields.js';
 
 const policies = {
   'customer:read': canViewCustomerManagement,
@@ -64,7 +65,7 @@ export const requireCustomerScope = async (req: Request, res: Response, next: Ne
 };
 
 /** 顾客凭证和员工凭证完全分开；客户 ID 只用于归属比较，不作为身份。 */
-export async function customerIdentity(req: Request, res: Response, next: NextFunction, param = 'id', allowPasswordChange = false): Promise<void> {
+export async function customerIdentity(req: Request, res: Response, next: NextFunction, param = 'id', allowPasswordChange = false, includeProfile = false): Promise<void> {
   try {
     const cookies = String(req.headers.cookie || '').split(';').map((part) => part.trim());
     const cookie = cookies.find((part) => part.startsWith(`${CUSTOMER_COOKIE}=`))?.slice(CUSTOMER_COOKIE.length + 1);
@@ -72,10 +73,11 @@ export async function customerIdentity(req: Request, res: Response, next: NextFu
     const token = bearer || cookie || '';
     const identity = verifyCustomerToken(token);
     if (req.params[param] !== identity.id) { res.status(403).json({ success: false, error: '仅可访问本人资料' }); return; }
-    const { data, error } = await supabase.from('customers').select('id, shop_id, password_hash, is_weak_password').eq('id', identity.id).eq('shop_id', identity.shopId).maybeSingle();
+    const fields: string = includeProfile ? `${CUSTOMER_SELF_FIELDS}, identity_verified, password_hash, is_weak_password` : 'id, shop_id, password_hash, is_weak_password';
+    const { data, error } = await supabase.from('customers').select(fields).eq('id', identity.id).eq('shop_id', identity.shopId).maybeSingle<Record<string, unknown>>();
     if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
     if (!data) { res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return; }
-    if (passwordVersion(data.password_hash || '') !== identity.passwordVersion) {
+    if (passwordVersion(String(data.password_hash || '')) !== identity.passwordVersion) {
       res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return;
     }
     identity.mustChangePassword = data.is_weak_password === true && !identity.smsVerified;
@@ -83,6 +85,10 @@ export async function customerIdentity(req: Request, res: Response, next: NextFu
       res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', error: '为了账户安全，请修改密码' }); return;
     }
     req.customer = identity;
+    if (includeProfile) {
+      const { password_hash: _hash, is_weak_password: _weak, ...safe } = data;
+      req.customerSelf = { ...safe, identity_verified: data.identity_verified === true && data.is_weak_password !== true };
+    }
     res.setHeader('Cache-Control', 'no-store');
     next();
   } catch { res.status(401).json({ success: false, error: '请使用本人登录凭证重新登录' }); }

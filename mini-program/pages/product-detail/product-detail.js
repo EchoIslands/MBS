@@ -13,6 +13,9 @@ Page({
     product: null,
     quantity: 1,
     loading: true,
+    customerLoading: true,
+    imageIndex: 0,
+    imageFailed: false,
     cartCount: 0,
   },
 
@@ -20,15 +23,15 @@ Page({
     const shopId = options.shopId || 'shop1';
     const productId = options.productId || '';
     this.setData({ shopId, productId });
-    await this.loadCustomer();
-    await this.loadProduct();
+    await Promise.all([this.loadCustomer(), this.loadProduct()]);
+    if (this.data.product) this.setData({ 'product.memberPrice': this.getMemberPrice(this.data.product) });
     this.refreshCartCount();
   },
 
   async loadCustomer() {
     const customerId = getCustomerId();
     if (!customerId) {
-      this.setData({ customer: null });
+      this.setData({ customer: null, customerLoading: false });
       return;
     }
     try {
@@ -37,6 +40,9 @@ Page({
     } catch (err) {
       console.error('[product-detail] 加载顾客信息失败:', err);
       this.setData({ customer: null });
+    } finally {
+      this.setData({ customerLoading: false });
+      if (this.data.product) this.setData({ 'product.memberPrice': this.getMemberPrice(this.data.product) });
     }
   },
 
@@ -75,6 +81,15 @@ Page({
     this.setData({ cartCount: getCartCount() });
   },
 
+  onProductImageError() {
+    const imageIndex = this.data.imageIndex + 1;
+    this.setData({ imageIndex, imageFailed: imageIndex >= (this.data.product?.images || []).length });
+  },
+
+  retryProductImage() {
+    this.setData({ imageIndex: 0, imageFailed: false });
+  },
+
   onQuantityMinus() {
     this.setData({ quantity: Math.max(1, this.data.quantity - 1) });
   },
@@ -89,6 +104,10 @@ Page({
   },
 
   onAddToCart() {
+    if (this.data.customerLoading) {
+      wx.showToast({ title: '正在核对会员价格，请稍候', icon: 'none' });
+      return;
+    }
     const { product, quantity } = this.data;
     if (!product) return;
     if (product.stock <= 0) {

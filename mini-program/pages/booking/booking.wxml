@@ -1,5 +1,5 @@
-<view class="booking-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
-  <view class="container">
+<view class="booking-page {{tabTransitionClass}}" bindtouchmove="onTabSwipeMove" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
+  <view class="container" animation="{{tabSwipeAnimation}}">
     <!-- ========== Loading ========== -->
     <view wx:if="{{loading}}" class="empty-state">
       <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
@@ -265,8 +265,8 @@
           <view wx:else class="bar-price-placeholder">请选择服务</view>
         </view>
       </view>
-      <view class="bar-btn {{booking ? 'bar-btn-disabled' : ''}}" bindtap="handleBooking">
-        <text>{{booking ? '预约中...' : '确认预约'}}</text>
+      <view class="bar-btn {{booking || customerLoading ? 'bar-btn-disabled' : ''}}" bindtap="handleBooking">
+        <text>{{booking ? '预约中...' : customerLoading ? '核对会员价...' : '确认预约'}}</text>
       </view>
     </view>
   </view>

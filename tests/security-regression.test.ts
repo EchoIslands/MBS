@@ -324,7 +324,11 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/customers/c1/public')).status,401);
    assert.equal((await request('/customers/c1/public',ceo)).status,401);
    assert.equal(r.body.data.idCardNumber,undefined);assert.equal(r.body.data.openidMini,undefined);
-   assert.equal((await request('/customers/c1/public',r.body.token)).status,200);
+   const profileReadsBefore = calls;
+   const ownProfile = await request('/customers/c1/public',r.body.token);
+   assert.equal(ownProfile.status,200);
+   assert.equal(calls-profileReadsBefore,1,'本人校验和展示资料仅查库一次');
+   for (const field of ['passwordHash','isWeakPassword','openidMini','idCardNumber']) assert.equal(ownProfile.body.data[field],undefined);
    assert.equal((await request('/customers/c1/public','','GET',undefined,r.cookie!.split(';')[0])).status,200);
    assert.equal((await request('/customers/c2/public',r.body.token)).status,403);
    assert.equal((await request('/customers/c1/packages',r.body.token)).status,200);

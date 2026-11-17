@@ -1,7 +1,7 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="index-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
+<view class="index-page {{tabTransitionClass}}" bindtouchmove="onTabSwipeMove" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
   <!-- 主入口由底部导航承载，顶部只保留店铺名称 -->
-  <view class="index-nav-bar">
+  <view class="index-nav-bar" animation="{{tabSwipeAnimation}}">
     <view class="index-nav-title">{{shop.name || '皓诗形象设计'}}</view>
   </view>
   <view wx:if="{{activeQueueBooking}}" class="active-queue-entry" bindtap="goToActiveQueue" role="button" aria-label="查看今日预约与排队">
@@ -9,7 +9,7 @@
     <text class="active-queue-arrow">›</text>
   </view>
 
-  <view class="container">
+  <view class="container" animation="{{tabSwipeAnimation}}">
     <!-- 加载 / 错误 -->
     <view wx:if="{{loading}}" class="empty-state">
       <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>

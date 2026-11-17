@@ -1,5 +1,6 @@
 import { enforcePasswordChange } from './utils/password-gate';
 import { withPageSharing } from './utils/share';
+import { getShop } from './api/shop';
 // 所有 Page 的深链、返回和切 tab 均受同一守卫约束。
 const registerPage = Page;
 Page = function(config) {
@@ -38,6 +39,8 @@ App({
   },
 
   onLaunch() {
+    // 与会话恢复并行预取公开展示配置，不阻塞任何启动路径。
+    getShop('shop1').catch(() => {});
     wx.onError((err) => {
       if (!shouldIgnoreError(err)) {
         console.warn('[app] 全局 onError:', err);

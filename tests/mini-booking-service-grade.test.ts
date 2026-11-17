@@ -94,3 +94,19 @@ test('未来日期预约按北京时间提交，不随设备时区偏移', async
  page.updateStylists(page.data.shop.employees);await page.doBooking();
  assert.equal((calls[0] as {scheduledTime:string}).scheduledTime,'2027-01-02T02:00:00.000Z');
 });
+
+test('预约页档期不等待慢会员请求，核对会员价期间不可提交', async () => {
+ const {page,context,notifications,calls}=await bookingPage();
+ context.takeRouteParams=()=>null;context.getCustomerId=()=> 'customer';context.trackBookingStart=()=>{};
+ let finishCustomer:()=>void;
+ let bookingsStarted=false;
+ page.loadShop=async()=>{page.setData({loading:false})};
+ page.loadCustomer=()=>new Promise<void>(resolve=>{finishCustomer=resolve});
+ page.loadBookings=async()=>{bookingsStarted=true};
+ page.refreshServicesWithCustomer=()=>{};
+ const pending=page.onLoad({});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(bookingsStarted,true);assert.equal(page.data.loading,false);
+ await page.handleBooking();assert.equal(calls.length,0);assert.match(notifications.at(-1),/核对会员价格/);
+ finishCustomer();await pending;
+});

@@ -1,7 +1,8 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="profile-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
+<view class="profile-page {{tabTransitionClass}}" bindtouchmove="onTabSwipeMove" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
+  <view wx:if="{{loading && !customer}}" class="card" style="margin: 24rpx; padding: 48rpx;">正在读取个人资料...</view>
   <!-- 1) 渐变 VIP 头部 -->
-  <view wx:if="{{customer}}" class="{{vipHeaderClass}}">
+  <view wx:if="{{customer}}" class="{{vipHeaderClass}}" animation="{{tabSwipeAnimation}}">
     <view class="vip-decor vip-decor-1"></view>
     <view class="vip-decor vip-decor-2"></view>
     <view class="vip-decor vip-decor-3"></view>
@@ -145,7 +146,7 @@
   </view>
 
   <!-- 主内容区 -->
-  <view wx:if="{{customer}}" class="container profile-content">
+  <view wx:if="{{customer}}" class="container profile-content" animation="{{tabSwipeAnimation}}">
 
     <!-- 股东会员权益说明卡 -->
     <view wx:if="{{stockholderSummary.isStockholder && stockholderSummary.enabled}}" class="card stockholder-benefits-card">
@@ -202,7 +203,8 @@
         </view>
       </view>
 
-      <view wx:if="{{loading}}" class="empty-text" style="padding: 48rpx 0;">加载中...</view>
+      <view wx:if="{{bookingsLoading}}" class="empty-text" style="padding: 48rpx 0;">正在同步预约...</view>
+      <view wx:elif="{{bookingsError}}" class="empty-text" style="padding: 48rpx 0;" bindtap="loadProfile">{{bookingsError}}</view>
 
       <block wx:else>
         <view wx:if="{{!hasFilteredBookings}}" class="empty-state" style="padding: 48rpx 0;">

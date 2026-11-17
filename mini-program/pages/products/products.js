@@ -214,6 +214,17 @@ Page({
     });
   },
 
+  onProductImageError(e) {
+    const id = e.currentTarget.dataset.id;
+    const products = this.data.products.map(product => {
+      if (product.id !== id) return product;
+      const imageIndex = (product.imageIndex || 0) + 1;
+      return { ...product, imageIndex, imageFailed: imageIndex >= (product.images || []).length };
+    });
+    this.setData({ products });
+    this.applyFilter();
+  },
+
   onAddToCart(e) {
     const { product } = e.currentTarget.dataset;
     if (!product || product.stock <= 0) {

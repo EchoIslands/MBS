@@ -17,7 +17,8 @@ import { supabase } from '../db/index.js';
 import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { operationError } from '../lib/rpcErrors.js';
 import {businessDayRange} from '../lib/businessTime.js';
-import {imageReference,sendStoredImage,restoreImageReference} from '../lib/imageData.js';
+import {imageReference,sendShopImage,restoreImageReference} from '../lib/imageData.js';
+import { CUSTOMER_SELF_FIELDS } from '../lib/customerFields.js';
 import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
 import { serviceWithStylistRequirements, stylistCanPerformService } from '../../shared/lib/serviceEligibility.js';
 import { bookingAccess } from '../middleware/bookingAccess.js';
@@ -1718,7 +1719,6 @@ mainRouter.use('/customer-packages', customerPackagesRouter);
 // ===================== customers =====================
 const customersRouter = Router();
 // 本人展示白名单：不返回证件、微信标识、员工备注及客户画像。
-const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, gender, birthday, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
 
 /** 顾客短信验证：新老顾客均可发送，验证成功后才创建档案。 */
 customersRouter.post('/sms/send', async (req: Request, res: Response) => {
@@ -1872,31 +1872,20 @@ customersRouter.post('/logout', (_req: Request, res: Response) => {
  * GET /api/customers/:id/public
  * 获取本人账户信息：必须持本人会话，接口路径为旧版本兼容保留
  */
-customersRouter.get('/:id/public', (req, res, next) => { void customerIdentity(req, res, next, 'id', true); }, async (req: Request, res: Response) => {
+customersRouter.get('/:id/public', (req, res, next) => { void customerIdentity(req, res, next, 'id', true, true); }, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     if (req.customer?.mustChangePassword) {
       return res.json({ success: true, data: { id, shopId: req.customer.shopId, mustChangePassword: true, identityVerified: false } });
     }
 
-    const { data: customer, error } = await supabase
-      .from('customers')
-      .select(CUSTOMER_SELF_FIELDS)
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error) {
-      console.error('[customers] 查询公开客户信息失败:', error.message);
-      res.status(500).json({ success: false, error: '查询客户信息失败' });
-      return;
-    }
-
+    const customer = req.customerSelf;
     if (!customer) {
       res.status(404).json({ success: false, error: '客户不存在' });
       return;
     }
 
-    res.json({ success: true, data: { ...toCamelCase(customer), mustChangePassword: false, identityVerified: await isCustomerVerified(customer.id, customer.shop_id) } });
+    res.json({ success: true, data: { ...toCamelCase(customer), mustChangePassword: false } });
   } catch (err: unknown) {
     console.error('[customers] 获取公开客户信息异常:', (err as Error).message);
     res.status(500).json({ success: false, error: '服务器错误' });
@@ -3222,17 +3211,17 @@ shopsRouter.get('/:id/media/:image',async(req:Request,res:Response)=>{
   const {data,error}=await supabase.from('shops').select('avatar,images').eq('id',req.params.id).maybeSingle();
   if(error) return res.status(503).end();
   const value=req.params.image==='avatar'?data?.avatar:Array.isArray(data?.images)?data.images[Number(req.params.image)]:null;
-  return sendStoredImage(res,value);
+  return sendShopImage(res,value);
 });
 shopsRouter.get('/:id/products/:productId/images/:image',async(req:Request,res:Response)=>{
   const {data,error}=await supabase.from('products').select('images').eq('id',req.params.productId).eq('shop_id',req.params.id).maybeSingle();
   if(error) return res.status(503).end();
-  return sendStoredImage(res,Array.isArray(data?.images)?data.images[Number(req.params.image)]:null);
+  return sendShopImage(res,Array.isArray(data?.images)?data.images[Number(req.params.image)]:null);
 });
 shopsRouter.get('/:id/employees/:employeeId/avatar',async(req:Request,res:Response)=>{
   const {data,error}=await supabase.from('employees').select('avatar').eq('id',req.params.employeeId).eq('shop_id',req.params.id).eq('is_active',true).maybeSingle();
   if(error) return res.status(503).end();
-  return sendStoredImage(res,data?.avatar);
+  return sendShopImage(res,data?.avatar);
 });
 
 // 计算两点之间的直线距离（公里）
@@ -3307,11 +3296,12 @@ shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const { data, error } = await supabase
-      .from('shops')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const [{ data, error }, { data: employees, error: empError }] = await Promise.all([
+      supabase.from('shops').select('*').eq('id', id).single(),
+      supabase.from('employees')
+        .select('id, name, phone, avatar, title, rating, specialty, role, is_active, is_gold_stylist')
+        .eq('shop_id', id).eq('is_active', true),
+    ]);
 
     if (error) {
       console.error('[shops] 查询店铺失败:', error.message);
@@ -3327,13 +3317,6 @@ shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
         error: '店铺不存在',
       });
     }
-
-    // 同时查询该店铺的员工，补充到返回数据中
-    const { data: employees, error: empError } = await supabase
-      .from('employees')
-      .select('id, name, phone, avatar, title, rating, specialty, role, is_active, is_gold_stylist')
-      .eq('shop_id', id)
-      .eq('is_active', true);
 
     if (empError) {
       console.error('[shops] 查询员工失败:', empError.message);

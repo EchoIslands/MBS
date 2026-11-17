@@ -40,8 +40,6 @@ function limitImageList(images, maxCount = 1) {
   if (!Array.isArray(images)) return [];
   return images.slice(0, maxCount).map((url) => {
     if (typeof url !== 'string') return '';
-    // base64 图片可能非常长，只保留前 200 个字符作为标识；小程序首页展示用不到完整 base64
-    if (url.startsWith('data:')) return url.slice(0, 200);
     return url;
   });
 }

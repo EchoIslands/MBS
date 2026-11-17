@@ -1,4 +1,4 @@
-import { get } from '../utils/api';
+import { get, getShopSnapshot } from '../utils/api';
 
 /**
  * 获取店铺详情
@@ -11,7 +11,7 @@ export async function getShop(id, lat, lon) {
   if (lat !== undefined) query.push(`lat=${encodeURIComponent(String(lat))}`);
   if (lon !== undefined) query.push(`lon=${encodeURIComponent(String(lon))}`);
   const queryString = query.length > 0 ? `?${query.join('&')}` : '';
-  const result = await get(`/shops/${id}${queryString}`);
+  const result = await getShopSnapshot(`/shops/${id}${queryString}`);
   return result?.data || null;
 }
 

@@ -38,6 +38,72 @@ async function harness(route = 'pages/index/index') {
   return { context, storage, requests, redirects, setSession };
 }
 
+test('门店展示短缓存复用且隔离会话，返回副本；预约和本人资料仍实时读取', async () => {
+  const h = await harness(); h.setSession();
+  let now=1000;
+  h.context.Date=class extends Date { static now(){return now;} };
+  const first=h.context.getShopSnapshot('/shops/shop1');
+  h.requests[0].success({statusCode:200,data:{data:{name:'门店',services:[{price:58}]}}});
+  const a=await first;a.data.services[0].price=0;
+  assert.equal((await h.context.getShopSnapshot('/shops/shop1')).data.services[0].price,58);
+  assert.equal(h.requests.length,1);
+  now+=60001;
+  const expired=h.context.getShopSnapshot('/shops/shop1');assert.equal(h.requests.length,2);
+  h.requests[1].success({statusCode:200,data:{data:{name:'新门店'}}});await expired;
+  h.setSession('new-token','new-customer');
+  const changed=h.context.getShopSnapshot('/shops/shop1');assert.equal(h.requests.length,3);
+  h.requests[2].success({statusCode:200,data:{data:{name:'新会话'}}});await changed;
+  for (const path of ['/bookings?shopId=shop1','/customers/new-customer/public']) {
+    const count=h.requests.length;
+    const one=h.context.get(path);h.requests[count].success({statusCode:200,data:{data:[]}});await one;
+    const two=h.context.get(path);assert.equal(h.requests.length,count+2);h.requests[count+1].success({statusCode:200,data:{data:[]}});await two;
+  }
+});
+
+test('个人资料先于慢预约和慢评价显示；预约失败明确提示，切换账户丢弃旧响应', async () => {
+  const h=await harness('pages/profile/profile');h.setSession();
+  await load(h.context,'utils/membership.js');
+  let finishCustomer:(value:object)=>void;
+  let failBookings:(reason:Error)=>void;
+  let finishReviews:(value:unknown[])=>void;
+  Object.assign(h.context,{
+    getCustomerPublic:()=>new Promise(resolve=>{finishCustomer=resolve}),
+    getCustomerBookings:()=>new Promise((_resolve,reject)=>{failBookings=reject}),
+    getCustomerReviews:()=>new Promise(resolve=>{finishReviews=resolve}),
+    getShop:async()=>({id:'shop1'}),
+  });
+  await load(h.context,'pages/profile/profile.js');
+  const page=h.context.page;page.setData=(patch:object)=>Object.assign(page.data,patch);
+  const pending=page.loadProfile();
+  finishCustomer({id:'synthetic-customer',name:'顾客甲',shopId:'shop1'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(page.data.customer.name,'顾客甲');assert.equal(page.data.loading,false);
+  assert.equal(page.data.bookingsLoading,true);assert.equal(page.data.reviewsLoading,true);
+  failBookings(Error('network'));finishReviews([]);await pending;
+  assert.match(page.data.bookingsError,/读取失败/);assert.equal(page.data.bookingsLoading,false);
+  const stale=page.loadProfile();h.setSession('other-token','other-customer');
+  finishCustomer({id:'synthetic-customer',name:'过时昵称'});failBookings(Error('old'));finishReviews([]);await stale;
+  assert.equal(page.data.customer.name,'顾客甲');
+});
+
+test('商品首图失败尝试下一张，全部失败显示占位；详情支持重试且会员价未就绪不加购', async () => {
+  const h=await harness();h.context.calcDiscountedItemPrice=(price:number)=>price;
+  await load(h.context,'pages/products/products.js');
+  const list=h.context.page;list.setData=(patch:object)=>Object.assign(list.data,patch);
+  list.data.products=[{id:'p',images:['broken','working'],name:'商品',price:58}];
+  const event={currentTarget:{dataset:{id:'p'}}};
+  list.onProductImageError(event);assert.equal(list.data.filteredProducts[0].imageIndex,1);assert.equal(list.data.filteredProducts[0].imageFailed,false);
+  list.onProductImageError(event);assert.equal(list.data.filteredProducts[0].imageFailed,true);
+  await load(h.context,'pages/product-detail/product-detail.js');
+  const detail=h.context.page;detail.setData=(patch:object)=>Object.assign(detail.data,patch);
+  detail.data.product={images:['broken','working']};
+  detail.onProductImageError();assert.equal(detail.data.imageIndex,1);assert.equal(detail.data.imageFailed,false);
+  detail.onProductImageError();assert.equal(detail.data.imageFailed,true);
+  detail.retryProductImage();assert.equal(detail.data.imageIndex,0);assert.equal(detail.data.imageFailed,false);
+  let cartWrites=0;h.context.addToCart=()=>{cartWrites++};
+  detail.onAddToCart();assert.equal(cartWrites,0);
+});
+
 test('登录按钮并发点击仅发一次请求；429原因原样展示且不自动重试', async () => {
   const h = await harness('pages/login/login');
   await load(h.context, 'api/customer.js');

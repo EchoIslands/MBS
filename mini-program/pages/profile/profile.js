@@ -119,6 +119,9 @@ Page({
     filteredBookings: [],
     hasFilteredBookings: false,
     loading: true,
+    bookingsLoading: true,
+    bookingsError: '',
+    reviewsLoading: true,
     error: '',
     activeTab: 'current',
     purchaseVIPPlans,
@@ -206,30 +209,41 @@ Page({
       return;
     }
 
-    this.setData({ loading: !this.data.customer, error: '' });
-    try {
-      const [rawCustomer, rawBookings, rawReviews] = await Promise.all([
-        getCustomerPublic(customerId),
-        getCustomerBookings(customerId),
-        getCustomerReviews(customerId).catch((err) => {
-          console.warn('[profile] 加载顾客评价失败，继续展示其他内容:', err);
-          return [];
-        }),
-      ]);
-      const customer = slimCustomer(rawCustomer);
+    const token = getToken();
+    const requestId = this._profileRequestId = (this._profileRequestId || 0) + 1;
+    const isCurrent = () => requestId === this._profileRequestId && customerId === getCustomerId() && token === getToken();
+    this.setData({ loading: !this.data.customer, error: '', bookingsLoading: true, bookingsError: '', reviewsLoading: true });
+    const bookingsRequest = getCustomerBookings(customerId).then(rawBookings => {
+      if (!isCurrent()) return;
       const allBookings = slimBookings(rawBookings);
-      const route=takeRouteParams();
-      if(route&&route.editBookingId){const target=allBookings.find(b=>b.id===route.editBookingId);if(target&&target.canChange){const local=new Date(Date.parse(target.scheduledTime)+8*3600000).toISOString();this.setData({rescheduleTarget:target,rescheduleDate:local.slice(0,10),rescheduleTime:local.slice(11,16)});}}
-
-      // 加载顾客评价，构建 bookingId → review 映射（三端协同，对齐H5 Profile的bookingReviewMap）
+      this.setData({ bookings: allBookings, bookingsLoading: false });
+      this.refreshFilteredBookings();
+      const route = takeRouteParams();
+      if (route?.editBookingId) {
+        const target = allBookings.find(b => b.id === route.editBookingId);
+        if (target?.canChange) {
+          const local = new Date(Date.parse(target.scheduledTime) + 8 * 3600000).toISOString();
+          this.setData({ rescheduleTarget: target, rescheduleDate: local.slice(0, 10), rescheduleTime: local.slice(11, 16) });
+        }
+      }
+    }).catch(() => {
+      if (isCurrent()) this.setData({ bookingsLoading: false, bookingsError: '预约读取失败，请点击重试' });
+    });
+    const reviewsRequest = getCustomerReviews(customerId).then(rawReviews => {
+      if (!isCurrent()) return;
       const bookingReviewMap = {};
       const bookingReviewedMap = {};
-      (rawReviews || []).forEach((r) => {
-        if (r && r.bookingId) {
-          bookingReviewMap[r.bookingId] = r;
-          bookingReviewedMap[r.bookingId] = true;
-        }
+      (rawReviews || []).forEach(r => {
+        if (r?.bookingId) { bookingReviewMap[r.bookingId] = r; bookingReviewedMap[r.bookingId] = true; }
       });
+      this.setData({ bookingReviewMap, bookingReviewedMap, reviewsLoading: false });
+    }).catch(() => {
+      if (isCurrent()) this.setData({ reviewsLoading: false });
+    });
+    try {
+      const rawCustomer = await getCustomerPublic(customerId);
+      if (!isCurrent()) return;
+      const customer = slimCustomer(rawCustomer);
 
       const purchaseLevel = customer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
       const storedLevel = customer?.storedValueLevel ?? StoredValueLevel.NONE;
@@ -239,20 +253,10 @@ Page({
       const purchasePlan = purchaseVIPPlans.find((p) => p.level === purchaseLevel);
       const storedPlan = storedValuePlans.find((p) => p.level === storedLevel);
 
-      // 三方协同：优先从最近预约获取店铺配置，与 H5 保持一致
-      let shop = null;
-      try {
-        const recentShopId = allBookings[0]?.shopId;
-        shop = recentShopId ? await getShop(recentShopId) : null;
-      } catch (shopErr) {
-        console.warn('[profile] 获取最近预约店铺配置失败，使用默认配置:', shopErr);
-        shop = null;
-      }
-      const stockholderSummary = getStockholderBenefitSummary(customer, shop);
+      const stockholderSummary = getStockholderBenefitSummary(customer, null);
       const vipHeaderClass = this.computeVipHeaderClass(purchaseLevel);
       const payload = {
         customer,
-        bookings: allBookings,
         loading: false,
         purchaseLevel,
         storedLevel,
@@ -269,8 +273,6 @@ Page({
         stockholderSummary,
         vipHeaderClass,
         shopPhone: this.data.shopPhone || '',
-        bookingReviewMap,
-        bookingReviewedMap,
         isMember: this.isCustomerMember(customer),
         _profileLoaded: true,
         _needRefresh: false,
@@ -280,8 +282,13 @@ Page({
         console.warn(`[profile] setData 数据量仍偏大: ${sizeKB} KB，请检查顾客/预约数据`);
       }
       this.setData(payload);
-      this.refreshFilteredBookings();
+      // 资料先显示，门店权益配置随后补齐，不等待预约和评价。
+      const shopRequest = getShop(customer?.shopId || 'shop1').then(shop => {
+        if (isCurrent()) this.setData({ stockholderSummary: getStockholderBenefitSummary(customer, shop) });
+      }).catch(() => {});
+      await Promise.all([bookingsRequest, reviewsRequest, shopRequest]);
     } catch (err) {
+      if (!isCurrent()) return;
       console.error('[profile] 加载个人信息失败:', err);
       if (err.statusCode === 401 || /未登录|请先登录|unauthorized/i.test(err.message)) {
         clearCustomerId();

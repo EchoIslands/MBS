@@ -130,7 +130,8 @@ Page({
     selectionMode: 'fastest',
     notes: '',
     existingBookings: [],
-    bookingsError: false,
+    bookingsError: true,
+    customerLoading: true,
     booking: false,
     customerId: '',
     showLogin: false,
@@ -162,24 +163,22 @@ Page({
       customerId: getCustomerId(),
     });
 
-    await Promise.all([this.loadShop(), this.loadCustomer()]);
-
-    // 顾客信息加载完成后，重新计算服务会员价（修复 loadShop/loadCustomer 竞态）
+    const shopAndBookings = this.loadShop().then(() => {
+      if (serviceId) {
+        const service = getServiceById(this.data.shop?.services || [], serviceId);
+        this.setData({
+          selectedService: serviceId,
+          selectedBarberId: '',
+          selectedBarberName: '',
+          selectionMode: 'fastest',
+          selectedServiceName: service?.name || '',
+          selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
+        });
+      }
+      return this.loadBookings();
+    });
+    await Promise.all([shopAndBookings, this.loadCustomer()]);
     this.refreshServicesWithCustomer();
-
-    if (serviceId) {
-      const service = getServiceById(this.data.shop?.services || [], serviceId);
-      this.setData({
-        selectedService: serviceId,
-        selectedBarberId: '',
-        selectedBarberName: '',
-        selectionMode: 'fastest',
-        selectedServiceName: service?.name || '',
-        selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
-      });
-    }
-
-    await this.loadBookings();
 
     trackBookingStart(
       this.data.selectedService,
@@ -256,8 +255,9 @@ Page({
 
   async loadCustomer({ prefetchedCustomer = null } = {}) {
     const customerId = getCustomerId();
+    this.setData({ customerLoading: true });
     if (!customerId) {
-      this.setData({ customer: null });
+      this.setData({ customer: null, customerLoading: false });
       return;
     }
     try {
@@ -267,6 +267,9 @@ Page({
     } catch (err) {
       console.error('[booking] 加载顾客信息失败:', err);
       this.setData({ customer: null });
+    } finally {
+      this.setData({ customerLoading: false });
+      this.refreshServicesWithCustomer();
     }
   },
 
@@ -507,6 +510,17 @@ Page({
   },
 
   async handleBooking() {
+    if (this.data.customerLoading) {
+      wx.showToast({ title: '正在核对会员价格，请稍候', icon: 'none' });
+      return;
+    }
+    if (getCustomerId() && !this.data.customer) {
+      await this.loadCustomer();
+      if (!this.data.customer) {
+        wx.showToast({ title: '会员信息读取失败，请重试', icon: 'none' });
+        return;
+      }
+    }
     if(this.data.bookingsError) {await this.loadBookings();if(this.data.bookingsError) return;}
     const { selectedService, selectedDate, selectedTime, customerId } = this.data;
 

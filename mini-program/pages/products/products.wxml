@@ -1,12 +1,12 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
-<view class="products-page {{tabTransitionClass}}" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
+<view class="products-page {{tabTransitionClass}}" bindtouchmove="onTabSwipeMove" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
   <!-- 1. 悬浮购物车入口 -->
   <view class="fab-cart" bindtap="goToCart">
     <text class="fab-cart-text">购物车</text>
     <view wx:if="{{cartCount > 0}}" class="fab-cart-badge">{{cartCount > 99 ? '99+' : cartCount}}</view>
   </view>
 
-  <view class="products-body">
+  <view class="products-body" animation="{{tabSwipeAnimation}}">
     <!-- 2. 优惠券横幅 -->
     <view wx:if="{{coupons.length > 0}}" class="coupon-banner" bindtap="toggleCouponModal">
       <view class="coupon-banner-left">
@@ -97,13 +97,16 @@
       >
         <view class="product-image-wrap">
           <image lazy-load
-            wx:if="{{item.images && item.images.length > 0}}"
+            wx:if="{{item.images && item.images.length > 0 && !item.imageFailed}}"
             class="product-image"
-            src="{{item.images[0]}}"
+            src="{{item.images[item.imageIndex || 0]}}"
+            data-id="{{item.id}}"
+            binderror="onProductImageError"
             mode="aspectFill"
           />
           <view wx:else class="product-image-placeholder">
             <mbs-icon name="shoppingBag" size="56" color="var(--text-tertiary)" />
+            <text wx:if="{{item.imageFailed}}">图片暂不可用</text>
           </view>
           <view wx:if="{{item.displayTags && item.displayTags.length > 0}}" class="product-tags">
             <text

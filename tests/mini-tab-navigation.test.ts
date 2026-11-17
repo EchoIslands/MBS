@@ -119,3 +119,36 @@ test('日期条的触摸冒泡不会切页，下一次在页面空白处横滑�
     miniGlobal.wx = oldWx;
   }
 });
+
+test('原生动画跟随手指，短滑回弹，完成手势后离场再入场，离页清理位置', async () => {
+  const miniGlobal = globalThis as typeof globalThis & {wx?:unknown};
+  const oldWx = miniGlobal.wx;
+  const destinations:string[]=[];
+  const frames:{x:number;duration:number}[]=[];
+  miniGlobal.wx = {
+    getWindowInfo:()=>({windowWidth:400}),
+    createAnimation:({duration}:{duration:number})=>{
+      const frame={duration,x:0};
+      return {translateX(x:number){frame.x=x;return this},step(){return this},export(){frames.push(frame);return frame}};
+    },
+    switchTab:({url,complete}:{url:string;complete:()=>void})=>{destinations.push(url);complete()},
+  };
+  try {
+    const page:vm.Context={data:{},setData(patch:object){Object.assign(this.data,patch)},...createTabSwipeHandlers(1)};
+    page.onTabSwipeStart({touches:[{pageX:240,pageY:100}]});
+    page.onTabSwipeMove({touches:[{pageX:210,pageY:103}]});
+    assert.deepEqual(frames.at(-1),{x:-15,duration:0});
+    page.onTabSwipeEnd({changedTouches:[{pageX:210,pageY:103}]});
+    assert.deepEqual(frames.at(-1),{x:0,duration:180});assert.equal(destinations.length,0);
+    page.onTabSwipeStart({touches:[{pageX:240,pageY:100}]});
+    page.onTabSwipeEnd({changedTouches:[{pageX:90,pageY:103}]});
+    assert.deepEqual(frames.at(-1),{x:-160,duration:110});assert.equal(destinations.length,0);
+    await new Promise(resolve=>setTimeout(resolve,140));
+    assert.deepEqual(destinations,['/pages/booking/booking']);
+    syncTabBarSelected(page,2);assert.deepEqual(frames.at(-1),{x:120,duration:0});
+    await new Promise(resolve=>setTimeout(resolve,35));
+    assert.deepEqual(frames.at(-1),{x:0,duration:300});
+    page.onHide();assert.deepEqual(frames.at(-1),{x:0,duration:0});
+    assert.equal(page._tabSwipeStart,null);
+  } finally { miniGlobal.wx=oldWx; }
+});

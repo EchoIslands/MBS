@@ -145,6 +145,21 @@ export function get(url, headers) {
   return pending;
 }
 
+// 仅门店展示配置复用一分钟；不缓存会员余额、预约档期、排队或订单。
+let shopSnapshot = null;
+export function getShopSnapshot(url) {
+  const key = JSON.stringify([getApiBase(), getCustomerId(), getToken(), url]);
+  if (shopSnapshot?.key === key && shopSnapshot.expires > Date.now()) {
+    return Promise.resolve(JSON.parse(JSON.stringify(shopSnapshot.value)));
+  }
+  return get(url).then(value => {
+    if (key === JSON.stringify([getApiBase(), getCustomerId(), getToken(), url])) {
+      shopSnapshot = { key, value, expires: Date.now() + 60000 };
+    }
+    return JSON.parse(JSON.stringify(value));
+  });
+}
+
 export function post(url, body, headers) {
   return request(url, { method: 'POST', body, headers });
 }

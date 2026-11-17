@@ -6,7 +6,7 @@ import { passwordVersion } from '../lib/password.js';
 
 export interface AuthEmployee { id: string; shopId: string; name: string; role: string; phone: string; }
 declare module 'express-serve-static-core' {
-  interface Request { employee?: AuthEmployee; customer?: { id: string; shopId: string; passwordVersion: string; mustChangePassword: boolean }; }
+  interface Request { employee?: AuthEmployee; customer?: { id: string; shopId: string; passwordVersion: string; mustChangePassword: boolean }; customerSelf?: Record<string, unknown>; }
 }
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
