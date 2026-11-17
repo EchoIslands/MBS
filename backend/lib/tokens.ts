@@ -16,8 +16,8 @@ export function getJwtSecret(): string {
 export const CUSTOMER_COOKIE = 'mbs_customer_auth';
 export const CUSTOMER_SESSION_SECONDS = 30 * 24 * 60 * 60;
 export const CUSTOMER_RESTRICTED_SESSION_SECONDS = 2 * 60 * 60;
-export function signCustomerToken(id: string, shopId: string, passwordHash: string, mustChangePassword = false): string {
-  return jwt.sign({ id, shopId, kind: 'customer', mustChangePassword, passwordVersion: passwordVersion(passwordHash) }, getJwtSecret(), {
+export function signCustomerToken(id: string, shopId: string, passwordHash: string, mustChangePassword = false, smsVerified = false): string {
+  return jwt.sign({ id, shopId, kind: 'customer', smsVerified, mustChangePassword, passwordVersion: passwordVersion(passwordHash) }, getJwtSecret(), {
     algorithm: 'HS256', audience: 'customer', issuer: 'mbs', expiresIn: mustChangePassword ? CUSTOMER_RESTRICTED_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS,
   });
 }
@@ -27,5 +27,5 @@ export function verifyCustomerToken(token: string) {
   if (typeof value === 'string' || value.kind !== 'customer' || typeof value.id !== 'string' || typeof value.shopId !== 'string' || typeof value.passwordVersion !== 'string') {
     throw new Error('无效顾客凭证');
   }
-  return { id: value.id, shopId: value.shopId, passwordVersion: value.passwordVersion, mustChangePassword: value.mustChangePassword === true };
+  return { id: value.id, shopId: value.shopId, passwordVersion: value.passwordVersion, mustChangePassword: value.mustChangePassword === true, smsVerified: value.smsVerified === true };
 }

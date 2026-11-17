@@ -1758,7 +1758,7 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
     if (error || !customer) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
     const { password_hash: passwordHash, ...safe } = customer;
-    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash || '');
+    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash || '', false, true);
     res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
     return res.json({ success: true, data: toCamelCase({ ...safe, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...(req.body?.client === 'mini' ? { token } : {}) });
   } catch { return res.status(503).json({ success: false, error: '验证码登录暂不可用' }); }

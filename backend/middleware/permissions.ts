@@ -78,7 +78,7 @@ export async function customerIdentity(req: Request, res: Response, next: NextFu
     if (passwordVersion(data.password_hash || '') !== identity.passwordVersion) {
       res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return;
     }
-    identity.mustChangePassword = data.is_weak_password === true;
+    identity.mustChangePassword = data.is_weak_password === true && !identity.smsVerified;
     if (identity.mustChangePassword && !allowPasswordChange) {
       res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', error: '为了账户安全，请修改密码' }); return;
     }
