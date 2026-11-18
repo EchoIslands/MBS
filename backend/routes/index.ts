@@ -1,3 +1,4 @@
+import commissionsRouter from './commissions.js';
 import {sortStylistsByRank} from '../../shared/lib/stylistOrder.js';
 import {changeOwnBooking,attendanceDesk,bookingFailure} from '../services/bookingSelfService.js';
 import operationsWorkbenchRouter from './operationsWorkbench.js';
@@ -47,6 +48,7 @@ import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerS
 const mainRouter = Router();
 mainRouter.use('/operations-workbench', operationsWorkbenchRouter);
 mainRouter.use('/queue-notifications', queueNotificationsRouter);
+mainRouter.use('/commissions', commissionsRouter);
 mainRouter.use('/customer-payment-orders', customerPaymentOrdersRouter);
 mainRouter.use('/customer-membership', customerMembershipRouter);
 const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
@@ -658,15 +660,20 @@ bookingsRouter.get('/customer/:customerId', (req, res, next) => personalCustomer
     const page = String(req.query.page || '1');
     const pageSize = String(req.query.pageSize || '50');
 
-    const pageNum = parseInt(page, 10);
-    const size = parseInt(pageSize, 10);
+    const pageNum = Number(page);
+    const size = Number(pageSize);
+    if (!Number.isSafeInteger(pageNum) || pageNum < 1 || !Number.isSafeInteger(size) || size < 1 || size > 200) {
+      return res.status(400).json({ success: false, error: '分页参数无效' });
+    }
     const offset = (pageNum - 1) * size;
 
-    const { data, error, count } = await supabase
+    let query = supabase
       .from('bookings')
       .select('*', { count: 'exact' })
-      .eq('customer_id', customerId)
-      .order('scheduled_time', { ascending: true })
+      .eq('customer_id', customerId);
+    if (req.query.active === 'true') query = query.in('status', ['pending', 'confirmed']);
+    const { data, error, count } = await query
+      .order('scheduled_time', { ascending: false }).order('id', { ascending: false })
       .range(offset, offset + size - 1);
 
     if (error) {
@@ -3296,12 +3303,23 @@ shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const [{ data, error }, { data: employees, error: empError }] = await Promise.all([
-      supabase.from('shops').select('*').eq('id', id).single(),
-      supabase.from('employees')
-        .select('id, name, phone, avatar, title, rating, specialty, role, is_active, is_gold_stylist')
-        .eq('shop_id', id).eq('is_active', true),
-    ]);
+    const snapshot = await supabase.rpc('shop_display_snapshot', { p_shop_id: id });
+    let data: DbRecord | null = null;
+    let error = snapshot.error;
+    let employees: DbRecord[] = [];
+    let empError = null;
+    if (!snapshot.error) {
+      data = snapshot.data?.shop || null;
+      employees = snapshot.data?.employees || [];
+    } else if (snapshot.error.code === 'PGRST202') {
+      // Rolling deploy: old schema remains readable until 059 is installed.
+      const [shopResult, employeeResult] = await Promise.all([
+        supabase.from('shops').select('*').eq('id', id).single(),
+        supabase.from('employees').select('id,name,phone,avatar,title,rating,specialty,role,is_active,is_gold_stylist').eq('shop_id', id).eq('is_active', true),
+      ]);
+      data = shopResult.data; error = shopResult.error;
+      employees = employeeResult.data || []; empError = employeeResult.error;
+    }
 
     if (error) {
       console.error('[shops] 查询店铺失败:', error.message);
@@ -3320,6 +3338,7 @@ shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
 
     if (empError) {
       console.error('[shops] 查询员工失败:', empError.message);
+      return res.status(503).json({success:false,error:'发型师信息同步失败，请重试'});
     }
 
     const shop = shopFromDb(data) as Record<string, unknown>;
@@ -3508,10 +3527,12 @@ const productInventoryLogFromDb = (r: Record<string, unknown>): Record<string, u
 // 将 products 表数据同步回 shops.products JSONB（保持现有 H5/小程序读取 shop.products 的兼容性）
 const syncShopProductsJsonb = async (shopId: string) => {
   try {
-    const { data: products } = await supabase.from('products').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
+    const { data: products, error: readError } = await supabase.from('products').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
+    if (readError) throw readError;
     // 兼容缓存必须保存完整原值，不能把展示层的缩略内容写回数据库。
     const jsonbProducts = (products || []).map(productFromDb);
-    await supabase.from('shops').update({ products: jsonbProducts, updated_at: new Date().toISOString() }).eq('id', shopId);
+    const { error: writeError } = await supabase.from('shops').update({ products: jsonbProducts, updated_at: new Date().toISOString() }).eq('id', shopId);
+    if (writeError) throw writeError;
   } catch (err) {
     console.error('[shops] 同步 shops.products JSONB 失败:', err);
   }
@@ -3520,6 +3541,8 @@ const syncShopProductsJsonb = async (shopId: string) => {
 shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const {error: expiryError} = await supabase.rpc('expire_product_order_reservations',{p_shop_id:id});
+    if (expiryError && expiryError.code !== 'PGRST202') return res.status(503).json({success:false,error:'库存核对失败，请重试'});
     const { recommended } = req.query;
     let query = supabase.from('products').select('*').eq('shop_id', id);
     if (recommended === 'true') {
@@ -3887,6 +3910,7 @@ const productOrderFromDb = (o: DbRecord): Record<string, unknown> => ({
   notes: o.notes,
   cancelledAt: o.cancelled_at,
   cancelReason: o.cancel_reason,
+  reservationExpiresAt: o.reservation_expires_at,
   completedAt: o.completed_at,
   createdAt: o.created_at,
   updatedAt: o.updated_at,
@@ -3951,9 +3975,13 @@ const calcCouponDiscount = (coupon: Coupon, baseAmount: number): number => {
 // 顾客创建商品订单（MVP：支持余额支付和到店自提付款，支持优惠券抵扣）
 productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityId = req.body?.customerId; personalCustomerAccess(req, res, next, 'customerIdentityId'); }, async (req: Request, res: Response) => {
   try {
-    const { shopId, customerId, items, paymentMethod, pickupName, pickupPhone, notes, customerCouponId } = req.body || {};
+    const { shopId, customerId, items, paymentMethod, pickupName, pickupPhone, notes, customerCouponId, requestKey, expectedAmount } = req.body || {};
+    if (paymentMethod === 'balance' && !(await isCustomerVerified(customerId, shopId))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
+    if (typeof requestKey !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(requestKey) || typeof expectedAmount !== 'number' || !Number.isFinite(expectedAmount) || expectedAmount < 0) {
+      return res.status(400).json({ success: false, error: '请更新客户端后重新确认结算金额' });
+    }
 
-    if (!shopId || !customerId || !items || !Array.isArray(items) || items.length === 0) {
+    if (!shopId || !customerId || !items || !Array.isArray(items) || items.length === 0 || items.some((i: unknown) => !i || typeof i !== 'object' || typeof (i as {productId?:unknown}).productId !== 'string')) {
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
 
@@ -3961,7 +3989,20 @@ productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityI
       return res.status(400).json({ success: false, error: '暂不支持的支付方式' });
     }
 
-    if (paymentMethod === 'balance' && !(await isCustomerVerified(customerId, shopId))) return res.status(403).json({ success: false, code: 'CUSTOMER_IDENTITY_UNVERIFIED', error: FIRST_USE_MESSAGE });
+    if (items.length > 100 || new Set(items.map((item: {productId: string}) => item.productId)).size !== items.length) return res.status(400).json({success:false,error:'商品列表重复或超出限制'});
+    const fingerprint = createHash('sha256').update(JSON.stringify({ shopId, customerId,
+      items: [...items].sort((a,b) => String(a.productId).localeCompare(String(b.productId))).map(item => [item.productId,item.quantity]),
+      paymentMethod, customerCouponId: customerCouponId || null, pickupName: pickupName || '', pickupPhone: pickupPhone || '', notes: notes || '', expectedAmount })).digest('hex');
+    const {data: replay, error: replayError} = await supabase.from('product_orders').select('*').eq('customer_id',customerId).eq('request_key',requestKey).maybeSingle();
+    if (replayError) return res.status(503).json({success:false,error:'交易保护尚未就绪，请核对058迁移'});
+    if (replay) {
+      if (replay.shop_id !== shopId || replay.request_fingerprint !== fingerprint) return res.status(409).json({success:false,error:'请求已用于另一笔订单，请在我的订单核对结果'});
+      const {data: replayItems,error: itemsError} = await supabase.from('product_order_items').select('*').eq('order_id',replay.id);
+      if (itemsError) return res.status(503).json({success:false,error:'订单已提交，明细暂不可用，请在我的订单核对'});
+      return res.json({success:true,data:{...productOrderFromDb(replay),items:(replayItems || []).map(item=>productOrderItemFromDb(item,shopId))}});
+    }
+    const {error: expiryError} = await supabase.rpc('expire_product_order_reservations',{p_shop_id:shopId});
+    if (expiryError) return res.status(503).json({success:false,error:'库存保护尚未就绪，请核对058迁移'});
 
     // 获取顾客信息（含会员等级，用于计算商品折扣）
     const { data: customer, error: customerError } = await supabase
@@ -4133,6 +4174,9 @@ productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityI
     const payableAmount = Math.round((totalAmount - couponDiscount) * 100) / 100;
     const discountAmount = Math.round((originalTotalAmount - payableAmount) * 100) / 100;
 
+    if (Math.round(expectedAmount * 100) !== Math.round(payableAmount * 100)) {
+      return res.status(409).json({success:false,code:'CHECKOUT_PRICE_CHANGED',error:'商品或会员优惠已变化，请确认新金额后重新提交',data:{payableAmount,items:orderItems}});
+    }
     // 余额支付：立即扣减库存和余额
     if (paymentMethod === 'balance') {
       const balance = Number(customer.stored_value_balance || 0);
@@ -4147,13 +4191,13 @@ productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityI
 
     const { data: createdOrders, error: orderError } = await supabase.rpc('create_product_order_atomic', {
       p_order: {
-        id: orderId, shop_id: shopId, customer_id: customerId, customer_name: customer.name || '', customer_phone: customer.phone || '',
+        id: orderId, request_key: requestKey, request_fingerprint: fingerprint, shop_id: shopId, customer_id: customerId, customer_name: customer.name || '', customer_phone: customer.phone || '',
         order_no: orderNo, total_amount: totalAmount, discount_amount: discountAmount, payable_amount: payableAmount,
         payment_method: paymentMethod, pickup_code: pickupCode, pickup_name: pickupName || customer.name || '',
         pickup_phone: pickupPhone || customer.phone || '', notes: notes || '',
       }, p_items: orderItems, p_coupon_id: appliedCustomerCoupon?.id || null,
     });
-    if (orderError) return res.status(orderError.code === 'PGRST202' ? 503 : 409).json({ success: false, error: orderError.code === 'PGRST202' ? '请先执行 028 商城交易迁移' : '订单未创建：余额、库存或优惠券状态已变化' });
+    if (orderError) return res.status(orderError.code === 'PGRST202' ? 503 : 409).json({ success: false, code: 'CHECKOUT_RECHECK_REQUIRED', error: orderError.code === 'PGRST202' ? '请先执行058商城交易保护迁移' : '订单未创建：金额、余额、库存或优惠券状态已变化，请刷新后确认' });
     const order = createdOrders?.[0];
     if (!order) return res.status(503).json({ success: false, error: '订单结果暂不可用' });
     await syncShopProductsJsonb(shopId);
@@ -4222,6 +4266,8 @@ productOrdersRouter.get('/customer/:customerId', (req, res, next) => personalCus
     const { shopId } = req.query;
     const ownShopId = req.customer!.shopId;
     if (shopId && shopId !== ownShopId) return res.status(403).json({success:false,error:'无权访问其他店铺数据'});
+    const { error: expiryError } = await supabase.rpc('expire_product_order_reservations', { p_shop_id: ownShopId });
+    if (expiryError && expiryError.code !== 'PGRST202') return res.status(503).json({ success:false, error:'订单有效期核对失败，请重试' });
     const query = supabase.from('product_orders').select('*').eq('customer_id', customerId).eq('shop_id', ownShopId);
     const { data: orders, error } = await query.order('created_at', { ascending: false });
     if (error) {

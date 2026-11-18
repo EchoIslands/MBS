@@ -69,7 +69,7 @@ test('个人资料先于慢预约和慢评价显示；预约失败明确提示�
   Object.assign(h.context,{
     getCustomerPublic:()=>new Promise(resolve=>{finishCustomer=resolve}),
     getCustomerBookings:()=>new Promise((_resolve,reject)=>{failBookings=reject}),
-    getCustomerReviews:()=>new Promise(resolve=>{finishReviews=resolve}),
+    getCustomerBenefits: async () => [], getCustomerReviews:()=>new Promise(resolve=>{finishReviews=resolve}),
     getShop:async()=>({id:'shop1'}),
   });
   await load(h.context,'pages/profile/profile.js');

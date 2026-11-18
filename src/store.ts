@@ -16,7 +16,7 @@ export const useAppStore = create<AppState>()(
       hasHydrated: false,
       setUserRole: (role: UserRole) => set({ userRole: role }),
       setCurrentCustomer: (customer: Customer | null) => {
-        set({ currentCustomer: customer, userRole: customer ? UserRole.CUSTOMER : null });
+        set({ currentCustomer: customer, userRole: customer ? UserRole.CUSTOMER : null, ...(get().currentCustomer?.id !== customer?.id ? { cart: [] } : {}) });
         saveCustomerSession(customer);
       },
       setCurrentShop: (shop: Shop | null) => 
@@ -66,7 +66,7 @@ export const useAppStore = create<AppState>()(
         });
       },
       addToCart: (product: Product, quantity: number = 1) => {
-        const { cart } = get();
+        const cart = get().cart.filter(item => item.product.shopId === product.shopId);
         const existingItem = cart.find(item => item.productId === product.id);
         
         if (existingItem) {

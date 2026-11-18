@@ -1,5 +1,6 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="orders-page page">
+  <view wx:if="{{error}}" bindtap="loadCustomer" style="padding:24rpx;background:#fff0e6;color:#8a421d;">{{error}}</view>
   <view wx:if="{{!hasPreviousPage}}" class="orders-root-back" role="button" aria-label="返回个人中心" bindtap="goBack">‹ 返回个人中心</view>
 
   <!-- 2. 状态筛选 Tabs (chips) -->
@@ -40,7 +41,7 @@
   </view>
 
   <!-- 空状态 -->
-  <view wx:elif="{{!loading && filteredOrders.length === 0}}" class="empty-state">
+  <view wx:elif="{{!loading && !error && filteredOrders.length === 0}}" class="empty-state">
     <view class="empty-icon">
       <mbs-icon name="shoppingBag" size="56" color="var(--text-tertiary)" />
     </view>

@@ -11,12 +11,13 @@
 
   <view class="container" animation="{{tabSwipeAnimation}}">
     <!-- 加载 / 错误 -->
-    <view wx:if="{{loading}}" class="empty-state">
+    <view wx:if="{{displayStale || error}}" class="card" bindtap="loadShop">{{error || "正在更新门店信息，下方为上次展示内容"}}</view>
+    <view wx:if="{{loading && !shop}}" class="empty-state">
       <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
       <view class="empty-text">店铺加载中...</view>
     </view>
 
-    <view wx:elif="{{error}}" class="card">
+    <view wx:elif="{{error && !shop}}" class="card">
       <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
       <view class="btn btn-secondary" bindtap="loadShop">重新加载</view>
     </view>

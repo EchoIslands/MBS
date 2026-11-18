@@ -29,7 +29,15 @@ router.get('/desk',authMiddleware,shopContext,async(req,res)=>{
 router.post('/dispatch',async(req,res)=>{
   const expected=process.env.QUEUE_DISPATCH_SECRET||'',provided=(req.headers.authorization||'').replace(/^Bearer /,'');
   if(expected.length<32||Buffer.byteLength(provided)!==Buffer.byteLength(expected)||!timingSafeEqual(Buffer.from(provided),Buffer.from(expected)))return res.status(401).json({success:false,error:'Unauthorized'});
-  try{return res.json({success:true,data:{processed:await dispatchQueueNotifications(5)}});}
+  try{
+    // Maintenance failure must not prevent time-sensitive queue notifications.
+    const [expiry,notifications]=await Promise.allSettled([
+      supabase.rpc('expire_due_product_reservations'),dispatchQueueNotifications(5),
+    ]);
+    if(notifications.status==='rejected')throw new Error('QUEUE_DISPATCH_UNAVAILABLE');
+    if(expiry.status==='rejected'||expiry.value.error)return res.status(503).json({success:false,error:'通知任务已处理，库存回收暂未完成，请检查服务状态',data:{processed:notifications.value}});
+    return res.json({success:true,data:{processed:notifications.value,releasedReservations:expiry.value.data}});
+  }
   catch{return res.status(503).json({success:false,error:'通知任务未完成，请查看电话待办及发送状态'});}
 });
 export default router;

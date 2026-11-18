@@ -1,3 +1,4 @@
+import CommissionPanel from './CommissionPanel';
 import React, { useState, useMemo, useEffect } from 'react';
 import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
@@ -97,6 +98,7 @@ const FinancialReportPage: React.FC = () => {
 
   return <ShopLayout title="财务报表">
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <CommissionPanel />
       <div className="bg-white rounded-2xl p-4 flex flex-wrap items-center gap-3 justify-between">
         <div className="flex flex-wrap gap-2" aria-label="趋势图范围">
           {(['week', 'month', 'quarter', 'year'] as const).map(range => <button key={range} onClick={() => setDateRange(range)}

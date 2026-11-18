@@ -54,9 +54,21 @@ export async function restoreCustomerSession() {
 /**
  * 获取顾客的预约列表
  */
-export async function getCustomerBookings(customerId) {
-  const result = await get(`/bookings/customer/${customerId}`);
-  return result?.data || [];
+export async function getCustomerBookings(customerId, { active = false } = {}) {
+  const rows = [];
+  for (let page = 1; ; page += 1) {
+    const result = await get(`/bookings/customer/${encodeURIComponent(customerId)}?page=${page}&pageSize=200${active ? '&active=true' : ''}`);
+    if (!Array.isArray(result?.data)) throw new Error('预约列表读取失败');
+    rows.push(...result.data);
+    if (!result.pagination || page >= result.pagination.totalPages) break;
+  }
+  return Array.from(new Map(rows.map(row => [row.id, row])).values());
+}
+
+export async function getCustomerBenefits(customerId) {
+  const result = await get(`/customers/${encodeURIComponent(customerId)}/benefits`);
+  if (!Array.isArray(result?.data)) throw new Error('权益读取失败');
+  return result.data;
 }
 
 /**

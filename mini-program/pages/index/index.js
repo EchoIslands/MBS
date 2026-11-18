@@ -85,13 +85,17 @@ Page({
 
   async onLoad() {
     if (!this.checkSession()) return;
+    try {
+      const cache = wx.getStorageSync('mbs_home_display:' + (wx.getStorageSync('mbs_api_base') || 'production'));
+      if (cache?.expires > Date.now()) this.setData({ ...cache.data, loading: false, displayStale: true });
+    } catch (_) { /* malformed local display does not prevent a network load */ }
     await Promise.all([this.loadShop(), this.loadCustomer()]);
   },
 
   onShow() {
     if (!this.checkSession()) return;
     syncTabBarSelected(this, 0);
-    if (this._indexShown) this.loadCustomer();
+    if (this._indexShown) { this.loadCustomer(); this.loadShop(); }
     else this._indexShown = true;
     this.loadActiveBooking();
     trackPageView('pages/index/index', { shop_id: 'shop1' });
@@ -103,7 +107,7 @@ Page({
     const requestId = (this._activeQueueRequestId || 0) + 1;
     this._activeQueueRequestId = requestId;
     try {
-      const bookings = await getCustomerBookings(customerId);
+      const bookings = await getCustomerBookings(customerId, { active: true });
       if (requestId !== this._activeQueueRequestId || getCustomerId() !== customerId) return;
       const beijingDay = (value) => Math.floor((new Date(value).getTime() + 8 * 3600000) / 86400000);
       const today = beijingDay(Date.now());
@@ -146,7 +150,7 @@ Page({
 
   async loadShop() {
     const startTime = Date.now();
-    this.setData({ loading: true, error: '' });
+    this.setData({ loading: !this.data.shop, error: '' });
     try {
       const reviewsRequest = this.loadReviews('shop1');
       const rawShop = await getShop('shop1');
@@ -201,7 +205,9 @@ Page({
           originalPrice: p.originalPrice,
           images: limitImageList(p.images, 1),
         }));
-      this.setData({ shop, stylists, displayTags, products, ratingStars: this.buildStars(shop.rating || 4.8), loading: false });
+      const display = { shop, stylists, displayTags, products, ratingStars: this.buildStars(shop.rating || 4.8) };
+      this.setData({ ...display, loading: false, displayStale: false });
+      try { wx.setStorageSync('mbs_home_display:' + (wx.getStorageSync('mbs_api_base') || 'production'), { data: display, expires: Date.now() + 86400000 }); } catch (_) { /* optional cache */ }
       const reviews = (await reviewsRequest).slice(0, 3).map((r) => ({
         id: r.id,
         customerName: truncate(r.customerName, 20) || '匿名用户',

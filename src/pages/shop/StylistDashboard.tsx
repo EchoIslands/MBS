@@ -21,6 +21,7 @@ import { stylistApi, bookingApi, employeeApi } from '../../api';
 import { StylistPerformance, UserRole, Booking } from '../../../shared/types';
 import { getAvatarUrl } from '../../lib/avatar';
 import ShopLayout from './ShopLayout';
+import CommissionPanel from './CommissionPanel';
 import { businessDateKey } from '../../../shared/lib/dashboardStats';
 import { FINANCIAL_BASIS_NOTE } from '../../../shared/lib/financialReport';
 import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
@@ -199,6 +200,7 @@ const StylistDashboard: React.FC = () => {
     return (
       <ShopLayout title="发型师看板">
         {basisNotice}
+        <CommissionPanel />
       <Link to="/shop/queue-desk" className="block mb-5 rounded-xl bg-orange-200 text-gray-900 text-center py-4 font-bold">打开实时排队工作台 · 叫号 / 开始服务 / 更新进度</Link>
         {/* 汇总数据卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -411,6 +413,7 @@ const StylistDashboard: React.FC = () => {
   return (
     <ShopLayout title="发型师看板">
       {basisNotice}
+      <CommissionPanel />
       <Link to="/shop/queue-desk" className="block mb-5 rounded-xl bg-orange-200 text-gray-900 text-center py-4 font-bold">打开实时排队工作台 · 叫号 / 开始服务 / 更新进度</Link>
       {/* 发型师个人信息卡片 */}
       <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
@@ -494,7 +497,7 @@ const StylistDashboard: React.FC = () => {
             ¥{ownPerformance.revenue.today.toLocaleString()}
           </div>
           <div className="text-xs text-gray-400 mt-1">
-            本月历史算法预估提成: ¥{ownPerformance.estimatedCommission.toLocaleString()}
+            提成以CEO确认的整月台账为准
           </div>
         </div>
 

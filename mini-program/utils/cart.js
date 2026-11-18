@@ -4,11 +4,13 @@
  * - 商品信息随购物车缓存，避免依赖页面间传参
  */
 
-const CART_KEY = 'mbs_mini_cart';
+import { getCustomerId } from './storage';
 
-function loadCart() {
+function cartKey(shopId = 'shop1') { return 'mbs_mini_cart_v2:' + (getCustomerId() || 'guest') + ':' + shopId; }
+
+function loadCart(shopId) {
   try {
-    const raw = wx.getStorageSync(CART_KEY);
+    const raw = wx.getStorageSync(cartKey(shopId));
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.error('[cart] 读取购物车失败:', e);
@@ -16,9 +18,9 @@ function loadCart() {
   }
 }
 
-function saveCart(cart) {
+function saveCart(cart, shopId) {
   try {
-    wx.setStorageSync(CART_KEY, JSON.stringify(cart || []));
+    wx.setStorageSync(cartKey(shopId), JSON.stringify(cart || []));
   } catch (e) {
     console.error('[cart] 保存购物车失败:', e);
   }
@@ -28,16 +30,18 @@ function generateId() {
   return `cart_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export function getCart() {
-  return loadCart();
+export function getCart(shopId) {
+  return loadCart(shopId);
 }
 
-export function getCartCount() {
-  return loadCart().reduce((sum, item) => sum + (item.quantity || 0), 0);
+export function getCartCount(shopId) {
+  return loadCart(shopId).reduce((sum, item) => sum + (item.quantity || 0), 0);
 }
 
 export function addToCart(product, quantity = 1) {
-  const cart = loadCart();
+  const shopId = product.shopId || 'shop1';
+  const previous = loadCart(shopId);
+  const cart = previous.filter(item => (item.product?.shopId || 'shop1') === (product.shopId || 'shop1'));
   const maxStock = Number(product.stock) || 0;
   if (maxStock <= 0) return cart;
 
@@ -53,12 +57,12 @@ export function addToCart(product, quantity = 1) {
       selected: true,
     });
   }
-  saveCart(cart);
+  saveCart(cart, shopId);
   return cart;
 }
 
-export function updateCartItem(itemId, quantity) {
-  const cart = loadCart();
+export function updateCartItem(itemId, quantity, shopId) {
+  const cart = loadCart(shopId);
   const index = cart.findIndex((item) => item.id === itemId);
   if (index === -1) return cart;
   if (quantity <= 0) {
@@ -67,39 +71,39 @@ export function updateCartItem(itemId, quantity) {
     const maxStock = Number(cart[index].product?.stock) || 0;
     cart[index].quantity = Math.min(quantity, maxStock);
   }
-  saveCart(cart);
+  saveCart(cart, shopId);
   return cart;
 }
 
-export function removeFromCart(itemId) {
-  const cart = loadCart().filter((item) => item.id !== itemId);
-  saveCart(cart);
+export function removeFromCart(itemId, shopId) {
+  const cart = loadCart(shopId).filter((item) => item.id !== itemId);
+  saveCart(cart, shopId);
   return cart;
 }
 
-export function toggleCartItemSelection(itemId) {
-  const cart = loadCart();
+export function toggleCartItemSelection(itemId, shopId) {
+  const cart = loadCart(shopId);
   const item = cart.find((i) => i.id === itemId);
   if (item) {
     item.selected = !item.selected;
-    saveCart(cart);
+    saveCart(cart, shopId);
   }
   return cart;
 }
 
-export function selectAllCartItems(selected) {
-  const cart = loadCart().map((item) => ({ ...item, selected }));
-  saveCart(cart);
+export function selectAllCartItems(selected, shopId) {
+  const cart = loadCart(shopId).map((item) => ({ ...item, selected }));
+  saveCart(cart, shopId);
   return cart;
 }
 
-export function clearCart() {
-  saveCart([]);
+export function clearCart(shopId) {
+  saveCart([], shopId);
   return [];
 }
 
-export function clearSelectedCartItems() {
-  const cart = loadCart().filter((item) => !item.selected);
-  saveCart(cart);
+export function clearSelectedCartItems(shopId) {
+  const cart = loadCart(shopId).filter((item) => !item.selected);
+  saveCart(cart, shopId);
   return cart;
 }

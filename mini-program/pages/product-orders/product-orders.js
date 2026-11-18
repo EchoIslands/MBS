@@ -24,6 +24,7 @@ Page({
     filteredOrders: [],
     filterStatus: 'all',
     loading: true,
+    error: '',
     showLogin: false,
     statusLabels,
     detailOrder: null,
@@ -57,26 +58,30 @@ Page({
       this.setData({ customer: null, loading: false, showLogin: true });
       return;
     }
-    this.setData({ loading: true, showLogin: false });
+    if (this.data.customer?.id !== customerId) this.setData({ customer: null, orders: [], filteredOrders: [] });
+    this.setData({ loading: !this.data.customer, showLogin: false, error: '' });
     try {
       const customer = await getCustomerPublic(customerId);
+      if (customerId !== getCustomerId()) return;
       this.setData({ customer });
       await this.loadOrders(customer.id);
     } catch (err) {
+      if (customerId !== getCustomerId()) return;
       console.error('[product-orders] 加载顾客信息失败:', err);
-      this.setData({ customer: null, loading: false, showLogin: true });
+      this.setData({ loading: false, showLogin: err.statusCode === 401, error: '资料同步失败，请点击重试；下方如有记录，为上次同步结果' });
     }
   },
 
   async loadOrders(customerId) {
     try {
       const orders = await getCustomerProductOrders(customerId, this.data.shopId);
-      this.setData({ orders: orders || [], loading: false });
+      if (customerId !== getCustomerId()) return;
+      this.setData({ orders: orders || [], loading: false, error: '' });
       this.applyFilter();
     } catch (err) {
       console.error('[product-orders] 加载订单失败:', err);
-      wx.showToast({ title: '订单加载失败', icon: 'none' });
-      this.setData({ orders: [], loading: false });
+      if (customerId !== getCustomerId()) return;
+      this.setData({ loading: false, error: '订单同步失败，请点击重试；上次记录不能代表当前支付或提货状态' });
     }
   },
 

@@ -44,7 +44,13 @@ export async function getShopProducts(shopId) {
  * - 后端返回非 2xx 或 success: false 时抛出错误，便于页面透传精确提示
  */
 export async function createProductOrder(data) {
-  const result = await post('/product-orders', data);
+  const signature = JSON.stringify(data);
+  const key = 'mbs_checkout_intent:' + (wx.getStorageSync('mbs_api_base') || 'https://www.hsxx8888.cn/api') + ':' + data.customerId + ':' + data.shopId;
+  const previous = wx.getStorageSync(key);
+  const intent = previous?.signature === signature ? previous : { signature, requestKey: 'checkout_' + Date.now() + '_' + Math.random().toString(36).slice(2) };
+  wx.setStorageSync(key, intent);
+  const result = await post('/product-orders', { ...data, requestKey: intent.requestKey });
+  if (result?.success !== false && result?.data && wx.getStorageSync(key)?.requestKey === intent.requestKey) wx.removeStorageSync(key);
   if (!result || result.success === false) {
     throw new Error(result?.error || '创建订单失败');
   }

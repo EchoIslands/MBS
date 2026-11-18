@@ -1,6 +1,7 @@
 <wxs src="../../utils/format.wxs" module="fmt" />
 <view class="profile-page {{tabTransitionClass}}" bindtouchmove="onTabSwipeMove" bindtouchstart="onTabSwipeStart" bindtouchend="onTabSwipeEnd" bindtouchcancel="onTabSwipeCancel">
   <view wx:if="{{loading && !customer}}" class="card" style="margin: 24rpx; padding: 48rpx;">正在读取个人资料...</view>
+  <view wx:if="{{error}}" class="card" style="margin:24rpx;color:#9a3412;" bindtap="loadProfile">{{error}}<text wx:if="{{lastProfileSyncText}}"> · 上次成功：{{lastProfileSyncText}}</text></view>
   <!-- 1) 渐变 VIP 头部 -->
   <view wx:if="{{customer}}" class="{{vipHeaderClass}}" animation="{{tabSwipeAnimation}}">
     <view class="vip-decor vip-decor-1"></view>
@@ -23,11 +24,11 @@
         <view class="vip-info-right">
           <view class="vip-badge">
             <mbs-icon name="crown" size="24" color="rgba(255,255,255,0.95)" />
-            <text>{{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
+            <text>{{fmt.getPurchaseVIPLabel(purchaseLevel)}}{{vipExpired ? "（已到期）" : ""}}</text>
           </view>
           <view wx:if="{{storedLevel !== StoredValueLevel.NONE}}" class="vip-badge vip-badge-sub">
             <mbs-icon name="wallet" size="20" color="rgba(255,255,255,0.95)" />
-            <text>{{fmt.getStoredValueLabel(storedLevel)}}</text>
+            <text>{{fmt.getStoredValueLabel(storedLevel)}}{{storedExpired ? "（已到期）" : ""}}</text>
           </view>
         </view>
       </view>
@@ -44,9 +45,10 @@
         </view>
         <view class="vip-discount-value">{{fmt.formatDiscount(effectiveDiscount)}} 折</view>
         <view class="vip-discount-hint">
-          <text wx:if="{{purchaseLevel !== PurchaseVIPLevel.REGULAR && storedLevel !== StoredValueLevel.NONE}}">{{fmt.getPurchaseVIPLabel(purchaseLevel)}} × {{fmt.getStoredValueLabel(storedLevel)}} 折上折</text>
-          <text wx:elif="{{purchaseLevel !== PurchaseVIPLevel.REGULAR}}">已开通 {{fmt.getPurchaseVIPLabel(purchaseLevel)}}</text>
-          <text wx:elif="{{storedLevel !== StoredValueLevel.NONE}}">已开通 {{fmt.getStoredValueLabel(storedLevel)}}</text>
+          <text wx:if="{{vipExpired || storedExpired}}">部分会员折扣已到期，当前折扣以有效会员等级计算</text>
+          <text wx:elif="{{purchaseLevel !== PurchaseVIPLevel.REGULAR && storedLevel !== StoredValueLevel.NONE}}">{{fmt.getPurchaseVIPLabel(purchaseLevel)}} × {{fmt.getStoredValueLabel(storedLevel)}} 折上折</text>
+          <text wx:elif="{{purchaseLevel !== PurchaseVIPLevel.REGULAR}}">已开通 {{fmt.getPurchaseVIPLabel(purchaseLevel)}}{{vipExpired ? "（已到期）" : ""}}</text>
+          <text wx:elif="{{storedLevel !== StoredValueLevel.NONE}}">已开通 {{fmt.getStoredValueLabel(storedLevel)}}{{storedExpired ? "（已到期）" : ""}}</text>
           <text wx:else>开通会员享受专属折扣</text>
         </view>
       </view>
@@ -173,6 +175,8 @@
       <view class="invite-action-label">立即邀请 ›</view>
     </view>
 
+    <view wx:if="{{benefitsLoading || benefitsError}}" class="card" bindtap="loadProfile">{{benefitsError || "正在同步可用权益..."}}</view>
+    <view wx:elif="{{!myBenefits.length}}" class="card">暂无可用权益</view>
     <!-- 6) 我的可用权益 -->
     <view wx:if="{{myBenefits.length > 0}}" class="card">
       <view class="card-title" >
@@ -207,6 +211,9 @@
       <view wx:elif="{{bookingsError}}" class="empty-text" style="padding: 48rpx 0;" bindtap="loadProfile">{{bookingsError}}</view>
 
       <block wx:else>
+        <view wx:if="{{bookingPages > 1}}" style="display:flex;align-items:center;justify-content:space-between;padding:20rpx;">
+          <button size="mini" disabled="{{bookingPage <= 1}}" bindtap="previousBookingPage">上一页</button><text>{{bookingPage}} / {{bookingPages}} 页</text><button size="mini" disabled="{{bookingPage >= bookingPages}}" bindtap="nextBookingPage">下一页</button>
+        </view>
         <view wx:if="{{!hasFilteredBookings}}" class="empty-state" style="padding: 48rpx 0;">
           <view class="empty-icon">
             <mbs-icon name="calendar" size="56" color="var(--text-tertiary)" />
@@ -322,7 +329,7 @@
       <view class="quick-item" bindtap="goToFeedback">
         <mbs-icon name="messageSquare" size="40" color="var(--primary)" />
         <view class="quick-title">意见反馈</view>
-        <view class="quick-hint">提交建议和投诉</view>
+        <view class="quick-hint">拨打门店电话咨询与反馈</view>
       </view>
     </view>
 

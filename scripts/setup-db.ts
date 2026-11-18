@@ -42,6 +42,10 @@ export const SETUP_MIGRATIONS = [
   '053_membership_upgrade_quotes.sql',
   '054_membership_payment_resolution.sql',
   '055_booking_self_service_and_attendance.sql',
+  '057_negotiated_booking_cancellation.sql',
+  '058_product_checkout_safety.sql',
+  '059_compact_shop_display.sql',
+  '060_confirmed_commission_records.sql',
 ] as const;
 
 const BASE_TABLES = [

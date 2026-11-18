@@ -30,17 +30,23 @@ Page({
 
   async loadCustomer() {
     const customerId = getCustomerId();
+    this.setData({ customerLoading: true });
+    const requestId = this._customerRequestId = (this._customerRequestId || 0) + 1;
+    const isCurrent = () => requestId === this._customerRequestId && customerId === getCustomerId();
     if (!customerId) {
       this.setData({ customer: null, customerLoading: false });
       return;
     }
     try {
       const customer = await getCustomerPublic(customerId);
+      if (!isCurrent()) return;
       this.setData({ customer });
     } catch (err) {
+      if (!isCurrent()) return;
       console.error('[product-detail] 加载顾客信息失败:', err);
       this.setData({ customer: null });
     } finally {
+      if (!isCurrent()) return;
       this.setData({ customerLoading: false });
       if (this.data.product) this.setData({ 'product.memberPrice': this.getMemberPrice(this.data.product) });
     }
@@ -52,6 +58,8 @@ Page({
   },
 
   onShow() {
+    if (this._shown) { this.loadProduct(); this.loadCustomer(); }
+    this._shown = true;
     this.refreshCartCount();
     trackPageView('pages/product-detail/product-detail', {
       shop_id: this.data.shopId,
@@ -78,7 +86,7 @@ Page({
   },
 
   refreshCartCount() {
-    this.setData({ cartCount: getCartCount() });
+    this.setData({ cartCount: getCartCount(this.data.shopId) });
   },
 
   onProductImageError() {

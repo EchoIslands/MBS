@@ -1,4 +1,4 @@
-import { getCustomerPublic, getCustomerBookings, updateMyProfile, uploadMyAvatar } from '../../api/customer';
+import { getCustomerPublic, getCustomerBookings, getCustomerBenefits, updateMyProfile, uploadMyAvatar } from '../../api/customer';
 import { getShop } from '../../api/shop';
 import { cancelBooking, respondDelay } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
@@ -16,7 +16,6 @@ import {
   getCustomerEffectiveDiscount,
   isVIPExpiringSoon,
   isStoredValueExpiringSoon,
-  generateBenefits,
   getStockholderBenefitSummary,
 } from '../../utils/membership';
 
@@ -75,8 +74,6 @@ function slimCustomer(raw) {
           type: b.type,
           name: truncate(b.name, 40),
           status: b.status,
-    canChange: ['pending','confirmed'].includes(b.status)&&!b.actualStartTime&&!b.actual_start_time&&!b.arrivedAt&&!b.arrived_at&&!b.queueState&&!b.queue_state,
-    canCancel: ['pending','confirmed'].includes(b.status)&&!b.actualStartTime&&!b.actual_start_time&&!['serving','finished'].includes(b.queueState||b.queue_state),
           expiresAt: b.expiresAt || b.expires_at,
         }))
       : Array.isArray(raw.benefits)
@@ -92,7 +89,7 @@ function slimCustomer(raw) {
 
 function slimBookings(list) {
   if (!Array.isArray(list)) return [];
-  return list.slice(0, 50).map((b) => ({
+  return list.map((b) => ({
     id: b.id,
     shopId: b.shopId || b.shop_id,
     shopName: truncate(b.shopName || b.shop_name, 40) || 'MBS 理发店',
@@ -134,6 +131,10 @@ Page({
     storedLevel: StoredValueLevel.NONE,
     effectiveDiscount: 1,
     expiringSoon: false,
+    vipExpired: false,
+    storedExpired: false,
+    benefitsLoading: false,
+    benefitsError: '',
     storedExpiringSoon: false,
     purchasePlan: null,
     storedPlan: null,
@@ -209,14 +210,25 @@ Page({
       return;
     }
 
+    if (this.data.customer && this.data.customer.id !== customerId) {
+      this._allBookings = [];
+      this.setData({ customer: null, bookings: [], filteredBookings: [], myBenefits: [], bookingReviewMap: {}, bookingReviewedMap: {}, balance: 0, withdrawable: 0, points: 0, totalSpent: 0 });
+    }
     const token = getToken();
     const requestId = this._profileRequestId = (this._profileRequestId || 0) + 1;
     const isCurrent = () => requestId === this._profileRequestId && customerId === getCustomerId() && token === getToken();
     this.setData({ loading: !this.data.customer, error: '', bookingsLoading: true, bookingsError: '', reviewsLoading: true });
+    this.setData({ benefitsLoading: true, benefitsError: '' });
+    const benefitsRequest = getCustomerBenefits(customerId).then(records => {
+      if (isCurrent()) this.setData({ myBenefits: this.computeMyBenefits({ memberBenefitRecords: records }), benefitsLoading: false });
+    }).catch(() => {
+      if (isCurrent()) this.setData({ myBenefits: [], benefitsLoading: false, benefitsError: '可用权益同步失败，点击重试' });
+    });
     const bookingsRequest = getCustomerBookings(customerId).then(rawBookings => {
       if (!isCurrent()) return;
       const allBookings = slimBookings(rawBookings);
-      this.setData({ bookings: allBookings, bookingsLoading: false });
+      this._allBookings = allBookings;
+      this.setData({ bookings: allBookings.filter(b => ['pending','confirmed'].includes(b.status)), bookingsLoading: false, bookingPage: 1 });
       this.refreshFilteredBookings();
       const route = takeRouteParams();
       if (route?.editBookingId) {
@@ -247,6 +259,8 @@ Page({
 
       const purchaseLevel = customer?.purchaseVIPLevel ?? PurchaseVIPLevel.REGULAR;
       const storedLevel = customer?.storedValueLevel ?? StoredValueLevel.NONE;
+      const vipExpired = !!customer?.purchaseVIPExpiresAt && Date.parse(customer.purchaseVIPExpiresAt) <= Date.now();
+      const storedExpired = !!customer?.storedValueExpiresAt && Date.parse(customer.storedValueExpiresAt) <= Date.now();
       const effectiveDiscount = customer ? getCustomerEffectiveDiscount(customer) : 1;
       const expiringSoon = isVIPExpiringSoon(customer);
       const storedExpiringSoon = isStoredValueExpiringSoon(customer);
@@ -262,6 +276,8 @@ Page({
         storedLevel,
         effectiveDiscount,
         expiringSoon,
+        vipExpired,
+        storedExpired,
         storedExpiringSoon,
         purchasePlan,
         storedPlan,
@@ -269,12 +285,12 @@ Page({
         withdrawable: customer?.withdrawableReferralAmount ?? 0,
         points: customer?.points ?? 0,
         totalSpent: customer?.totalSpent ?? 0,
-        myBenefits: this.computeMyBenefits(customer),
         stockholderSummary,
         vipHeaderClass,
         shopPhone: this.data.shopPhone || '',
         isMember: this.isCustomerMember(customer),
         _profileLoaded: true,
+        lastProfileSyncText: formatDateTime(new Date().toISOString()),
         _needRefresh: false,
       };
       const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
@@ -284,9 +300,9 @@ Page({
       this.setData(payload);
       // 资料先显示，门店权益配置随后补齐，不等待预约和评价。
       const shopRequest = getShop(customer?.shopId || 'shop1').then(shop => {
-        if (isCurrent()) this.setData({ stockholderSummary: getStockholderBenefitSummary(customer, shop) });
+        if (isCurrent()) this.setData({ stockholderSummary: getStockholderBenefitSummary(customer, shop), shopPhone: /^(?:1\d{10}|0\d{2,3}-?\d{7,8}|[2-9]\d{7})$/.test(String(shop.phone || '')) && !['13800138001', '13900000001'].includes(String(shop.phone)) ? shop.phone : '' });
       }).catch(() => {});
-      await Promise.all([bookingsRequest, reviewsRequest, shopRequest]);
+      await Promise.all([bookingsRequest, reviewsRequest, shopRequest, benefitsRequest]);
     } catch (err) {
       if (!isCurrent()) return;
       console.error('[profile] 加载个人信息失败:', err);
@@ -295,7 +311,7 @@ Page({
         wx.reLaunch({ url: '/pages/login/login' });
         return;
       }
-      this.setData({ error: '个人信息加载失败', loading: false });
+      this.setData({ error: this.data.customer ? '资料同步失败，下方为上次记录，余额及权益请刷新确认。点击重试' : '个人资料读取失败，点击重试', loading: false });
     }
   },
 
@@ -386,18 +402,23 @@ Page({
   },
 
   refreshFilteredBookings() {
-    const { bookings, activeTab } = this.data;
+    const { activeTab } = this.data;
+    const bookings = this._allBookings || this.data.bookings;
     const filtered = bookings.filter((b) =>
       activeTab === 'current'
         ? b.status === 'pending' || b.status === 'confirmed'
         : b.status === 'completed' || b.status === 'cancelled'
     );
-    this.setData({ filteredBookings: filtered, hasFilteredBookings: filtered.length > 0 });
+    const page = this.data.bookingPage || 1;
+    this.setData({ filteredBookings: filtered.slice((page - 1) * 20, page * 20), hasFilteredBookings: filtered.length > 0, bookingPage: page, bookingPages: Math.max(1, Math.ceil(filtered.length / 20)) });
   },
+
+  previousBookingPage() { this.setData({ bookingPage: Math.max(1, this.data.bookingPage - 1) }); this.refreshFilteredBookings(); },
+  nextBookingPage() { this.setData({ bookingPage: Math.min(this.data.bookingPages, this.data.bookingPage + 1) }); this.refreshFilteredBookings(); },
 
   switchTab(e) {
     const { tab } = e.currentTarget.dataset;
-    this.setData({ activeTab: tab });
+    this.setData({ activeTab: tab, bookingPage: 1 });
     this.refreshFilteredBookings();
   },
 
@@ -408,7 +429,7 @@ Page({
 
   onBookingTap(e) {
     const { id } = e.currentTarget.dataset;
-    const booking = this.data.bookings.find((b) => b.id === id);
+    const booking = (this._allBookings || this.data.bookings).find((b) => b.id === id);
     if (booking) {
       this.setData({ viewingBooking: booking });
     }
@@ -420,7 +441,7 @@ Page({
 
   openReschedule(e) {
     const { id } = e.currentTarget.dataset;
-    const booking = this.data.bookings.find((b) => b.id === id);
+    const booking = (this._allBookings || this.data.bookings).find((b) => b.id === id);
     if (!booking) return;
     const d = new Date(booking.scheduledTime);
     const pad = (n) => String(n).padStart(2, '0');
@@ -476,7 +497,7 @@ Page({
   stopPropagation() {},
 
   cancelFromList(e) {
-    const booking=this.data.bookings.find(b=>b.id===e.currentTarget.dataset.id);
+    const booking=(this._allBookings || this.data.bookings).find(b=>b.id===e.currentTarget.dataset.id);
     if(!booking)return;this.setData({viewingBooking:booking});this.handleCancelBooking();
   },
   async handleCancelBooking() {
@@ -527,7 +548,7 @@ Page({
   },
 
   goToFeedback() {
-    wx.showToast({ title: '功能开发中', icon: 'none' });
+    this.callStore();
   },
 
   goToRefund() {
@@ -622,7 +643,7 @@ goToCoupons() {
     const records = customer.memberBenefitRecords || customer.benefits;
     if (Array.isArray(records) && records.length > 0) {
       return records
-        .filter((b) => b.status === 'available')
+        .filter((b) => b.status === 'available' && (!b.expiresAt || Date.parse(b.expiresAt) > Date.now()))
         .map((b) => ({
           type: b.type || BenefitType.SHAMPOO,
           name: b.name || '会员权益',
@@ -632,11 +653,7 @@ goToCoupons() {
           expiresAt: b.expiresAt,
         }));
     }
-    // 兜底：根据购买 VIP 等级生成权益
-    return generateBenefits(customer).map((b) => ({
-      ...b,
-      description: '无固定期限',
-    }));
+    return [];
   },
 
   benefitIconName(type) {

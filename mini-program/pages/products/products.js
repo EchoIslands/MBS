@@ -53,24 +53,30 @@ Page({
       this.loadProducts();
       this.loadCoupons();
     }
-    if (this._productsShown) this.loadCustomer();
+    if (this._productsShown) { this.loadCustomer(); this.loadProducts(); this.loadCoupons(); }
     else this._productsShown = true;
     this.refreshCartCount();
   },
 
   async loadCustomer() {
     const customerId = getCustomerId();
+    const requestId = this._customerRequestId = (this._customerRequestId || 0) + 1;
+    const isCurrent = () => this._customerRequestId === requestId && getCustomerId() === customerId;
     if (!customerId) {
       this.setData({ customer: null });
+      this.applyFilter();
       return;
     }
     try {
       const customer = await getCustomerPublic(customerId);
+      if (!isCurrent()) return;
       this.setData({ customer });
       this.applyFilter();
     } catch (err) {
+      if (!isCurrent()) return;
       console.error('[products] 加载顾客信息失败:', err);
       this.setData({ customer: null });
+      this.applyFilter();
     }
   },
 
@@ -80,9 +86,12 @@ Page({
   },
 
   async loadProducts() {
+    const shopId = this.data.shopId;
+    const requestId = this._productsRequestId = (this._productsRequestId || 0) + 1;
     this.setData({ loading: true });
     try {
-      const products = await getShopProducts(this.data.shopId);
+      const products = await getShopProducts(shopId);
+      if (requestId !== this._productsRequestId || shopId !== this.data.shopId) return;
       this.setData({ products: products || [] }, () => {
         this.applyFilter();
       });
@@ -90,18 +99,21 @@ Page({
       console.error('[products] 加载商品失败:', err);
       wx.showToast({ title: '商品加载失败', icon: 'none' });
     } finally {
-      this.setData({ loading: false });
+      if (requestId === this._productsRequestId) this.setData({ loading: false });
     }
   },
 
   async loadCoupons() {
+    const shopId = this.data.shopId;
+    const customerId = getCustomerId();
+    const requestId = this._couponsRequestId = (this._couponsRequestId || 0) + 1;
     try {
       const coupons = await getShopCoupons(this.data.shopId);
       let myCoupons = [];
-      const customerId = getCustomerId();
       if (customerId) {
         myCoupons = await getCustomerCoupons(customerId, this.data.shopId, 'unused');
       }
+      if (requestId !== this._couponsRequestId || shopId !== this.data.shopId || customerId !== getCustomerId()) return;
       const claimedMap = {};
       (Array.isArray(myCoupons) ? myCoupons : []).forEach((mc) => {
         if (mc.couponId) claimedMap[mc.couponId] = true;
@@ -119,6 +131,8 @@ Page({
   async onClaimCoupon(e) {
     const { couponId } = e.currentTarget.dataset;
     const customerId = getCustomerId();
+    const requestId = this._customerRequestId = (this._customerRequestId || 0) + 1;
+    const isCurrent = () => this._customerRequestId === requestId && getCustomerId() === customerId;
     if (!customerId) {
       ensureLogin({ content: '登录后即可领取优惠券' });
       return;
@@ -141,7 +155,7 @@ Page({
   },
 
   refreshCartCount() {
-    this.setData({ cartCount: getCartCount() });
+    this.setData({ cartCount: getCartCount(this.data.shopId) });
   },
 
   applyFilter() {

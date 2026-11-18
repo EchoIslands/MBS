@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, AlertCircle, X, Ticket } from 'lucide-react';
 import { useAppStore } from '../../store';
@@ -11,7 +11,7 @@ const Cart: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
   const navigate = useNavigate();
   const {
-    cart,
+    cart: allCart,
     updateCartItem,
     removeFromCart,
     toggleCartItemSelection,
@@ -19,6 +19,8 @@ const Cart: React.FC = () => {
     clearCart,
     currentCustomer
   } = useAppStore();
+  const submittingRef = useRef(false);
+  const cart = allCart.filter(item => item.product.shopId === shopId);
   const [submitting, setSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'balance' | 'store_pickup'>('balance');
   const [showBalanceModal, setShowBalanceModal] = useState(false);
@@ -111,18 +113,20 @@ const Cart: React.FC = () => {
 
   const allSelected = cart.length > 0 && cart.every(item => item.selected);
 
-  const submitOrder = async (method: 'balance' | 'store_pickup') => {
+  const submitOrder = async (method: 'balance' | 'store_pickup', confirmedAmount = payablePrice) => {
     if (!shopId || !currentCustomer?.id) return;
 
     // 余额支付前端预检：避免余额不足时直接调用 API 产生 400
     if (method === 'balance') {
       const balance = currentCustomer.storedValueBalance || currentCustomer.balance || 0;
-      if (balance < payablePrice) {
+      if (balance < confirmedAmount) {
         setShowBalanceModal(true);
         return;
       }
     }
 
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const order = await productOrderApi.create({
@@ -132,12 +136,14 @@ const Cart: React.FC = () => {
           productId: item.productId,
           quantity: item.quantity,
         })),
+        expectedAmount: confirmedAmount,
         paymentMethod: method,
         pickupName: currentCustomer.name,
         pickupPhone: currentCustomer.phone,
         customerCouponId: selectedCouponId || undefined,
       });
 
+      if (useAppStore.getState().currentCustomer?.id !== currentCustomer.id) return;
       if (order) {
         selectedItems.forEach((item) => removeFromCart(item.id));
         alert('订单提交成功！');
@@ -147,13 +153,20 @@ const Cart: React.FC = () => {
       }
     } catch (err: unknown) {
       const message = (err as Error).message || '';
-      if (message.includes('余额不足')) {
+      const response = (err as {response?: {code?: string; data?: {payableAmount: number; items: Array<{name: string; quantity: number; total_amount: number}>}}}).response;
+      if (response?.code === 'CHECKOUT_PRICE_CHANGED' && response.data) {
+        const quote = response.data;
+        if (confirm(quote.items.map(item => `${item.name} ×${item.quantity}：¥${item.total_amount}`).join('；') + `。当前应付 ¥${quote.payableAmount.toFixed(2)}，是否按此金额下单？`)) {
+          setTimeout(() => { void submitOrder(method,quote.payableAmount); },0);
+        }
+      } else if (message.includes('余额不足')) {
         setShowBalanceModal(true);
       } else {
         console.error('[Cart] 结算失败:', err);
         alert(message || '结算失败，请重试');
       }
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -187,6 +200,7 @@ const Cart: React.FC = () => {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+        <p className="text-sm text-gray-600">未付款的自提单保留30分钟，超时自动取消并释放库存。</p>
         {cart.length === 0 ? (
           <div className="text-center py-16">
             <ShoppingBag className="w-20 h-20 mx-auto text-gray-300 mb-4" />

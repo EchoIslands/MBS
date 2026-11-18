@@ -41,9 +41,9 @@ export function buildStylistPerformances(records: Settlement[], employees: Pick<
     for (const period of Object.keys(revenue) as Array<keyof typeof revenue>) revenue[period] /= 100;
     return { stylistId: emp.id, stylistName: emp.name, title: emp.title || '发型师', revenue, services,
       averageRating: averageStylistRating(reviews, emp.id),
-      // 保留既有算法，不把未获门店确认的比例作为工资结算规则。
-      estimatedCommission: Math.round(revenue.month * 0.15 * 100) / 100,
-      commissionNote: '历史算法参考：本月归属项目金额×15%；比例和计提基数尚需门店确认，不作为工资结算依据',
+      // 服务业绩不能直接代表充值销售提成；确认台账独立计算。
+      estimatedCommission: 0,
+      commissionNote: '提成须以门店确认（CEO核对）的整月套档台账为准；本处服务业绩不直接计提',
       timeBasis: FINANCIAL_TIME_BASIS, generatedAt: now.toISOString(), excluded: { count: excluded.count, amount: excluded.amount / 100 } };
   });
 }

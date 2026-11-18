@@ -535,7 +535,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal(weak.identity_verified,false);assert.equal(weak.identity_verified_at,null);assert.equal(weak.identity_verified_by,null);
    assert.equal((await request('/customers/legacy/public',token)).status,401);
    const self=await request('/customers/legacy/public',changed.body.token);assert.equal(self.status,200);assert.equal(self.body.data.identityVerified,false);assert.equal(self.body.data.mustChangePassword,false);
-   const payment=await request('/product-orders',changed.body.token,'POST',{shopId:'s1',customerId:'legacy',items:[{productId:'synthetic',quantity:1}],paymentMethod:'balance'});
+   const payment=await request('/product-orders',changed.body.token,'POST',{shopId:'s1',customerId:'legacy',items:[{productId:'synthetic',quantity:1}],paymentMethod:'balance',requestKey:'identity-guard-test',expectedAmount:0});
    assert.equal(payment.status,403);assert.equal(payment.body.code,'CUSTOMER_IDENTITY_UNVERIFIED');assert.equal(weak.stored_value_balance,321);
    assert.equal((await request('/customers/legacy/identity/verify',cs,'POST',{})).status,200);
    assert.equal((await request('/customers/legacy/public',changed.body.token)).body.data.identityVerified,true);

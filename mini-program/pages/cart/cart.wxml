@@ -110,6 +110,8 @@
     </view>
   </block>
 
+  <view class="text-secondary" style="padding:16rpx 24rpx;">未付款的自提单保留30分钟，超时自动取消并释放库存。</view>
+
   <view wx:if="{{showCouponModal}}" class="coupon-modal" bindtap="toggleCouponModal">
     <view class="coupon-modal-content" catchtap="noop">
       <view class="coupon-modal-header">
@@ -129,10 +131,10 @@
             <text wx:if="{{!selectedCouponId}}" class="coupon-option-checked">已选</text>
           </view>
           <view
-            wx:for="{{customerCoupons}}"
+            wx:for="{{displayCoupons}}"
             wx:key="id"
             data-coupon-id="{{item.id}}"
-            class="coupon-option {{selectedCouponId === item.id ? 'coupon-option-active' : ''}} {{isCouponApplicable(item.coupon) ? '' : 'coupon-option-disabled'}}"
+            class="coupon-option {{selectedCouponId === item.id ? 'coupon-option-active' : ''}} {{item.applicable ? '' : 'coupon-option-disabled'}}"
             bindtap="onSelectCoupon"
           >
             <view class="coupon-option-info">

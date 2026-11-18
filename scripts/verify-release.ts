@@ -32,7 +32,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
   const issues: string[] = [];
   const warnings: string[] = [];
   const fields = ['password_hash', 'is_weak_password', 'password_reset_at', 'identity_verified', 'identity_verified_at', 'identity_verified_by'];
-  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts','membership_operation_audit','queue_notification_consent','queue_notification_outbox','membership_payment_resolutions','booking_changes','booking_attendance_decisions'];
+  const protectedTables = ['customer_auth_limits', 'customer_auth_reservations', 'customer_sms_ip_limits', 'customer_sms_challenges', 'settlement_package_reservations', 'customer_password_initialization_runs','wechat_payment_attempts','membership_operation_audit','queue_notification_consent','queue_notification_outbox','membership_payment_resolutions','booking_changes','booking_attendance_decisions','commission_sources','commission_entries'];
   const signatures = new Set<string>();
   const serviceExecutables = new Set<string>();
   const normalizeSignature = (value: string) => 'public.' + value.replace(/^public\./i, '').replace(/\s/g, '').toLowerCase();
@@ -41,7 +41,8 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
     for (const match of sql.matchAll(/REVOKE ALL ON FUNCTION\s+((?:public\.)?[\w]+\([^)]*\))\s+FROM PUBLIC/gi)) {
       signatures.add(normalizeSignature(match[1]));
     }
-    for (const change of sql.matchAll(/\b(GRANT|REVOKE) EXECUTE ON FUNCTION\s+([^;]*?)\s+(?:TO|FROM)\s+service_role\s*;/gi)) {
+    for (const change of sql.matchAll(/\b(GRANT|REVOKE) (?:EXECUTE|ALL(?: PRIVILEGES)?) ON FUNCTION\s+([^;]*?)\s+(?:TO|FROM)\s+([^;]+);/gi)) {
+      if (!change[3].split(',').some(role => role.trim().toLowerCase() === 'service_role')) continue;
       for (const match of change[2].matchAll(/(?:public\.)?[\w]+\([^)]*\)/gi)) {
         const signature = normalizeSignature(match[0]);
         signatures.add(signature);
@@ -147,7 +148,7 @@ export async function verifyRelease(connection: SetupConnection, options: Releas
       'member_benefits','membership_enrollments','package_usage_logs','payments','product_inventory_logs','product_order_items','product_order_refunds',
       'product_orders','products','purchase_vip_configs','queues','referral_records','refund_requests','reviews','satisfaction_surveys','services',
       'settlement_items','settlement_package_reservations','settlements','shipment_tracking','shop_vip_configs','shops','special_vip_configs',
-      'stockholder_benefit_records','stored_value_configs','stored_value_transactions','withdrawal_requests','wechat_payment_attempts'
+      'commission_sources','commission_entries','stockholder_benefit_records','stored_value_configs','stored_value_transactions','withdrawal_requests','wechat_payment_attempts'
     ]]);
     for(const table of tableAccess.rows) {
       if(!table.rls) issues.push('业务表未启用RLS：'+table.table_name);

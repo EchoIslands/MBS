@@ -36,12 +36,13 @@ Page({
   },
 
   async onShow() {
+    if (this.data.customer?.id !== getCustomerId()) this.setData({ customer: null, customerCoupons: [], selectedCouponId: null });
     this.refreshCart();
     await this.loadCustomer();
   },
 
   refreshCart() {
-    const cart = getCart();
+    const cart = getCart(this.data.shopId);
     const customer = this.data.customer;
     const displayCart = cart.map((item) => {
       const memberPrice = calcDiscountedItemPrice(
@@ -80,6 +81,7 @@ Page({
       couponDiscount: couponDiscount.toFixed(2),
       payablePrice: payablePrice.toFixed(2),
       selectedCouponName,
+      displayCoupons: this.data.customerCoupons.map(cc => ({ ...cc, applicable: this.isCouponApplicable(cc.coupon, selectedItems, totalPrice) })),
     });
   },
 
@@ -129,7 +131,9 @@ Page({
     if (!customer || !customer.id) return;
     try {
       const coupons = await getCustomerCoupons(customer.id, shopId, 'unused');
+      if (customer.id !== getCustomerId() || shopId !== this.data.shopId) return;
       this.setData({ customerCoupons: coupons || [] });
+      this.refreshCart();
     } catch (err) {
       console.error('[cart] 加载优惠券失败:', err);
     }
@@ -138,35 +142,39 @@ Page({
   async loadCustomer() {
     const customerId = getCustomerId();
     if (!customerId) {
-      this.setData({ customer: null });
+      this.setData({ customer: null, customerCoupons: [], selectedCouponId: null });
+      this.refreshCart();
       return;
     }
     try {
       const customer = await getCustomerPublic(customerId);
+      if (customerId !== getCustomerId()) return;
       this.setData({ customer });
       await this.loadCustomerCoupons();
       this.refreshCart();
     } catch (err) {
       console.error('[cart] 加载顾客信息失败:', err);
-      this.setData({ customer: null });
+      if (customerId !== getCustomerId()) return;
+      this.setData({ customer: null, customerCoupons: [], selectedCouponId: null });
+      this.refreshCart();
     }
   },
 
   onToggleSelect(e) {
     const { itemId } = e.currentTarget.dataset;
-    toggleCartItemSelection(itemId);
+    toggleCartItemSelection(itemId, this.data.shopId);
     this.refreshCart();
   },
 
   onSelectAllTap() {
     const next = !this.data.allSelected;
-    selectAllCartItems(next);
+    selectAllCartItems(next, this.data.shopId);
     this.refreshCart();
   },
 
   onQuantityMinus(e) {
     const { item } = e.currentTarget.dataset;
-    updateCartItem(item.id, item.quantity - 1);
+    updateCartItem(item.id, item.quantity - 1, this.data.shopId);
     this.refreshCart();
   },
 
@@ -176,13 +184,13 @@ Page({
       wx.showToast({ title: '库存不足', icon: 'none' });
       return;
     }
-    updateCartItem(item.id, item.quantity + 1);
+    updateCartItem(item.id, item.quantity + 1, this.data.shopId);
     this.refreshCart();
   },
 
   onRemove(e) {
     const { itemId } = e.currentTarget.dataset;
-    removeFromCart(itemId);
+    removeFromCart(itemId, this.data.shopId);
     this.refreshCart();
   },
 
@@ -192,7 +200,7 @@ Page({
       content: '确定要清空购物车吗？',
       success: (res) => {
         if (res.confirm) {
-          clearCart();
+          clearCart(this.data.shopId);
           this.refreshCart();
         }
       },
@@ -218,7 +226,9 @@ Page({
   },
 
   async doCheckout() {
+    if (this.data.submitting) return;
     const { shopId, selectedItems, customer, paymentMethod, selectedCouponId } = this.data;
+    if (!customer || customer.id !== getCustomerId()) { this.setData({ customer: null, showLogin: true }); return; }
     this.setData({ submitting: true });
     try {
       const order = await createProductOrder({
@@ -228,14 +238,16 @@ Page({
           productId: item.productId,
           quantity: item.quantity,
         })),
+        expectedAmount: Number(this.data.payablePrice),
         paymentMethod,
         pickupName: customer.name,
         pickupPhone: customer.phone,
         customerCouponId: selectedCouponId || undefined,
       });
 
+      if (customer.id !== getCustomerId()) return;
       if (order) {
-        clearSelectedCartItems();
+        clearSelectedCartItems(shopId);
         this.refreshCart();
         wx.showToast({ title: '订单提交成功', icon: 'success' });
         wx.navigateTo({
@@ -245,7 +257,11 @@ Page({
         wx.showToast({ title: '结算失败，请重试', icon: 'none' });
       }
     } catch (err) {
-      if (err.message && err.message.includes('余额不足')) {
+      if (customer.id !== getCustomerId()) return;
+      if (err.response?.code === 'CHECKOUT_PRICE_CHANGED' && err.response?.data) {
+        const quote = err.response.data;
+        wx.showModal({ title: '结算金额已变化', content: (quote.items || []).map(item => `${item.name} ×${item.quantity}：¥${item.total_amount}`).join('；') + `。当前应付 ¥${Number(quote.payableAmount).toFixed(2)}，是否按此金额下单？`, success: result => { if (result.confirm && customer.id === getCustomerId()) { this.setData({ payablePrice: Number(quote.payableAmount).toFixed(2) }); this.doCheckout(); } } });
+      } else if (err.message && err.message.includes('余额不足')) {
         wx.showActionSheet({
           itemList: ['切换为到店自提付款', '去储值页面充值'],
           success: (res) => {
@@ -304,8 +320,7 @@ Page({
     this.refreshCart();
   },
 
-  isCouponApplicable(coupon) {
-    const { selectedItems, totalPrice } = this.data;
+  isCouponApplicable(coupon, selectedItems = this.data.selectedItems, totalPrice = this.data.totalPrice) {
     const price = parseFloat(totalPrice) || 0;
     if (!coupon) return false;
     if (coupon.type === 'buy_x_get_y') return false;

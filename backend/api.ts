@@ -735,8 +735,14 @@ export const bookingApi = {
 
   getCustomerBookings: async (customerId: string): Promise<Booking[]> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Booking[] }>(`${API_BASE}/bookings/customer/${customerId}`);
-      if (result?.data) return result.data;
+      const rows: Booking[] = [];
+      for (let page = 1; ; page += 1) {
+        const result = await http<{ success: boolean; data: Booking[]; pagination?: { totalPages: number } }>(`${API_BASE}/bookings/customer/${encodeURIComponent(customerId)}?page=${page}&pageSize=200`);
+        if (!Array.isArray(result?.data)) throw new Error('预约列表读取失败');
+        rows.push(...result.data);
+        if (!result.pagination || page >= result.pagination.totalPages) break;
+      }
+      return Array.from(new Map(rows.map(row => [row.id, row])).values());
     }
     await new Promise((r) => setTimeout(r, 200));
     return mockBookings.filter((b) => b.customerId === customerId);
@@ -2155,7 +2161,7 @@ async function httpThrowing<T>(url: string, opts: RequestInit = {}, timeout = 15
     data?: T;
   };
   if (!res.ok || data.success === false) {
-    throw new Error(data.error || `请求失败 (${res.status})`);
+    throw Object.assign(new Error(data.error || `请求失败 (${res.status})`), { response: data, statusCode: res.status });
   }
   return data.data as T;
 }
@@ -2163,6 +2169,7 @@ async function httpThrowing<T>(url: string, opts: RequestInit = {}, timeout = 15
 // 商品订单 API（MVP 商城）
 export const productOrderApi = {
   create: async (data: {
+    expectedAmount: number;
     shopId: string;
     customerId: string;
     items: Array<{ productId: string; quantity: number }>;
@@ -2173,10 +2180,15 @@ export const productOrderApi = {
     customerCouponId?: string;
   }): Promise<ProductOrder | null> => {
     if (USE_REAL_API) {
-      return await httpThrowing<ProductOrder>(`${API_BASE}/product-orders`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
+      const key = `mbs_checkout_intent:${API_BASE}:${data.customerId}:${data.shopId}`;
+      const signature = JSON.stringify(data);
+      let previous: {signature?: string; requestKey?: string} = {};
+      try { previous = JSON.parse(localStorage.getItem(key) || '{}'); } catch { /* discard malformed intent */ }
+      const requestKey = previous.signature === signature && previous.requestKey ? previous.requestKey : crypto.randomUUID();
+      localStorage.setItem(key, JSON.stringify({ signature, requestKey }));
+      const result = await httpThrowing<ProductOrder>(`${API_BASE}/product-orders`, { method: 'POST', body: JSON.stringify({...data,requestKey}) });
+      if (JSON.parse(localStorage.getItem(key) || '{}').requestKey === requestKey) localStorage.removeItem(key);
+      return result;
     }
     return null;
   },

@@ -158,8 +158,8 @@ Page({
       minDate: dates[0].value,
       maxDate: dates[dates.length - 1].value,
       selectedDate,
-      timeSlots: timeSlots.map((t) => ({ time: t, full: false })),
-      selectedTime: timeSlots[0] || '',
+      timeSlots: timeSlots.map((t) => ({ time: t, full: true })),
+      selectedTime: '',
       customerId: getCustomerId(),
     });
 
@@ -211,7 +211,7 @@ Page({
       } else {
         this.setData({ dates, minDate: dates[0].value, maxDate: dates[dates.length - 1].value });
       }
-      await Promise.all([this.loadCustomer(), this.loadBookings()]);
+      await Promise.all([this.loadCustomer(), this.loadShop().then(() => this.loadBookings())]);
       this.refreshServicesWithCustomer();
     } else {
       this._bookingShown = true;
@@ -229,7 +229,7 @@ Page({
       if (shop) {
         const services = this.enrichServices(shop.services || []);
         const rawStylists = (shop.employees || []).filter((e) => isStylist(e) && e.isActive !== false);
-        const selectedService = services.length > 0 ? services[0].id : '';
+        const selectedService = services.some(item => item.id === this.data.selectedService) ? this.data.selectedService : (services[0]?.id || '');
         const service = getServiceById(services, selectedService);
         this.setData({
           shop: { ...shop, services },
@@ -426,11 +426,12 @@ Page({
       const allBusy = eligible.length === 0 || eligible.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
       return { time, full: allBusy };
     });
-    const stillValid = rawSlots.includes(selectedTime);
+    const stillValid = timeSlots.some(slot => slot.time === selectedTime && !slot.full);
     this.setData({
       timeSlots,
-      selectedTime: stillValid ? selectedTime : (rawSlots[0] || ''),
+      selectedTime: stillValid ? selectedTime : (timeSlots.find(slot => !slot.full)?.time || ''),
     });
+    this.updateStylists((this.data.shop?.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
   },
 
   onServiceSelect(e) {
@@ -459,8 +460,8 @@ Page({
     const timeSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
     this.setData({
       selectedDate,
-      timeSlots: timeSlots.map((t) => ({ time: t, full: false })),
-      selectedTime: timeSlots[0] || '',
+      timeSlots: timeSlots.map((t) => ({ time: t, full: true })),
+      selectedTime: '',
     });
     return this.loadBookings();
   },
@@ -468,7 +469,7 @@ Page({
   onTimeSelect(e) {
     const time = e.currentTarget.dataset.value;
     const item = this.data.timeSlots.find((t) => t.time === time);
-    if (item && item.full) return;
+    if (!item || item.full) return;
     this.setData({ selectedTime: time });
     this.updateStylists((this.data.shop?.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
   },
