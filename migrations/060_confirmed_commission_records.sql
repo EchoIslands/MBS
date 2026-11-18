@@ -27,9 +27,13 @@ BEGIN
  IF category='settlements' AND row->>'payment_status'<>'completed' THEN RETURN NEW; END IF;
  IF category='stored_value_transactions' AND row->>'type'<>'recharge' THEN RETURN NEW; END IF;
  IF category='refund_requests' AND row->>'status'<>'completed' THEN RETURN NEW; END IF;
- shop:=row->>'shop_id';
- IF shop IS NULL THEN SELECT shop_id INTO shop FROM customers WHERE id=row->>'customer_id'; END IF;
- IF shop IS NULL THEN RETURN NEW; END IF;
+ -- Legacy records may contain an empty string instead of NULL.  Never enqueue
+ -- evidence for an unknown shop: commission_sources.shop_id has a strict FK.
+ shop:=NULLIF(btrim(row->>'shop_id'),'');
+ IF shop IS NULL THEN
+   SELECT NULLIF(btrim(shop_id),'') INTO shop FROM customers WHERE id=row->>'customer_id';
+ END IF;
+ IF shop IS NULL OR NOT EXISTS (SELECT 1 FROM shops WHERE id=shop) THEN RETURN NEW; END IF;
  occurred:=COALESCE((row->>'manual_paid_at')::TIMESTAMPTZ,(row->>'paid_at')::TIMESTAMPTZ,(row->>'processed_at')::TIMESTAMPTZ,(row->>'created_at')::TIMESTAMPTZ,NOW());
  INSERT INTO commission_sources(id,shop_id,kind,source_record_id,payload,occurred_at)
  VALUES(category||':'||(row->>'id'),shop,category,row->>'id',row,occurred) ON CONFLICT(id) DO NOTHING;
@@ -130,13 +134,24 @@ REVOKE ALL ON FUNCTION commission_record(TEXT,TEXT,JSONB) FROM PUBLIC,anon,authe
 GRANT EXECUTE ON FUNCTION commission_record(TEXT,TEXT,JSONB) TO service_role;
 -- Historical financial evidence enters review, never automatic guessed commission.
 INSERT INTO commission_sources(id,shop_id,kind,source_record_id,payload,occurred_at)
- SELECT 'settlements:'||id,shop_id,'settlements',id,to_jsonb(s),COALESCE(manual_paid_at,created_at) FROM settlements s WHERE payment_status='completed' ON CONFLICT(id) DO NOTHING;
+ SELECT 'settlements:'||s.id,sh.id,'settlements',s.id,to_jsonb(s),COALESCE(s.manual_paid_at,s.created_at)
+ FROM settlements s LEFT JOIN customers c ON c.id=s.customer_id
+ JOIN shops sh ON sh.id=COALESCE(NULLIF(btrim(s.shop_id),''),NULLIF(btrim(c.shop_id),''))
+ WHERE s.payment_status='completed' ON CONFLICT(id) DO NOTHING;
 INSERT INTO commission_sources(id,shop_id,kind,source_record_id,payload,occurred_at)
- SELECT 'stored_value_transactions:'||t.id,c.shop_id,'stored_value_transactions',t.id,to_jsonb(t),t.created_at FROM stored_value_transactions t JOIN customers c ON c.id=t.customer_id WHERE t.type='recharge' ON CONFLICT(id) DO NOTHING;
+ SELECT 'stored_value_transactions:'||t.id,sh.id,'stored_value_transactions',t.id,to_jsonb(t),t.created_at
+ FROM stored_value_transactions t JOIN customers c ON c.id=t.customer_id
+ JOIN shops sh ON sh.id=NULLIF(btrim(c.shop_id),'')
+ WHERE t.type='recharge' ON CONFLICT(id) DO NOTHING;
 INSERT INTO commission_sources(id,shop_id,kind,source_record_id,payload,occurred_at)
- SELECT 'customer_packages:'||id,shop_id,'customer_packages',id,to_jsonb(p),created_at FROM customer_packages p ON CONFLICT(id) DO NOTHING;
+ SELECT 'customer_packages:'||p.id,sh.id,'customer_packages',p.id,to_jsonb(p),p.created_at
+ FROM customer_packages p LEFT JOIN customers c ON c.id=p.customer_id
+ JOIN shops sh ON sh.id=COALESCE(NULLIF(btrim(p.shop_id),''),NULLIF(btrim(c.shop_id),'')) ON CONFLICT(id) DO NOTHING;
 INSERT INTO commission_sources(id,shop_id,kind,source_record_id,payload,occurred_at)
- SELECT 'refund_requests:'||id,shop_id,'refund_requests',id,to_jsonb(r),COALESCE(processed_at,created_at) FROM refund_requests r WHERE status='completed' ON CONFLICT(id) DO NOTHING;
+ SELECT 'refund_requests:'||r.id,sh.id,'refund_requests',r.id,to_jsonb(r),COALESCE(r.processed_at,r.created_at)
+ FROM refund_requests r LEFT JOIN customers c ON c.id=r.customer_id
+ JOIN shops sh ON sh.id=COALESCE(NULLIF(btrim(r.shop_id),''),NULLIF(btrim(c.shop_id),''))
+ WHERE r.status='completed' ON CONFLICT(id) DO NOTHING;
 -- CEO records verified offline refunds for recharge/card sales as well as services.
 -- This function only appends evidence and commission reversals; it never refunds money.
 CREATE OR REPLACE FUNCTION commission_record_manual_refund(p_shop TEXT,p_actor TEXT,p_request JSONB) RETURNS JSONB

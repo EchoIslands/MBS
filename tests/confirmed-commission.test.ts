@@ -14,8 +14,12 @@ test('060 isolated database: evidence, owner confirmation, transfers and cross-m
  await db.exec('CREATE ROLE service_role; CREATE ROLE anon; CREATE ROLE authenticated;');
  for(const file of ['001_baseline_schema.sql','019_create_customer_packages.sql','021_create_membership_enrollments.sql','007_create_product_tables.sql','010_add_shipping_to_orders.sql','009_create_product_inventory_logs.sql','011_create_product_order_refunds.sql','013_create_group_buy.sql','016_fix_coupon_schema.sql','020_create_package_usage_logs.sql'])await db.exec((await readFile(new URL('../migrations/'+file,import.meta.url),'utf8')).replace(/^\uFEFF/,''));
  const connection:SetupConnection={query:async(sql,values)=>values?db.query(sql,values):{rows:(await db.exec(sql)).at(-1)?.rows||[]}};
- await setupDatabase(connection,()=>{});
  await db.exec("INSERT INTO shops(id,name) VALUES('s','test'); INSERT INTO customers(id,shop_id,name,phone) VALUES('c','s','test','13800000000'); INSERT INTO employees(id,shop_id,name,role,is_active) VALUES('boss','s','boss','ceo',true),('seller','s','seller','stylist',true),('actual','s','actual','stylist',true);");
+ // Legacy package rows can have an empty shop_id; 060 must recover the shop
+ // from the owning customer instead of violating commission_sources FK.
+ await db.exec("INSERT INTO customer_packages(id,shop_id,customer_id,name,service_id,expires_at) VALUES('legacy-package','','c','legacy','svc','2027-01-01T00:00:00Z');");
+ await setupDatabase(connection,()=>{});
+ assert.equal((await db.query<{shop_id:string}>("SELECT shop_id FROM commission_sources WHERE id='customer_packages:legacy-package'")).rows[0]?.shop_id,'s');
  // Synthetic sources represent a captured paid receipt and a later card redemption.
  await db.exec(`INSERT INTO commission_sources(id,shop_id,kind,source_record_id,payload,occurred_at) VALUES
  ('sale','s','settlements','original','{"customer_id":"c","total":20000}','2026-10-15T12:00:00+08:00'),
