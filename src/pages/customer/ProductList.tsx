@@ -78,7 +78,7 @@ const ProductList: React.FC = () => {
       if (!shopId) return;
       setLoading(true);
       try {
-        const data = await productApi.getByShop(shopId);
+        const data = await productApi.getPublicCatalog(shopId);
         setProducts(data || []);
       } catch (err) {
         console.error('[ProductList] 获取商品失败:', err);

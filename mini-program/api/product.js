@@ -1,4 +1,4 @@
-import { get, post, put } from '../utils/api';
+import { get, getPublicDisplay, post, put } from '../utils/api';
 
 /**
  * 获取店铺优惠券列表（顾客端）
@@ -35,8 +35,8 @@ export async function claimCoupon(couponId, customerId, customerName, customerPh
  * 获取店铺商品列表
  */
 export async function getShopProducts(shopId) {
-  const result = await get(`/shops/${shopId}/products`);
-  return result?.data || [];
+  const result = await getPublicDisplay(`/shops/${encodeURIComponent(shopId)}/products?view=public`);
+  return (result?.data || []).filter(product => product.isActive !== false);
 }
 
 /**

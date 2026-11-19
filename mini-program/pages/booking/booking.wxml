@@ -126,7 +126,10 @@
           <mbs-icon name="clock" size="36" color="var(--primary)" />
           <text class="card-header-text">选择到店时间</text>
         </view>
-        <view class="time-grid">
+        <view wx:if="{{bookingsLoading}}" class="empty-hint">正在读取档期…</view>
+        <view wx:elif="{{bookingsError}}" class="empty-hint" bindtap="loadBookings">档期读取失败，点击重试</view>
+        <view wx:elif="{{timeSlots.length === 0}}" class="empty-hint">当天已无可选时段，请选择其他日期</view>
+        <view wx:else class="time-grid">
           <view
             wx:for="{{timeSlots}}"
             wx:key="time"
@@ -265,8 +268,8 @@
           <view wx:else class="bar-price-placeholder">请选择服务</view>
         </view>
       </view>
-      <view class="bar-btn {{booking || customerLoading ? 'bar-btn-disabled' : ''}}" bindtap="handleBooking">
-        <text>{{booking ? '预约中...' : customerLoading ? '核对会员价...' : '确认预约'}}</text>
+      <view class="bar-btn {{booking || customerLoading || bookingsLoading || bookingsError ? 'bar-btn-disabled' : ''}}" bindtap="handleBooking">
+        <text>{{booking ? '预约中...' : bookingsLoading ? '读取档期…' : bookingsError ? '档期未更新' : customerLoading ? '核对会员价...' : '确认预约'}}</text>
       </view>
     </view>
   </view>

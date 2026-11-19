@@ -42,8 +42,8 @@ export function request(url, options = {}) {
   const base = getApiBase();
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
   const timeout = options.timeout || DEFAULT_TIMEOUT;
-  const requestToken = getToken();
-  const requestCustomerId = getCustomerId();
+  const requestToken = options.publicRead ? '' : getToken();
+  const requestCustomerId = options.publicRead ? '' : getCustomerId();
   const headers = {
     'Content-Type': 'application/json',
     ...(requestToken && !url.startsWith('http') ? { Authorization: 'Bearer ' + requestToken } : {}),
@@ -66,13 +66,13 @@ export function request(url, options = {}) {
         if (completed) return;
         completed = true;
         if (timeoutId) clearTimeout(timeoutId);
-        recordTiming(url,started,res.statusCode,JSON.stringify(res.data||null).length);
+        const bodySize = JSON.stringify(res.data ?? null).length;
+        recordTiming(url,started,res.statusCode,bodySize);
 
         // 微信返回 200 但后端可能返回错误信息
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          const bodyStr = res.data ? JSON.stringify(res.data) : '';
-          if (bodyStr.length > 512 * 1024) {
-            console.warn(`[mini-api] ${fullUrl} 响应体过大: ${Math.round(bodyStr.length / 1024)}KB`);
+          if (bodySize > 512 * 1024) {
+            console.warn(`[mini-api] ${fullUrl} 响应体过大: ${Math.round(bodySize / 1024)}KB`);
           }
           if(res.data?.success===false) {reject(new Error(res.data.error || '操作未完成'));return;}
           resolve(resolveMedia(res.data,base));
@@ -136,9 +136,17 @@ export function request(url, options = {}) {
 // 仅合并同一会话中同时进行的相同读取，不缓存结果，避免影响排队实时性。
 const pendingGets = new Map();
 export function get(url, headers) {
-  const key = JSON.stringify([getApiBase(), getCustomerId(), getToken(), url, headers || {}]);
+  return getOnce(url, headers, false);
+}
+
+export function getPublicDisplay(url) {
+  return getOnce(url, undefined, true);
+}
+
+function getOnce(url, headers, publicRead) {
+  const key = JSON.stringify([getApiBase(), publicRead, publicRead ? '' : getCustomerId(), publicRead ? '' : getToken(), url, headers || {}]);
   if (pendingGets.has(key)) return pendingGets.get(key);
-  const pending = request(url, { method: 'GET', headers }).finally(() => {
+  const pending = request(url, { method: 'GET', headers, publicRead }).finally(() => {
     if (pendingGets.get(key) === pending) pendingGets.delete(key);
   });
   pendingGets.set(key, pending);
@@ -147,12 +155,12 @@ export function get(url, headers) {
 
 // 仅门店展示配置复用一分钟；不缓存会员余额、预约档期、排队或订单。
 let shopSnapshot = null;
-export function getShopSnapshot(url) {
+export function getShopSnapshot(url, { publicRead = false } = {}) {
   const key = JSON.stringify([getApiBase(), getCustomerId(), getToken(), url]);
   if (shopSnapshot?.key === key && shopSnapshot.expires > Date.now()) {
     return Promise.resolve(JSON.parse(JSON.stringify(shopSnapshot.value)));
   }
-  return get(url).then(value => {
+  return (publicRead ? getPublicDisplay(url) : get(url)).then(value => {
     if (key === JSON.stringify([getApiBase(), getCustomerId(), getToken(), url])) {
       shopSnapshot = { key, value, expires: Date.now() + 60000 };
     }

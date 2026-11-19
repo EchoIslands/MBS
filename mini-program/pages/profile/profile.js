@@ -172,25 +172,7 @@ Page({
   },
 
   async onLoad() {
-    if (!getCustomerId() || !getToken()) {
-      await this.loadProfile();
-      return;
-    }
-    this.loadStoreContact();
     await this.loadProfile();
-  },
-
-  async loadStoreContact() {
-    try {
-      const shop = await getShop('shop1');
-      if (!shop || shop.isActive === false) throw new Error('门店暂不可用');
-      const publicPhone = /^(?:1\d{10}|0\d{2,3}-?\d{7,8}|[2-9]\d{7})$/.test(String(shop.phone || '')) && !['13800138001', '13900000001'].includes(String(shop.phone)) ? shop.phone : '';
-      this.setData({
-        shopPhone: publicPhone,
-      });
-    } catch (err) {
-      console.warn('[profile] 门店联系方式加载失败');
-    }
   },
 
   async onShow() {
@@ -219,6 +201,7 @@ Page({
     const isCurrent = () => requestId === this._profileRequestId && customerId === getCustomerId() && token === getToken();
     this.setData({ loading: !this.data.customer, error: '', bookingsLoading: true, bookingsError: '', reviewsLoading: true });
     this.setData({ benefitsLoading: true, benefitsError: '' });
+    const profileRequest = getCustomerPublic(customerId);
     const benefitsRequest = getCustomerBenefits(customerId).then(records => {
       if (isCurrent()) this.setData({ myBenefits: this.computeMyBenefits({ memberBenefitRecords: records }), benefitsLoading: false });
     }).catch(() => {
@@ -253,7 +236,7 @@ Page({
       if (isCurrent()) this.setData({ reviewsLoading: false });
     });
     try {
-      const rawCustomer = await getCustomerPublic(customerId);
+      const rawCustomer = await profileRequest;
       if (!isCurrent()) return;
       const customer = slimCustomer(rawCustomer);
 

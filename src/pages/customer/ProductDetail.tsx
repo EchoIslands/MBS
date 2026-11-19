@@ -23,7 +23,7 @@ const ProductDetail: React.FC = () => {
       if (!shopId || !productId) return;
       setLoading(true);
       try {
-        const products = await productApi.getByShop(shopId);
+        const products = await productApi.getPublicCatalog(shopId);
         const found = products.find((p) => p.id === productId);
         setProduct(found || null);
       } catch (err) {

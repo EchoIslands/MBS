@@ -7,11 +7,10 @@ import { get, getShopSnapshot } from '../utils/api';
  * @param {number} [lon] 用户经度
  */
 export async function getShop(id, lat, lon) {
-  const query = [];
+  const query = ['view=public'];
   if (lat !== undefined) query.push(`lat=${encodeURIComponent(String(lat))}`);
   if (lon !== undefined) query.push(`lon=${encodeURIComponent(String(lon))}`);
-  const queryString = query.length > 0 ? `?${query.join('&')}` : '';
-  const result = await getShopSnapshot(`/shops/${id}${queryString}`);
+  const result = await getShopSnapshot(`/shops/${id}?${query.join('&')}`, { publicRead: true });
   return result?.data || null;
 }
 

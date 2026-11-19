@@ -131,6 +131,7 @@ Page({
     notes: '',
     existingBookings: [],
     bookingsError: true,
+    bookingsLoading: true,
     customerLoading: true,
     booking: false,
     customerId: '',
@@ -163,21 +164,8 @@ Page({
       customerId: getCustomerId(),
     });
 
-    const shopAndBookings = this.loadShop().then(() => {
-      if (serviceId) {
-        const service = getServiceById(this.data.shop?.services || [], serviceId);
-        this.setData({
-          selectedService: serviceId,
-          selectedBarberId: '',
-          selectedBarberName: '',
-          selectionMode: 'fastest',
-          selectedServiceName: service?.name || '',
-          selectedServicePrice: service?.memberPrice ?? service?.price ?? 0,
-        });
-      }
-      return this.loadBookings();
-    });
-    await Promise.all([shopAndBookings, this.loadCustomer()]);
+    if (serviceId) this.setData({ selectedService: serviceId });
+    await Promise.all([this.loadShop(), this.loadBookings(), this.loadCustomer()]);
     this.refreshServicesWithCustomer();
 
     trackBookingStart(
@@ -211,7 +199,7 @@ Page({
       } else {
         this.setData({ dates, minDate: dates[0].value, maxDate: dates[dates.length - 1].value });
       }
-      await Promise.all([this.loadCustomer(), this.loadShop().then(() => this.loadBookings())]);
+      await Promise.all([this.loadBookings(), this.loadShop(), this.loadCustomer()]);
       this.refreshServicesWithCustomer();
     } else {
       this._bookingShown = true;
@@ -223,7 +211,7 @@ Page({
   },
 
   async loadShop() {
-    this.setData({ loading: true, error: '' });
+    this.setData({ loading: !this.data.shop, error: '' });
     try {
       const shop = await getShop('shop1');
       if (shop) {
@@ -398,21 +386,24 @@ Page({
   },
 
   async loadBookings() {
-    const { shop, selectedDate } = this.data;
-    if (!shop?.id || !selectedDate) return;
+    const { selectedDate } = this.data;
+    const shopId = this.data.shop?.id || 'shop1';
+    if (!selectedDate) return;
     const requestId = (this._bookingsRequestId || 0) + 1;
     this._bookingsRequestId = requestId;
-    this.setData({ bookingsError: true });
+    this.setData({ bookingsLoading: true, bookingsError: true });
     try {
-      const data = await getBookingsByShop(shop.id, selectedDate);
+      const data = await getBookingsByShop(shopId, selectedDate);
       if (requestId !== this._bookingsRequestId || selectedDate !== this.data.selectedDate) return;
-      this.setData({ existingBookings: data || [], bookingsError:false });
-      this.updateStylists((shop.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
+      this.setData({ existingBookings: data || [], bookingsLoading: false, bookingsError: false });
+      if (!this.data.shop) return; // loadShop applies the current date's snapshot on arrival.
+      this.updateStylists((this.data.shop.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
       this.updateTimeSlots();
     } catch (error) {
       if (requestId !== this._bookingsRequestId || selectedDate !== this.data.selectedDate) return;
       console.error('加载店铺预约失败:', error);
-      this.setData({ existingBookings: [], bookingsError:true });
+      this.setData({ existingBookings: [], bookingsLoading: false, bookingsError: true });
+      if (this.data.shop) this.updateTimeSlots();
       wx.showToast({title:'档期加载失败，请稍后重试',icon:'none'});
     }
   },
@@ -421,15 +412,15 @@ Page({
     const { selectedDate, selectedTime, stylists, existingBookings } = this.data;
     const rawSlots = generateTimeSlots(selectedDate, this.data.shop?.openingHours);
     const duration = getServiceById(this.data.shop?.services || [],this.data.selectedService)?.duration;
+    const eligible = stylists.filter((s) => s.eligible);
     const timeSlots = rawSlots.map((time) => {
-      const eligible = stylists.filter((s) => s.eligible);
-      const allBusy = eligible.length === 0 || eligible.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
+      const allBusy = this.data.bookingsError || eligible.length === 0 || eligible.every((s) => isBarberBusy(s.id, selectedDate, time, existingBookings, duration));
       return { time, full: allBusy };
     });
     const stillValid = timeSlots.some(slot => slot.time === selectedTime && !slot.full);
     this.setData({
       timeSlots,
-      selectedTime: stillValid ? selectedTime : (timeSlots.find(slot => !slot.full)?.time || ''),
+      selectedTime: this.data.bookingsError || stillValid ? selectedTime : (timeSlots.find(slot => !slot.full)?.time || ''),
     });
     this.updateStylists((this.data.shop?.employees || []).filter((e) => isStylist(e) && e.isActive !== false));
   },
@@ -467,6 +458,7 @@ Page({
   },
 
   onTimeSelect(e) {
+    if (this.data.bookingsError) return;
     const time = e.currentTarget.dataset.value;
     const item = this.data.timeSlots.find((t) => t.time === time);
     if (!item || item.full) return;
@@ -522,7 +514,7 @@ Page({
         return;
       }
     }
-    if(this.data.bookingsError) {await this.loadBookings();if(this.data.bookingsError) return;}
+    if (this.data.bookingsLoading || this.data.bookingsError) return;
     const { selectedService, selectedDate, selectedTime, customerId } = this.data;
 
     if (!selectedService || !selectedDate || !selectedTime) {

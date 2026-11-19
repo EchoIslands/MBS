@@ -28,6 +28,7 @@ Page({
     searchQuery: '',
     sortBy: 'recommended',
     loading: true,
+    productsError: '',
     cartCount: 0,
     coupons: [],
     myCoupons: [],
@@ -40,21 +41,25 @@ Page({
     const routeParams = takeRouteParams();
     const shopId = options.shopId || routeParams?.shopId || 'shop1';
     this.setData({ shopId });
-    this.loadCustomer();
     this.loadProducts();
+    this.loadCustomer();
     this.loadCoupons();
   },
 
   onShow() {
     syncTabBarSelected(this, 1);
     const routeParams = takeRouteParams();
-    if (routeParams?.shopId && routeParams.shopId !== this.data.shopId) {
-      this.setData({ shopId: routeParams.shopId });
+    const shopChanged = routeParams?.shopId && routeParams.shopId !== this.data.shopId;
+    if (shopChanged) {
+      this._loadedCatalogShopId = null;
+      this.setData({ shopId: routeParams.shopId, products: [], filteredProducts: [], coupons: [], myCoupons: [], claimedMap: {}, showCoupons: false });
+    }
+    if (shopChanged || this._productsShown) {
       this.loadProducts();
+      this.loadCustomer();
       this.loadCoupons();
     }
-    if (this._productsShown) { this.loadCustomer(); this.loadProducts(); this.loadCoupons(); }
-    else this._productsShown = true;
+    this._productsShown = true;
     this.refreshCartCount();
   },
 
@@ -62,6 +67,10 @@ Page({
     const customerId = getCustomerId();
     const requestId = this._customerRequestId = (this._customerRequestId || 0) + 1;
     const isCurrent = () => this._customerRequestId === requestId && getCustomerId() === customerId;
+    if (this.data.customer && this.data.customer.id !== customerId) {
+      this.setData({ customer: null });
+      this.applyFilter();
+    }
     if (!customerId) {
       this.setData({ customer: null });
       this.applyFilter();
@@ -88,18 +97,21 @@ Page({
   async loadProducts() {
     const shopId = this.data.shopId;
     const requestId = this._productsRequestId = (this._productsRequestId || 0) + 1;
-    this.setData({ loading: true });
+    const isCurrent = () => requestId === this._productsRequestId && shopId === this.data.shopId;
+    const hasLoaded = this._loadedCatalogShopId === shopId;
+    this.setData({ loading: !hasLoaded, productsError: '' });
     try {
       const products = await getShopProducts(shopId);
-      if (requestId !== this._productsRequestId || shopId !== this.data.shopId) return;
-      this.setData({ products: products || [] }, () => {
-        this.applyFilter();
-      });
+      if (!isCurrent()) return;
+      this._loadedCatalogShopId = shopId;
+      this.setData({ products: products || [] });
+      this.applyFilter();
     } catch (err) {
+      if (!isCurrent()) return;
       console.error('[products] 加载商品失败:', err);
-      wx.showToast({ title: '商品加载失败', icon: 'none' });
+      this.setData({ productsError: hasLoaded ? '商品更新失败，点击重试' : '商品加载失败，点击重试' });
     } finally {
-      if (requestId === this._productsRequestId) this.setData({ loading: false });
+      if (isCurrent()) this.setData({ loading: false });
     }
   },
 
@@ -108,11 +120,10 @@ Page({
     const customerId = getCustomerId();
     const requestId = this._couponsRequestId = (this._couponsRequestId || 0) + 1;
     try {
-      const coupons = await getShopCoupons(this.data.shopId);
-      let myCoupons = [];
-      if (customerId) {
-        myCoupons = await getCustomerCoupons(customerId, this.data.shopId, 'unused');
-      }
+      const [coupons, myCoupons] = await Promise.all([
+        getShopCoupons(shopId),
+        customerId ? getCustomerCoupons(customerId, shopId, 'unused') : [],
+      ]);
       if (requestId !== this._couponsRequestId || shopId !== this.data.shopId || customerId !== getCustomerId()) return;
       const claimedMap = {};
       (Array.isArray(myCoupons) ? myCoupons : []).forEach((mc) => {

@@ -56,9 +56,33 @@ test('cart state is not exposed across account switches or mixed between shops',
  ctx.addToCart({id:'r',shopId:'other',stock:10});assert.equal(ctx.getCart('other').length,1);assert.equal(ctx.getCart('other')[0].productId,'r');assert.equal(ctx.getCart('s')[0].productId,'p');
 });
 
+test('mall keeps the loaded grid on a slow refresh and rejects results from another shop', async () => {
+ const requests: {shopId:string;resolve:(rows:unknown[])=>void}[] = [];
+ const p = page('mini-program/pages/products/products.js', {
+  getShopProducts: (shopId:string) => new Promise(resolve => requests.push({shopId, resolve})),
+ });
+ const initial = p.loadProducts();
+ requests[0].resolve([{id:'first',price:100}]);
+ await initial;
+ const refresh = p.loadProducts();
+ assert.equal(p.data.loading,false);
+ assert.equal(p.data.filteredProducts[0].id,'first');
+ p.setData({shopId:'shop2',products:[],filteredProducts:[]});
+ const newShop = p.loadProducts();
+ assert.equal(p.data.loading,true);
+ requests[1].resolve([{id:'old-shop',price:100}]);
+ await refresh;
+ assert.equal(p.data.filteredProducts.length,0);
+ requests[2].resolve([{id:'new-shop',price:100}]);
+ await newShop;
+ assert.equal(p.data.loading,false);
+ assert.equal(p.data.filteredProducts[0].id,'new-shop');
+});
+
 test('booking recomputes stylist availability after choosing first unfilled slot',()=>{
  const p=page('mini-program/pages/booking/booking.js',{bookingSlots:()=>['09:00','09:30'],sortStylistsByRank:(items:unknown[])=>items});
  p.data.shop={services:[{id:'svc',duration:30}],employees:[{id:'s',role:'stylist'}]};p.data.selectedService='svc';p.data.selectedDate='2099-01-01';p.data.selectedTime='08:00';p.data.stylists=[{id:'s',eligible:true,isAvailable:true}];p.data.existingBookings=[{status:'confirmed',stylistId:'s',scheduledTime:'2099-01-01T09:00:00+08:00',duration:30}];
+ p.data.bookingsError=false;p.data.bookingsLoading=false;
  p.updateTimeSlots();assert.equal(p.data.selectedTime,'09:30');assert.equal(p.data.stylists[0].isAvailable,true);
  p.data.existingBookings.push({status:'confirmed',stylistId:'s',scheduledTime:'2099-01-01T09:30:00+08:00',duration:30});p.updateTimeSlots();assert.equal(p.data.selectedTime,'');
 });

@@ -905,6 +905,39 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal((await request('/shops/s1/products/image-product',ceo,'PUT',{name:'Edited',images:product.body.data[0].images,stock:999})).status,200);assert.deepEqual(tables.products[0].images,[png]);assert.equal(tables.products[0].stock,1);
    }finally{Object.assign(shop,before);tables.products=products;}
   });
+  await t.test('只有匿名公开展示数据可以进 CDN，发型师电话和下架商品不会进入公开响应', async () => {
+   const shopPath = base + '/api/shops/s1';
+   const savedProducts = tables.products;
+   tables.products = [
+    {id:'visible',shop_id:'s1',is_active:true},
+    {id:'hidden',shop_id:'s1',is_active:false},
+   ];
+   try {
+    const publicShop = await fetch(shopPath + '?view=public');
+    assert.equal(publicShop.status, 200);
+    assert.match(publicShop.headers.get('vercel-cdn-cache-control') || '', /s-maxage=20/);
+    const {data: {employees}} = await publicShop.json();
+    assert.ok(employees.length > 0);
+    assert.ok(employees.every((employee: {phone?:string}) => !Object.hasOwn(employee, 'phone')));
+    const staffShop = await fetch(shopPath, {headers:{Authorization:'Bearer ' + ceo}});
+    assert.equal(staffShop.headers.get('vercel-cdn-cache-control'), null);
+    assert.match(staffShop.headers.get('cache-control') || '', /no-store/);
+    assert.ok((await staffShop.json()).data.employees.some((employee: {phone?:string}) => employee.phone));
+    const locatedShop = await fetch(shopPath + '?view=public&lat=36&lon=120');
+    assert.equal(locatedShop.headers.get('vercel-cdn-cache-control'), null);
+    const catalog = await fetch(shopPath + '/products?view=public');
+    assert.match(catalog.headers.get('vercel-cdn-cache-control') || '', /s-maxage=20/);
+    assert.deepEqual((await catalog.json()).data.map((product: {id:string}) => product.id), ['visible']);
+    const privateCatalog = await fetch(shopPath + '/products');
+    assert.equal(privateCatalog.headers.get('vercel-cdn-cache-control'), null);
+    assert.equal((await privateCatalog.json()).data.length, 2);
+    const catalogWithCookie = await fetch(shopPath + '/products?view=public', {headers:{Cookie:'test=1'}});
+    assert.equal(catalogWithCookie.headers.get('vercel-cdn-cache-control'), null);
+    assert.match(catalogWithCookie.headers.get('cache-control') || '', /no-store/);
+   } finally {
+    tables.products = savedProducts;
+   }
+  });
   await t.test('服务端预约遵守门店营业配置，不信任前端可选时段',async()=>{
    const shop=tables.shops[0],before=structuredClone(shop);tables.bookings=[];
    const body={shopId:'s1',customerId:'c1',serviceId:'svc',stylistId:'stylist',scheduledTime:'2029-01-01T10:00:00+08:00'};

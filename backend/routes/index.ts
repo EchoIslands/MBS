@@ -3298,10 +3298,21 @@ shopsRouter.get('/', async (_req: Request, res: Response) => {
   }
 });
 
+// Only opt-in public reads can be shared by the CDN.
+function cachePublicDisplay(req: Request, res: Response) {
+  if (!req.headers.authorization && !req.headers.cookie) {
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=20');
+  } else {
+    res.setHeader('Cache-Control', 'private, no-store');
+  }
+}
+
 // 获取单条店铺
 shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const publicDisplay = req.query.view === 'public';
 
     const snapshot = await supabase.rpc('shop_display_snapshot', { p_shop_id: id });
     let data: DbRecord | null = null;
@@ -3356,6 +3367,8 @@ shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
       shop.distance = calculateDistance(userLat, userLon, shop.latitude, shop.longitude);
     }
 
+    if (publicDisplay && !req.employee && !lat && !lon) cachePublicDisplay(req, res);
+    else res.setHeader('Cache-Control', 'private, no-store');
     res.json({
       success: true,
       data: {
@@ -3363,7 +3376,7 @@ shopsRouter.get('/:id', optionalStaff, async (req: Request, res: Response) => {
         employees: (employees || []).map((e: Record<string, unknown>) => ({
           id: e.id,
           name: e.name,
-          ...(req.employee?.shopId === id ? {phone:e.phone} : {}),
+          ...(!publicDisplay && req.employee?.shopId === id ? {phone:e.phone} : {}),
           avatar: imageReference(e.avatar,'/api/shops/'+encodeURIComponent(id)+'/employees/'+encodeURIComponent(String(e.id))+'/avatar'),
           title: e.title,
           role: e.role,
@@ -3544,9 +3557,11 @@ shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
     const {error: expiryError} = await supabase.rpc('expire_product_order_reservations',{p_shop_id:id});
     if (expiryError && expiryError.code !== 'PGRST202') return res.status(503).json({success:false,error:'库存核对失败，请重试'});
     const { recommended } = req.query;
+    const publicDisplay = req.query.view === 'public';
     let query = supabase.from('products').select('*').eq('shop_id', id);
+    if (publicDisplay || recommended === 'true') query = query.eq('is_active', true);
     if (recommended === 'true') {
-      query = query.eq('is_recommended', true).eq('is_active', true);
+      query = query.eq('is_recommended', true);
     }
     const { data, error } = await query
       .order('is_recommended', { ascending: false })
@@ -3556,6 +3571,8 @@ shopsRouter.get('/:id/products', async (req: Request, res: Response) => {
       console.error('[shops] 查询商品失败:', error.message);
       return res.status(500).json({ success: false, error: '查询商品失败' });
     }
+    if (publicDisplay) cachePublicDisplay(req, res);
+    else res.setHeader('Cache-Control', 'private, no-store');
     res.json({ success: true, data: productImageReferences((data || []).map(productFromDb),id) });
   } catch (error) {
     console.error('[shops] 获取商品异常:', error);

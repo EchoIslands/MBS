@@ -86,6 +86,10 @@
       <view class="empty-text">加载中...</view>
     </view>
 
+    <view wx:if="{{productsError}}" class="empty-state" bindtap="loadProducts">
+      <view class="empty-text">{{productsError}}</view>
+    </view>
+
     <!-- 6. 商品网格 -->
     <view wx:if="{{!loading && filteredProducts.length > 0}}" class="product-grid">
       <view
@@ -152,7 +156,7 @@
     </view>
 
     <!-- 7. 空状态 -->
-    <view wx:if="{{!loading && filteredProducts.length === 0}}" class="empty-state">
+    <view wx:if="{{!loading && !productsError && filteredProducts.length === 0}}" class="empty-state">
       <mbs-icon name="shoppingBag" size="80" color="var(--text-tertiary)" />
       <view class="empty-text">暂无相关商品</view>
     </view>

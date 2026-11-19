@@ -95,18 +95,35 @@ test('未来日期预约按北京时间提交，不随设备时区偏移', async
  assert.equal((calls[0] as {scheduledTime:string}).scheduledTime,'2027-01-02T02:00:00.000Z');
 });
 
-test('预约页档期不等待慢会员请求，核对会员价期间不可提交', async () => {
- const {page,context,notifications,calls}=await bookingPage();
+test('预约页并行读取门店、档期和会员价，档期先返回时也能正确生成可选时段', async () => {
+ const {page,context,notifications,calls}=await bookingPage('2026-11-02T00:00:00Z');
  context.takeRouteParams=()=>null;context.getCustomerId=()=> 'customer';context.trackBookingStart=()=>{};
- let finishCustomer:()=>void;
- let bookingsStarted=false;
- page.loadShop=async()=>{page.setData({loading:false})};
+ const shop = page.data.shop;
+ page.data.shop = null;
+ page.data.selectedService = 'ordinary';
+ let finishShop!: () => void;
+ let finishCustomer!: () => void;
+ let finishBookings!: (rows: unknown[]) => void;
+ page.loadShop=()=>new Promise<void>(resolve=>{finishShop=()=> {
+   page.setData({shop, loading:false});
+   page.updateStylists(shop.employees);
+   page.updateTimeSlots();
+   resolve();
+ };});
  page.loadCustomer=()=>new Promise<void>(resolve=>{finishCustomer=resolve});
- page.loadBookings=async()=>{bookingsStarted=true};
+ context.getBookingsByShop=()=>new Promise(resolve=>{finishBookings=resolve;});
  page.refreshServicesWithCustomer=()=>{};
  const pending=page.onLoad({});
+ assert.equal(typeof finishBookings,'function');
+ assert.equal(typeof finishCustomer,'function');
+ assert.equal(page.data.loading,true);
+ assert.equal(page.data.bookingsLoading,true);
+ finishBookings([]);
  await new Promise(resolve=>setImmediate(resolve));
- assert.equal(bookingsStarted,true);assert.equal(page.data.loading,false);
+ assert.equal(page.data.bookingsLoading,false);
+ finishShop();
+ assert.equal(page.data.loading,false);
+ assert.equal(page.data.selectedTime,'10:00');
  await page.handleBooking();assert.equal(calls.length,0);assert.match(notifications.at(-1),/核对会员价格/);
  finishCustomer();await pending;
 });

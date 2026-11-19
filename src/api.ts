@@ -2394,6 +2394,14 @@ export const vipConfigApi = {
 
 // 商品管理 API
 export const productApi = {
+  getPublicCatalog: async (shopId: string): Promise<Product[]> => {
+    if (!USE_REAL_API) return [];
+    const result = await http<{ success: boolean; data: Product[] }>(
+      `${API_BASE}/shops/${encodeURIComponent(shopId)}/products?view=public`,
+      { credentials: 'omit' }
+    );
+    return (result?.data || []).filter(product => product.isActive !== false);
+  },
   getByShop: async (shopId: string): Promise<Product[]> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
