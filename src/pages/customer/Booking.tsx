@@ -81,10 +81,11 @@ export default function BookingPage() {
 
   useEffect(() => {
     let active = true;
-    bookingApi.getBookingsByShop(shopId, day).then(data => {
+    const controller = new AbortController();
+    bookingApi.getPublicAvailability(shopId, day, controller.signal).then(data => {
       if (active) setAvailability({ key: lookupKey, rows: data });
     }).catch(() => { if (active) setAvailability({ key: lookupKey, error: true }); });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [shopId, day, lookupKey]);
 
   const activeShop = shop?.id === shopId ? shop : null;
@@ -100,7 +101,7 @@ export default function BookingPage() {
   };
   const duration = service?.duration || 30;
   const eligibleStylists = stylists.filter(eligible);
-  const slots = result?.rows ? bookingSlots(day, activeShop?.openingHours)
+  const slots = result?.rows && activeShop ? bookingSlots(day, activeShop.openingHours)
     .filter(time => +bookingInstant(day, time) > now)
     .map(time => ({ time, full: eligibleStylists.every(person => stylistBooked(person, +bookingInstant(day, time), duration, rows)) })) : [];
   const time = slots.find(slot => slot.time === timeChoice && !slot.full)?.time ?? slots.find(slot => !slot.full)?.time ?? '';

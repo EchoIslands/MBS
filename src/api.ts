@@ -941,6 +941,16 @@ export const bookingApi = {
     });
   },
 
+  getPublicAvailability: async (shopId: string, date: string, signal?: AbortSignal): Promise<Booking[]> => {
+    if (!USE_REAL_API) return bookingApi.getBookingsByShop(shopId, date);
+    const params = new URLSearchParams({ shopId, date });
+    const rows = await httpThrowing<Booking[]>(API_BASE + '/bookings?' + params, {
+      credentials: 'omit', signal,
+    });
+    if (!Array.isArray(rows)) throw new Error('档期读取失败，请重试');
+    return rows.map(normalizeBooking);
+  },
+
   getAllBookingsByShop: async (shopId: string): Promise<Booking[]> => {
     if (!USE_REAL_API) return mockBookings.filter(booking => booking.shopId === shopId);
     const bookings: Booking[] = [];
