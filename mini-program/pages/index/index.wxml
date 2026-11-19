@@ -10,26 +10,13 @@
   </view>
 
   <view class="container" animation="{{tabSwipeAnimation}}">
-    <!-- 加载 / 错误 -->
-    <view wx:if="{{displayStale || error}}" class="card" bindtap="loadShop">{{error || "正在更新门店信息，下方为上次展示内容"}}</view>
-    <view wx:if="{{loading && !shop}}" class="empty-state">
-      <view class="empty-icon"><mbs-icon name="search" size="56" color="var(--text-tertiary)" /></view>
-      <view class="empty-text">店铺加载中...</view>
-    </view>
-
-    <view wx:elif="{{error && !shop}}" class="card">
-      <view class="card-subtitle" style="color: var(--danger);">{{error}}</view>
-      <view class="btn btn-secondary" bindtap="loadShop">重新加载</view>
-    </view>
-
-    <block wx:elif="{{shop}}">
-      <!-- 店铺主卡片 -->
-      <view class="card shop-card">
+    <!-- 门店实景在主包内，直接渲染。门店资料到达后填入同一张卡片。 -->
+    <view class="card shop-card">
         <swiper class="home-shop-gallery" indicator-dots="true" autoplay="false" catchtouchstart="noop">
           <swiper-item><image class="home-shop-image" src="/assets/shop/storefront.jpg" mode="aspectFill" aria-label="皓诗形象门头实景" /></swiper-item>
           <swiper-item><image class="home-shop-image" src="/assets/shop/service.jpg" mode="aspectFill" aria-label="皓诗形象店内服务实景" /></swiper-item>
         </swiper>
-        <view class="shop-info">
+        <view wx:if="{{shop}}" class="shop-info">
           <view wx:if="{{shop.description}}" class="home-shop-description">{{shop.description}}</view>
           <view class="home-shop-details">
             <view class="home-shop-detail"><text class="home-shop-label">评分</text><view class="home-shop-value home-shop-rating"><text class="home-shop-score">{{shop.rating || '4.8'}} 分</text><text class="home-shop-reviews">{{reviewCount || 0}} 条评价</text></view></view>
@@ -38,8 +25,12 @@
             <view class="home-shop-detail"><text class="home-shop-label">营业时间</text><text class="home-shop-value">09:00–21:00</text></view>
           </view>
         </view>
-      </view>
+        <view wx:elif="{{error}}" class="shop-info" bindtap="loadShop" role="button">{{error}} · 点击重试</view>
+        <view wx:elif="{{loading}}" class="shop-info card-subtitle">正在更新门店资料…</view>
+    </view>
+    <view wx:if="{{shop && (displayStale || error)}}" class="card" bindtap="loadShop">{{error || "正在更新门店信息，上方为上次展示内容"}}</view>
 
+    <block wx:if="{{shop}}">
       <view class="card home-membership">
         <view class="card-title"><mbs-icon name="crown" size="32" color="var(--primary)" />会员体系 · 权益简介</view>
         <view class="membership-intro">购买 VIP 享等级权益，储值会员可叠加消费折扣。</view>

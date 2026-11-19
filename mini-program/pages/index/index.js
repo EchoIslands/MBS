@@ -152,8 +152,9 @@ Page({
     const startTime = Date.now();
     this.setData({ loading: !this.data.shop, error: '' });
     try {
+      const shopRequest = getShop('shop1');
       const reviewsRequest = this.loadReviews('shop1');
-      const rawShop = await getShop('shop1');
+      const rawShop = await shopRequest;
       if (!rawShop) {
         this.setData({ error: '店铺信息加载失败', loading: false });
         return;
@@ -218,21 +219,7 @@ Page({
         replyAt: r.replyAt,
         starList: buildStarList(r.overallScore || r.rating || 0),
       }));
-      const payload = {
-        shop,
-        stylists,
-        displayTags,
-        products,
-        reviews,
-        reviewCount: reviews.length,
-        ratingStars: this.buildStars(shop.rating || 4.8),
-        loading: false,
-      };
-      const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
-      if (sizeKB > 500) {
-        console.warn(`[index] setData 数据量仍偏大: ${sizeKB} KB，请检查店铺/商品/服务数据`);
-      }
-      this.setData(payload);
+      this.setData({ reviews, reviewCount: reviews.length });
     } catch (err) {
       const elapsed = Date.now() - startTime;
       const isTimeout = err && (err.isTimeout || /timeout|超时/i.test(err.message));
