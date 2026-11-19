@@ -1,6 +1,6 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, Clock, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { mockRefundRequests, mockSettlements } from '../../../shared/mockData';
 import {isRealApi} from '../../../shared/api-base';
@@ -9,7 +9,6 @@ import { ServiceRefundCandidate, RefundRequest, RefundStatus } from '../../../sh
 import { settlementDateLabel } from '../../../shared/lib/settlementDisplay';
 
 const RefundPage: React.FC = () => {
-  const navigate = useNavigate();
   const { currentCustomer } = useAppStore();
   const [showApplyForm, setShowApplyForm] = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState('');
@@ -122,19 +121,7 @@ const RefundPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/customer/profile')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-800"
-          >
-            <ArrowLeft size={20} />
-            <span>返回</span>
-          </button>
-          <h1 className="font-semibold text-gray-800">退款管理</h1>
-          <div className="w-16"></div>
-        </div>
-      </header>
+      <CustomerHeader title="退款管理" backTo="/customer/profile" />
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {loading && <p className="text-gray-500">加载中...</p>}

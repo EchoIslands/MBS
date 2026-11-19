@@ -1,10 +1,12 @@
+import { CustomerHeader } from '../../components/CustomerPage';
+import { useCustomerToast } from '../../hooks/useCustomerToast';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Search, Filter, Star, Loader2, Crown, Ticket, X } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product, ProductCategory, Coupon, CustomerCoupon } from '../../../shared/types';
 import { productApi, couponApi } from '../../api';
-import ProductImage from '../../components/ProductImage';
+import CustomerImage from '../../components/CustomerImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const categoryNames: Record<ProductCategory, string> = {
@@ -20,6 +22,7 @@ const ProductList: React.FC = () => {
   const { shopId } = useParams<{ shopId: string }>();
   const navigate = useNavigate();
   const { cart, addToCart, currentCustomer } = useAppStore();
+  const { toast, notify } = useCustomerToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,17 +53,16 @@ const ProductList: React.FC = () => {
 
   const handleClaim = async (coupon: Coupon) => {
     if (!currentCustomer?.id) {
-      alert('请先登录');
       navigate(`/customer/login?redirect=/customer/products/${shopId}`);
       return;
     }
     setClaimingId(coupon.id);
     try {
       await couponApi.claim(coupon.id, currentCustomer.id, currentCustomer.name, currentCustomer.phone);
-      alert('领取成功');
+      notify('领取成功');
       await loadCoupons();
     } catch (err) {
-      alert(err instanceof Error ? err.message : '领取失败');
+      notify(err instanceof Error ? err.message : '领取失败');
     } finally {
       setClaimingId(null);
     }
@@ -133,12 +135,13 @@ const ProductList: React.FC = () => {
   }, [products, searchQuery, selectedCategory, sortBy]);
 
   const handleAddToCart = (product: Product) => {
-    if (product.stock <= 0) {
-      alert('暂时缺货');
+    const inCart = useAppStore.getState().cart.find(item => item.product.id === product.id)?.quantity ?? 0;
+    if (product.stock <= inCart) {
+      notify(product.stock <= 0 ? '暂时缺货' : '购物车内数量已达库存上限');
       return;
     }
     addToCart(product);
-    alert('已添加到购物车！');
+    notify('已加入购物车');
   };
 
   const getMemberPrice = (product: Product) => {
@@ -152,22 +155,11 @@ const ProductList: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#fff9f3]">
       {/* Header */}
-      <header className="sticky top-0 bg-[#fff9f3] border-b border-[#eadbcf] z-30">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="font-bold text-lg text-[#4d4038]">商品商城</h1>
-          <button
-            onClick={() => navigate(`/customer/cart/${shopId}`)}
-            className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ShoppingCart size={20} />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-[#bf673e] text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-                {cartCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </header>
+      <CustomerHeader title="商品商城" />
+      {toast}
+      <button type="button" className="customer-cart-float customer-secondary" onClick={() => navigate('/customer/cart/' + shopId, { state: { customerBack: true } })}>
+        <ShoppingCart size={19} />购物车{cartCount > 0 && <span className="rounded-full bg-[#a8582f] px-1.5 text-xs text-white">{cartCount}</span>}
+      </button>
 
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {loading && (
@@ -181,23 +173,23 @@ const ProductList: React.FC = () => {
           <>
         {/* 优惠券入口 */}
         {displayCoupons.length > 0 && (
-          <div
+          <button type="button"
             onClick={() => setShowCoupons(true)}
-            className="bg-gradient-to-r from-[#e99579] to-[#f5ad78] rounded-xl p-4 text-[#38261d] shadow-md cursor-pointer flex items-center justify-between"
+            className="w-full bg-gradient-to-r from-[#e99579] to-[#f5ad78] rounded-xl p-4 text-left text-[#38261d] shadow-md cursor-pointer flex items-center justify-between"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+            <span className="flex items-center gap-3">
+              <span className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
                 <Ticket size={20} />
-              </div>
-              <div>
-                <div className="font-bold">领取优惠券</div>
-                <div className="text-xs text-[#593d2e]">
+              </span>
+              <span>
+                <span className="block font-bold">领取优惠券</span>
+                <span className="block text-xs text-[#593d2e]">
                   共 {displayCoupons.length} 张优惠券，已领 {myCoupons.length} 张
-                </div>
-              </div>
-            </div>
+                </span>
+              </span>
+            </span>
             <span className="text-sm bg-white text-[#75411f] px-3 py-1 rounded-full font-bold">去领取</span>
-          </div>
+          </button>
         )}
 
         {/* 搜索栏 */}
@@ -218,7 +210,7 @@ const ProductList: React.FC = () => {
             <Filter size={16} className="text-gray-500" />
             <span className="font-medium text-gray-700 text-sm sm:text-base">商品分类</span>
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setSelectedCategory('all')}
               className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition-colors ${
@@ -297,16 +289,15 @@ const ProductList: React.FC = () => {
         {/* 商品列表 —— 手机端图片更小 */}
         <div className="grid grid-cols-2 gap-2 sm:gap-4">
           {filteredProducts.map((product) => (
-            <div
+            <article
               key={product.id}
               className="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => navigate(`/customer/product/${shopId}/${product.id}`)}
             >
-              <div className="relative">
-                <ProductImage
-                  src={product.images?.[0]}
+              <button type="button" className="relative block w-full" aria-label={product.name} onClick={() => navigate('/customer/product/' + shopId + '/' + product.id, { state: { customerBack: true } })}>
+                <CustomerImage
+                  images={product.images}
                   alt={product.name}
-                  className="w-full h-40 sm:h-48 object-cover"
+                  className="aspect-square w-full object-cover"
                 />
                 {product.tags && product.tags.length > 0 && (
                   <div className="absolute top-1 sm:top-2 left-1 sm:left-2 flex gap-1">
@@ -320,10 +311,10 @@ const ProductList: React.FC = () => {
                     ))}
                   </div>
                 )}
-              </div>
+              </button>
               <div className="p-2.5 sm:p-3 space-y-1.5 sm:space-y-2">
                 <h3 className="font-medium text-gray-800 line-clamp-2 text-xs sm:text-sm">
-                  {product.name}
+                  <button type="button" className="text-left" onClick={() => navigate('/customer/product/' + shopId + '/' + product.id, { state: { customerBack: true } })}>{product.name}</button>
                 </h3>
                 <div className="flex items-center gap-1">
                   <Star size={10} className="sm:hidden text-yellow-400 fill-current" />
@@ -336,7 +327,7 @@ const ProductList: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-baseline gap-1">
+                  <div className="flex flex-wrap items-baseline gap-1">
                     {(() => {
                       const memberPrice = getMemberPrice(product);
                       const hasDiscount = memberPrice < product.price;
@@ -374,7 +365,7 @@ const ProductList: React.FC = () => {
                   加入购物车
                 </button>
               </div>
-            </div>
+            </article>
           ))}
         </div>
 
@@ -386,7 +377,7 @@ const ProductList: React.FC = () => {
 
         {/* 优惠券领取弹窗 */}
         {showCoupons && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label="领取优惠券">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
               <div className="p-4 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-gray-800">领取优惠券</h2>

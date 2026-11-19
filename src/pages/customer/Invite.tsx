@@ -1,165 +1,87 @@
-import React, { useCallback, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Share2, Copy, Loader2, Gift } from 'lucide-react';
+
+import { useEffect, useState } from 'react';
+import { CustomerHeader } from '../../components/CustomerPage';
 import { useAppStore } from '../../store';
 import { getApiBase, http } from '../../../shared/api-base';
-import { getAuthToken } from '../../api';
 
-const DEFAULT_SHOP_ID = 'shop1';
+interface InviteDetails { inviteUrl: string; qrCodeDataUrl: string; referrerName: string }
 
-const CustomerInvite: React.FC = () => {
-  const navigate = useNavigate();
-  const { currentCustomer } = useAppStore();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [inviteUrl, setInviteUrl] = useState('');
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
-  const [referrerName, setReferrerName] = useState('会员');
-  const [copied, setCopied] = useState(false);
-
-  const generateInvite = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const token = getAuthToken();
-      const API_BASE = getApiBase();
-      const result = await http<{ success: boolean; data?: { inviteUrl: string; qrCodeDataUrl: string; referrerName: string }; error?: string }>(
-        `${API_BASE}/referrals/invite`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ shopId: DEFAULT_SHOP_ID, customerId: currentCustomer?.id }),
-          headers: { Authorization: token ? `Bearer ${token}` : '' },
-        }
-      );
-      if (result?.success && result.data) {
-        setInviteUrl(result.data.inviteUrl);
-        setQrCodeDataUrl(result.data.qrCodeDataUrl);
-        setReferrerName(result.data.referrerName || '会员');
-      } else {
-        setError(result?.error || '生成邀请码失败');
-      }
-    } catch (err: unknown) {
-      setError((err as Error).message || '生成邀请码失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [currentCustomer?.id]);
+export default function Invite() {
+  const customer = useAppStore(state => state.currentCustomer);
+  const customerId = customer?.id;
+  const shopId = customer?.shopId || 'shop1';
+  const [attempt, setAttempt] = useState(0);
+  const key = customerId + '/' + shopId + '/' + attempt;
+  const [result, setResult] = useState<{ key: string; invite?: InviteDetails; error?: string }>();
+  const [preview, setPreview] = useState(false);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (!currentCustomer?.id) {
-      setLoading(false);
-      setError('请先登录');
-      return;
-    }
-    generateInvite();
-  }, [generateInvite, currentCustomer?.id]);
+    if (!customerId) return;
+    let active = true;
+    setMessage('');
+    http<{ data: InviteDetails }>(getApiBase() + '/referrals/invite', { method: 'POST', body: JSON.stringify({ shopId, customerId }) }).then(response => {
+      if (!response?.data?.qrCodeDataUrl || !response.data.inviteUrl) throw new Error('生成邀请码失败');
+      if (active) setResult({ key, invite: response.data });
+    }).catch(error => { if (active) setResult({ key, error: error instanceof Error ? error.message : '生成邀请码失败' }); });
+    return () => { active = false; };
+  }, [customerId, shopId, key]);
 
-  const handleCopy = async () => {
-    if (!inviteUrl) return;
+  const current = result?.key === key ? result : undefined;
+  const invite = current?.invite;
+  const name = invite?.referrerName || customer?.name || '会员';
+
+  async function copyInvite() {
+    if (!invite) return;
     try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // 降级方案
-      const input = document.createElement('input');
-      input.value = inviteUrl;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(invite.inviteUrl);
+      setMessage('网页版邀请链接已复制');
+    } catch { setMessage('请长按下方链接复制'); }
+  }
+
+  async function shareInvite() {
+    if (!invite) return;
+    try {
+      const blob = await fetch(invite.qrCodeDataUrl).then(response => response.blob());
+      const file = new File([blob], '皓诗形象邀请二维码.png', { type: blob.type });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) await navigator.share({ title: '皓诗形象 · 邀请好友', files: [file] });
+      else setMessage('请保存二维码，再发送给好友');
+    } catch (error) {
+      if ((error as { name?: string }).name !== 'AbortError') setMessage('请保存二维码，再发送给好友');
     }
-  };
+  }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-orange-100">
-      <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl">
-        {/* 顶部导航 */}
-        <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-          <button
-            onClick={() => navigate('/customer/profile')}
-            className="p-2 -ml-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="text-lg font-bold text-gray-800">邀请好友</h1>
-        </div>
-
-        <div className="p-5 space-y-6">
-          {/* 说明 */}
-          <div className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl p-5 text-white">
-            <div className="flex items-center gap-2 mb-2">
-              <Gift size={20} />
-              <h2 className="font-bold">好友消费，你得奖励金</h2>
-            </div>
-            <p className="text-sm text-white/90">
-              分享下方链接或二维码给好友，好友扫码领取新人优惠券并完成首次消费后，你将获得消费金额 {(currentCustomer?.referralBonusRate || 0.10) * 100}% 的奖励金。
-            </p>
+  return <>
+    <CustomerHeader title="邀请好友" backTo="/customer/profile" />
+    <main className="customer-body space-y-3">
+      <section className="customer-card space-y-4">
+        <div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-full bg-[#ffe7ce] font-bold text-[#805536]">{name[0]}</span>
+          <div><h2 className="font-bold">{name}</h2><p className="text-sm text-gray-600">邀请您体验皓诗形象服务</p></div></div>
+        {!current && <p className="py-16 text-center text-sm" role="status">正在生成邀请码…</p>}
+        {current?.error && <div className="py-10 text-center"><p role="alert" className="mb-3 text-sm text-red-800">{current.error}</p>
+          <button type="button" className="customer-primary" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}
+        {invite && <>
+          <button type="button" className="mx-auto block" onClick={() => setPreview(true)} aria-label="放大邀请二维码">
+            <img className="mx-auto h-48 w-48 object-contain" src={invite.qrCodeDataUrl} alt="邀请二维码" /></button>
+          <p className="text-center text-sm text-gray-600">微信扫码直接进入小程序，登录领取新人优惠券</p>
+          <div className="grid grid-cols-2 gap-2">
+            <a download="皓诗形象邀请二维码.png" href={invite.qrCodeDataUrl} className="customer-primary text-center">保存二维码</a>
+            <button type="button" onClick={() => void shareInvite()} className="customer-secondary">分享给好友</button>
           </div>
-
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 size={32} className="animate-spin text-orange-500 mb-3" />
-              <p className="text-sm text-gray-500">正在生成邀请二维码...</p>
-            </div>
-          ) : error ? (
-            <div className="bg-red-50 text-red-600 rounded-xl p-4 text-sm text-center">
-              {error}
-            </div>
-          ) : (
-            <>
-              {/* 二维码 */}
-              <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-                <p className="text-center text-sm text-gray-500 mb-4">
-                  {referrerName} 的专属邀请码
-                </p>
-                {qrCodeDataUrl ? (
-                  <div className="flex justify-center">
-                    <img
-                      src={qrCodeDataUrl}
-                      alt="邀请二维码"
-                      className="w-56 h-56 rounded-xl"
-                    />
-                  </div>
-                ) : (
-                  <div className="w-56 h-56 mx-auto bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 text-sm">
-                    二维码生成失败
-                  </div>
-                )}
-              </div>
-
-              {/* 链接复制 */}
-              <div className="bg-gray-50 rounded-2xl p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">备用网页版链接</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={inviteUrl}
-                    readOnly
-                    className="flex-1 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 outline-none"
-                  />
-                  <button
-                    onClick={handleCopy}
-                    className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-medium flex items-center gap-1.5 transition-colors"
-                  >
-                    {copied ? <Share2 size={16} /> : <Copy size={16} />}
-                    {copied ? '已复制' : '复制'}
-                  </button>
-                </div>
-              </div>
-
-              {/* 提示 */}
-              <p className="text-xs text-gray-400 text-center px-4">
-                微信扫描上方小程序码直接进入小程序；复制的备用链接会打开网页版。
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default CustomerInvite;
+          <details><summary className="cursor-pointer text-sm text-[#805536]">备用网页版链接</summary><div className="mt-2 flex gap-2">
+            <input className="min-w-0 flex-1 rounded-xl border border-[#ecdfd1] p-2 text-xs" aria-label="备用网页版链接" readOnly value={invite.inviteUrl} />
+            <button type="button" className="customer-secondary" onClick={() => void copyInvite()}>复制</button></div></details>
+          {message && <p role="status" className="text-sm">{message}</p>}
+        </>}
+      </section>
+      <section className="customer-card space-y-2"><h2 className="font-bold">邀请规则</h2><ol className="list-decimal space-y-1 pl-5 text-sm leading-6 text-gray-600">
+        <li>成为会员后即可生成专属邀请二维码</li><li>好友微信扫码进入小程序，验证码登录后领取新人优惠券</li>
+        <li>好友首次消费成功后，你可获得消费金额 {((customer?.referralBonusRate || .1) * 100).toFixed(0)}% 的奖励金</li>
+        <li>奖励金进入可消费余额，可用于店铺内消费抵扣</li></ol></section>
+    </main>
+    {preview && invite && <div role="dialog" aria-modal="true" aria-label="邀请二维码" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-5">
+      <div className="customer-card space-y-3"><img src={invite.qrCodeDataUrl} alt="邀请二维码" className="w-64 max-w-full" />
+        <button type="button" className="customer-secondary w-full" onClick={() => setPreview(false)}>关闭</button></div>
+    </div>}
+  </>;
+}

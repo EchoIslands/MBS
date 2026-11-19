@@ -1,6 +1,7 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Ticket, Calendar, ChevronRight } from 'lucide-react';
+import { Ticket, Calendar, ChevronRight } from 'lucide-react';
 import { CustomerPackage, PackageStatus } from '../../../shared/types';
 import { customerPackageApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -57,17 +58,7 @@ const Packages: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
-      <header className="sticky top-0 bg-white shadow-sm z-40">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button
-            onClick={() => navigate('/customer/profile')}
-            className="p-2 -ml-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <ArrowLeft size={22} />
-          </button>
-          <h1 className="text-lg font-bold text-gray-800">我的次卡</h1>
-        </div>
-      </header>
+      <CustomerHeader title="我的次卡" backTo="/customer/profile" />
 
       <main className="max-w-4xl mx-auto px-4 py-4">
         {loading && (

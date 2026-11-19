@@ -1,8 +1,11 @@
-const OperationsWorkbench = lazy(() => import('./pages/shop/OperationsWorkbench'));
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./store";
 import CustomerMainLayout from './components/CustomerMainLayout';
+import { CustomerPageFrame } from './components/CustomerPage';
+import { customerLoginRedirect, customerPasswordChangePath } from './lib/customerLoginRedirect';
+
+const OperationsWorkbench = lazy(() => import('./pages/shop/OperationsWorkbench'));
 
 // 角色选择
 const SelectRole = lazy(() => import('./pages/SelectRole'));
@@ -27,6 +30,10 @@ const MyCoupons = lazy(() => import('./pages/customer/MyCoupons'));
 const CustomerInvite = lazy(() => import('./pages/customer/Invite'));
 const CustomerPackages = lazy(() => import('./pages/customer/Packages'));
 const InviteLanding = lazy(() => import('./pages/InviteLanding'));
+const CustomerServiceCheckout = lazy(() => import('./pages/customer/ServiceCheckout'));
+const CustomerPaymentOrder = lazy(() => import('./pages/customer/PaymentOrder'));
+const CustomerRecharge = lazy(() => import('./pages/customer/Recharge'));
+const CustomerLegal = lazy(() => import('./pages/customer/Legal'));
 
 // 理发店端
 const ShopLogin = lazy(() => import('./pages/shop/Login'));
@@ -83,6 +90,14 @@ const hasCustomerSession = (): boolean => {
   }
 };
 
+let customerRestore: Promise<void> | undefined;
+function restoreCustomerOnce() {
+  if (!customerRestore) {
+    customerRestore = restoreCustomerSession().finally(() => { customerRestore = undefined; });
+  }
+  return customerRestore;
+}
+
 // 理发店端路由守卫：未登录时重定向到 /shop/login
 const ShopRouteGuard = () => {
   const { currentShop, currentEmployee, hasHydrated } = useAppStore();
@@ -117,13 +132,13 @@ const ShopRouteGuard = () => {
 // 顾客端路由守卫：未登录时重定向到 /customer/login
 const CustomerRouteGuard = () => {
   const { currentCustomer, hasHydrated } = useAppStore();
-  const [checked, setChecked] = useState(false);
+  const [checked, setChecked] = useState(() => !!useAppStore.getState().currentCustomer);
   const location = useLocation();
 
   useEffect(() => {
     let active = true;
     const restore = async () => {
-      if (hasCustomerSession()) await restoreCustomerSession();
+      if (!useAppStore.getState().currentCustomer && hasCustomerSession()) await restoreCustomerOnce();
       if (active) setChecked(true);
     };
     void restore();
@@ -148,7 +163,11 @@ const CustomerPasswordGate = () => {
   const customer = useAppStore(state => state.currentCustomer);
   const location = useLocation();
   if (customer?.mustChangePassword && location.pathname.startsWith('/customer') && location.pathname !== '/customer/change-password') {
-    return <Navigate to="/customer/change-password" replace />;
+    const params = new URLSearchParams(location.search);
+    const returnTo = location.pathname === '/customer/login'
+      ? customerLoginRedirect(params.get('redirect')) || customerLoginRedirect(params.get('returnTo'))
+      : location.pathname + location.search + location.hash;
+    return <Navigate to={customerPasswordChangePath(returnTo)} replace />;
   }
   return <Outlet />;
 };
@@ -169,7 +188,7 @@ export default function App() {
   useEffect(() => {
     if (!hasHydrated) return;
     // 店铺会话由 ShopRouteGuard 统一恢复，避免启动阶段重复请求 /auth/me 和门店信息。
-    if(!window.location.pathname.startsWith('/shop')) void restoreCustomerSession();
+    if(!window.location.pathname.startsWith('/shop')) void restoreCustomerOnce();
   }, [hasHydrated]);
 
   return (
@@ -183,6 +202,7 @@ export default function App() {
         <Route path="/select-role" element={<SelectRole />} />
 
         <Route element={<CustomerPasswordGate />}>
+        <Route element={<CustomerPageFrame />}>
         {/* 顾客端路由 */}
         <Route path="/customer/login" element={<CustomerLogin />} />
         <Route path="/customer" element={<Navigate to={`/customer/shop/${DEFAULT_SHOP_ID}`} replace />} />
@@ -196,8 +216,15 @@ export default function App() {
         </Route>
         <Route path="/customer/product/:shopId/:productId" element={<ProductDetail />} />
         <Route path="/customer/try-on/:shopId" element={<HairTryOn />} />
-        <Route path="/customer/queue/:bookingId" element={<Queue />} />
+        <Route path="/customer/agreement" element={<CustomerLegal kind="agreement" />} />
+        <Route path="/customer/privacy" element={<CustomerLegal kind="privacy" />} />
+        <Route path="/invite" element={<InviteLanding />} />
+        <Route path="/customer/invite/claim" element={<InviteLanding />} />
         <Route element={<CustomerRouteGuard />}>
+          <Route path="/customer/queue/:bookingId" element={<Queue />} />
+          <Route path="/customer/payment-order" element={<CustomerPaymentOrder />} />
+          <Route path="/customer/checkout/:bookingId" element={<CustomerServiceCheckout />} />
+          <Route path="/customer/recharge" element={<CustomerRecharge />} />
           <Route path="/customer/change-password" element={<ChangePassword />} />
           <Route path="/customer/membership" element={<CustomerMembership />} />
           <Route path="/customer/packages" element={<CustomerPackages />} />
@@ -210,6 +237,7 @@ export default function App() {
           <Route path="/customer/feedback" element={<Feedback />} />
         </Route>
 
+        </Route>
         </Route>
 
         {/* 理发店端路由 */}
@@ -247,7 +275,6 @@ export default function App() {
 
         {/* 店铺专属入口（保留短链，但移除 /shop/:shopId 通配，避免误匹配管理端路径） */}
         <Route path="/s/:shopId" element={<ShopRedirect />} />
-        <Route path="/invite" element={<InviteLanding />} />
       </Routes>
       </Suspense>
     </Router>

@@ -54,7 +54,7 @@ test('H5个人中心：离页后迟到的门店和权益响应不覆盖当前页
   const shops: unknown[] = [], benefits: unknown[] = [];
   const run = await effect('Profile.tsx', 1, {
     customerId: 'a', customerShopId: 's', isRealApi: () => true,
-    shopApi: { getShop: () => new Promise(r => { resolve = r; }) },
+    shopApi: { getPublicShop: () => new Promise(r => { resolve = r; }) },
     memberBenefitApi: { getOwn: async () => ['old-benefit'] },
     setShop: (value: unknown) => shops.push(value),
     setMyBenefits: (value: unknown) => benefits.push(value), setLoadError: () => {},

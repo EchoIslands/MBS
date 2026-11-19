@@ -1,389 +1,171 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  MapPin,
-  Phone,
-  Star,
-  Clock,
-  User,
-  MessageSquare,
-  MessageCircle,
-  Scissors,
-  Crown,
-  Award,
-} from 'lucide-react';
-import { Shop, Review, UserRole, Employee } from '../../../shared/types';
-import { shopApi } from '../../api';
+import { useEffect, useRef, useState } from 'react';
+import { Clock, MessageSquare, Scissors, Share2, ShoppingBag, Star, UserRound, X } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { bookingApi, shopApi } from '../../api';
 import { useAppStore } from '../../store';
-import { getAvatarUrl } from '../../lib/avatar';
-import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
-import ProductImage from '../../components/ProductImage';
-import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 import { sortStylistsByRank } from '../../../shared/lib/stylistOrder';
+import type { Booking, Employee, Review, Shop } from '../../../shared/types';
 import CustomerMembershipBenefits from '../../components/CustomerMembershipBenefits';
+import CustomerImage from '../../components/CustomerImage';
+import { getEffectivePurchaseVIPLevel, getEffectiveStoredValueLevel } from '../../lib/membership';
+import storefront from '../../../mini-program/assets/shop/storefront.jpg';
+import servicePhoto from '../../../mini-program/assets/shop/service.jpg';
 
-const ShopDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const { setCurrentShop, currentCustomer } = useAppStore();
+const photos = [{ src: storefront, alt: '皓诗形象门头实景' }, { src: servicePhoto, alt: '皓诗形象店内服务实景' }];
+const money = (value: number) => Number(value).toFixed(2);
+const date = (value: string | Date) => Number.isFinite(+new Date(value)) ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai' }).format(new Date(value)) : '';
+
+function StylistBadges({ stylist }: { stylist: Employee }) {
+  const manager = stylist.role === 'shop_manager';
+  return <>{(stylist.isGoldStylist || manager) && <small className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-900">金牌</small>}
+    {manager && <small className="rounded-full bg-purple-100 px-2 py-0.5 text-purple-800">店长</small>}</>;
+}
+
+export default function ShopDetail() {
+  const { id = 'shop1' } = useParams();
+  const navigate = useNavigate();
+  const customer = useAppStore(state => state.currentCustomer);
+  const gallery = useRef<HTMLDivElement>(null);
+  const customerId = customer?.id;
+  const [activeQueue, setActiveQueue] = useState<{ customerId: string; booking: Booking }>();
+  const [activeImage, setActiveImage] = useState(0);
   const [shop, setShop] = useState<Shop | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [activeImage, setActiveImage] = useState(0);
-  const navigate = useNavigate();
-
-  const isStylist = (e: Employee) => {
-    if (e.role) return e.role === UserRole.STYLIST || e.role === UserRole.SHOP_MANAGER;
-    const title = e.title || '';
-    return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
-  };
-
-  const loadShopData = React.useCallback(async () => {
-    try {
-      const shopData = await shopApi.getShop(id!);
-      setShop(shopData);
-      setCurrentShop(shopData);
-      loadReviews(shopData.id);
-    } catch (error) {
-      console.error('Failed to load shop data:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, setCurrentShop]);
+  const [stylist, setStylist] = useState<Employee | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (id) {
-      loadShopData();
-    }
-  }, [id, loadShopData]);
+    let live = true;
+    setError('');
+    setShop(null);
+    setReviews([]);
+    shopApi.getPublicShop(id).then(value => {
+      if (live) setShop(value);
+    }).catch(() => { if (live) setError('门店资料读取失败，点击重试'); });
+    shopApi.getShopReviews(id).then(value => { if (live) setReviews(value.slice(0, 3)); }).catch(() => {});
+    return () => { live = false; };
+  }, [id, attempt]);
 
-  const loadReviews = async (shopId: string) => {
-    setReviewsLoading(true);
-    try {
-      const data = await shopApi.getShopReviews(shopId);
-      setReviews(data);
-    } catch (error) {
-      console.error('Failed to load reviews:', error);
-      setReviews([]);
-    } finally {
-      setReviewsLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (!customerId) return;
+    let active = true;
+    const beijingDay = (value: number) => Math.floor((value + 8 * 3600000) / 86400000);
+    bookingApi.getCustomerBookings(customerId, { active: true }).then(rows => {
+      const entry = rows.filter(row => row.shopId === id && row.status === 'confirmed' &&
+        beijingDay(+new Date(row.scheduledTime)) === beijingDay(Date.now()))
+        .sort((left, right) => +new Date(left.scheduledTime) - +new Date(right.scheduledTime))[0];
+      if (active) setActiveQueue(entry ? { customerId, booking: entry } : undefined);
+    }).catch(() => { if (active) setActiveQueue(undefined); });
+    return () => { active = false; };
+  }, [customerId, id]);
+  const today = activeQueue?.customerId === customerId && activeQueue?.booking.shopId === id ? activeQueue.booking : undefined;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-pulse text-gray-500">加载中...</div>
-      </div>
-    );
-  }
+  const stylists = sortStylistsByRank((shop?.employees ?? []).filter(item => item.isActive !== false &&
+    (item.role === 'shop_manager' || item.role === 'stylist' || (!item.role && /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(item.title || ''))))).slice(0, 8);
+  const products = (shop?.products ?? []).filter(item => item.isActive !== false).slice(0, 4);
+  const member = customer && (getEffectivePurchaseVIPLevel(customer) !== 'regular' ||
+    getEffectiveStoredValueLevel(customer) !== 'none' || customer.isStockholder);
+  const bookingPath = '/customer/booking/' + id;
+  const productsPath = '/customer/products/' + id;
 
-  if (!shop) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">店铺不存在</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#fff9f3]">
-      {/* 头部 */}
-      <header className="sticky top-0 bg-[#fff9f3] border-b border-[#eadbcf] z-30">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <h1 className="font-bold text-lg sm:text-xl text-[#4d4038] truncate">{shop.name}</h1>
-        </div>
-      </header>
-
-      <div className="max-w-4xl mx-auto px-4 pb-8 flex flex-col">
-        {/* 图片轮播 */}
-        <div className="relative mt-4">
-          <div className="aspect-video rounded-2xl overflow-hidden bg-gray-200">
-            <img
-              src={shop.images[activeImage]}
-              alt={shop.name}
-              className="w-full h-full object-cover"
-            />
+  return <>
+    <header className="customer-header !place-items-start !px-4"><h1>{shop?.name || '皓诗形象设计'}</h1></header>
+    <main className="customer-body space-y-3">
+      {today && <button type="button" className="customer-card customer-invite-entry flex w-full items-center justify-between gap-2 text-left"
+        onClick={() => navigate('/customer/queue/' + encodeURIComponent(today.id), { state: { customerBack: true } })}>
+        <span><strong className="block">今日预约 · 查看排队</strong><small>{today.serviceName || '今日预约'}</small></span><span aria-hidden="true">›</span>
+      </button>}
+      <section className="customer-card !p-0 overflow-hidden" aria-label="门店介绍">
+        <div className="customer-home-gallery" data-no-tab-swipe>
+          <div ref={gallery} className="flex h-full overflow-x-auto snap-x snap-mandatory [scrollbar-width:none]"
+            onScroll={event => setActiveImage(Math.round(event.currentTarget.scrollLeft / event.currentTarget.clientWidth))}>
+            {photos.map(photo => <img key={photo.src} className="snap-start shrink-0" src={photo.src} alt={photo.alt} />)}
           </div>
-          {shop.images.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2">
-              {shop.images.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setActiveImage(index)}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    activeImage === index ? 'bg-white w-6' : 'bg-white/50'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 店铺信息 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          {shop.description && <p className="mb-4 text-sm leading-7 text-stone-700 whitespace-pre-wrap">{shop.description}</p>}
-          <div className="flex items-center gap-2 text-sm mb-4">
-            <div className="flex items-center gap-0.5">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <Star
-                  key={star}
-                  size={14}
-                  className={star <= Math.round(shop.rating || 0)
-                    ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
-                />
-              ))}
-            </div>
-            <span className="font-medium text-gray-800">{(shop.rating || 0).toFixed(1)}</span>
-            <span className="text-gray-400">({shop.reviewCount || 0} 条评价)</span>
-          </div>
-
-          <div className="space-y-3 text-gray-600">
-            <div className="flex items-center gap-3">
-              <MapPin size={20} className="text-[#a8582f]" />
-              <span>{shop.address}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Phone size={20} className="text-[#a8582f]" />
-              <span>{shop.phone}</span>
-            </div>
+          <div className="absolute inset-x-0 bottom-1 flex justify-center" aria-label="选择门店实景">
+            {photos.map((photo, index) => <button type="button" key={photo.src} className="grid h-8 w-8 place-items-center"
+              aria-label={photo.alt} aria-pressed={activeImage === index} onClick={() => {
+                const el = gallery.current;
+                if (el) el.scrollTo({ left: el.clientWidth * index, behavior: 'smooth' });
+              }}><span className={'h-2 w-2 rounded-full ' + (activeImage === index ? 'bg-stone-900' : 'bg-white/70')} /></button>)}
           </div>
         </div>
+        {shop ? <div className="p-4 text-sm text-gray-600">
+          {shop.description && <p className="mb-3 border-b border-[#ecdfd1] pb-3 leading-6 text-gray-800">{shop.description}</p>}
+          <dl className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-y-2">
+            <dt>评分</dt><dd><strong className="text-[#805536]">{shop.rating || 4.8} 分</strong> · {shop.reviewCount || reviews.length} 条评价</dd>
+            <dt>地址</dt><dd>{shop.address || '暂无地址'}</dd>
+            {shop.phone && <><dt>电话</dt><dd><a className="text-[#805536]" href={'tel:' + shop.phone}>{shop.phone} · 联系门店 ›</a></dd></>}
+            <dt>营业时间</dt><dd>09:00–21:00</dd>
+          </dl>
+        </div> : error ? <button className="p-4 text-sm" type="button" onClick={() => setAttempt(value => value + 1)}>{error}</button>
+          : <p className="p-4 text-sm text-gray-600" role="status">正在更新门店资料…</p>}
+      </section>
 
-        <CustomerMembershipBenefits />
-        {currentCustomer && (
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => navigate('/customer/membership')}
-              className="rounded-xl bg-[#f6ae79] px-3 py-3 text-sm font-bold text-[#392719] shadow-sm">
-              办理 / 续费会员
-            </button>
-            <button type="button" onClick={() => navigate('/customer/invite')}
-              className="rounded-xl border border-[#dfa77f] bg-[#fff0e1] px-3 py-3 text-sm font-bold text-[#70452d]">
-              邀请新顾客
-            </button>
-          </div>
-        )}
+      {shop && <CustomerMembershipBenefits />}
+      {shop && member && <button className="customer-card customer-invite-entry flex w-full items-center gap-3 text-left" type="button"
+        onClick={() => navigate('/customer/invite', { state: { customerBack: true } })}>
+        <Share2 className="shrink-0 text-[#805536]" size={23} />
+        <span className="min-w-0 flex-1"><strong className="block">邀请新顾客 · 一起变美</strong>
+          <span className="text-xs text-stone-700">好友消费后，你可获得 {(customer.referralBonusRate || .1) * 100}% 奖励金，可用于店内消费</span></span>
+        <span className="shrink-0 text-xs font-bold text-[#805536]">立即邀请 ›</span>
+      </button>}
 
-        {/* 发型师团队 */}
-        {shop.employees && shop.employees.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">发型师团队</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {sortStylistsByRank(shop.employees
-                .filter(emp => emp.isActive !== false && isStylist(emp)))
-                .map((employee) => (
-                  <div
-                    key={employee.id}
-                    className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl"
-                  >
-                    <img
-                      src={employee.avatar || getAvatarUrl(employee.name)}
-                      alt={employee.name}
-                      className="w-16 h-16 rounded-full object-cover"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium text-gray-800">{employee.name}</div>
-                        {(employee.isGoldStylist || employee.role === UserRole.SHOP_MANAGER) && (
-                          <div className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded-full">
-                            <Award size={13} />金牌
-                          </div>
-                        )}
-                        {employee.role === UserRole.SHOP_MANAGER && (
-                          <div className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 bg-orange-100 text-orange-800 border border-orange-200 rounded-full">
-                            <Crown size={13} />店长
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 text-sm text-gray-500 mt-1">
-                        <Star size={14} className="text-amber-400 fill-amber-400" />
-                        <span>{employee.rating}</span>
-                      </div>
-                      {employee.specialty && (
-                        <div className="text-xs text-gray-400 mt-1">
-                          专长：{employee.specialty}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
+      {!!stylists.length && <section className="customer-card space-y-2">
+        <h2 className="mb-3 flex items-center gap-2 font-bold"><UserRound size={17} />发型师团队</h2>
+        {stylists.map(item => <button type="button" key={item.id} onClick={() => setStylist(item)}
+          className="flex w-full items-center gap-3 rounded-xl border border-[#ecdfd1] bg-[#fffaf4] p-3 text-left">
+          <CustomerImage images={[item.avatar || '']} alt={item.name} className="h-12 w-12 shrink-0 rounded-full object-cover" fallback={<UserRound size={23} />} />
+          <span className="min-w-0"><span className="flex flex-wrap items-center gap-1.5"><strong>{item.name}</strong><StylistBadges stylist={item} /></span>
+            <span className="block text-xs text-[#805536]">☆ {item.rating || 5} 分</span>
+            {item.specialty && <span className="block text-xs text-gray-600">{item.specialty}</span>}</span>
+        </button>)}
+      </section>}
 
-        {/* 商品商城置于首页底部 */}
-        {shop.products && shop.products.length > 0 && (
-          <div className="order-last bg-white rounded-2xl shadow-sm p-6 mt-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-800">商品商城</h3>
-              <button
-                onClick={() => navigate(`/customer/products/${shop.id}`)}
-                className="text-amber-600 text-sm font-medium hover:text-amber-700"
-              >
-                查看全部 →
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              {shop.products
-                .filter(p => p.isActive)
-                .slice(0, 4)
-                .map((product) => (
-                  <div
-                    key={product.id}
-                    onClick={() => navigate(`/customer/products/${shop.id}`)}
-                    className="bg-gray-50 rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
-                  >
-                    <ProductImage
-                      src={product.images?.[0]}
-                      alt={product.name}
-                      className="w-full h-32 object-cover"
-                    />
-                    <div className="p-3">
-                      <h4 className="font-medium text-gray-800 text-sm line-clamp-2 mb-1">
-                        {product.name}
-                      </h4>
-                      {(() => {
-                        const memberPrice = calcDiscountedItemPriceForCustomer(
-                          product.price,
-                          currentCustomer,
-                          product.category
-                        );
-                        const hasDiscount = memberPrice < product.price;
-                        return (
-                          <div className="flex items-baseline gap-1 flex-wrap">
-                            <span className="text-lg font-bold text-amber-600">
-                              ¥{memberPrice.toFixed(2)}
-                            </span>
-                            {hasDiscount ? (
-                              <>
-                                <span className="text-xs text-gray-400 line-through">
-                                  ¥{product.price.toFixed(2)}
-                                </span>
-                                <span className="text-[10px] inline-flex items-center gap-0.5 px-1 py-0.5 bg-orange-100 text-orange-600 rounded-full">
-                                  <Crown size={8} /> 会员价
-                                </span>
-                              </>
-                            ) : product.originalPrice ? (
-                              <span className="text-xs text-gray-400 line-through">
-                                ¥{product.originalPrice.toFixed(2)}
-                              </span>
-                            ) : null}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* 服务项目 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Scissors size={20} className="text-amber-600" />服务项目
-          </h3>
-          <VerticalScrollSlider maxHeight={360} containerClassName="space-y-3 pr-1">
-            {shop.services.map((service) => (
-              <div
-                key={service.id}
-                className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100"
-              >
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center flex-shrink-0">
-                  <Scissors size={22} className="sm:hidden text-amber-600" />
-                  <Scissors size={26} className="hidden sm:inline text-amber-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-gray-800 text-sm sm:text-base">{service.name}</div>
-                  {service.description && (
-                    <div className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-1">{service.description}</div>
-                  )}
-                  <div className="inline-flex items-center gap-1 mt-2 text-xs text-amber-700 bg-orange-50 px-2 py-0.5 rounded-full">
-                    <Clock size={12} />
-                    约 {service.duration} 分钟
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0 ml-2 bg-white px-3 py-2 rounded-lg border border-gray-100">
-                  <div className="text-lg sm:text-xl font-bold text-amber-600">
-                    ¥{service.price}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </VerticalScrollSlider>
+      {!!shop?.services?.length && <section className="customer-card">
+        <h2 className="mb-3 flex items-center gap-2 font-bold"><Scissors size={17} />服务项目 <span className="ml-auto text-xs font-normal text-gray-500">滑动查看更多</span></h2>
+        <div className="max-h-72 space-y-2 overflow-y-auto overscroll-y-contain pr-1" data-no-tab-swipe>
+          {shop.services.slice(0, 20).map(item => <button type="button" key={item.id}
+            onClick={() => navigate(bookingPath + '?serviceId=' + encodeURIComponent(item.id))}
+            className="flex w-full items-start gap-2 rounded-xl border border-[#ecdfd1] bg-[#fffaf4] p-3 text-left">
+            <Scissors size={19} className="mt-0.5 shrink-0 text-[#99613f]" />
+            <span className="flex-1"><strong className="block text-sm">{item.name}</strong>
+              {item.description && <span className="block text-xs leading-5 text-gray-600">{item.description.slice(0, 120)}</span>}
+              {!!item.duration && <span className="mt-1 flex items-center gap-1 text-xs text-[#805536]"><Clock size={11} />约 {item.duration} 分钟</span>}</span>
+            <strong className="shrink-0 text-sm text-[#99613f]">¥{money(item.price)}</strong>
+          </button>)}
         </div>
+      </section>}
 
-        {/* 顾客评价 */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mt-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-              <MessageSquare size={20} className="text-amber-600" />
-              顾客评价
-            </h3>
-            <span className="text-sm text-gray-400">{reviews.length} 条</span>
-          </div>
+      {!!reviews.length && <section className="customer-card">
+        <h2 className="flex items-center gap-2 font-bold"><MessageSquare size={17} />顾客评价 <span className="ml-auto text-xs font-normal text-gray-500">{reviews.length} 条</span></h2>
+        {reviews.map(item => <article className="mt-3 rounded-xl bg-[#fffaf4] p-3 text-sm" key={item.id}>
+          <div className="flex items-center gap-2"><strong>{item.customerName || '匿名用户'}</strong><span className="text-xs text-gray-500">{date(item.createdAt)}</span><Star size={15} className="ml-auto text-amber-600" /></div>
+          <p className="mt-2">{item.comment || '用户未填写文字评价'}</p>
+          {item.reply && <p className="mt-2 rounded-lg bg-[#f7eee4] p-2 text-xs">{item.replyBy || '店铺回复'} · {item.reply}</p>}
+        </article>)}
+      </section>}
 
-          {reviewsLoading ? (
-            <div className="text-center text-gray-500 py-8">加载中...</div>
-          ) : reviews.length > 0 ? (
-            <div className="space-y-4">
-              {reviews.slice(0, 5).map((review) => (
-                <div key={review.id} className="border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                        <User size={16} className="text-gray-400" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-800">{review.customerName}</div>
-                        <div className="text-xs text-gray-400">
-                          {new Date(review.createdAt).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          size={12}
-                          className={
-                            star <= Math.round(review.overallScore)
-                              ? 'text-amber-400 fill-amber-400'
-                              : 'text-gray-300'
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-700">{review.comment || '用户未填写文字评价'}</p>
-
-                  {review.reply && (
-                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border-l-4 border-amber-400">
-                      <div className="flex items-center gap-2 mb-1">
-                        <MessageCircle size={14} className="text-amber-600" />
-                        <span className="text-sm font-medium text-gray-700">{review.replyBy || '店铺回复'}</span>
-                        <span className="text-xs text-gray-400">
-                          {review.replyAt && new Date(review.replyAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600">{review.reply}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center text-gray-500 py-8">
-              <MessageSquare size={40} className="mx-auto mb-2 opacity-50" />
-              <p className="text-sm">暂无评价</p>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-    </div>
-  );
-};
-
-export default ShopDetail;
+      {!!products.length && <section className="customer-card">
+        <h2 className="mb-3 flex items-center gap-2 font-bold"><ShoppingBag size={17} />商品商城
+          <button type="button" className="ml-auto text-xs font-semibold text-[#805536]" onClick={() => navigate(productsPath)}>查看全部 →</button></h2>
+        <div className="grid grid-cols-2 gap-3">{products.map(item => <button type="button" key={item.id} className="min-w-0 rounded-xl bg-[#fffaf4] text-left"
+          onClick={() => navigate(productsPath)}>
+          <CustomerImage images={item.images} alt={item.name} className="aspect-square w-full rounded-t-xl object-cover" />
+          <span className="block p-2 text-sm"><span className="block truncate">{item.name}</span><strong className="text-[#99613f]">¥{money(item.price)}</strong>
+            {!!item.originalPrice && item.originalPrice > item.price && <del className="ml-1 text-xs text-gray-500">¥{money(item.originalPrice)}</del>}</span>
+        </button>)}</div>
+      </section>}
+    </main>
+    {stylist && <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="发型师资料" onClick={() => setStylist(null)}>
+      <section className="customer-card w-full max-w-xs text-center" role="dialog" aria-modal="true" aria-label="发型师资料" onClick={event => event.stopPropagation()}>
+        <button className="ml-auto block p-1" type="button" aria-label="关闭" onClick={() => setStylist(null)}><X size={20} /></button>
+        <CustomerImage images={[stylist.avatar || '']} alt={stylist.name} className="mx-auto h-24 w-24 rounded-full object-cover" fallback={<UserRound size={36} />} />
+        <h2 className="mt-3 flex justify-center gap-2 font-bold">{stylist.name}<StylistBadges stylist={stylist} /></h2>
+        <p className="mt-2 text-sm text-gray-600">{stylist.title}</p>
+        <p className="mt-2 text-sm text-[#805536]">☆ {stylist.rating || 5} 分</p>
+        {stylist.specialty && <p className="mt-3 rounded-xl bg-[#fffaf4] p-3 text-sm">擅长专长 · {stylist.specialty}</p>}
+      </section>
+    </div>}
+  </>;
+}

@@ -1,10 +1,9 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { customerApi, customerMembershipApi, type CustomerMembershipOrder, type CustomerMembershipPlans } from '../../api';
 import { useAppStore } from '../../store';
 
 const Membership: React.FC = () => {
-  const navigate=useNavigate();
   const {currentCustomer,setCurrentCustomer}=useAppStore();
   const [plans,setPlans]=useState<CustomerMembershipPlans|null>(null);
   const [order,setOrder]=useState<CustomerMembershipOrder|null>(null);
@@ -12,7 +11,11 @@ const Membership: React.FC = () => {
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const load=async()=>{
-    try { const data=await customerMembershipApi.plans();setPlans(data);setOrder(data.activeOrder);setError(''); }
+    try {
+      const data = await customerMembershipApi.plans();
+      if (!Array.isArray(data?.vip) || !Array.isArray(data?.stored) || !data.currentVip || !data.currentStored) throw new Error('会员方案暂不可用');
+      setPlans(data); setOrder(data.activeOrder); setError('');
+    }
     catch(e){setError(e instanceof Error?e.message:'会员方案加载失败');}
   };
   useEffect(()=>{void load();},[]);
@@ -78,11 +81,13 @@ const Membership: React.FC = () => {
     }catch(e){setError(e instanceof Error?e.message:'微信下单暂不可用');}
     finally{setBusy(false);}
   };
-  return <div className="min-h-screen bg-[#faf4ec] px-4 pb-12 text-[#493b32]">
-    <header className="mx-auto flex max-w-xl items-center gap-4 py-5"><button onClick={()=>navigate('/customer/profile')} aria-label="返回个人中心">←</button><h1 className="text-xl font-bold">会员办理</h1></header>
-    <main className="mx-auto max-w-xl space-y-5">
+  return <div className="min-h-screen bg-[#faf4ec] pb-12 text-[#493b32]">
+    <CustomerHeader title="办理会员" backTo="/customer/profile" />
+    <main className="customer-body space-y-3">
       <section className="rounded-2xl border border-orange-100 bg-[#fff2e7] p-5"><h2 className="text-lg font-bold">本人办理 · 微信支付</h2><p className="mt-2 text-sm text-stone-600">支付成功并经微信核验后，自动开通或续费会员。</p></section>
-      {error&&<p role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
+      {error && <section className="customer-card space-y-2"><p role="alert" className="text-red-800">{error}</p>
+        {!plans && <button type="button" className="customer-secondary" onClick={() => void load()}>重新加载</button>}</section>}
+      {!error && !plans && <p className="customer-card" role="status">正在读取会员方案…</p>}
       {notice&&<p role="status" className="rounded-xl bg-green-50 p-4 text-green-800">{notice}</p>}
       {order&&<section className="rounded-2xl bg-amber-50 p-4"><p className="font-semibold">原订单：{order.kind==='vip'?'VIP':'储值'} {order.level} · ¥{order.amount}</p><p className="my-2 text-sm">{order.status==='review'?'微信已收款，待门店核对；请勿重复付款':'付款状态待确认，请先核对原单'}</p><div className="flex flex-wrap gap-2"><button disabled={busy} onClick={()=>void check()} className="rounded-xl bg-[#f6ae79] px-4 py-2 font-semibold text-[#392719]">核对支付结果</button>{order.status==='pending'&&order.channel==='wechat_h5'&&<button disabled={busy} onClick={()=>void resume()} className="rounded-xl border border-orange-300 bg-white px-4 py-2 font-semibold">继续支付原订单</button>}</div>{order.status==='pending'&&order.channel==='wechat_mini'&&<p className="mt-2 text-sm">原订单在小程序创建，请返回小程序继续支付。</p>}</section>}
       <section className="rounded-2xl border border-stone-200 bg-[#fffaf5] p-4"><h2 className="text-lg font-bold">购买 VIP</h2><p className="my-2 text-sm text-stone-600">原档续费按完整年费收取，从原到期日顺延 365 天。</p>

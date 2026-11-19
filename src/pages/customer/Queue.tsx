@@ -1,7 +1,9 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { liveQueueApi } from '../../api';
+import { bookingApi, liveQueueApi } from '../../api';
 import { useLiveQueue } from '../../hooks/useLiveQueue';
+import { useAppStore } from '../../store';
 import type { LiveQueueSnapshot } from '../../../shared/lib/liveQueue';
 const fmt=(v?:string)=>v?new Date(v).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit'}):'—';
 export default function Queue(){
@@ -11,6 +13,17 @@ export default function Queue(){
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[sound,setSound]=useState(false);
  const acting=useRef(false),lastNotice=useRef(0),audio=useRef<AudioContext|null>(null);
  const b=data?.booking;
+ const customerId=useAppStore(state=>state.currentCustomer?.id);
+ const editable=b?.state==='reserved'||b?.state==='pending';
+ const canCancel=!!b&&!['serving','finished','completed','cancelled'].includes(b.state);
+ const cancel=async()=>{
+   if(!b||!customerId||stale||acting.current)return;
+   if(!window.confirm('确定取消预约？名额将立即释放。提前2小时取消不计失信；临时取消单独记录，不等于爽约。'))return;
+   acting.current=true;setBusy(true);setMessage('');
+   try{await bookingApi.updateBookingStatus(b.id,'cancelled',customerId);setMessage('预约已取消');}
+   catch(error){setMessage(error instanceof Error?error.message:'取消结果暂未确认，请刷新核对');}
+   finally{await refresh(true);acting.current=false;setBusy(false);}
+ };
  useEffect(()=>{if(!data)return;const latest=data.notices.find(n=>['called','ready'].includes(n.type));
  if(!latest||latest.acknowledged||latest.id<=lastNotice.current)return;lastNotice.current=latest.id;
  if(sound&&audio.current){try{const c=audio.current;void c.resume();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);g.gain.value=.12;o.frequency.value=660;o.start();o.stop(c.currentTime+.5);}catch{/* Banner remains the primary notice. */}}
@@ -23,9 +36,9 @@ export default function Queue(){
  finally{await refresh(true);acting.current=false;setBusy(false);}
  };
  const enableSound=()=>{try{audio.current ||= new AudioContext();void audio.current.resume();setSound(true);}catch{setMessage('此浏览器无法播放提醒音，请关注页面与电话');}};
- return <main className="min-h-screen bg-orange-50/60 px-4 py-5 pb-12 text-gray-800"><div className="max-w-xl mx-auto space-y-4">
- <header className="flex justify-between items-center"><button onClick={()=>navigate(`/customer/shop/${b?.shopId||'shop1'}`)} className="px-3 py-3 rounded-xl border bg-white">返回首页</button><h1 className="text-xl font-bold">我的排队</h1><button onClick={()=>void refresh(true)} className="px-3 py-3 rounded-xl bg-orange-100">立即刷新</button></header>
- <div role="status" className={`rounded-xl p-3 text-sm ${stale?'bg-red-50 text-red-700':'bg-white text-gray-600'}`}>{stale?'同步中断或尚未完成，旧数据不能代表现场顺序':'页面开启时约每5秒同步'} · 上次成功 {lastSync?new Date(lastSync).toLocaleTimeString('zh-CN'):'尚未同步'}</div>
+ return <><CustomerHeader title="排队状态" backTo="/customer/profile" /><main className="min-h-screen bg-orange-50/60 px-4 py-4 pb-12 text-gray-800"><div className="max-w-xl mx-auto space-y-4">
+ <header className="flex items-center justify-between gap-2"><h2 className="text-xl font-bold">我的排队</h2><button onClick={()=>void refresh(true)} className="px-3 py-3 rounded-xl bg-orange-100">立即刷新</button></header>
+ <div role="status" className={`rounded-xl p-3 text-sm ${stale?'bg-red-50 text-red-700':'bg-white text-gray-600'}`}>{stale?'同步中断或尚未完成，旧数据不能代表现场顺序':'页面开启时约每5秒同步'} · 上次成功 {lastSync?fmt(new Date(lastSync).toISOString()):'尚未同步'}</div>
  {error&&<p role="alert" className="text-red-700">{error}</p>}{message&&<p role="status" className="bg-white border rounded-xl p-4">{message}</p>}
  {b&&<><section className="rounded-2xl border border-orange-200 bg-white p-5 space-y-4">
  <div className="text-sm text-gray-500">{b.serviceName} · {b.stylistName}</div><h2 className="text-2xl font-bold">{b.stateLabel}</h2>
@@ -37,7 +50,8 @@ export default function Queue(){
  {b.expectedReturnAt&&<p>登记预计返回：{fmt(b.expectedReturnAt)}</p>}
  {b.overWait&&<p role="alert" className="text-orange-800">等待已超过45分钟，可一键请前台协助换人、改约或确认进度。</p>}
  <div className="grid grid-cols-2 gap-3">
- {['reserved','pending','arrived','away','called','returned','missed'].includes(b.state)&&<button className="col-span-2 rounded-xl bg-orange-200 p-4 font-bold" onClick={()=>navigate('/customer/profile?editBookingId='+encodeURIComponent(b.id))}>修改 / 取消预约</button>}{b.canLeave&&<><button disabled={stale||busy} onClick={()=>void act('left_reported',10)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离10分钟</button><button disabled={stale||busy} onClick={()=>void act('left_reported',20)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离20分钟</button></>}
+ {editable&&<button type="button" className="customer-primary" disabled={busy||stale} onClick={()=>navigate('/customer/profile?editBookingId='+encodeURIComponent(b.id)+'&action=reschedule')}>修改预约时间</button>}
+ {canCancel&&<button type="button" className="customer-secondary" disabled={busy||stale} onClick={()=>void cancel()}>取消预约</button>}{b.canLeave&&<><button disabled={stale||busy} onClick={()=>void act('left_reported',10)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离10分钟</button><button disabled={stale||busy} onClick={()=>void act('left_reported',20)} className="rounded-xl bg-orange-100 p-4 font-bold disabled:opacity-40">暂离20分钟</button></>}
  {b.canReturn&&<button disabled={stale||busy} onClick={()=>void act('return_requested')} className="col-span-2 rounded-xl bg-orange-200 text-gray-900 p-4 font-bold disabled:opacity-40">我已返回，请前台确认</button>}
  {b.canAskHelp&&<button disabled={stale||busy} onClick={()=>void act('help_requested')} className="rounded-xl border border-orange-200 p-4 font-bold disabled:opacity-40">请前台协助</button>}
  {data.contactPhone&&<a href={`tel:${data.contactPhone}`} className="text-center rounded-xl border border-orange-200 p-4 font-bold">直接致电门店</a>}
@@ -45,5 +59,5 @@ export default function Queue(){
  <section className="bg-white rounded-2xl border p-5 space-y-3"><h2 className="font-bold">现场消息</h2>{data.notices.length?data.notices.map(n=><div key={n.id} className="border-b pb-3 text-sm"><span className="text-gray-500">{fmt(n.at)} · {n.acknowledged?'已确认':'现场更新'}</span><p>{n.message}</p></div>):<p className="text-gray-500 text-sm">暂无新的叫号消息</p>}</section>
  </>}
  <section className="bg-white rounded-2xl border p-5 text-sm leading-7 space-y-2"><h2 className="font-bold text-base">等待与过号规则</h2><p>{data?.rules.text||'到店请先到前台签到，预约时间为到店时间段。'}</p><button onClick={enableSound} className="border rounded-xl px-4 py-3">{sound?'页面提醒音已开启':'开启页面提醒音'}</button><p className="text-gray-500">离开页面、锁屏或网络中断时无法保证提醒音及时播放。不要只依赖页面叫号；请保持电话畅通，临近轮到时返回门店。</p></section>
- </div></main>;
+ </div></main></>;
 }

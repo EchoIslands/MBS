@@ -418,6 +418,15 @@ export const shopApi = {
     return mockShops;
   },
 
+  getPublicShop: async (id: string): Promise<Shop> => {
+    if (!USE_REAL_API) return shopApi.getShop(id);
+    const result = await http<{ success: boolean; data: Shop }>(
+      `${API_BASE}/shops/${encodeURIComponent(id)}?view=public`, { credentials: 'omit' }
+    );
+    if (!result?.data) throw new Error('门店资料读取失败');
+    return result.data;
+  },
+
   getShop: async (id: string): Promise<Shop> => {
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; data: Shop }>(`${API_BASE}/shops/${id}`);
@@ -893,11 +902,11 @@ export const bookingApi = {
     return booking;
   },
 
-  getCustomerBookings: async (customerId: string): Promise<Booking[]> => {
+  getCustomerBookings: async (customerId: string, options: { active?: boolean } = {}): Promise<Booking[]> => {
     if (USE_REAL_API) {
       const rows: Booking[] = [];
       for (let page = 1; ; page += 1) {
-        const result = await http<{ success: boolean; data: Booking[]; pagination?: { totalPages: number } }>(`${API_BASE}/bookings/customer/${encodeURIComponent(customerId)}?page=${page}&pageSize=200`);
+        const result = await http<{ success: boolean; data: Booking[]; pagination?: { totalPages: number } }>(`${API_BASE}/bookings/customer/${encodeURIComponent(customerId)}?page=${page}&pageSize=200${options.active ? '&active=true' : ''}`);
         if (!Array.isArray(result?.data)) throw new Error('预约列表读取失败');
         rows.push(...result.data);
         if (!result.pagination || page >= result.pagination.totalPages) break;
@@ -905,7 +914,7 @@ export const bookingApi = {
       return Array.from(new Map(rows.map(row => [row.id, row])).values());
     }
     await new Promise((r) => setTimeout(r, 200));
-    return mockBookings.filter((b) => b.customerId === customerId);
+    return mockBookings.filter(b => b.customerId === customerId && (!options.active || b.status === 'pending' || b.status === 'confirmed'));
   },
 
   getBookingsByShop: async (shopId: string, dateStart?: string, status?: string, timeout = 15000): Promise<Booking[]> => {
@@ -924,9 +933,8 @@ export const bookingApi = {
     return mockBookings.filter((b) => {
       if (b.shopId !== shopId) return false;
       if (dateStart) {
-        const bookingDate = new Date(b.scheduledTime).toDateString();
-        const filterDate = new Date(dateStart).toDateString();
-        if (bookingDate !== filterDate) return false;
+        const bookingDate = new Date(+new Date(b.scheduledTime) + 8 * 3600000).toISOString().slice(0, 10);
+        if (bookingDate !== dateStart) return false;
       }
       if (status && b.status !== status) return false;
       return true;

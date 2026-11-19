@@ -1,764 +1,265 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Calendar as CalendarIcon, Clock, User, CheckCircle, Star, Users,
-  Scissors, Sparkles, Award, Zap
-} from 'lucide-react';
-import {isRealApi} from '../../../shared/api-base';
-import {bookingSlots} from '../../../shared/lib/bookingHours';
-import { sortStylistsByRank } from '../../../shared/lib/stylistOrder';
-import { mockShops } from '../../../shared/mockData';
-import { Employee, Shop, UserRole, Booking } from '../../../shared/types';
-import { bookingApi, shopApi } from '../../../src/api';
+
+import { useEffect, useRef, useState } from 'react';
+import { CalendarDays, Clock, Scissors, Sparkles, UserRound } from 'lucide-react';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { bookingApi, shopApi } from '../../api';
 import { useAppStore } from '../../store';
-import { calcDiscountedItemPrice, getStockholderBenefitSummary, calcStockholderDiscountedPrice } from '../../lib/membership';
-import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
+import { CustomerHeader } from '../../components/CustomerPage';
+import CustomerImage from '../../components/CustomerImage';
+import { calcDiscountedItemPriceForCustomer, calcStockholderDiscountedPrice, getStockholderBenefitSummary } from '../../lib/membership';
+import { bookingSlots } from '../../../shared/lib/bookingHours';
+import { sortStylistsByRank, stylistRank } from '../../../shared/lib/stylistOrder';
+import type { Booking, Employee, Shop } from '../../../shared/types';
 
-type SelectionMode = 'specific' | 'fastest';
+const DAY = 86400000;
+const BEIJING = 8 * 3600000;
+const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const bookingInstant = (day: string, time: string) => new Date(day + 'T' + time + ':00+08:00');
 
-const BookingPage: React.FC = () => {
-  const { shopId } = useParams<{ shopId: string }>();
-  const location = useLocation();
-  const { currentCustomer } = useAppStore();
-
-  const [shop, setShop] = useState<Shop | null>(null);
-  const [loadError,setLoadError]=useState('');
-  const [loadingShop, setLoadingShop] = useState(true);
-  const [existingBookings, setExistingBookings] = useState<Booking[]>([]);
-  const bookingLock = useRef(false);
-
-  const [selectedService, setSelectedService] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedTime, setSelectedTime] = useState<string>('');
-  const [selectedBarberId, setSelectedBarberId] = useState<string>('');
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('fastest');
-  const [notes, setNotes] = useState<string>(() => {
-    const hairstyle = (location.state as { hairstyle?: unknown } | null)?.hairstyle;
-    return typeof hairstyle === 'string' && hairstyle.length <= 30 ? `试发型偏好：${hairstyle}` : '';
+function bookingDays(now: number) {
+  return Array.from({ length: 15 }, (_, index) => {
+    const day = new Date(now + BEIJING + index * DAY);
+    return { day: day.toISOString().slice(0, 10), label: (day.getUTCMonth() + 1) + '月' + day.getUTCDate() + '日', weekday: weekdays[day.getUTCDay()] };
   });
-  const [booking, setBooking] = useState(false);
+}
+
+function stylistBooked(stylist: Employee, start: number, duration: number, rows: Booking[]) {
+  return rows.some(row => {
+    if (!['confirmed', 'pending'].includes(row.status) || (row.stylistId !== stylist.id && row.barberId !== stylist.id)) return false;
+    const begin = new Date(row.scheduledTime).getTime();
+    const end = row.scheduledEndTime ? new Date(row.scheduledEndTime).getTime() : begin + (row.plannedDurationMinutes || 30) * 60000;
+    return begin < start + duration * 60000 && end > start;
+  });
+}
+
+type Availability = { key: string; rows?: Booking[]; error?: boolean };
+const EMPTY_ROWS: Booking[] = [];
+
+export default function BookingPage() {
+  const { shopId = 'shop1' } = useParams();
+  const [params] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const customer = useAppStore(state => state.currentCustomer);
+  const [now, setNow] = useState(Date.now);
+  const dates = bookingDays(now);
+  const [shop, setShop] = useState<Shop | null>(null);
+  const [shopError, setShopError] = useState(false);
+  const [shopRetry, setShopRetry] = useState(0);
+  const [availability, setAvailability] = useState<Availability>();
+  const [retry, setRetry] = useState(0);
+  const [serviceId, setServiceId] = useState('');
+  const [date, setDate] = useState(() => params.get('date') || '');
+  const day = dates.some(item => item.day === date) ? date : dates[0].day;
+  const [timeChoice, setTimeChoice] = useState(() => params.get('time') || '');
+  const [stylistId, setStylistId] = useState(() => params.get('stylistId') || '');
+  const [stylistProfile, setStylistProfile] = useState<Employee | null>(null);
+  const [notes, setNotes] = useState(() => typeof location.state?.hairstyle === 'string' ? '试发型偏好：' + location.state.hairstyle.slice(0, 30) : '');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const busy = useRef(false);
+  const dateStrip = useRef<HTMLDivElement>(null);
+  const lookupKey = shopId + '/' + day + '/' + retry;
+  const result = lookupKey === availability?.key ? availability : undefined;
+  const rows = result?.rows ?? EMPTY_ROWS;
 
   useEffect(() => {
-    const loadShop = async () => {
-      if (!shopId) {
-        if(isRealApi()) {setLoadError('缺少门店信息，请返回门店页面重新预约');} else setShop(mockShops[0]);
-        setLoadingShop(false);
-        return;
-      }
-      try {
-        const shopData = await shopApi.getShop(shopId);
-        setShop(shopData);
-      } catch (error) {
-        console.error('加载店铺信息失败:', error);
-        if(isRealApi()) {setLoadError('门店信息加载失败，请稍后重试');setShop(null);} else setShop(mockShops.find((s) => s.id === shopId) || mockShops[0]);
-      } finally {
-        setLoadingShop(false);
-      }
-    };
-    loadShop();
-  }, [shopId]);
-
-  // 加载店铺已有预约，用于自动匹配发型师时判断档期
-  useEffect(() => {
-    async function loadBookings() {
-      if (!shop?.id || !selectedDate) return;
-      try {
-        const data = await bookingApi.getBookingsByShop(shop.id, selectedDate);
-        setExistingBookings(data || []);
-      } catch (error) {
-        console.error('加载店铺预约失败:', error);
-        setExistingBookings([]);setLoadError('档期加载失败，请刷新后再预约');
-      }
-    }
-    loadBookings();
-  }, [shop?.id, selectedDate]);
-
-  // 生成未来7天日期
-  const dates = useMemo(() => {
-    const arr: { value: string; label: string; weekDay: string }[] = [];
-    const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    for (let i = 0; i < 15; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      const dateStr = new Date(d.getTime()+8*3600000).toISOString().slice(0,10);
-      arr.push({
-        value: dateStr,
-        label: `${d.getMonth() + 1}月${d.getDate()}日`,
-        weekDay: weekDays[d.getDay()],
-      });
-    }
-    return arr;
+    const tick = () => setNow(Date.now());
+    const timer = window.setInterval(tick, 15000);
+    window.addEventListener('focus', tick);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', tick); };
   }, []);
 
-  // 生成时段（每30分钟）
-  // 如果是今天，只显示当前时间之后的时段；如果是未来日期，显示所有时段
-  const availableTimeSlots = useMemo(() => {
-    const arr=bookingSlots(selectedDate,shop?.openingHours);
-    // 判断是否是今天
-    const today = new Date();
-    const todayStr = new Date(today.getTime()+8*3600000).toISOString().slice(0,10);
-    if (selectedDate === todayStr) {
-      // 今天，只显示当前时间之后的时段
-      const currentHour = today.getHours();
-      const currentMinute = today.getMinutes();
-      return arr.filter((time) => {
-        const [h, m] = time.split(':').map(Number);
-        if (h > currentHour) return true;
-        if (h === currentHour && m > currentMinute) return true;
-        return false;
-      });
-    }
-    return arr;
-  }, [selectedDate,shop?.openingHours]);
-
-  // 默认选择第一个可用的时段
   useEffect(() => {
-    if (!availableTimeSlots.includes(selectedTime)) {
-      setSelectedTime(availableTimeSlots[0] || '');
-    }
-  }, [availableTimeSlots, selectedTime]);
+    let active = true;
+    setShopError(false);
+    shopApi.getPublicShop(shopId).then(data => {
+      if (active) setShop(data);
+    }).catch(() => { if (active) setShopError(true); });
+    return () => { active = false; };
+  }, [shopId, shopRetry]);
 
   useEffect(() => {
-    if (shop && shop.services.length > 0 && !selectedService) {
-      setSelectedService(shop.services[0].id);
-    }
-    if (dates.length > 0 && !selectedDate) {
-      setSelectedDate(dates[0].value);
-    }
-  }, [shop, dates, selectedService, selectedDate]);
+    let active = true;
+    bookingApi.getBookingsByShop(shopId, day).then(data => {
+      if (active) setAvailability({ key: lookupKey, rows: data });
+    }).catch(() => { if (active) setAvailability({ key: lookupKey, error: true }); });
+    return () => { active = false; };
+  }, [shopId, day, lookupKey]);
 
-  const isStylist = (e: Employee) => {
-    if (e.role) return e.role === UserRole.STYLIST || e.role === UserRole.SHOP_MANAGER;
-    const title = e.title || '';
-    return /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(title);
-  };
-
-  const selectedServiceData = shop?.services.find((s) => s.id === selectedService);
-  const requireGoldStylist = !!selectedServiceData?.requiresGoldStylist;
-  const requireShopManager = !!selectedServiceData?.requiresShopManager;
-
-  const stylists = useMemo(() =>
-    sortStylistsByRank(shop?.employees.filter((e) => isStylist(e) && e.isActive !== false) || []),
-  [shop]);
-
-  // 店长专属服务仅店长可选；金牌专属服务仅金牌发型师（含店长）可选；普通服务则均可
-  const eligibleStylists = useMemo(() =>
-    stylists.filter((e) =>
-      requireShopManager ? e.role === UserRole.SHOP_MANAGER
-        : requireGoldStylist ? (e.isGoldStylist === true || e.role === UserRole.SHOP_MANAGER)
-        : true
-    ),
-  [stylists, requireGoldStylist, requireShopManager]);
-
-  const isStylistEligible = (e: Employee) => {
-    if (requireShopManager) return e.role === UserRole.SHOP_MANAGER;
-    if (requireGoldStylist) return e.isGoldStylist === true || e.role === UserRole.SHOP_MANAGER;
+  const activeShop = shop?.id === shopId ? shop : null;
+  const service = activeShop?.services.find(item => item.id === serviceId) ??
+    activeShop?.services.find(item => item.id === params.get('serviceId')) ?? activeShop?.services[0];
+  const stylists = sortStylistsByRank((activeShop?.employees ?? []).filter(item => item.isActive !== false &&
+    (item.role === 'shop_manager' || item.role === 'stylist' || (!item.role && /发型师|造型师|总监|设计师|老师|剪发|烫染|护理/.test(item.title || '')))));
+  const eligible = (item: Employee) => {
+    const manager = item.role === 'shop_manager';
+    if (service?.requiresShopManager) return manager;
+    if (service?.requiresGoldStylist) return manager || item.isGoldStylist === true;
     return true;
   };
+  const duration = service?.duration || 30;
+  const eligibleStylists = stylists.filter(eligible);
+  const slots = result?.rows ? bookingSlots(day, activeShop?.openingHours)
+    .filter(time => +bookingInstant(day, time) > now)
+    .map(time => ({ time, full: eligibleStylists.every(person => stylistBooked(person, +bookingInstant(day, time), duration, rows)) })) : [];
+  const time = slots.find(slot => slot.time === timeChoice && !slot.full)?.time ?? slots.find(slot => !slot.full)?.time ?? '';
+  const available = (item: Employee) => !!time && eligible(item) && !stylistBooked(item, +bookingInstant(day, time), duration, rows);
+  const bookingCount = (item: Employee) => rows.filter(row => row.status !== 'cancelled' && (row.stylistId === item.id || row.barberId === item.id)).length;
+  const fastest = stylists.filter(available).sort((left, right) => bookingCount(left) - bookingCount(right))[0];
+  const selectedStylist = stylists.find(item => item.id === stylistId && available(item));
+  const stockholder = getStockholderBenefitSummary(customer, activeShop);
 
-  // 技师在特定时段是否已被预约
-  const isBarberBusy = useCallback(
-    (barberId: string, date: string, time: string) =>
-      existingBookings.some((bk) => {
-        if (bk.status !== 'confirmed' && bk.status !== 'pending') return false;
-        if (bk.barberId !== barberId && bk.stylistId !== barberId) return false;
-        const start = new Date(`${date}T${time}:00+08:00`).getTime();
-        const end = start + (Number(selectedServiceData?.duration) || 30) * 60000;
-        const bookedStart = new Date(bk.scheduledTime).getTime();
-        const bookedEnd = bk.scheduledEndTime ? new Date(bk.scheduledEndTime).getTime() : bookedStart + 30*60000;
-        return bookedStart < end && bookedEnd > start;
-      }),
-    [existingBookings, selectedServiceData?.duration]
-  );
-
-  // 计算技师可用性与预计等待时间
-  // 等待时间基于该技师在当天的已有预约数稳定计算，不再使用 Math.random()，
-  // 避免用户在备注栏输入时组件重渲染导致数字乱跳。
-  const getBarberAvailability = (barber: Employee, date: string, time: string) => {
-    if (isBarberBusy(barber.id, date, time)) return { isAvailable: false, waitTime: -1 };
-
-    const sameDayBookings = existingBookings.filter((bk) => {
-      if (bk.barberId !== barber.id && bk.stylistId !== barber.id) return false;
-      if (bk.status === 'cancelled') return false;
-      const bkDate = new Date(bk.scheduledTime);
-      return bkDate.toISOString().split('T')[0] === date;
-    });
-
-    // 预约数量仅作匹配排序参考，不作为等待分钟数。
-    const waitTime = sameDayBookings.length;
-    return { isAvailable: true, waitTime };
-  };
-
-  // 找最快可服务的技师（基于真实预约数据）
-  const fastest = useMemo(() => {
-    if (!eligibleStylists || eligibleStylists.length === 0 || !selectedDate || !selectedTime) return null;
-    let best: Employee | null = null;
-    let min = Infinity;
-    for (const barber of eligibleStylists) {
-      if (isBarberBusy(barber.id, selectedDate, selectedTime)) continue;
-
-      const sameDayBookings = existingBookings.filter((bk) => {
-        if (bk.barberId !== barber.id && bk.stylistId !== barber.id) return false;
-        if (bk.status === 'cancelled') return false;
-        const bkDate = new Date(bk.scheduledTime);
-        return bkDate.toISOString().split('T')[0] === selectedDate;
-      });
-      const waitTime = sameDayBookings.length;
-
-      if (waitTime < min) {
-        min = waitTime;
-        best = barber;
-      }
-    }
-    return best;
-  }, [eligibleStylists, selectedDate, selectedTime, existingBookings, isBarberBusy]);
-
-  const handleBooking = async () => {
-    if (bookingLock.current) return;
-    if (!selectedService || !selectedDate || !selectedTime) {
-      alert('请填写完整预约信息');
-      return;
-    }
-    if (!currentCustomer) {
-      alert('请先登录顾客账号');
-      navigate(`/customer/login?redirect=${encodeURIComponent(`/customer/booking/${shop?.id || 'shop1'}`)}`);
-      return;
-    }
-    const target = selectionMode === 'specific'
-      ? eligibleStylists.find((e) => e.id === selectedBarberId && !isBarberBusy(e.id, selectedDate, selectedTime))
-      : fastest;
-    if (!target) {
-      alert('当前所选时间没有可用发型师，请更换时间');
-      return;
-    }
-    setBooking(true);
-    bookingLock.current = true;
-
-    // 构建预约时间
-    const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
-    console.log('🔍 传给后端的 scheduledTime:', {
-      selectedDate,
-      selectedTime,
-      scheduledTime,
-      scheduledTimeISO: scheduledTime.toISOString(),
-      isValid: !isNaN(scheduledTime.getTime())
-    });
-
-    try {
-      // 调用后端API创建预约
-      const newBooking = await bookingApi.createBooking({
-        shopId: shop?.id || 'shop1',
-        customerId: currentCustomer.id,
-        serviceId: selectedService,
-        scheduledTime: scheduledTime.toISOString(), // 明确转换为 ISO 字符串
-        barberId: target.id,
-        barberName: target.name,
-        stylistId: target.id,
-        stylistName: target.name,
-        notes,
-      });
-      
-      // 使用真实的预约ID跳转
-      navigate(`/customer/queue/${newBooking.id}`);
-    } catch (error) {
-      console.error('预约失败:', error);
-      alert(error instanceof Error ? error.message : '预约失败，请检查网络连接');
-      setBooking(false);
-    } finally {
-      bookingLock.current = false;
-    }
-  };
-
-  // 股东权益摘要
-  const stockholderSummary = useMemo(
-    () => getStockholderBenefitSummary(currentCustomer, shop),
-    [currentCustomer, shop]
-  );
-
-  if(loadError) return <div className="min-h-screen flex flex-col items-center justify-center gap-4"><p role="alert">{loadError}</p><button onClick={()=>navigate(-1)}>返回</button></div>;
-  if (loadingShop || !shop) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-500">店铺加载中...</div>;
+  function priceFor(price: number) {
+    return Math.min(calcDiscountedItemPriceForCustomer(price, customer, 'service'), calcStockholderDiscountedPrice(price, customer, activeShop).price);
   }
 
-  // ============= 渲染函数 =============
-  const renderSkillStars = (skillValue = 4.5) => {
-    // 手艺值：小数 0-5，我们渲染成 5 颗星
-    return (
-      <div className="flex items-center gap-0.5">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <Star
-            key={i}
-            size={13}
-            className={i <= Math.round(skillValue) ? 'text-amber-400 fill-amber-400' : 'text-gray-200'}
-          />
-        ))}
-      </div>
-    );
-  };
+  function chooseDay(value: string, reveal = false) {
+    if (!dates.some(item => item.day === value)) return;
+    setDate(value);
+    setTimeChoice('');
+    setFormError('');
+    if (reveal) {
+      const chip = dateStrip.current?.querySelector<HTMLButtonElement>('[data-day="' + value + '"]');
+      if (chip && dateStrip.current) dateStrip.current.scrollTo({ left: Math.max(0, chip.offsetLeft - 12), behavior: 'smooth' });
+    }
+  }
 
-  return (
-    <div className="min-h-screen bg-[#fff9f3] pb-40">
-      {/* 顶部导航 */}
-      <header className="sticky top-0 bg-[#fff9f3] border-b border-[#eadbcf] z-30">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <ArrowLeft size={20} className="text-gray-700" />
-          </button>
-          <h1 className="font-semibold text-gray-800">预约服务</h1>
-          <div className="w-10" />
-        </div>
-      </header>
+  async function submit() {
+    if (busy.current || !result?.rows) return;
+    const target = selectedStylist ?? fastest;
+    if (!service || !time || !target || +bookingInstant(day, time) <= Date.now()) {
+      setFormError('请重新选择可预约的服务、时间和发型师');
+      setNow(Date.now());
+      return;
+    }
+    if (!customer) {
+      const redirect = location.pathname + '?' + new URLSearchParams({ serviceId: service.id, date: day, time, stylistId: selectedStylist?.id || '' });
+      navigate('/customer/login?redirect=' + encodeURIComponent(redirect), { state: { customerBack: true } });
+      return;
+    }
+    busy.current = true;
+    setSubmitting(true);
+    setFormError('');
+    try {
+      const booking = await bookingApi.createBooking({
+        shopId, customerId: customer.id, serviceId: service.id, scheduledTime: bookingInstant(day, time).toISOString(),
+        barberId: target.id, barberName: target.name, stylistId: target.id, stylistName: target.name, notes: notes.trim(),
+      });
+      navigate('/customer/queue/' + booking.id, { state: { customerBack: true } });
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : '预约失败，请稍后重试');
+      setRetry(value => value + 1);
+    } finally {
+      busy.current = false;
+      setSubmitting(false);
+    }
+  }
 
-      <div className="max-w-2xl mx-auto px-4">
-
-        {/* 股东权益展示 */}
-        {stockholderSummary.isStockholder && stockholderSummary.enabled && (
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl shadow-sm p-4 sm:p-5 mt-4 border border-amber-100">
-            <h3 className="font-bold text-amber-800 mb-2 sm:mb-3 flex items-center gap-2 text-sm sm:text-base">
-              <Award size={18} className="text-amber-600" />
-              股东会员专享权益
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {stockholderSummary.benefits.map((benefit) => (
-                <span
-                  key={benefit}
-                  className="text-xs sm:text-sm px-2.5 py-1 bg-white/70 text-amber-700 rounded-full border border-amber-200"
-                >
-                  {benefit}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 选择服务 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Scissors size={18} className="sm:hidden text-amber-600" />
-            <Scissors size={20} className="hidden sm:inline text-amber-600" />
-            选择服务
-          </h3>
-          <VerticalScrollSlider maxHeight={320} containerClassName="space-y-2 sm:space-y-3 pr-1">
-            {shop.services.map((service) => {
-              const memberPrice = calcDiscountedItemPrice(
-                service.price,
-                currentCustomer?.purchaseVIPLevel,
-                currentCustomer?.storedValueLevel,
-                'service'
-              );
-              const stockholderPrice = calcStockholderDiscountedPrice(
-                service.price,
-                currentCustomer,
-                shop,
-                'service'
-              );
-              // 取最优惠价格
-              const finalPrice = Math.min(memberPrice, stockholderPrice.price);
-              const hasDiscount = finalPrice < service.price;
-              const isStockholderDiscount = stockholderPrice.hasDiscount && stockholderPrice.price <= memberPrice;
-              return (
-                <label
-                  key={service.id}
-                  className={`flex items-center gap-3 sm:gap-4 p-3 sm:p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                    selectedService === service.id
-                      ? 'border-amber-500 bg-amber-50'
-                      : 'border-gray-200 hover:border-amber-200'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="service"
-                    checked={selectedService === service.id}
-                    onChange={() => { setSelectedService(service.id); setSelectionMode('fastest'); setSelectedBarberId(''); }}
-                    className="accent-amber-500 flex-shrink-0"
-                  />
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center flex-shrink-0">
-                    <Scissors size={18} className="sm:hidden text-amber-600" />
-                    <Scissors size={22} className="hidden sm:inline text-amber-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-gray-800 text-sm sm:text-base">{service.name}</div>
-                    {service.description && (
-                      <div className="text-xs sm:text-sm text-gray-500 line-clamp-1">{service.description}</div>
-                    )}
-                    <div className="inline-flex items-center gap-1 mt-1.5 text-xs text-amber-700 bg-orange-50 px-2 py-0.5 rounded-full">
-                      <Clock size={12} />
-                      约 {service.duration} 分钟
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-2 bg-white px-2 py-1.5 rounded-lg border border-gray-100">
-                    {hasDiscount && (
-                      <div className="text-xs text-gray-400 line-through">¥{service.price}</div>
-                    )}
-                    <div className="flex items-center gap-1.5 justify-end">
-                      {hasDiscount && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          isStockholderDiscount
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-orange-100 text-amber-700'
-                        }`}>
-                          {isStockholderDiscount ? '股东价' : '会员价'}
-                        </span>
-                      )}
-                      <span className="text-amber-600 font-bold text-base sm:text-lg">
-                        ¥{finalPrice.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </label>
-              );
+  return <>
+    <CustomerHeader title="预约服务" />
+    <main className="customer-body space-y-3" style={activeShop ? { paddingBottom: 82 } : undefined}>
+      {shopError && <section className="customer-card space-y-2"><p>店铺加载失败，请重试</p><button className="customer-secondary" onClick={() => setShopRetry(value => value + 1)}>重新加载</button></section>}
+      {!activeShop && !shopError && <p className="customer-card text-center text-sm" role="status">店铺加载中…</p>}
+      {activeShop && <>
+        {stockholder.enabled && stockholder.isStockholder && <section className="customer-card"><h2 className="font-bold">股东专属权益</h2><p className="mt-2 text-sm">{stockholder.benefits.join(' · ')}</p></section>}
+        <section className="customer-card booking-panel">
+          <h2><Scissors size={17} />选择服务</h2>
+          <div className="max-h-64 space-y-2 overflow-y-auto px-4 py-3" data-no-tab-swipe>
+            {activeShop.services.map(item => {
+              const price = priceFor(item.price);
+              const stockPrice = calcStockholderDiscountedPrice(item.price, customer, activeShop);
+              return <button type="button" className="booking-choice flex w-full items-start gap-2 text-left" key={item.id} disabled={submitting}
+                aria-pressed={service?.id === item.id} onClick={() => { setServiceId(item.id); setFormError(''); }}>
+                <span className="booking-radio" /><span className="booking-service-icon"><Scissors size={17} /></span>
+                <span className="min-w-0 flex-1"><strong className="block text-sm">{item.name}</strong>
+                  {item.duration > 0 && <span className="mt-1 block text-xs text-stone-600">约 {item.duration} 分钟</span>}
+                  {item.description && <span className="mt-1 block text-xs text-gray-600">{item.description}</span>}</span>
+                <span className="shrink-0 text-right text-[#805536]">
+                  {price < item.price && <del className="block text-xs text-gray-500">¥{item.price.toFixed(2)}</del>}
+                  {price < item.price && <span className="mr-1 text-[11px]">{stockPrice.hasDiscount && stockPrice.price === price ? '股东价' : '会员价'}</span>}
+                  <strong className="text-sm">¥{price.toFixed(2)}</strong></span>
+              </button>;
             })}
-          </VerticalScrollSlider>
-          {shop.services.length === 0 && (
-            <div className="text-center text-gray-500 py-6 text-sm">暂无可用服务</div>
-          )}
-        </div>
-
-        {/* 选择日期 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <CalendarIcon size={18} className="sm:hidden" />
-            <CalendarIcon size={20} className="hidden sm:inline" />
-            选择日期
-          </h3>
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-            {dates.map((d) => (
-              <button
-                key={d.value}
-                onClick={() => setSelectedDate(d.value)}
-                className={`flex-shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl text-center transition-all min-w-[72px] sm:min-w-[78px] ${
-                  selectedDate === d.value
-                    ? 'bg-amber-500 text-white shadow'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <div className="text-sm font-medium">{d.label}</div>
-                <div className="text-xs opacity-80 mt-0.5">{d.weekDay}</div>
-              </button>
-            ))}
+            {!activeShop.services.length && <p className="py-2 text-sm text-gray-600">暂无可用服务</p>}
           </div>
-        </div>
+        </section>
 
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm leading-6 text-gray-700">预约时间为到店时间段，非保证开剪时间。到店由前台确认后排队；暂离请登记，叫号后保留10分钟。实际等待以排队页面和现场确认动态更新。</div>
-        {/* 选择时间 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Clock size={18} className="sm:hidden" />
-            <Clock size={20} className="hidden sm:inline" />
-            选择到店时间
-          </h3>
-          <div className="grid grid-cols-4 gap-2 sm:gap-3">
-            {availableTimeSlots.map((time) => {
-              const allBusy = eligibleStylists.length === 0 || eligibleStylists.every((e) => isBarberBusy(e.id, selectedDate, time));
-              return (
-                <button
-                  key={time}
-                  onClick={() => !allBusy && setSelectedTime(time)}
-                  disabled={allBusy}
-                  className={`py-2.5 sm:py-3 rounded-xl text-center transition-all text-sm ${
-                    selectedTime === time
-                      ? 'bg-amber-500 text-white shadow'
-                      : allBusy
-                        ? 'bg-gray-200 text-gray-400 line-through cursor-not-allowed'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {time}
-                  {allBusy && <span className="text-[10px] block opacity-75">已满</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* 选择发型师 —— 核心改造 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
-          <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Scissors size={20} className="text-amber-600" />
-            选择发型师
-          </h3>
-
-          {/* 智能匹配卡片 */}
-          <div className={`p-3 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all mb-3 sm:mb-4 ${
-            selectionMode === 'fastest'
-              ? 'border-emerald-500 bg-green-50'
-              : 'border-gray-200 hover:border-green-300'
-          }`}
-          >
-            <label className="flex items-start gap-2 sm:gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="barberSelection"
-                checked={selectionMode === 'fastest'}
-                onChange={() => setSelectionMode('fastest')}
-                className="mt-2 sm:mt-3 accent-emerald-500 flex-shrink-0"
-              />
-              <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
-                  <Zap size={18} className="sm:hidden text-green-600" />
-                  <Zap size={22} className="hidden sm:inline text-green-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
-                    <span className="font-bold text-gray-800 text-sm sm:text-base">智能匹配 · 推荐发型师</span>
-                    <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-green-600 text-white rounded-full">推荐</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-gray-500 mb-2 line-clamp-2">
-                    按所选服务和时段推荐可预约的发型师，等待以到店现场为准
-                  </div>
-                  <div className="flex items-center gap-2 text-xs sm:text-sm flex-wrap">
-                    {fastest ? (
-                      <>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded border border-gray-200 text-gray-700">
-                          <User size={12} /> {fastest.name}
-                        </span>
-                        <span className="text-green-600 font-medium">
-                          到店后动态更新等待
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-gray-400">正在计算...</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+        <section className="customer-card booking-panel">
+          <h2><CalendarDays size={17} />选择日期
+            <label className="booking-calendar ml-auto" data-no-tab-swipe>日历选择 ▾
+              <input type="date" aria-label="日历选择" min={dates[0].day} max={dates[14].day} value={day} disabled={submitting}
+                onClick={event => { try { event.currentTarget.showPicker?.(); } catch { /* The native input still handles the click. */ } }}
+                onChange={event => chooseDay(event.target.value, true)} />
             </label>
+          </h2>
+          <p className="px-4 pt-2 text-xs leading-5 text-gray-600">已选 {day} · 可预约今天起未来14天，日期条可左右滑动</p>
+          <div ref={dateStrip} className="relative flex gap-2 overflow-x-auto px-4 pb-3 pt-2" data-no-tab-swipe>
+            {dates.map(item => <button type="button" key={item.day} data-day={item.day} disabled={submitting}
+              className="booking-choice shrink-0 text-center text-sm" aria-pressed={day === item.day} onClick={() => chooseDay(item.day)}>
+              <strong className="block">{item.label}</strong><small>{item.weekday}</small></button>)}
           </div>
+        </section>
 
-          {/* 分隔线 —— 手机端简化，只保留一行 */}
-          <div className="relative my-3 sm:my-5">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-white px-3 sm:px-4 text-xs text-gray-500">或选择指定发型师</span>
-            </div>
+        <section className="customer-card booking-panel">
+          <h2><Clock size={17} />选择到店时间</h2>
+          {!result ? <p className="p-4 text-sm text-gray-600" role="status">正在读取档期…</p>
+            : result.error ? <button type="button" className="m-3 customer-secondary" onClick={() => setRetry(value => value + 1)}>档期读取失败，点击重试</button>
+              : !slots.length ? <p className="p-4 text-sm text-gray-600">当天已无可选时段，请选择其他日期</p>
+                : <div className="grid grid-cols-4 gap-2 p-4">{slots.map(slot => <button type="button" key={slot.time} disabled={submitting || slot.full}
+                  className="booking-choice !px-1 text-sm" aria-pressed={time === slot.time} onClick={() => { setTimeChoice(slot.time); setFormError(''); }}>
+                  {slot.time}{slot.full && <small className="block">已满</small>}</button>)}</div>}
+        </section>
+
+        <section className="customer-card booking-panel">
+          <h2><UserRound size={17} />选择发型师</h2>
+          <div className="space-y-2 px-4 py-3">
+            <button type="button" disabled={submitting} className="booking-choice booking-recommended flex w-full items-center gap-2 text-left"
+              aria-pressed={!selectedStylist} onClick={() => setStylistId('')}>
+              <span className="booking-radio" /><span className="booking-service-icon"><Sparkles size={18} /></span>
+              <span><strong className="block text-sm">智能匹配 · 推荐发型师</strong>
+                <span className="block text-xs leading-5 text-gray-600">按所选服务和时段推荐发型师，等待以到店现场为准</span>
+                <span className="block text-xs text-[#526641]">{fastest ? fastest.name + ' · 到店后动态更新等待' : time ? '暂无可推荐发型师' : '选择可用时段后查看推荐'}</span></span>
+            </button>
+            <p className="py-2 text-center text-xs text-gray-600">或选择指定发型师</p>
+            {stylists.map(item => <div key={item.id} className="booking-choice flex items-center gap-2" data-selected={selectedStylist?.id === item.id}>
+              <button type="button" aria-label={'查看' + item.name + '资料'} className="shrink-0" onClick={() => setStylistProfile(item)}>
+                <CustomerImage images={[item.avatar || '']} alt="" className="h-10 w-10 rounded-full object-cover" fallback={<UserRound size={19} />} />
+              </button>
+              <button type="button" aria-pressed={selectedStylist?.id === item.id} disabled={!available(item) || submitting}
+                onClick={() => setStylistId(item.id)} className="min-w-0 flex-1 text-left text-sm disabled:opacity-60">
+                <span className="flex flex-wrap items-center gap-2"><strong>{item.name}</strong>
+                  {stylistRank(item) < 2 && <small className="rounded-full bg-amber-100 px-1.5 text-amber-900">金牌</small>}
+                  {stylistRank(item) === 0 && <small className="rounded-full bg-purple-100 px-1.5 text-purple-800">店长</small>}</span>
+                <span className="block text-xs text-gray-600">{item.rating || 5} 分{item.specialty ? ' · ' + item.specialty : ''}</span>
+                <span className="block text-xs text-[#805536]">{!eligible(item) ? service?.requiresShopManager ? '该服务需店长' : '该服务需金牌发型师' : available(item) ? '此时段可预约，到店后确认等待' : time ? '当前时段已满' : '请先选择到店时间'}</span>
+              </button>
+            </div>)}
           </div>
+        </section>
 
-          {/* 发型师列表 —— 手机端卡片压缩信息密度，桌面端完整展示 */}
-          <div className="space-y-2 sm:space-y-3">
-            {stylists.map((stylist) => {
-              const av = getBarberAvailability(stylist, selectedDate, selectedTime);
-              const eligible = isStylistEligible(stylist);
-              const disabled = !av.isAvailable || !eligible;
-              const isSelected = selectionMode === 'specific' && selectedBarberId === stylist.id;
-              return (
-                <label
-                  key={stylist.id}
-                  className={`flex items-start p-3 sm:p-4 border-2 rounded-2xl transition-all ${
-                    isSelected
-                      ? 'border-amber-500 bg-orange-50'
-                      : av.isAvailable && eligible
-                        ? 'border-gray-200 hover:border-orange-200 cursor-pointer'
-                        : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="barberSelection"
-                    checked={isSelected}
-                    disabled={disabled}
-                    onChange={() => {
-                      if (av.isAvailable && eligible) {
-                        setSelectionMode('specific');
-                        setSelectedBarberId(stylist.id);
-                      }
-                    }}
-                    className="mt-3 sm:mt-4 accent-amber-500 mr-2 sm:mr-3 flex-shrink-0"
-                  />
-
-                  {/* 头像 —— 手机端小一点 */}
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center overflow-hidden flex-shrink-0 mr-2 sm:mr-3">
-                    {stylist.avatar ? (
-                      <img src={stylist.avatar} alt={stylist.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <User size={22} className="sm:hidden text-orange-600" />
-                      )}
-                    {stylist.avatar ? null : (
-                      <User size={26} className="hidden sm:inline text-orange-600" />
-                    )}
-                  </div>
-
-                  {/* 信息 —— 手机端更紧凑 */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 sm:gap-2 mb-1 flex-wrap">
-                      <span className="font-bold text-gray-800 text-sm sm:text-base">{stylist.name}</span>
-                      {(stylist.isGoldStylist || stylist.role === UserRole.SHOP_MANAGER) && (
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
-                          金牌
-                        </span>
-                      )}
-                      {stylist.role === UserRole.SHOP_MANAGER && (
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">
-                          店长
-                        </span>
-                      )}
-                      {!av.isAvailable && (
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">
-                          已约
-                        </span>
-                      )}
-                      {requireGoldStylist && !eligible && (
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full font-medium">
-                          该服务需金牌发型师
-                        </span>
-                      )}
-                      {requireShopManager && !eligible && (
-                        <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full font-medium">
-                          该服务需店长
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 手艺值行 —— 手机端只展示关键数据，桌面端完整显示 */}
-                    <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-600 mb-1.5 sm:mb-2 flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <Award size={12} className="sm:hidden text-amber-400" />
-                        <Award size={14} className="hidden sm:inline text-amber-400" />
-                        <span className="font-bold text-gray-800 text-xs sm:text-sm">
-                          {(stylist.skillValue || stylist.rating || 4.5).toFixed(1)}
-                        </span>
-                        {/* 只在桌面端显示 5 颗星 —— 手机端省略以省空间 */}
-                        <div className="hidden sm:flex items-center gap-0.5">
-                          {renderSkillStars(stylist.skillValue || stylist.rating)}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 text-gray-500 text-[11px] sm:text-xs">
-                        <Users size={12} className="sm:hidden" />
-                        <Users size={12} className="hidden sm:inline" />
-                        <span>{stylist.totalServices || 200}+次</span>
-                      </div>
-                    </div>
-
-                    {/* 擅长标签 —— 手机端只显示前 2 个 */}
-                    {stylist.tags && stylist.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-1.5 sm:mb-2">
-                        {stylist.tags.slice(0, 2).map((tag) => (
-                          <span
-                            key={tag}
-                            className="text-[10px] sm:text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                        {stylist.tags.length > 2 && (
-                          <span className="text-[10px] sm:text-xs text-gray-400">
-                            +{stylist.tags.length - 2}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 等待时间 */}
-                    <div className={`text-xs sm:text-sm font-semibold ${
-                      av.isAvailable ? 'text-green-600' : 'text-rose-500'
-                    }`}>
-                      {av.isAvailable ? '此时段可预约，到店后确认等待' : '当前时段已满'}
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* 备注 */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 mt-4">
-          <h3 className="font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-            <Sparkles size={18} className="sm:hidden" />
-            <Sparkles size={20} className="hidden sm:inline" />
-            备注（可选）
-          </h3>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="您的发型偏好、特殊需求等..."
-            className="w-full px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none text-sm sm:text-base"
-            rows={3}
-          />
-        </div>
-
-        {/* 预约信息摘要 */}
-        {selectedServiceData && (
-          <div className="bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl p-4 sm:p-6 mt-4 border border-orange-100">
-            <h3 className="font-bold text-gray-800 mb-2 sm:mb-3 text-sm sm:text-base">预约信息</h3>
-            <div className="space-y-1.5 sm:space-y-2 text-gray-700 text-xs sm:text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="flex-shrink-0">服务项目</span>
-                <span className="font-medium text-right">{selectedServiceData.name}</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="flex-shrink-0">预约时间</span>
-                <span className="font-medium text-right">{selectedDate} {selectedTime || '--:--'}</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="flex-shrink-0">发型师</span>
-                <span className="font-medium text-right">
-                  {selectionMode === 'fastest'
-                    ? (fastest ? fastest.name : '待安排')
-                    : stylists.find((e) => e.id === selectedBarberId)?.name || '待安排'}
-                </span>
-              </div>
-              <div className="flex justify-between pt-2 border-t border-orange-200 text-sm sm:text-base gap-4">
-                <span className="font-bold flex-shrink-0">预计费用</span>
-                <div className="text-right">
-                  {(() => {
-                    const memberPrice = calcDiscountedItemPrice(
-                      selectedServiceData.price,
-                      currentCustomer?.purchaseVIPLevel,
-                      currentCustomer?.storedValueLevel,
-                      'service'
-                    );
-                    const stockholderPrice = calcStockholderDiscountedPrice(
-                      selectedServiceData.price,
-                      currentCustomer,
-                      shop,
-                      'service'
-                    );
-                    const finalPrice = Math.min(memberPrice, stockholderPrice.price);
-                    const hasDiscount = finalPrice < selectedServiceData.price;
-                    const isStockholderDiscount = stockholderPrice.hasDiscount && stockholderPrice.price <= memberPrice;
-                    return (
-                      <>
-                        {hasDiscount && (
-                          <span className="block text-xs text-gray-400 line-through">¥{selectedServiceData.price}</span>
-                        )}
-                        <span className={`font-bold ${hasDiscount ? 'text-orange-600' : 'text-gray-800'}`}>
-                          ¥{finalPrice.toFixed(2)}
-                        </span>
-                        {isStockholderDiscount && (
-                          <span className="block text-[10px] text-amber-600 mt-0.5">股东专享价</span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <p className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-stone-700">每人最多保留2个未完成预约，同一天1个。提前2小时可正常取消或改期；临时变更单独记录，不等于爽约。未到店由门店联系核实后确认，多次爽约将限制预约，不影响会员、余额和售后。预约为到店时段，不保证准时开始服务。</p>
-        {/* 底部按钮占位 —— 防止底部固定按钮遮挡内容 */}
-        <div className="h-24" />
+        <p className="px-2 text-xs leading-5 text-gray-600">每人最多保留2个未完成预约，同一天1个。提前2小时可正常取消或改期；临时变更单独记录，不直接算爽约。未到店由门店联系核实后确认，多次爽约将限制自助预约；会员与余额不受影响。</p>
+        <section className="customer-card booking-panel">
+          <h2><label htmlFor="booking-notes">备注（可选）</label></h2>
+          <div className="p-4"><textarea id="booking-notes" maxLength={200} value={notes} onChange={event => setNotes(event.target.value)}
+            placeholder="请输入您的需求或备注..." className="booking-choice min-h-20 w-full text-sm" /></div>
+        </section>
+        <p className="px-2 text-xs leading-5 text-gray-600">预约时间为到店时间段。到店请前台确认；暂离请登记，叫号后保留10分钟。实际等待以排队页和现场确认动态更新。</p>
+      </>}
+    </main>
+    {activeShop && <div className="customer-fixed-above-tabs booking-submit fixed inset-x-0 z-30 border-t px-4 py-2">
+      {formError && <p role="alert" className="pb-2 text-sm text-red-800">{formError}</p>}
+      <div className="flex items-center justify-between gap-3">
+        <span><span className="block text-xs text-gray-600">合计</span><strong className="text-xl text-[#805536]">{service ? '¥' + priceFor(service.price).toFixed(2) : '请选择服务'}</strong></span>
+        <button type="button" className="customer-primary" disabled={submitting || !result?.rows || !time || !fastest} onClick={() => void submit()}>{submitting ? '正在提交…' : '确认预约'}</button>
       </div>
-
-      {/* 底部固定按钮 —— 手机端保持较大的点击区域 */}
-      <div className="fixed bottom-[calc(72px+env(safe-area-inset-bottom))] left-0 right-0 bg-[#fff9f3] border-t border-[#eadbcf] shadow-lg p-3 sm:p-4 z-30">
-        <div className="max-w-2xl mx-auto">
-          <button
-            onClick={handleBooking}
-            disabled={booking}
-            className="w-full bg-[#f6ae79] hover:bg-[#ee9c62] disabled:bg-stone-300 text-[#392719] py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl font-bold text-base sm:text-lg shadow-lg transition-colors flex items-center justify-center gap-2"
-          >
-            <CheckCircle size={18} className="sm:hidden" />
-            <CheckCircle size={20} className="hidden sm:inline" />
-            {booking ? '预约中...' : '确认预约'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default BookingPage;
+    </div>}
+    {stylistProfile && <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label="发型师资料" onClick={() => setStylistProfile(null)}>
+      <article className="customer-card w-full max-w-xs space-y-3 text-center" onClick={event => event.stopPropagation()}>
+        <CustomerImage images={[stylistProfile.avatar || '']} alt={stylistProfile.name} className="mx-auto h-20 w-20 rounded-full object-cover" fallback={<UserRound size={32} />} />
+        <h2 className="font-bold">{stylistProfile.name}</h2><p className="text-sm">{stylistProfile.title}</p><p className="text-sm">{stylistProfile.specialty}</p>
+        <button type="button" className="customer-secondary w-full" onClick={() => setStylistProfile(null)}>关闭</button>
+      </article>
+    </div>}
+  </>;
+}

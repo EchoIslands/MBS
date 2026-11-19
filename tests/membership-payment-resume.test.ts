@@ -51,7 +51,7 @@ for (const status of ['paid', 'review']) {
           : { customerMembershipApi: {
             create: async () => ({ ...original, status }),
             check: async (id: string) => { assert.equal(id, original.id); checks++; return { ...original, status }; },
-            plans: async () => ({ activeOrder: null }),
+            plans: async () => ({ activeOrder: null, vip: [], stored: [], currentVip: { active: false }, currentStored: { active: false } }),
           } },
     });
     const tree = exports.default();

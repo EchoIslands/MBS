@@ -1,6 +1,7 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Ticket, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Ticket, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { CustomerCoupon, Coupon } from '../../../shared/types';
 import { couponApi } from '../../api';
@@ -110,18 +111,7 @@ const MyCoupons: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="sticky top-0 bg-white shadow-sm z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-lg">我的优惠券</h1>
-          <div className="w-10"></div>
-        </div>
-      </header>
+      <CustomerHeader title="我的优惠券" backTo="/customer/profile" />
 
       {/* Tab 切换 */}
       <div className="bg-white border-b">

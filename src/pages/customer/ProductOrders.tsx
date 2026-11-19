@@ -1,6 +1,7 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, Loader2, X } from 'lucide-react';
+import { Package, Loader2, X } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { ProductOrder } from '../../../shared/types';
 import { productOrderApi } from '../../api';
@@ -131,18 +132,7 @@ const ProductOrders: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="sticky top-0 bg-white shadow-sm z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-lg">我的商品订单</h1>
-          <div className="w-10" />
-        </div>
-      </header>
+      <CustomerHeader title="我的商品订单" backTo="/customer/profile" />
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         {loading && (

@@ -1,22 +1,25 @@
+import { CustomerHeader } from '../../components/CustomerPage';
+import { useCustomerToast } from '../../hooks/useCustomerToast';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Plus, Minus, Star, Package, Crown } from 'lucide-react';
+import { Plus, Minus, Star, Package, Crown } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Product } from '../../../shared/types';
 import { productApi } from '../../api';
-import ProductImage from '../../components/ProductImage';
+import CustomerImage from '../../components/CustomerImage';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 
 const ProductDetail: React.FC = () => {
   const { shopId, productId } = useParams<{ shopId: string; productId: string }>();
   const navigate = useNavigate();
-  const { cart, addToCart, currentCustomer } = useAppStore();
+  const { addToCart, currentCustomer } = useAppStore();
+  const { toast, notify } = useCustomerToast();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(0);
 
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -37,12 +40,13 @@ const ProductDetail: React.FC = () => {
 
   const handleAddToCart = () => {
     if (!product) return;
-    if (quantity > product.stock) {
-      alert('库存不足');
+    const inCart = useAppStore.getState().cart.find(item => item.product.id === product.id)?.quantity ?? 0;
+    if (quantity + inCart > product.stock) {
+      notify('购物车内数量已达库存上限');
       return;
     }
     addToCart(product, quantity);
-    alert(`已将 ${quantity} 件商品加入购物车`);
+    notify('已加入购物车');
   };
 
   if (loading) {
@@ -60,7 +64,7 @@ const ProductDetail: React.FC = () => {
         <Package size={48} className="mb-4 text-gray-300" />
         <p>商品不存在或已下架</p>
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/customer/products/' + (shopId || 'shop1'), { replace: true })}
           className="mt-4 px-6 py-2 bg-orange-500 text-white rounded-lg"
         >
           返回
@@ -75,37 +79,17 @@ const ProductDetail: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
-      <header className="sticky top-0 bg-white shadow-sm z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-lg">商品详情</h1>
-          <button
-            onClick={() => navigate(`/customer/cart/${shopId}`)}
-            className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ShoppingCart size={20} />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-                {cartCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </header>
+      <CustomerHeader title="商品详情" backTo={'/customer/products/' + (shopId || 'shop1')} />
+      {toast}
 
       <div className="max-w-4xl mx-auto">
         {/* 商品图片 */}
         <div className="bg-white">
           <div className="relative">
-            <ProductImage
-              src={images[activeIndex]}
+            <CustomerImage
+              images={[...images.slice(activeIndex), ...images.slice(0, activeIndex)]}
               alt={product.name}
-              className="w-full h-72 sm:h-96 object-cover"
+              className="aspect-square w-full object-cover"
             />
             {images.length > 1 && (
               <span className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
@@ -132,8 +116,8 @@ const ProductDetail: React.FC = () => {
                     idx === activeIndex ? 'border-orange-500' : 'border-transparent'
                   }`}
                 >
-                  <img
-                    src={img}
+                  <CustomerImage
+                    images={[img]}
                     alt={`${product.name} 图${idx + 1}`}
                     className="w-full h-full object-cover"
                   />
@@ -199,40 +183,40 @@ const ProductDetail: React.FC = () => {
 
       {/* 底部操作栏 */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-4xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
           {/* 数量选择 */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">数量</span>
             <div className="flex items-center border rounded-lg">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="w-10 h-10 flex items-center justify-center hover:bg-gray-100"
+                className="w-8 h-10 flex items-center justify-center hover:bg-gray-100"
               >
                 <Minus size={16} />
               </button>
-              <span className="w-12 text-center font-medium">{quantity}</span>
+              <span className="w-6 text-center font-medium">{quantity}</span>
               <button
-                onClick={() => setQuantity(quantity + 1)}
-                className="w-10 h-10 flex items-center justify-center hover:bg-gray-100"
+                onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                className="w-8 h-10 flex items-center justify-center hover:bg-gray-100"
               >
                 <Plus size={16} />
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate(`/customer/cart/${shopId}`)}
-              className="px-4 py-3 border border-orange-500 text-orange-500 rounded-xl font-medium"
+              onClick={() => navigate('/customer/cart/' + shopId, { state: { customerBack: true } })}
+              className="customer-secondary whitespace-nowrap text-sm !px-2"
             >
               购物车
             </button>
             <button
               onClick={handleAddToCart}
               disabled={product.stock <= 0}
-              className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium disabled:bg-gray-300"
+              className="customer-primary whitespace-nowrap text-sm !px-2"
             >
-              加入购物车
+              {product.stock > 0 ? '加入购物车' : '暂时缺货'}
             </button>
           </div>
         </div>

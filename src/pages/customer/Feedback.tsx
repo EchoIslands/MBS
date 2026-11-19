@@ -1,6 +1,7 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, MessageSquare, Mail, CheckCircle } from 'lucide-react';
+import { Send, MessageSquare, Mail, CheckCircle } from 'lucide-react';
 
 import {isRealApi} from '../../../shared/api-base';
 import {shopApi} from '../../api';
@@ -37,18 +38,7 @@ const Feedback: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 顶部导航 */}
-      <header className="sticky top-0 bg-white shadow-sm z-40">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/customer/profile')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} className="text-gray-700" />
-          </button>
-          <h1 className="font-semibold text-gray-800">意见反馈</h1>
-          <div className="w-10" />
-        </div>
-      </header>
+      <CustomerHeader title="意见反馈" backTo="/customer/profile" />
 
       <div className="max-w-2xl mx-auto px-4 py-6">
         {submitted ? (

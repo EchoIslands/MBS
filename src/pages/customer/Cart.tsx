@@ -1,3 +1,4 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, AlertCircle, X, Ticket } from 'lucide-react';
@@ -186,18 +187,7 @@ const Cart: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="sticky top-0 bg-white shadow-sm z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-lg">购物车</h1>
-          <div className="w-10"></div>
-        </div>
-      </header>
+      <CustomerHeader title="购物车" backTo={'/customer/products/' + (shopId || 'shop1')} />
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         <p className="text-sm text-gray-600">未付款的自提单保留30分钟，超时自动取消并释放库存。</p>
@@ -445,12 +435,12 @@ const Cart: React.FC = () => {
               <button
                 onClick={() => {
                   setShowBalanceModal(false);
-                  navigate('/customer/profile');
+                  navigate('/customer/recharge', { state: { customerBack: true } });
                 }}
                 className="w-full py-3 bg-white border border-orange-500 text-orange-500 hover:bg-orange-50 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
               >
                 <Wallet size={18} />
-                去储值页面充值
+                查看储值余额
               </button>
               <button
                 onClick={() => setShowBalanceModal(false)}

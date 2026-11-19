@@ -1,64 +1,114 @@
-import { useRef, type TouchEvent } from 'react';
-import { CalendarDays, Store, ShoppingBag, UserRound } from 'lucide-react';
+import { useEffect, useRef, type TouchEvent } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
+import storeIcon from '../../mini-program/assets/tabbar/store.png';
+import storeActive from '../../mini-program/assets/tabbar/store-active.png';
+import shopIcon from '../../mini-program/assets/tabbar/shop.png';
+import shopActive from '../../mini-program/assets/tabbar/shop-active.png';
+import bookIcon from '../../mini-program/assets/tabbar/booking.png';
+import bookActive from '../../mini-program/assets/tabbar/booking-active.png';
+import meIcon from '../../mini-program/assets/tabbar/me.png';
+import meActive from '../../mini-program/assets/tabbar/me-active.png';
 
 const tabs = [
-  { label: '门店', icon: Store, path: (id: string) => `/customer/shop/${id}` },
-  { label: '商城', icon: ShoppingBag, path: (id: string) => `/customer/products/${id}` },
-  { label: '预约', icon: CalendarDays, path: (id: string) => `/customer/booking/${id}` },
-  { label: '我的', icon: UserRound, path: () => '/customer/profile' },
+  { label: '门店', icon: storeIcon, active: storeActive, path: (id: string) => '/customer/shop/' + id },
+  { label: '商城', icon: shopIcon, active: shopActive, path: (id: string) => '/customer/products/' + id },
+  { label: '预约', icon: bookIcon, active: bookActive, path: (id: string) => '/customer/booking/' + id },
+  { label: '我的', icon: meIcon, active: meActive, path: () => '/customer/profile' },
 ];
 
 export default function CustomerMainLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const currentShop = useAppStore(state => state.currentShop);
   const currentCustomer = useAppStore(state => state.currentCustomer);
-  const touchStart = useRef<{ x: number; y: number; at: number } | null>(null);
   const routeShopId = pathname.match(/^\/customer\/(?:shop|products|booking)\/([^/]+)/)?.[1];
-  const shopId = routeShopId || currentShop?.id || currentCustomer?.shopId || 'shop1';
+  const shopId = routeShopId || currentCustomer?.shopId || 'shop1';
   const selected = pathname.startsWith('/customer/products/') ? 1
     : pathname.startsWith('/customer/booking/') ? 2
     : pathname === '/customer/profile' ? 3 : 0;
+  const panel = useRef<HTMLDivElement>(null);
+  const touch = useRef<{ x: number; y: number; at: number; dragged: boolean } | null>(null);
+  const direction = useRef(0);
+  const timer = useRef<number>();
+  const scrollPositions = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    const el = panel.current;
+    const enter = direction.current;
+    direction.current = 0;
+    if (el) {
+      el.style.transform = '';
+      const position = scrollPositions.current.get(pathname) ?? 0;
+      window.scrollTo(0, position);
+      if (enter && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        el.animate([{ transform: 'translateX(' + (enter * 30) + '%)' }, { transform: 'translateX(0)' }], { duration: 300, easing: 'ease-out' });
+      }
+    }
+    return () => window.clearTimeout(timer.current);
+  }, [pathname]);
+
+  const switchTab = (next: number, swipe = false) => {
+    if (next === selected) return;
+    window.clearTimeout(timer.current);
+    scrollPositions.current.set(pathname, window.scrollY);
+    direction.current = swipe ? Math.sign(next - selected) : 0;
+    navigate(tabs[next].path(shopId), { replace: true });
+  };
 
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    touch.current = null;
     const target = event.target;
-    if (event.touches.length !== 1 || (target instanceof Element && target.closest('input,textarea,select,button,a,[data-no-tab-swipe],[role=dialog]'))) {
-      touchStart.current = null;
-      return;
-    }
-    touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY, at: Date.now() };
+    if (event.touches.length !== 1 || (target instanceof Element && target.closest('input,textarea,select,button,a,[data-no-tab-swipe],[role=dialog]'))) return;
+    touch.current = { x: event.touches[0].clientX, y: event.touches[0].clientY, at: Date.now(), dragged: false };
   };
 
-  const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const start = touchStart.current;
-    touchStart.current = null;
-    const end = event.changedTouches[0];
-    if (!start || !end) return;
-    const dx = end.clientX - start.x;
-    const dy = end.clientY - start.y;
-    if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - start.at > 850) return;
+  const onTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const start = touch.current;
+    if (!start || !panel.current || event.touches.length !== 1) return;
+    const dx = event.touches[0].clientX - start.x;
+    const dy = event.touches[0].clientY - start.y;
+    if (!start.dragged && (Math.abs(dx) < 14 || Math.abs(dx) < Math.abs(dy) * 1.5)) return;
     const next = selected + (dx < 0 ? 1 : -1);
-    if (next >= 0 && next < tabs.length) navigate(tabs[next].path(shopId));
+    const limit = panel.current.clientWidth * .32;
+    const offset = dx * (next < 0 || next >= tabs.length ? .12 : .5);
+    start.dragged = true;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    panel.current.style.transform = 'translateX(' + Math.max(-limit, Math.min(limit, offset)) + 'px)';
   };
 
-  return (
-    <div className="min-h-screen bg-[#fff9f3] pb-[calc(72px+env(safe-area-inset-bottom))]">
-      <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={() => { touchStart.current = null; }}>
-        <Outlet />
-      </div>
-      <nav aria-label="顾客主导航" className="fixed inset-x-0 bottom-0 z-40 border-t border-[#eadbcf] bg-[#fff9f3] shadow-[0_-4px_16px_rgba(104,69,48,0.07)] pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto flex h-[72px] max-w-2xl">
-          {tabs.map((tab, index) => {
-            const Icon = tab.icon;
-            return <button key={tab.label} type="button" aria-current={selected === index ? 'page' : undefined} onClick={() => navigate(tab.path(shopId))} className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[13px] font-semibold transition-colors ${selected === index || index === 2 ? 'text-[#a8582f]' : 'text-[#71665d]'}`}>
-              <Icon size={index === 2 ? 27 : 25} strokeWidth={selected === index ? 2.3 : 1.9} />
-              <span>{tab.label}</span>
-            </button>;
-          })}
-        </div>
-      </nav>
+  const endSwipe = (event?: TouchEvent<HTMLDivElement>) => {
+    const start = touch.current;
+    touch.current = null;
+    const end = event?.changedTouches[0];
+    const el = panel.current;
+    if (!start || !el) return;
+    const dx = end ? end.clientX - start.x : 0;
+    const dy = end ? end.clientY - start.y : 0;
+    const next = selected + (dx < 0 ? 1 : -1);
+    const slide = Math.abs(dx) >= 80 && Math.abs(dx) >= Math.abs(dy) * 1.5 && Date.now() - start.at <= 850
+      && next >= 0 && next < tabs.length;
+    const offset = el.style.transform || 'translateX(0)';
+    el.style.transform = '';
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduceMotion && (slide || start.dragged)) {
+      const transform = slide ? 'translateX(' + (dx < 0 ? -40 : 40) + '%)' : 'translateX(0)';
+      el.animate([{ transform: offset }, { transform }], { duration: slide ? 110 : 180, easing: 'ease-out' });
+    }
+    if (slide) timer.current = window.setTimeout(() => switchTab(next, true), reduceMotion ? 0 : 110);
+  };
+
+  return <div className="customer-main">
+    <div className="customer-swipe-viewport" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={endSwipe} onTouchCancel={() => endSwipe()}>
+      <div ref={panel}><Outlet /></div>
     </div>
-  );
+    <nav aria-label="顾客主导航" className="customer-tabbar">
+      <div className="flex">
+        {tabs.map((tab, index) => <button key={tab.label} type="button" aria-current={selected === index ? 'page' : undefined} onClick={() => switchTab(index)}
+          className={'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[13px] font-semibold ' + (selected === index || index === 2 ? 'text-[#a8582f]' : 'text-[#71665d]')}>
+          <img src={index === selected ? tab.active : tab.icon} alt="" width={index === 2 ? 29 : 26} height={index === 2 ? 29 : 26} />
+          <span className="leading-tight">{tab.label}</span>
+        </button>)}
+      </div>
+    </nav>
+  </div>;
 }

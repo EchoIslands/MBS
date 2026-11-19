@@ -1,184 +1,102 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Loader2, Gift } from 'lucide-react';
+
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CustomerHeader } from '../components/CustomerPage';
 import { useAppStore } from '../store';
-import { getApiBase } from '../../shared/api-base';
-
-const API_BASE_URL = getApiBase();
-
-interface CouponInfo {
-  id: string;
-  name: string;
-  type: string;
-  value: number;
-  minOrderAmount: number;
-  validDays: number;
-}
+import { getApiBase, http } from '../../shared/api-base';
 
 interface InviteInfo {
-  referralId: string;
   referrerName: string;
   shopId: string;
-  coupon: CouponInfo | null;
+  coupon: { name: string; value: number; minOrderAmount: number; validDays: number } | null;
   alreadyClaimed: boolean;
 }
 
 interface ClaimedCoupon {
-  couponName?: string;
-  value?: number;
-  minOrderAmount?: number;
-  validEnd?: string;
+  couponName: string;
+  value: number;
+  minOrderAmount: number;
+  validEnd: string;
 }
 
 export default function InviteLanding() {
-  const [searchParams] = useSearchParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const ref = searchParams.get('ref');
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [info, setInfo] = useState<InviteInfo | null>(null);
-  const currentCustomer = useAppStore(state => state.currentCustomer);
-  const [claiming, setClaiming] = useState(false);
-  const [claimed, setClaimed] = useState(false);
-  const [claimedCoupon, setClaimedCoupon] = useState<ClaimedCoupon | null>(null);
-
-  const loadInviteInfo = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const res = await fetch(`${API_BASE_URL}/referrals/check-code?ref=${encodeURIComponent(ref || '')}`);
-      const data = await res.json();
-      if (data.success) {
-        setInfo(data.data);
-      } else {
-        setError(data.error || '邀请信息加载失败');
-      }
-    } catch {
-      setError('邀请信息加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [ref]);
+  const ref = params.get('ref') || '';
+  const customer = useAppStore(state => state.currentCustomer);
+  const valid = /^ref_[A-Za-z0-9_]{1,28}$/.test(ref);
+  const [attempt, setAttempt] = useState(0);
+  const key = ref + '/' + attempt;
+  const [result, setResult] = useState<{ key: string; info?: InviteInfo; error?: string }>();
+  const [claimed, setClaimed] = useState<{ ref: string; customerId: string; coupon: ClaimedCoupon }>();
+  const [submitting, setSubmitting] = useState(false);
+  const [claimError, setClaimError] = useState('');
+  const claimLock = useRef(false);
 
   useEffect(() => {
-    if (!ref) {
-      setLoading(false);
-      setError('无效的邀请链接');
-      return;
-    }
-    loadInviteInfo();
-  }, [loadInviteInfo, ref]);
+    if (!valid) return;
+    let active = true;
+    http<{ data: InviteInfo }>(getApiBase() + '/referrals/check-code?ref=' + encodeURIComponent(ref), { credentials: 'omit' })
+      .then(response => {
+        if (!response?.data) throw new Error('邀请信息加载失败');
+        if (active) setResult({ key, info: response.data });
+      }).catch(error => { if (active) setResult({ key, error: error instanceof Error ? error.message : '邀请信息加载失败' }); });
+    return () => { active = false; };
+  }, [key, ref, valid]);
 
-  const handleClaim = async () => {
-    if (claiming) return;
-    if (!currentCustomer) { navigate('/customer/login?mode=sms&returnTo=' + encodeURIComponent('/invite?ref=' + encodeURIComponent(ref || ''))); return; }
+  function goLogin() {
+    navigate('/customer/login?mode=sms&returnTo=' + encodeURIComponent('/invite?ref=' + ref), { state: { customerBack: true } });
+  }
+
+  async function claim() {
+    if (!valid || claimLock.current) return;
+    if (!customer) { goLogin(); return; }
+    claimLock.current = true;
+    setSubmitting(true);
+    setClaimError('');
     try {
-      setClaiming(true);
-      const res = await fetch(`${API_BASE_URL}/referrals/claim`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref }),
-      });
-      const data = await res.json();
-      if (res.status === 401) { navigate('/customer/login?mode=sms&returnTo=' + encodeURIComponent('/invite?ref=' + encodeURIComponent(ref || ''))); return; }
-      if (data.success) {
-        setClaimed(true);
-        setClaimedCoupon(data.data as ClaimedCoupon);
-      } else {
-        alert(data.error || '领取失败');
-      }
-    } catch {
-      alert('领取失败');
+      const response = await http<{ data: ClaimedCoupon }>(getApiBase() + '/referrals/claim', { method: 'POST', body: JSON.stringify({ ref }) });
+      if (!response?.data) throw new Error('领取状态暂不可用，请重试');
+      setClaimed({ ref, customerId: customer.id, coupon: response.data });
+    } catch (error) {
+      if ((error as { status?: number }).status === 401) { useAppStore.getState().setCurrentCustomer(null); goLogin(); return; }
+      setClaimError(error instanceof Error ? error.message : '领取失败，请稍后重试');
     } finally {
-      setClaiming(false);
+      claimLock.current = false;
+      setSubmitting(false);
     }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-indigo-50 to-white">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-      </div>
-    );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-indigo-50 to-white p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 text-center text-red-500">
-          {error}
-        </div>
-      </div>
-    );
-  }
-
-  if (claimed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-indigo-50 to-white p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl text-center overflow-hidden">
-          <div className="p-6 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-800">领取成功</h2>
-          </div>
-          <div className="p-6 space-y-5">
-            <div className="text-5xl">🎉</div>
-            <p className="text-gray-600">恭喜你获得 {claimedCoupon?.couponName || '新人优惠券'}</p>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <div className="text-3xl font-bold text-indigo-600">¥{claimedCoupon?.value || 0}</div>
-              <div className="text-sm text-gray-500">满 {claimedCoupon?.minOrderAmount || 0} 元可用</div>
-            </div>
-            <button
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl font-semibold transition-colors"
-              onClick={() => navigate(`/customer/shop/${info?.shopId || 'shop1'}`)}
-            >
-              去预约体验
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-indigo-50 to-white p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="p-6 text-center border-b border-gray-100">
-          <div className="mx-auto w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
-            <Gift className="h-8 w-8 text-indigo-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-800">{info?.referrerName || '会员'} 送你一份新人礼</h2>
-        </div>
-        <div className="p-6 space-y-6">
-          {info?.coupon && (
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white text-center">
-              <div className="text-4xl font-bold">¥{info.coupon.value}</div>
-              <div className="text-lg font-medium mt-2">{info.coupon.name}</div>
-              <div className="text-sm opacity-90 mt-1">满 {info.coupon.minOrderAmount} 元可用</div>
-              <div className="text-xs opacity-80 mt-1">领取后 {info.coupon.validDays} 天内有效</div>
-            </div>
-          )}
-
-          {info?.alreadyClaimed ? (
-            <div className="text-center text-red-500 py-4">该优惠券已被领取</div>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500">用本人手机号接收验证码即可登录领取，新顾客无需提前到店建档。</p>
-              <button
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-colors flex items-center justify-center"
-                onClick={handleClaim}
-                disabled={claiming}
-              >
-                {claiming ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                {claiming ? '领取中...' : currentCustomer ? '立即领取' : '验证码登录领取'}
+  const current = result?.key === key ? result : undefined;
+  const error = valid ? current?.error : '无效的邀请链接';
+  const coupon = claimed?.ref === ref && claimed.customerId === customer?.id ? claimed.coupon : undefined;
+  const info = current?.info;
+  return <>
+    <CustomerHeader title="领取新人礼" backTo="/customer" />
+    <main className="customer-body">
+      {error && <section className="customer-card space-y-3 text-center"><p role="alert">{error}</p>{valid &&
+        <button type="button" onClick={() => setAttempt(value => value + 1)} className="customer-primary">重试</button>}</section>}
+      {!error && !info && <p className="customer-card text-center" role="status">加载中…</p>}
+      {info && <section className="customer-card space-y-4 text-center">
+        <div><p className="text-sm text-[#805536]">{coupon ? '🎉' : info.referrerName || '会员'}</p>
+          <h2 className="mt-1 text-xl font-bold">{coupon ? '领取成功' : '送你一份新人礼'}</h2></div>
+        {(coupon || info.coupon) && <div className="customer-card customer-invite-entry space-y-1">
+          <p className="text-3xl font-bold text-[#805536]">¥{coupon?.value ?? info.coupon?.value}</p>
+          <p className="font-semibold">{coupon?.couponName || info.coupon?.name}</p>
+          <p className="text-sm">满 {coupon?.minOrderAmount ?? info.coupon?.minOrderAmount} 元可用</p>
+          <p className="text-xs text-gray-600">{coupon ? '有效期至 ' + (coupon.validEnd || '以我的优惠券为准').slice(0, 10) : '领取后 ' + info.coupon?.validDays + ' 天内有效'}</p>
+        </div>}
+        {coupon ? <Link to={'/customer/booking/' + encodeURIComponent(info.shopId)} className="customer-primary block">去预约体验</Link>
+          : info.alreadyClaimed ? <p>该优惠券已被领取</p>
+            : <>
+              <p className="text-sm text-gray-600">使用本人手机号验证码登录后领取，新顾客无需提前到店建档。</p>
+              {claimError && <p role="alert" className="text-sm text-red-800">{claimError}</p>}
+              <button type="button" className="customer-primary w-full" disabled={submitting} onClick={() => void claim()}>
+                {submitting ? '领取中…' : customer ? '立即领取' : '验证码登录领取'}
               </button>
-            </>
-          )}
-
-          <div className="text-xs text-gray-400 text-center">
-            领取即表示同意《用户协议》和《隐私政策》
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+            </>}
+        <p className="text-xs text-gray-600"><Link to="/customer/agreement" state={{ customerBack: true }}>用户协议</Link> · <Link to="/customer/privacy" state={{ customerBack: true }}>隐私政策</Link></p>
+      </section>}
+    </main>
+  </>;
 }

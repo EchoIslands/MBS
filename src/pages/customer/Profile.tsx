@@ -1,3 +1,4 @@
+import { CustomerHeader } from '../../components/CustomerPage';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -44,6 +45,7 @@ const Profile: React.FC = () => {
 
   // 延时改签
   const [rescheduleTarget, setRescheduleTarget] = useState<Booking | null>(null);
+  const [bookingPage, setBookingPage] = useState(1);
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduling, setRescheduling] = useState(false);
   const [contactShopId, setContactShopId] = useState<string | null>(null);
@@ -115,7 +117,7 @@ const Profile: React.FC = () => {
     if(!customerId || !customerShopId) return;
     if(!isRealApi()) {setShop(mockShops[0]);setMyBenefits(mockMemberBenefitRecords.filter(b=>b.customerId===customerId && b.status==='available'));return;}
     let cancelled=false;
-    Promise.all([shopApi.getShop(customerShopId),memberBenefitApi.getOwn(customerId)])
+    Promise.all([shopApi.getPublicShop(customerShopId),memberBenefitApi.getOwn(customerId)])
       .then(([store,benefits])=>{if(!cancelled){setShop(store);setMyBenefits(benefits);}})
       .catch(()=>{if(!cancelled)setLoadError('门店或权益信息加载失败，请稍后重试');});
     return()=>{cancelled=true;};
@@ -128,7 +130,18 @@ const Profile: React.FC = () => {
 
   const [bookingParams,setBookingParams]=useSearchParams();
   const editBookingId=bookingParams.get('editBookingId');
-  useEffect(()=>{if(!editBookingId||!bookings.length)return;const target=bookings.find(b=>b.id===editBookingId);if(target){setViewingBooking(target);setBookingParams({}, {replace:true});}},[editBookingId,bookings,setBookingParams]);
+  useEffect(() => {
+    if (!editBookingId || !bookings.length) return;
+    const target = bookings.find(booking => booking.id === editBookingId);
+    if (!target) return;
+    const editTime = bookingParams.get('action') === 'reschedule' && ['pending', 'confirmed'].includes(target.status) && !target.arrivedAt && !target.actualStartTime;
+    if (editTime) {
+      const local = new Date(+new Date(target.scheduledTime) + 8 * 3600000);
+      setRescheduleTime(Number.isFinite(+local) ? local.toISOString().slice(0, 16) : '');
+      setRescheduleTarget(target);
+    } else setViewingBooking(target);
+    setBookingParams({}, { replace: true });
+  }, [editBookingId, bookings, bookingParams, setBookingParams]);
 
   const loadBookings = React.useCallback(async () => {
     if (!currentCustomer) return;
@@ -185,12 +198,10 @@ const Profile: React.FC = () => {
 
   // 打开改时间弹窗
   const openReschedule = (booking: Booking) => {
-    const d = new Date(booking.scheduledTime);
-    const pad = (n: number) => String(n).padStart(2, '0');
+    const d = new Date(+new Date(booking.scheduledTime) + 8 * 3600000);
     setRescheduleTarget(booking);
-    setRescheduleTime(
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-    );
+    setViewingBooking(null);
+    setRescheduleTime(Number.isFinite(+d) ? d.toISOString().slice(0, 16) : '');
   };
 
   const submitReschedule = async () => {
@@ -200,7 +211,7 @@ const Profile: React.FC = () => {
       await bookingApi.respondDelay(rescheduleTarget.id, {
         customerId: currentCustomer.id,
         action: 'reschedule',
-        scheduledTime: rescheduleTime,
+        scheduledTime: new Date(rescheduleTime + ':00+08:00').toISOString(),
       });
       setRescheduleTarget(null);
       await loadBookings();
@@ -213,7 +224,7 @@ const Profile: React.FC = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/');
+    navigate('/customer/login', { replace: true });
   };
 
   
@@ -243,15 +254,16 @@ const Profile: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#fff9f3] pb-8">
+      <CustomerHeader title="我的" />
       {loadError && <p role="alert" className="p-4 text-red-600">{loadError}</p>}
       {/* 顶部会员卡（视觉焦点区域 — 让会员一眼看到自己的权益价值） */}
-      <div className={`bg-gradient-to-br ${purchaseVIPGradient[purchaseLevel]} text-white relative overflow-hidden`}>
+      <div className={`bg-gradient-to-br ${purchaseVIPGradient[purchaseLevel]} text-white relative overflow-hidden m-3 rounded-2xl`}>
         {/* 装饰性背景 */}
         <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full" />
         <div className="absolute -right-16 top-10 w-32 h-32 bg-white/5 rounded-full" />
         <div className="absolute left-4 bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl" />
 
-        <div className="max-w-4xl mx-auto px-4 pt-6 pb-8 relative">
+        <div className="px-4 py-4 relative">
           {/* 基本信息行 */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
@@ -278,7 +290,7 @@ const Profile: React.FC = () => {
           </div>
           <div className="flex gap-2 mb-4">
             <button onClick={openSelfEditor} className="flex-1 rounded-xl border border-white/50 bg-white/15 px-3 py-2 text-sm font-semibold">编辑个人资料</button>
-            <button onClick={() => navigate('/customer/membership')} className="flex-1 rounded-xl bg-orange-100 px-3 py-2 text-sm font-bold text-orange-900">办理 / 续费会员</button>
+            <button onClick={() => navigate('/customer/membership', { state: { customerBack: true } })} className="flex-1 rounded-xl bg-orange-100 px-3 py-2 text-sm font-bold text-orange-900">办理 / 续费会员</button>
           </div>
 
           {/* 核心价值数字：当前综合折扣 */}
@@ -300,9 +312,9 @@ const Profile: React.FC = () => {
             </div>
             <div className="mt-2 space-y-0.5 text-xs text-white/85">
               {currentCustomer.purchaseVIPLevel !== PurchaseVIPLevel.REGULAR && currentCustomer.purchaseVIPExpiresAt &&
-                <p>{purchaseLevel === PurchaseVIPLevel.REGULAR ? 'VIP 已于' : 'VIP 有效期至'} {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString('zh-CN')}{purchaseLevel === PurchaseVIPLevel.REGULAR ? ' 到期' : ''}</p>}
+                <p>{purchaseLevel === PurchaseVIPLevel.REGULAR ? 'VIP 已于' : 'VIP 有效期至'} {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}{purchaseLevel === PurchaseVIPLevel.REGULAR ? ' 到期' : ''}</p>}
               {currentCustomer.storedValueLevel !== StoredValueLevel.NONE && currentCustomer.storedValueExpiresAt &&
-                <p>{storedLevel === StoredValueLevel.NONE ? '储值权益已于' : '储值权益有效期至'} {new Date(currentCustomer.storedValueExpiresAt).toLocaleDateString('zh-CN')}{storedLevel === StoredValueLevel.NONE ? ' 到期（余额仍保留）' : ''}</p>}
+                <p>{storedLevel === StoredValueLevel.NONE ? '储值权益已于' : '储值权益有效期至'} {new Date(currentCustomer.storedValueExpiresAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}{storedLevel === StoredValueLevel.NONE ? ' 到期（余额仍保留）' : ''}</p>}
             </div>
           </div>
 
@@ -341,7 +353,7 @@ const Profile: React.FC = () => {
               <div className="flex items-center gap-2 text-sm text-white font-medium">
                 <AlertCircle size={16} />
                 您的 {getPurchaseVIPLabel(purchaseLevel)} 将于{' '}
-                {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString()} 到期，请及时续费
+                {new Date(currentCustomer.purchaseVIPExpiresAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} 到期，请及时续费
               </div>
             </div>
           )}
@@ -352,7 +364,7 @@ const Profile: React.FC = () => {
               <div className="flex items-center gap-2 text-sm text-white font-medium">
                 <AlertCircle size={16} />
                 您的 {getStoredValueLabel(storedLevel)} 将于{' '}
-                {new Date(currentCustomer.storedValueExpiresAt).toLocaleDateString()} 到期。到期前充值满额可延续储值福利，到期未充值将不再享受储值折扣
+                {new Date(currentCustomer.storedValueExpiresAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} 到期。到期前充值满额可延续储值福利，到期未充值将不再享受储值折扣
               </div>
             </div>
           )}
@@ -379,7 +391,7 @@ const Profile: React.FC = () => {
           {isMember && (
             <div className="mt-4">
               <button
-                onClick={() => navigate('/customer/invite')}
+                onClick={() => navigate('/customer/invite', { state: { customerBack: true } })}
                 className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-xl p-4 flex items-center justify-between transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -448,7 +460,7 @@ const Profile: React.FC = () => {
                   </div>
                   <span className="text-xs text-gray-500">
                     {benefit.expiresAt
-                      ? `有效期至 ${new Date(benefit.expiresAt).toLocaleDateString()}`
+                      ? `有效期至 ${new Date(benefit.expiresAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
                       : '无固定期限'}
                   </span>
                 </div>
@@ -470,7 +482,7 @@ const Profile: React.FC = () => {
                 <button
                   key={tab}
                   type="button"
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => { setActiveTab(tab); setBookingPage(1); }}
                   className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${
                     activeTab === tab ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
                   }`}
@@ -491,6 +503,8 @@ const Profile: React.FC = () => {
                   : b.status === 'completed' || b.status === 'cancelled'
               );
 
+              const pages = Math.max(1, Math.ceil(filteredBookings.length / 20));
+              const page = Math.min(bookingPage, pages);
               if (filteredBookings.length === 0) {
                 return (
                   <div className="text-center py-8 sm:py-10">
@@ -503,7 +517,7 @@ const Profile: React.FC = () => {
                     </div>
                     {activeTab === 'current' && (
                       <button
-                        onClick={() => navigate(`/customer/shop/${shop?.id}`)}
+                        onClick={() => navigate('/customer/booking/' + (customerShopId || 'shop1'), { replace: true })}
                         className="text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white px-4 sm:px-5 py-2.5 rounded-lg transition-colors inline-flex items-center gap-1"
                       >
                         去预约 <ChevronRight size={14} />
@@ -515,7 +529,12 @@ const Profile: React.FC = () => {
 
               return (
                 <div className="space-y-3">
-                  {filteredBookings.map((booking) => (
+                  {pages > 1 && <div className="flex items-center justify-between gap-2 text-sm">
+                    <button type="button" className="customer-secondary" disabled={page <= 1} onClick={() => setBookingPage(page - 1)}>上一页</button>
+                    <span>{page} / {pages} 页</span>
+                    <button type="button" className="customer-secondary" disabled={page >= pages} onClick={() => setBookingPage(page + 1)}>下一页</button>
+                  </div>}
+                  {filteredBookings.slice((page - 1) * 20, page * 20).map((booking) => (
                     <div
                       key={booking.id}
                       onClick={() => setViewingBooking(booking)}
@@ -543,11 +562,11 @@ const Profile: React.FC = () => {
                         <div className="flex items-center gap-1">
                           <Clock size={12} className="sm:hidden" />
                           <Clock size={14} className="hidden sm:inline" />
-                          {new Date(booking.scheduledTime).toLocaleString()}
+                          {new Date(booking.scheduledTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                         </div>
                         <div className="font-medium text-orange-500">¥{booking.price}</div>
                       </div>
-                      {booking.status === 'confirmed' && <button onClick={e=>{e.stopPropagation();navigate(`/customer/queue/${booking.id}`);}} className="w-full mt-3 rounded-xl bg-orange-100 text-orange-900 py-3 font-bold">查看排队 / 暂离 / 返回 ›</button>}
+                      {booking.status === 'confirmed' && <button onClick={e=>{e.stopPropagation();navigate(`/customer/queue/${booking.id}`, { state: { customerBack: true } });}} className="w-full mt-3 rounded-xl bg-orange-100 text-orange-900 py-3 font-bold">查看排队 / 暂离 / 返回 ›</button>}
                       {['pending','confirmed'].includes(booking.status)&&!booking.actualStartTime&& !['serving','finished'].includes(booking.queueState||'')&&<div className="flex gap-3 mt-3">
                         {!booking.arrivedAt&&!booking.queueState&&<button className="flex-1 py-3 rounded-xl bg-orange-200 font-bold" onClick={e=>{e.stopPropagation();openReschedule(booking);}}>修改时间</button>}
                         <button className="flex-1 py-3 rounded-xl border border-orange-200 font-bold" onClick={e=>{e.stopPropagation();void handleCancelBooking(booking);}}>取消预约</button>
@@ -594,7 +613,7 @@ const Profile: React.FC = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(`/customer/review/${booking.id}`);
+                                navigate(`/customer/review/${booking.id}`, { state: { customerBack: true } });
                               }}
                               className="text-green-600 hover:text-green-700 text-sm font-medium flex items-center gap-1"
                             >
@@ -605,7 +624,7 @@ const Profile: React.FC = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(`/customer/review/${booking.id}`);
+                                navigate(`/customer/review/${booking.id}`, { state: { customerBack: true } });
                               }}
                               className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
                             >
@@ -630,7 +649,7 @@ const Profile: React.FC = () => {
               alert('门店信息未加载，请刷新个人中心后重试');
               return;
             }
-            navigate(`/customer/product-orders/${encodeURIComponent(currentCustomer.shopId)}`);
+            navigate(`/customer/product-orders/${encodeURIComponent(currentCustomer.shopId)}`, { state: { customerBack: true } });
           }}
           className="w-full flex items-center gap-3 bg-white rounded-2xl shadow-sm p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100 text-left hover:bg-orange-50 transition-colors"
         >
@@ -645,7 +664,7 @@ const Profile: React.FC = () => {
         {/* 快捷功能 —— 手机端保持四列，点击区域足够 */}
         <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-3 sm:mb-4">
           <button
-            onClick={() => navigate('/customer/packages')}
+            onClick={() => navigate('/customer/packages', { state: { customerBack: true } })}
             className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"
           >
             <Ticket size={20} className="sm:hidden text-orange-500 mb-1" />
@@ -654,7 +673,7 @@ const Profile: React.FC = () => {
             <div className="text-xs text-gray-500 mt-0.5">查看剩余次数</div>
           </button>
           <button
-            onClick={() => navigate('/customer/coupons')}
+            onClick={() => navigate('/customer/coupons', { state: { customerBack: true } })}
             className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"
           >
             <Ticket size={20} className="sm:hidden text-orange-500 mb-1" />
@@ -663,7 +682,7 @@ const Profile: React.FC = () => {
             <div className="text-xs text-gray-500 mt-0.5">查看已领券</div>
           </button>
           <button
-            onClick={() => navigate('/customer/refund')}
+            onClick={() => navigate('/customer/refund', { state: { customerBack: true } })}
             className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"
           >
             <AlertCircle size={20} className="sm:hidden text-orange-500 mb-1" />
@@ -672,14 +691,19 @@ const Profile: React.FC = () => {
             <div className="text-xs text-gray-500 mt-0.5">申请退款查看进度</div>
           </button>
           <button
-            onClick={() => navigate('/customer/feedback')}
+            onClick={() => navigate('/customer/feedback', { state: { customerBack: true } })}
             className="bg-white rounded-2xl shadow-sm p-3 sm:p-4 text-left hover:shadow-md transition-shadow border border-gray-100 min-h-[96px]"
           >
-            <MessageSquare size={20} className="sm:hidden text-blue-500 mb-1" />
-            <MessageSquare size={22} className="hidden sm:inline text-blue-500 mb-2" />
+            <MessageSquare size={20} className="sm:hidden text-[#99613f] mb-1" />
+            <MessageSquare size={22} className="hidden sm:inline text-[#99613f] mb-2" />
             <div className="font-medium text-gray-800 text-sm">意见反馈</div>
             <div className="text-xs text-gray-500 mt-0.5">提交建议和投诉</div>
           </button>
+        </div>
+
+        <div className="customer-card mb-3 grid gap-2">
+          <button type="button" className="customer-secondary text-left" onClick={() => navigate('/customer/agreement', { state: { customerBack: true } })}>用户协议 ›</button>
+          <button type="button" className="customer-secondary text-left" onClick={() => navigate('/customer/privacy', { state: { customerBack: true } })}>隐私政策 ›</button>
         </div>
 
         {/* 退出登录 */}
@@ -695,7 +719,7 @@ const Profile: React.FC = () => {
 
       {/* 预约详情弹窗 */}
       {viewingBooking && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
           <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 sm:mb-5">
               <h3 className="text-lg sm:text-xl font-bold text-gray-800">预约详情</h3>
@@ -744,7 +768,7 @@ const Profile: React.FC = () => {
                     <Calendar size={16} /> 预约时间
                   </span>
                   <span className="font-medium text-gray-800">
-                    {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN')}
+                    {new Date(viewingBooking.scheduledTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                   </span>
                 </div>
                 {(viewingBooking as { customerPhone?: string }).customerPhone && (
@@ -818,7 +842,7 @@ const Profile: React.FC = () => {
                 <button
                   onClick={() => {
                     setViewingBooking(null);
-                    navigate(`/customer/queue/${viewingBooking.id}`);
+                    navigate(`/customer/queue/${viewingBooking.id}`, { state: { customerBack: true } });
                   }}
                   className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors"
                 >
@@ -871,7 +895,7 @@ const Profile: React.FC = () => {
       )}
       {/* 延时改时间弹窗 */}
       {rescheduleTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
           <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base sm:text-lg font-bold text-gray-800">更改预约时间</h3>
@@ -881,7 +905,7 @@ const Profile: React.FC = () => {
             </div>
             <p className="text-sm text-gray-500 mb-3">请选择未来14天内的到店时间；新时段确认成功才释放原时段。更换服务或发型师请联系门店。</p>
             <input
-              type="datetime-local"
+              type="datetime-local" aria-label="到店时间（北京时间）" step={1800}
               value={rescheduleTime}
               onChange={(e) => setRescheduleTime(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none mb-4"
