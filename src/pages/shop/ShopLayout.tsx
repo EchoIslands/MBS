@@ -46,6 +46,7 @@ const roleLabels: Record<string, string> = {
   [UserRole.SHOP_MANAGER]: '店长',
   [UserRole.STYLIST]: '发型师',
   [UserRole.SHOP_OWNER]: '老板',
+  [UserRole.QUEUE_DISPLAY]: '显示屏账号',
 };
 
 const ShopLayout: React.FC<ShopLayoutProps> = ({ children, title }) => {

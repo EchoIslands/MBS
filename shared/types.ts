@@ -715,6 +715,7 @@ export enum UserRole {
   STYLIST = 'stylist',          // 发型师/技师 - 只能看自己服务的客户
   RECEPTIONIST = 'receptionist',  // 前台/助理
   CASHIER = 'cashier',          // 收银员
+  QUEUE_DISPLAY = 'queue_display', // 店内显示屏专用账号，只读查看排队状态
 }
 
 // 权限配置（细化到具体功能

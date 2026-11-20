@@ -4,7 +4,7 @@ import {changeOwnBooking,attendanceDesk,bookingFailure} from '../services/bookin
 import operationsWorkbenchRouter from './operationsWorkbench.js';
 import queueNotificationsRouter from './queueNotifications.js';
 import { membershipOperation } from '../../shared/lib/membershipOperation.js';
-import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, liveQueueAction } from '../services/liveQueue.js';
+import { customerQueueSnapshot, staffQueueSnapshot, staffQueueAvailability, liveQueueAction, kioskQueueAction, kioskQueueAvailability } from '../services/liveQueue.js';
 import { recoverWechatPayment, activeWechatOrder, ledgerPaymentId, recoveryDependencies } from '../services/paymentRecovery.js';
 import customerPaymentOrdersRouter from './customerPaymentOrders.js';
 import customerMembershipRouter from './customerMembership.js';
@@ -226,6 +226,7 @@ const ROLE_PRIORITY: Record<string, number> = {
   customer_service: 60,
   cashier: 60,
   stylist: 40,
+  queue_display: 10,
 };
 
 // 获取员工列表
@@ -272,9 +273,15 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
-    const validRoles = ['ceo', 'shop_manager', 'customer_service', 'cashier', 'stylist'];
+    const validRoles = ['ceo', 'shop_manager', 'customer_service', 'cashier', 'stylist', 'queue_display'];
     if (!validRoles.includes(newRole)) {
       res.status(400).json({ success: false, error: '无效的角色' });
+      return;
+    }
+
+    // 显示屏账号只允许 CEO 创建，避免只读账号变成共享后台账号。
+    if (newRole === 'queue_display' && role !== 'ceo') {
+      res.status(403).json({ success: false, error: '显示屏账号只能由 CEO 创建' });
       return;
     }
 
@@ -2728,6 +2735,8 @@ mainRouter.use('/customers', customersRouter);
 const queuesRouter = Router();
 queuesRouter.get('/:shopId/live', authMiddleware, staffQueueSnapshot);
 queuesRouter.post('/:shopId/live/availability', authMiddleware, staffQueueAvailability);
+queuesRouter.post('/:shopId/kiosk/action', authMiddleware, kioskQueueAction);
+queuesRouter.post('/:shopId/kiosk/availability', authMiddleware, kioskQueueAvailability);
 
 // 时段长度（分钟）
 const QUEUE_TIME_SLOT_MINUTES = 30;

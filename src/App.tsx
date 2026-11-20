@@ -126,6 +126,9 @@ const ShopRouteGuard = () => {
   if (!currentShop && !currentEmployee && location.pathname !== "/shop/login") {
     return <Navigate to="/shop/login" replace />;
   }
+  if (currentEmployee?.role === 'queue_display' && location.pathname !== '/shop/queue-display' && location.pathname !== '/shop/login') {
+    return <Navigate to="/shop/queue-display" replace />;
+  }
   return <Outlet />;
 };
 

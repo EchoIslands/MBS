@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 /** Poll only while visible; latest response wins, and stale data cannot authorize actions. */
-export function useLiveQueue<T>(loader:()=>Promise<T>,enabled=true){
+export function useLiveQueue<T>(loader:()=>Promise<T>,enabled=true,pollMs=2000){
  const [data,setData]=useState<T|null>(null),[error,setError]=useState(''),[lastSync,setLastSync]=useState(0),[clock,setClock]=useState(Date.now());
  const flight=useRef(false),sequence=useRef(0),alive=useRef(true);
  const refresh=useCallback(async(force=false)=>{
@@ -13,9 +13,9 @@ export function useLiveQueue<T>(loader:()=>Promise<T>,enabled=true){
  useEffect(()=>{const cleanupCounter=sequence;alive.current=true;setData(null);setLastSync(0);setError('');void refresh(true);
   const resume=()=>{if(document.visibilityState==='visible'){setClock(Date.now());void refresh(true);}};
   document.addEventListener('visibilitychange',resume);window.addEventListener('online',resume);
-  const poll=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},5000);
+  const poll=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},Math.max(1000,pollMs));
   const tick=window.setInterval(()=>setClock(Date.now()),1000);
   return()=>{alive.current=false;cleanupCounter.current++;flight.current=false;window.clearInterval(poll);window.clearInterval(tick);document.removeEventListener('visibilitychange',resume);window.removeEventListener('online',resume);};
- },[refresh]);
+ },[refresh,pollMs]);
  return {data,error,lastSync,refresh,stale:!lastSync||clock-lastSync>20000||!!error};
 }

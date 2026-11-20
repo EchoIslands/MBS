@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Lock, Eye, EyeOff, Phone, Crown, Headphones, UserCheck, User } from 'lucide-react';
+import { ArrowLeft, Lock, Eye, EyeOff, Phone, Crown, Headphones, UserCheck, User, Monitor } from 'lucide-react';
 import { loginAsEmployee, useAppStore } from '../../store';
 import { UserRole, Employee, Shop } from '../../../shared/types';
 import { mockShops } from '../../../shared/mockData';
@@ -10,7 +10,7 @@ import { isRealApi } from '../../../shared/api-base';
 const DEFAULT_SHOP_ID = 'shop1';
 
 // 只保留 4 个登录模式：CEO、客服专员、店长、发型师
-type LoginMode = 'ceo' | 'cs' | 'manager' | 'stylist';
+type LoginMode = 'ceo' | 'cs' | 'manager' | 'stylist' | 'display';
 
 const ShopLogin: React.FC = () => {
   const [loginMode, setLoginMode] = useState<LoginMode>('manager');
@@ -67,7 +67,7 @@ const ShopLogin: React.FC = () => {
           }));
         } catch (_e) { /* ignore */ }
 
-        navigate('/shop');
+        navigate(result.user.role === UserRole.QUEUE_DISPLAY ? '/shop/queue-display' : '/shop');
         return;
       }
     } catch (apiError: unknown) {
@@ -90,7 +90,7 @@ const ShopLogin: React.FC = () => {
 
       const loggedIn = loginAsEmployee(DEFAULT_SHOP_ID, fallbackEmployee.id, password);
       if (loggedIn) {
-        navigate('/shop');
+        navigate(loggedIn && fallbackEmployee.role === UserRole.QUEUE_DISPLAY ? '/shop/queue-display' : '/shop');
       } else {
         setError('密码错误，请重新输入');
       }
@@ -131,6 +131,12 @@ const ShopLogin: React.FC = () => {
       subtitle: '个人业绩 / 客户服务 / 排队状态',
       placeholder: '请输入发型师手机号',
       icon: <User size={22} />,
+    },
+    display: {
+      title: '显示屏账号',
+      subtitle: '只显示全店排队状态，可在大屏进入发型师快捷操作',
+      placeholder: '请输入显示屏账号手机号',
+      icon: <Monitor size={22} />,
     },
   };
 

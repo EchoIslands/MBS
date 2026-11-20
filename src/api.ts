@@ -2930,6 +2930,8 @@ export const customerPackageApi = {
 // No mock fallback: queue actions and acknowledgement must reflect the database.
 export const liveQueueApi = {
  availability: (shopId:string,stylistId:string,version:number,minutes:number) => httpThrowing<{recorded:boolean}>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/live/availability`,{method:'POST',headers:{Authorization:`Bearer ${getAuthToken()}`},body:JSON.stringify({stylistId,version,minutes})}),
+ kioskAvailability: (shopId:string,employeeId:string,password:string,version:number,minutes:number) => httpThrowing<{recorded:boolean}>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/kiosk/availability`,{method:'POST',headers:{Authorization:`Bearer ${getAuthToken()}`},body:JSON.stringify({employeeId,password,version,minutes})}),
+ kioskAction: (shopId:string,employeeId:string,password:string,bookingId:string,action:string,version:number,minutes?:number,note?:string) => httpThrowing<{eventId:number;version:number}>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/kiosk/action`,{method:'POST',headers:{Authorization:`Bearer ${getAuthToken()}`},body:JSON.stringify({employeeId,password,bookingId,action,version,minutes,note})}),
  snapshot: (id:string) => httpThrowing<LiveQueueSnapshot>(`${API_BASE}/bookings/${encodeURIComponent(id)}/live-queue`, {credentials:'include'}),
  desk: (shopId:string) => httpThrowing<LiveQueueDesk>(`${API_BASE}/queues/${encodeURIComponent(shopId)}/live`, {headers:{Authorization:`Bearer ${getAuthToken()}`}}),
  act: (id:string,action:string,version:number,minutes?:number,note?:string,staff=false) => httpThrowing<{eventId:number;version:number}>(`${API_BASE}/bookings/${encodeURIComponent(id)}/live-queue`, {

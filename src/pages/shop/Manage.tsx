@@ -37,7 +37,7 @@ const roleLabels: Partial<Record<UserRole, string>> = {
 };
 
 // 岗位键：统一「能上钟被预约的技师 + 后台员工」的选择项
-type PositionKey = 'stylist' | 'gold' | 'shop_manager' | 'ceo' | 'customer_service' | 'cashier';
+type PositionKey = 'stylist' | 'gold' | 'shop_manager' | 'ceo' | 'customer_service' | 'cashier' | 'queue_display';
 
 const positionLabels: Record<PositionKey, string> = {
   stylist: '发型师',
@@ -46,6 +46,7 @@ const positionLabels: Record<PositionKey, string> = {
   ceo: 'CEO/老板',
   customer_service: '客服',
   cashier: '收银',
+  queue_display: '店内显示屏账号',
 };
 
 // 岗位键 → 系统角色 role + 是否金牌（底层只复用 role + is_gold_stylist 两个字段）
@@ -56,10 +57,11 @@ const positionMeta: Record<PositionKey, { role: UserRole; gold: boolean }> = {
   ceo: { role: UserRole.CEO, gold: false },
   customer_service: { role: UserRole.CUSTOMER_SERVICE, gold: false },
   cashier: { role: UserRole.CASHIER, gold: false },
+  queue_display: { role: UserRole.QUEUE_DISPLAY, gold: false },
 };
 
 const bookablePositions: PositionKey[] = ['stylist', 'gold', 'shop_manager'];
-const backendPositions: PositionKey[] = ['ceo', 'customer_service', 'cashier'];
+const backendPositions: PositionKey[] = ['ceo', 'customer_service', 'cashier', 'queue_display'];
 
 // 从 role + 是否金牌反推岗位键（店长视为具备金牌资格）
 function roleToPositionKey(role?: UserRole, isGold?: boolean): PositionKey {
@@ -69,6 +71,7 @@ function roleToPositionKey(role?: UserRole, isGold?: boolean): PositionKey {
   if (role === UserRole.CEO) return 'ceo';
   if (role === UserRole.CUSTOMER_SERVICE) return 'customer_service';
   if (role === UserRole.CASHIER) return 'cashier';
+  if (role === UserRole.QUEUE_DISPLAY) return 'queue_display';
   return 'stylist';
 }
 

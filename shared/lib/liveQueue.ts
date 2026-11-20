@@ -8,7 +8,7 @@ export type QueueRow = {
  actual_start_time?:string; actual_end_time?:string; planned_duration_minutes?:number;
  progress_remaining_minutes?:number; progress_updated_at?:string; queue_ack_event_id?:number; queue_call_event_id?:number; queue_help_requested_at?:string; queue_contacted_at?:string;
 };
-export const QUEUE_RULES = { graceMinutes:10, pollSeconds:5, staleSeconds:20, overWaitMinutes:45,
+export const QUEUE_RULES = { graceMinutes:10, pollSeconds:2, staleSeconds:20, overWaitMinutes:45,
  text:'到店由前台确认后排队；暂离请登记。叫号后保留10分钟，未到场由前台确认过号。首次过号返回后恢复原排队优先级，不打断服务；再次过号或过号超过60分钟后返回，按返回时间排队。等待时间为动态范围，不保证准点开始。' };
 export const QUEUE_LABELS:Record<string,string> = {pending:'待门店确认',reserved:'待到店确认',arrived:'已到店等待',away:'暂时离店',returned:'已确认返回',called:'已叫号，请到服务位',missed:'已过号，返回后联系前台',serving:'正在服务',finished:'服务已结束',cancelled:'预约已取消',completed:'服务已完成'};
 const time=(v?:string)=>v?Date.parse(v):0;
@@ -71,5 +71,5 @@ export function describeQueue(b:QueueRow,all:QueueRow[],history:QueueRow[],now=D
 export type LiveQueueBooking=ReturnType<typeof describeQueue>;
 export type QueueNotice={id:number;type:string;at:string;message:string;acknowledged:boolean};
 export type LiveQueueSnapshot={serverTime:string;rules:typeof QUEUE_RULES;booking:LiveQueueBooking;notices:QueueNotice[];contactPhone:string;latestEventId:number};
-export type QueueAvailability={id:string;name:string;pausedUntil:string|null;version:number};
+export type QueueAvailability={id:string;name:string;role?:string;avatar?:string;pausedUntil:string|null;version:number};
 export type LiveQueueDesk={serverTime:string;rules:typeof QUEUE_RULES;availability:QueueAvailability[];bookings:(LiveQueueBooking&{notification?:{status:string;reason:string;channel?:string;created_at?:string}|null;customerName:string;customerPhone:string;stylistId?:string;latestEventId:number;unacknowledged:boolean;needsHelp:boolean})[]};

@@ -117,7 +117,7 @@ export function pathMatchesShopTab(pathname: string, tab: ShopNavigationTab): bo
 }
 
 export function visibleShopSections(role: UserRole | null | undefined): ShopNavigationSection[] {
-  if (!role) return [];
+  if (!role || role === UserRole.QUEUE_DISPLAY) return [];
   return SHOP_NAVIGATION.map((section) => ({
     ...section,
     tabs: section.tabs.filter((tab) => tab.roles.includes(role)),
