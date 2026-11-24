@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { liveQueueApi } from '../../api';
 import { useAppStore } from '../../store';
@@ -21,10 +21,21 @@ export default function QueueDisplay() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
+  useEffect(() => {
+    if (!operator) return;
+    const timeout = window.setTimeout(() => setOperator(null), 60_000);
+    const lock = () => { if (document.hidden) setOperator(null); };
+    document.addEventListener('visibilitychange', lock);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener('visibilitychange', lock);
+    };
+  }, [operator]);
+
   const unlock = () => {
     if (!pending || !password.trim()) return;
     setOperator({ employeeId: pending.id, name: pending.name, password: password.trim() });
-    setMessage('已解锁该发型师操作区，操作只会作用于本人队列');
+    setMessage('请选择本人操作。提交时会验证密码');
     setPassword('');
     setPending(null);
   };
@@ -202,7 +213,7 @@ export default function QueueDisplay() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onSubmit={(event) => { event.preventDefault(); unlock(); }}>
             <h2 className="text-2xl font-bold">解锁 {pending.name} 的操作</h2>
-            <p className="mt-3 text-gray-600">请输入该发型师本人登录密码。验证只保存在当前页面内，刷新显示屏后需要重新验证。</p>
+            <p className="mt-3 text-gray-600">请输入该发型师本人登录密码。操作区在 1 分钟后或页面离开前台时自动锁定。</p>
             <input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="发型师登录密码" className="mt-5 w-full rounded-xl border p-4" />
             <div className="mt-5 flex gap-3">
               <button type="button" onClick={() => { setPending(null); setPassword(''); }} className="flex-1 rounded-xl border p-3">取消</button>

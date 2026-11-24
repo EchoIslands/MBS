@@ -3,7 +3,15 @@ import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
+import { fileURLToPath } from 'node:url';
+
+export default defineConfig(({ mode, command }) => ({
+  resolve: {
+    alias: command === 'build' ? [{
+      find: /^(?:\.\.\/)+shared\/mockData$/,
+      replacement: fileURLToPath(new URL('./src/mock/emptyProductionData.ts', import.meta.url)),
+    }] : [],
+  },
   plugins: [
     react({
       babel: {

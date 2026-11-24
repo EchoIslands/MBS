@@ -25,21 +25,21 @@ test('小程序实际守卫：普通页面、深链、返回受限；改密与�
 });
 
 test('小程序真实改密表单：六位校验、确认、防重复提交、成功清理输入',async()=>{
- let page:vm.Context;let changes=0;let hidden=0;const routes:string[]=[];
+ let page:vm.Context;let changes=0;const routes:string[]=[];
  const context=vm.createContext({Page:(config:vm.Context)=>{page=config;},
-  getCustomerId:()=> 'synthetic',getToken:()=> 'synthetic',clearCustomerId:()=>{},
-  changeCustomerPassword:async(current:string,next:string,confirm:string)=>{changes++;assert.equal(current,'123456');assert.equal(next,'246810');assert.equal(confirm,next);},
-  wx:{reLaunch:(o:{url:string;complete?:()=>void})=>routes.push(o.url),hideHomeButton:()=>hidden++},
+  setCustomerId:(id:string)=>assert.equal(id,'synthetic'),clearCustomerId:()=>{},
+  changeCustomerPassword:async(phone:string,code:string,next:string,confirm:string)=>{changes++;assert.equal(phone,'13800000005');assert.equal(code,'987654');assert.equal(next,'246810');assert.equal(confirm,next);return {id:'synthetic'};},
+  wx:{reLaunch:(o:{url:string;complete?:()=>void})=>routes.push(o.url)},
  });
  const link=await readFile(new URL('../mini-program/utils/payment-order-link.js',import.meta.url),'utf8');
  vm.runInContext(link.replace(/^export /gm,''),context);
  let code=await readFile(new URL('../mini-program/pages/change-password/change-password.js',import.meta.url),'utf8');
  code=code.split(String.fromCharCode(10)).filter(line=>!line.startsWith('import ')).join(String.fromCharCode(10));vm.runInContext(code,context);
- page.setData=(patch:Record<string, unknown>)=>Object.assign(page.data,patch);page.onShow();assert.equal(hidden,1);
+ page.setData=(patch:Record<string, unknown>)=>Object.assign(page.data,patch);
  page.onInput({currentTarget:{dataset:{field:'newPassword'}},detail:{value:'24x6810'}});assert.equal(page.data.newPassword,'246810');
- Object.assign(page.data,{currentPassword:'123456',newPassword:'123456',confirmPassword:'123456'});await page.onSubmit();assert.equal(changes,0);assert.ok(page.data.error);
- Object.assign(page.data,{newPassword:'246810',confirmPassword:'246811'});await page.onSubmit();assert.equal(changes,0);
+ Object.assign(page.data,{phone:'13800000005',code:'',newPassword:'246810',confirmPassword:'246810'});await page.onSubmit();assert.equal(changes,0);assert.ok(page.data.error);
+ Object.assign(page.data,{code:'987654',newPassword:'246810',confirmPassword:'246811'});await page.onSubmit();assert.equal(changes,0);
  Object.assign(page.data,{newPassword:'246810',confirmPassword:'246810'});await Promise.all([page.onSubmit(),page.onSubmit()]);
- assert.equal(changes,1);assert.equal(page.data.saving,false);assert.equal(page.data.currentPassword,'');assert.equal(page.data.newPassword,'');assert.equal(page.data.confirmPassword,'');
+ assert.equal(changes,1);assert.equal(page.data.saving,false);assert.equal(page.data.code,'');assert.equal(page.data.newPassword,'');assert.equal(page.data.confirmPassword,'');
  assert.deepEqual(routes,['/pages/index/index']);
 });

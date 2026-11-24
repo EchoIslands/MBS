@@ -36,7 +36,7 @@ create table if not exists employees (
   rating numeric default 5.0,
   specialty text,
   role text not null default 'stylist', -- stylist / manager / ceo / customer_service
-  password_hash text default '123456',
+  password_hash text,
   is_active boolean default true,
   created_at timestamptz default now(),
   updated_at timestamptz default now()

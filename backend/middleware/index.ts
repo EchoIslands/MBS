@@ -25,6 +25,16 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       decoded.passwordVersion !== passwordVersion(String(employee.password_hash || ''))) {
       res.status(401).json({ success: false, error: '账号或会话已失效，请重新登录' }); return;
     }
+    if (employee.role === 'queue_display') {
+      const pathname = req.originalUrl.split('?')[0];
+      const shop = encodeURIComponent(employee.shop_id);
+      const canRead = req.method === 'GET' && ['/api/auth/me', '/api/shops/' + shop, '/api/queues/' + shop + '/live'].includes(pathname);
+      const canPost = req.method === 'POST' && ['/api/auth/verify', '/api/queues/' + shop + '/kiosk/action', '/api/queues/' + shop + '/kiosk/availability'].includes(pathname);
+      if (!canRead && !canPost) {
+        res.status(403).json({ success: false, error: '显示屏账号仅可使用本店排队显示和快捷操作' });
+        return;
+      }
+    }
     req.employee = { id: employee.id, shopId: employee.shop_id, name: employee.name, role: employee.role, phone: employee.phone };
     res.setHeader('Cache-Control', 'no-store');
     next();

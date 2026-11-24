@@ -25,7 +25,7 @@ test('live HTTP snapshots expose only own customer details, scope stylist work a
  }
  const supabase={from:(t:string)=>new Query(t),rpc:async(name:string,args:Record<string,unknown>)=>{rpcs.push({name,args});return {data:{eventId:9},error:args.p_actor_type==='customer'&&args.p_action==='arrived'?{message:'QUEUE_FORBIDDEN'}:null};}};
  const source=(await readFile(new URL('../backend/services/liveQueue.ts',import.meta.url),'utf8')).replace(/^import .*;$/gm,'');const exports={} as typeof import("../backend/services/liveQueue.js");
- vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{sortStylistsByRank,exports,supabase,createDurationEstimator,describeQueue,queueOrder,QUEUE_RULES,console,Date,dispatchQueueNotifications:async()=>0});
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{sortStylistsByRank,exports,supabase,imageReference:(value:unknown)=>value,createDurationEstimator,describeQueue,queueOrder,QUEUE_RULES,console,Date,dispatchQueueNotifications:async()=>0});
  const app=express();app.use(express.json());app.use((req,res,next)=>{const key=String(req.headers['x-test-identity'] || '');if(!key)return res.status(401).json({success:false});if(key==='customer')req.customer={id:'c',shopId:'s',passwordVersion:'synthetic',mustChangePassword:false};else req.employee={id:key==='stylist'?'stylist':'front',shopId:'s',role:key,name:'Synthetic',phone:'synthetic'};next();});
  app.get('/bookings/:id/live',exports.customerQueueSnapshot);app.post('/bookings/:id/live',exports.liveQueueAction);app.get('/queues/:shopId/live',exports.staffQueueSnapshot);
  const server=app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',()=>r()));const base='http://127.0.0.1:'+(server.address() as AddressInfo).port;
@@ -36,6 +36,9 @@ test('live HTTP snapshots expose only own customer details, scope stylist work a
  res=await request('/queues/other/live','ceo');assert.equal(res.status,403);
  res=await request('/queues/s/live','stylist');let data=(await res.json()).data;assert.equal(data.bookings.length,1);assert.equal(data.bookings[0].id,'own');assert.equal(data.availability.length,1);
  res=await request('/queues/s/live','customer_service');data=(await res.json()).data;assert.equal(data.bookings.length,2);assert.deepEqual(data.availability.map((a:{id:string})=>a.id),['manager','gold','stylist']);assert.equal(data.bookings.find((b:{id:string;unacknowledged?:boolean})=>b.id==='private').unacknowledged,true);
+ res=await request('/queues/s/live','queue_display'); assert.equal(res.status,200);
+ const displayBody=await res.text(); assert.doesNotMatch(displayBody,/customerName|customerPhone|13999999999|绝不可泄露姓名|notification/);
+ assert.equal(JSON.parse(displayBody).data.bookings.length,2);
  res=await request('/bookings/own/live','customer',{action:'left_reported'});assert.equal(res.status,400);assert.equal(rpcs.length,0);
  res=await request('/bookings/own/live','cashier',{action:'called',version:1});assert.equal(res.status,403);assert.equal(rpcs.length,0);
  res=await request('/bookings/own/live','customer',{action:'arrived',version:1,shopId:'other',actorId:'front'});assert.equal(res.status,403);assert.equal(rpcs[0].args.p_actor_id,'c');assert.equal(rpcs[0].args.p_shop_id,'s');

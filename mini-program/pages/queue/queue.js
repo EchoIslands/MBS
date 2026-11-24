@@ -15,24 +15,29 @@ Page({
  },
  editBooking(){setRouteParams({bookingId:this.bookingId,editBookingId:this.bookingId});wx.switchTab({url:'/pages/profile/profile'});},
  async cancelMyBooking(){if(this.data.busy||this.data.stale)return;const r=await wx.showModal({title:'取消预约',content:'取消后释放名额；临时取消单独记录，不等于爽约。确认取消？'});if(!r.confirm)return;this.setData({busy:true});try{await cancelBooking(this.bookingId,getCustomerId());await this.refresh(true);this.setData({message:'预约已取消，名额已释放'});}catch(e){this.setData({message:e.message||'取消未确认，请刷新核对'});}finally{this.setData({busy:false});}},
- bookingId:'',visible:false,flight:false,sequence:0,lastAlert:0,
+ bookingId:'',visible:false,flight:false,sequence:0,lastAlert:0,failures:0,retryAt:0,
  onLoad(options={}){notificationConfig().then(c=>this.setData({notificationTemplate:c.templateId||''})).catch(()=>{});const params=takeRouteParams();this.bookingId=options.bookingId||options.id||(params&&params.bookingId)||'';if(!this.bookingId)this.setData({loading:false,error:'缺少预约信息，请从个人中心的预约进入'});},
  onShow(){this.visible=true;this.setData({stale:true});this.startPolling();this.refresh(true);},
  onHide(){this.visible=false;this.sequence++;this.flight=false;this.stopPolling();},
  onUnload(){this.visible=false;this.sequence++;this.stopPolling();},
- startPolling(){this.stopPolling();this.timer=setInterval(()=>{this.updateFreshness();this.refresh();},5000);this.clock=setInterval(()=>this.updateFreshness(),1000);},
+ startPolling(){this.stopPolling();this.timer=setInterval(()=>{this.updateFreshness();this.refresh();},2000);this.clock=setInterval(()=>this.updateFreshness(),1000);},
  stopPolling(){if(this.timer)clearInterval(this.timer);if(this.clock)clearInterval(this.clock);this.timer=null;this.clock=null;},
- updateFreshness(){this.setData({stale:!this.data.lastSync||Date.now()-this.data.lastSync>20000||!!this.data.error});},
+ updateFreshness(){const stale=!this.data.lastSync||Date.now()-this.data.lastSync>20000||!!this.data.error;if(stale!==this.data.stale)this.setData({stale});},
  async refresh(force=false){
-  if(!this.visible||!this.bookingId||(this.flight&&!force))return;
+  if(!this.visible||!this.bookingId||(!force&&(this.flight||Date.now()<this.retryAt)))return;
   const seq=++this.sequence;this.flight=true;
   try{
    const s=await getLiveQueue(this.bookingId);if(!this.visible||seq!==this.sequence)return;
+   this.failures=0;this.retryAt=0;
    const b=s.booking;const now=Date.now();
    this.setData({snapshot:s,booking:b,notices:s.notices.map(n=>({...n,timeLabel:time(n.at)})),loading:false,error:'',stale:false,lastSync:now,lastSyncLabel:time(new Date(now).toISOString()),contactPhone:s.contactPhone,deadlineLabel:time(b.graceDeadlineAt),returnLabel:time(b.expectedReturnAt),rules:s.rules.text});
    const notice=s.notices.find(n=>['called','ready'].includes(n.type)&&!n.acknowledged);
    if(notice&&notice.id>this.lastAlert){this.lastAlert=notice.id;wx.vibrateLong({fail:()=>{}});wx.showToast({title:notice.type==='called'?'门店已叫号，请返回服务位':'请准备返回门店',icon:'none',duration:4000});}
-  }catch(e){if(this.visible&&seq===this.sequence)this.setData({loading:false,error:e.message||'同步失败，请联系前台',stale:true});}
+  }catch(e){if(this.visible&&seq===this.sequence){
+   this.failures++;
+   this.retryAt=Date.now()+Math.min(15000,2000*2**Math.min(this.failures,3));
+   this.setData({loading:false,error:e.message||'同步失败，请联系前台',stale:true});
+  }}
   finally{if(seq===this.sequence)this.flight=false;}
  },
  async act(e){

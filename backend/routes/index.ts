@@ -41,7 +41,7 @@ import type { Settlement } from '../../shared/types.js';
 import { invitationMiniProgramCode } from '../services/miniProgramCode.js';
 import { priceSettlement } from '../lib/settlementPricing.js';
 import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
-import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS, CUSTOMER_RESTRICTED_SESSION_SECONDS } from '../lib/tokens.js';
+import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS } from '../lib/tokens.js';
 import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
@@ -108,7 +108,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     const employee = employees[0];
 
     // 成功校验旧密码后平滑迁移为哈希。
-    if (!(await verifyPassword(password, employee.password_hash))) {
+    if (password === '123456' || !(await verifyPassword(password, employee.password_hash))) {
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       res.status(401).json({ success: false, error: '手机号或密码错误' });
       return;
@@ -273,6 +273,7 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
+    if (password === '123456') return res.status(400).json({ success: false, error: '请使用非默认员工密码' });
     const validRoles = ['ceo', 'shop_manager', 'customer_service', 'cashier', 'stylist', 'queue_display'];
     if (!validRoles.includes(newRole)) {
       res.status(400).json({ success: false, error: '无效的角色' });
@@ -353,6 +354,7 @@ employeesRouter.put('/me', authMiddleware, async (req: Request, res: Response) =
     if (title !== undefined) updateData.title = title;
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
+    if (password === '123456') return res.status(400).json({ success: false, error: '请使用非默认员工密码' });
     if (password !== undefined) updateData.password_hash = await hashPassword(password);
 
     const { data, error } = await supabase
@@ -390,7 +392,11 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
 
     // 不能修改自己以外的 CEO（CEO 可以，店长不行）
     if (id !== currentId) {
-      const { data: target } = await supabase.from('employees').select('role').eq('id', id).single();
+      const { data: target } = await supabase.from('employees').select('role').eq('id', id).eq('shop_id', shopId).single();
+      if (role === 'shop_manager' && (phone !== undefined || password !== undefined) && target?.role !== 'stylist') {
+        res.status(403).json({ success: false, error: '店长只能为本店发型师调整登录凭证' });
+        return;
+      }
       if (target?.role === 'ceo' && role !== 'ceo') {
         res.status(403).json({ success: false, error: '无权修改 CEO 信息' });
         return;
@@ -412,6 +418,7 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     if (phone !== undefined) updateData.phone = phone;
     if (title !== undefined) updateData.title = title;
     if (newRole !== undefined) updateData.role = newRole;
+    if (password === '123456') return res.status(400).json({ success: false, error: '请使用非默认员工密码' });
     if (password !== undefined) updateData.password_hash = await hashPassword(password);
     if (specialty !== undefined) updateData.specialty = specialty;
     if (avatar !== undefined) updateData.avatar = avatar;
@@ -1651,7 +1658,7 @@ customerPackagesRouter.delete('/:id', authMiddleware, async (req: Request, res: 
 });
 
 // 核销 1 次（内部调用，也可供店铺端手动核销）
-customerPackagesRouter.post('/:id/consume', authMiddleware, async (req: Request, res: Response) => {
+customerPackagesRouter.post('/:id/consume', authMiddleware, requirePermission('settlement:all'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { bookingId, note } = req.body;
@@ -1762,7 +1769,7 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
   const ip = typeof forwarded === 'string' && forwarded.trim() ? forwarded.split(',')[0].trim() : req.ip || 'unknown';
   let attempt: CustomerAuthAttempt | undefined;
   try {
-    const decision = await beginCustomerAuthAttempt(ip);
+    const decision = await beginCustomerAuthAttempt(JSON.stringify(['sms-login', ip]));
     if (decision.allowed === false) { res.setHeader('Retry-After', decision.retryAfterSeconds); return res.status(429).json({ success: false, ...decision }); }
     attempt = decision.attempt;
     if (!(await verifySmsCode(phone, code))) { await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined; return res.status(401).json({ success: false, error: '验证码错误或已过期' }); }
@@ -1784,7 +1791,7 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
  */
 customersRouter.post('/login', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
-  const { phone, password, setupPassword } = req.body || {};
+  const { phone, password } = req.body || {};
   if (typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone.trim())) return res.status(400).json({ success: false, error: '请输入正确的手机号' });
   const normalizedPhone = phone.trim();
   // Vercel overwrites its own forwarding header; do not trust arbitrary X-Forwarded-For.
@@ -1801,34 +1808,17 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
     const { data: customers, error } = await supabase.from('customers')
       .select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('phone', normalizedPhone).limit(2);
     if (error) return res.status(503).json({ success: false, error: '身份验证暂不可用' });
-    if (!customers?.length) {
+    const customer = customers?.length === 1 ? customers[0] : null;
+    const passwordHash = customer?.password_hash;
+    if (!customer || !passwordHash || customer.is_weak_password === true || password === '123456' || password === normalizedPhone.slice(-6) || !(await verifyCustomerPassword(password, passwordHash))) {
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
-      return res.status(401).json({ success: false, error: '手机号或密码错误；如首次使用，请联系门店核实手机号' });
-    }
-    if (customers.length !== 1) return res.status(409).json({ success: false, error: '该手机号关联多个客户档案，请联系门店处理' });
-    const customer = customers[0];
-    let passwordHash = customer.password_hash;
-    if (!passwordHash) {
-      if (!setupPassword) return res.json({ success: true, setupRequired: true });
-      if (!isCustomerPassword(password)) return res.status(400).json({ success: false, error: '请设置六位数字密码' });
-      passwordHash = await hashCustomerPassword(password);
-      const { data: saved, error: saveError } = await supabase.from('customers').update({ password_hash: passwordHash, identity_verified: false, identity_verified_at: null, identity_verified_by: null })
-        .eq('id', customer.id).eq('shop_id', customer.shop_id).is('password_hash', null).select('id').maybeSingle();
-      if (saveError) return res.status(503).json({ success: false, error: '密码设置失败，请重试' });
-      if (!saved) return res.status(409).json({ success: false, error: '密码状态已更新，请重新登录' });
-    } else {
-      if (!isCustomerPassword(password)) return res.status(400).json({ success: false, error: '请输入六位数字密码' });
-      if (!(await verifyCustomerPassword(password, passwordHash))) {
-        await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
-        return res.status(401).json({ success: false, error: '手机号或密码错误' });
-      }
+      return res.status(401).json({ success: false, error: '手机号或密码错误。可使用验证码直接登录，或验证手机号后设置密码' });
     }
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
-    const { password_hash: _passwordHash, is_weak_password: weakPassword, ...safeCustomer } = customer;
-    const mustChangePassword = weakPassword === true;
-    const verifiedCustomer = mustChangePassword ? { id: customer.id, shop_id: customer.shop_id, must_change_password: true, identity_verified: false } : { ...safeCustomer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) };
-    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash, mustChangePassword);
-    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: (mustChangePassword ? CUSTOMER_RESTRICTED_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS) * 1000 });
+    const { password_hash: _passwordHash, is_weak_password: _weakPassword, ...safeCustomer } = customer;
+    const verifiedCustomer = { ...safeCustomer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) };
+    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash);
+    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
     return res.json({ success: true, data: toCamelCase(verifiedCustomer), ...(req.body?.client === 'mini' ? { token } : {}) });
   } catch (error) {
     return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '身份验证暂不可用' });
@@ -1836,45 +1826,53 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
     if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
   }
 });
-// 受限会话仅能恢复状态、改密和退出；所有业务路径仍走默认本人中间件。
-customersRouter.post('/:id/password/change', (req, res, next) => { void customerIdentity(req, res, next, 'id', true); }, async (req: Request, res: Response) => {
-  const { currentPassword, newPassword, confirmPassword } = req.body || {};
-  if (!isCustomerPassword(currentPassword) || !isCustomerPassword(newPassword) || newPassword !== confirmPassword || newPassword === '123456' || newPassword === currentPassword) {
-    return res.status(400).json({ success: false, error: '请输入原密码，并设置不同于原密码及 123456 的六位数字密码，两次输入须一致' });
+// 首次设密与找回密码使用一次性手机号验证。短信直登仍可独立使用。
+customersRouter.post('/sms/password', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { code, newPassword, confirmPassword } = req.body || {};
+  const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  if (!isValidPhone(phone) || !isCustomerPassword(code) || !isCustomerPassword(newPassword) ||
+      newPassword !== confirmPassword || newPassword === '123456' || newPassword === phone.slice(-6)) {
+    return res.status(400).json({ success: false, error: '请填写本人手机号和六位验证码。两次新密码须一致，且不能使用 123456 或手机号后六位' });
   }
-  const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
-  const ip = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
-  let attempt: CustomerAuthAttempt | undefined;
   try {
-    const decision = await beginCustomerAuthAttempt(ip);
-    if (decision.allowed === false) {
-      res.setHeader('Retry-After', decision.retryAfterSeconds);
-      return res.status(429).json({ success: false, ...decision });
+    const { data: rows, error } = await supabase.from('customers')
+      .select(`${CUSTOMER_SELF_FIELDS}, password_hash`).eq('phone', phone).limit(2);
+    if (error) return res.status(503).json({ success: false, error: '密码服务暂不可用' });
+    if (!(await verifySmsCode(phone, code))) {
+      return res.status(401).json({ success: false, error: '验证码错误或已过期' });
     }
-    attempt = decision.attempt;
-    const { data: customer, error } = await supabase.from('customers').select('id, shop_id, password_hash')
-      .eq('id', req.customer!.id).eq('shop_id', req.customer!.shopId).maybeSingle();
-    if (error) return res.status(503).json({ success: false, error: '改密服务暂不可用' });
-    if (!customer || passwordVersion(customer.password_hash) !== req.customer!.passwordVersion) return res.status(401).json({ success: false, error: '会话已失效，请重新登录' });
-    if (!(await verifyCustomerPassword(currentPassword, customer.password_hash))) {
-      await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
-      return res.status(400).json({ success: false, error: '原密码错误' });
+    if (rows && rows.length > 1) {
+      return res.status(409).json({ success: false, error: '此手机号关联多个档案，请联系门店处理' });
     }
+    let account = rows?.[0];
+    if (!account) {
+      const { data: customerId, error: resolveError } = await supabase.rpc('resolve_sms_customer', { p_phone: phone });
+      if (resolveError || !customerId) return res.status(503).json({ success: false, error: '客户档案暂不可用，请稍后重新获取验证码' });
+      const { data: created, error: readError } = await supabase.from('customers')
+        .select(CUSTOMER_SELF_FIELDS).eq('id', customerId).eq('phone', phone).maybeSingle();
+      if (readError || !created) return res.status(503).json({ success: false, error: '客户档案暂不可用，请稍后重新获取验证码' });
+      account = { ...created, password_hash: null };
+    }
+    const { password_hash: oldHash, ...customer } = account;
     const hash = await hashCustomerPassword(newPassword);
-    await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
-    // 比较旧哈希，防止并发改密覆盖员工重置；不修改任何身份核实字段。
-    const { data: saved, error: saveError } = await supabase.from('customers').update({ password_hash: hash, is_weak_password: false })
-      .eq('id', customer.id).eq('shop_id', customer.shop_id).eq('password_hash', customer.password_hash).select('id').maybeSingle();
-    if (saveError) return res.status(503).json({ success: false, error: '密码保存失败，请重试' });
-    if (!saved) return res.status(409).json({ success: false, error: '密码已被更新，请重新登录' });
-    const token = signCustomerToken(customer.id, customer.shop_id, hash);
+    // 比较旧凭证和手机号，以免覆盖并发改密、门店重置或换号。
+    const update = supabase.from('customers').update({ password_hash: hash, is_weak_password: false })
+      .eq('id', customer.id).eq('shop_id', customer.shop_id).eq('phone', phone);
+    const { data: saved, error: saveError } = await (oldHash == null ? update.is('password_hash', null) : update.eq('password_hash', oldHash)).select('id').maybeSingle();
+    if (saveError) return res.status(503).json({ success: false, error: '密码保存失败，请重新获取验证码' });
+    if (!saved) return res.status(409).json({ success: false, error: '账号资料已更新，请重新获取验证码' });
+    const token = signCustomerToken(customer.id, customer.shop_id, hash, false, true);
     res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
-    return res.json({ success: true, data: { id: customer.id, shopId: customer.shop_id, mustChangePassword: false }, ...(req.body?.client === 'mini' ? { token } : {}) });
-  } catch (error) {
-    return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '改密服务暂不可用' });
-  } finally {
-    if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
+    return res.json({ success: true, data: toCamelCase({ ...customer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...(req.body?.client === 'mini' ? { token } : {}) });
+  } catch {
+    return res.status(503).json({ success: false, error: '密码服务暂不可用' });
   }
+});
+
+customersRouter.post('/:id/password/change', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(400).json({ success: false, code: 'SMS_VERIFICATION_REQUIRED', error: '设置或修改密码需短信验证。请更新客户端，或返回登录页使用验证码直接登录' });
 });
 customersRouter.post('/logout', (_req: Request, res: Response) => {
   res.clearCookie(CUSTOMER_COOKIE, { httpOnly: true, sameSite: 'strict', path: '/api' });
@@ -2013,8 +2011,8 @@ customersRouter.post('/:id/password/reset', requirePermission('customer:credenti
     const { data: customer, error } = await supabase.from('customers').select('id, phone, shop_id').eq('id', req.params.id).eq('shop_id', req.employee!.shopId).maybeSingle();
     if (error) return res.status(503).json({ success: false, error: '客户信息暂不可用' });
     if (!customer || !/^1[3-9]\d{9}$/.test(customer.phone || '')) return res.status(404).json({ success: false, error: '未找到有效客户手机号' });
-    const passwordHash = await hashCustomerPassword(customer.phone.slice(-6));
-    const { error: updateError } = await supabase.from('customers').update({ password_hash: passwordHash, is_weak_password: true }).eq('id', customer.id).eq('shop_id', customer.shop_id);
+    const passwordHash = await hashPassword(randomUUID());
+    const { error: updateError } = await supabase.from('customers').update({ password_hash: passwordHash, is_weak_password: false, identity_verified: false, identity_verified_at: null, identity_verified_by: null }).eq('id', customer.id).eq('shop_id', customer.shop_id);
     if (updateError) return res.status(503).json({ success: false, error: '密码重置失败' });
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ success: true, data: { reset: true } });
@@ -2117,6 +2115,16 @@ customersRouter.post('/', requirePermission('customer:create'), async (req: Requ
 
 
     const insertData = mapCustomerBodyToDB(body);
+    for (const field of CUSTOMER_ACCOUNT_FIELDS) {
+      if (['last_visit_at', 'last_stylist', 'last_service_items'].includes(field)) continue;
+      // Old staff clients send default zero values when opening a file.
+      const value = insertData[field];
+      if (value == null || value === false || value === 0 || value === '' || value === 'none' || (Array.isArray(value) && value.length === 0)) {
+        delete insertData[field];
+      } else {
+        return res.status(400).json({ success: false, error: '新建档案后请通过会员或账户操作办理权益和资金变更' });
+      }
+    }
     const validation = validateCustomerData(insertData);
     if ('error' in validation) {
       res.status(400).json({ success: false, error: validation.error });
@@ -4576,7 +4584,7 @@ productOrdersRouter.post('/:id/refund',resourceAccess('product_orders','id'),asy
 });
 
 // 店铺查看商品订单退款申请列表
-productOrdersRouter.get('/refunds/shop/:shopId', authMiddleware, async (req: Request, res: Response) => {
+productOrdersRouter.get('/refunds/shop/:shopId', authMiddleware, requirePermission('product:fulfill'), requireOwnShop('shopId'), async (req: Request, res: Response) => {
   try {
     const { shopId } = req.params;
     const { status } = req.query;
@@ -4696,6 +4704,20 @@ mainRouter.use('/product-orders', productOrdersRouter);
 
 // ===================== settlements =====================
 const settlementsRouter = Router();
+
+async function requireStylistSettlementScope(req: Request, res: Response, next: import('express').NextFunction) {
+  if (req.employee!.role !== 'stylist') { next(); return; }
+  try {
+    const { data, error } = await supabase.from('settlements').select('id')
+      .eq('id', req.params.id).eq('shop_id', req.employee!.shopId)
+      .contains('items', [{ type: 'service', employeeId: req.employee!.id }]).maybeSingle();
+    if (error) { res.status(503).json({ success: false, error: '暂时无法核对结算权限' }); return; }
+    if (!data) { res.status(404).json({ success: false, error: '结算记录不存在或无权访问' }); return; }
+    next();
+  } catch {
+    res.status(503).json({ success: false, error: '暂时无法核对结算权限' });
+  }
+}
 
 const settlementFromDb = (s: Record<string, unknown>, payment?: Record<string, unknown>): Record<string, unknown> => {
   const verified = payment?.status === 'paid' && payment?.paid_at_source === 'wechat_success_time';
@@ -4830,7 +4852,7 @@ async function processSettlementAfterPayment(params: {
 }
 
 // 创建结算记录
-settlementsRouter.post('/', authMiddleware, (req, res, next) => {
+settlementsRouter.post('/', authMiddleware, requirePermission('settlement:operate'), (req, res, next) => {
   if (Array.isArray(req.body?.items) && req.body.items.some((item: Record<string, unknown>) => item?.priceOverride !== undefined)) return requirePermission('settlement:override')(req, res, next);
   next();
 }, async (req: Request, res: Response) => {
@@ -4854,6 +4876,9 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
       return res.status(400).json({ success: false, error: '缺少必要字段' });
     }
 
+    if (employee.role === 'stylist' && !items.some((item: Record<string, unknown>) => item?.type === 'service' && item?.employeeId === employee.id)) {
+      return res.status(403).json({ success: false, error: '发型师只能为本人服务开单' });
+    }
     const method = paymentMethod || 'cash';
     if (!['cash','balance','card','wechat','alipay'].includes(method)) return res.status(400).json({ success: false, error: '不支持的支付方式' });
     if (method === 'alipay') return res.status(400).json({ success: false, error: '支付宝网关尚未接入，请使用其他支付方式' });
@@ -4876,6 +4901,12 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
     if (id) {
       const { data: existing, error: existingError } = await supabase.from('settlements').select('*').eq('id', id).eq('shop_id', shopId).maybeSingle();
       if (existingError) return res.status(503).json({ success: false, error: '结算状态暂不可用，请稍后使用原单号重试' });
+      if (existing && employee.role === 'stylist' && !Array.isArray(existing.items)) {
+        return res.status(403).json({ success: false, error: '无权操作此结算单' });
+      }
+      if (existing && employee.role === 'stylist' && !existing.items.some((item: Record<string, unknown>) => item?.type === 'service' && item?.employeeId === employee.id)) {
+        return res.status(403).json({ success: false, error: '无权操作此结算单' });
+      }
       if (existing?.payment_status === 'completed') {
         if (existing.customer_id !== customerId || existing.checkout_request_key !== requestKey) return res.status(409).json({ success: false, error: '此结算单已完成，请勿更改后重复收款' });
         return res.json({ success: true, data: settlementFromDb(existing) });
@@ -4960,7 +4991,7 @@ settlementsRouter.post('/', authMiddleware, (req, res, next) => {
 });
 
 // 微信收款仅信任已验签的网关凭据；现金/银行卡由授权员工登记。
-settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.post('/:id/confirm-payment', authMiddleware, requirePermission('settlement:operate'), requireStylistSettlementScope, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
     const employee = req.employee!;
@@ -5027,7 +5058,7 @@ settlementsRouter.post('/:id/confirm-payment', authMiddleware, async (req: Reque
 });
 
 // 重新生成支付二维码（顾客未扫码/二维码过期时继续使用）
-settlementsRouter.post('/:id/retry-payment', authMiddleware, async (req:Request,res:Response) => {
+settlementsRouter.post('/:id/retry-payment', authMiddleware, requirePermission('settlement:operate'), requireStylistSettlementScope, async (req:Request,res:Response) => {
   try {
     const e=req.employee!;
     const result=await recoverWechatPayment(req.params.id,e.shopId,e.id,e.name);
@@ -5038,7 +5069,7 @@ settlementsRouter.post('/:id/retry-payment', authMiddleware, async (req:Request,
 });
 
 // 删除待支付/失败的结算记录
-settlementsRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.delete('/:id', authMiddleware, requirePermission('settlement:operate'), requireStylistSettlementScope, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
     const { id } = req.params;
@@ -5084,7 +5115,7 @@ settlementsRouter.delete('/:id', authMiddleware, async (req: Request, res: Respo
 });
 
 // 查询结算支付状态
-settlementsRouter.post('/:id/release-unstarted-payment', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.post('/:id/release-unstarted-payment', authMiddleware, requirePermission('settlement:operate'), requireStylistSettlementScope, async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase.rpc('release_stale_settlement_payment_claim', {
       p_settlement_id: req.params.id, p_shop_id: req.employee!.shopId,
@@ -5102,7 +5133,7 @@ settlementsRouter.post('/:id/release-unstarted-payment', authMiddleware, async (
   }
 });
 
-settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.get('/:id/payment-status', authMiddleware, requirePermission('settlement:operate'), requireStylistSettlementScope, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
     const { id } = req.params;
@@ -5144,13 +5175,16 @@ settlementsRouter.get('/:id/payment-status', authMiddleware, async (req: Request
 });
 
 // 获取店铺结算列表
-settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.get('/', authMiddleware, requirePermission('settlement:operate'), async (req: Request, res: Response) => {
+  const stylist = req.employee!.role === 'stylist';
+  if (stylist && req.query.pending !== '1') return res.status(403).json({ success: false, error: '发型师只能查看本人待结算单' });
   try {
     const shopId = req.employee!.shopId;
     const rows:Record<string,unknown>[]=[];
     for(let page=0;;page++) {
       let query=supabase.from('settlements').select('*').eq('shop_id',shopId);
       if(req.query.pending==='1') query=query.eq('payment_status','pending');
+      if (stylist) query = query.contains('items', [{ type: 'service', employeeId: req.employee!.id }]);
       const {data,error}=await query.order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*500,page*500+499);
       if(error) return res.status(503).json({success:false,error:'结算列表暂不可读取，请刷新重试'});
       rows.push(...(data || []));
@@ -5167,7 +5201,7 @@ settlementsRouter.get('/', authMiddleware, async (req: Request, res: Response) =
 });
 
 // 获取单条结算详情（用于继续未完成的结算）
-settlementsRouter.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+settlementsRouter.get('/:id', authMiddleware, requirePermission('settlement:operate'), requireStylistSettlementScope, async (req: Request, res: Response) => {
   try {
     const shopId = req.employee!.shopId;
     const { id } = req.params;

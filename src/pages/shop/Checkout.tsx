@@ -687,65 +687,26 @@ const Checkout: React.FC = () => {
 
   const handleRedeemGroupBuy = async () => {
     if (!groupBuyVerifyResult) return;
-    const { voucher, batch, needBind, availableBatches } = groupBuyVerifyResult;
-    if (selectedGroupBuyCartIndex === null) {
-      alert('请选择要应用团购券的服务项目');
-      return;
-    }
-    const cartItem = cartWithAdjustedPrices[selectedGroupBuyCartIndex];
-    if (!cartItem || cartItem.type !== 'service') {
-      alert('团购券只能用于服务项目');
-      return;
-    }
-
-    let batchId = batch?.id;
-    if (voucher && batch) {
-      if (!batch.serviceIds?.includes(cartItem.id)) {
-        alert('该券码不适用所选服务项目');
-        return;
-      }
-    } else if (!voucher && needBind) {
-      batchId = selectedGroupBuyBatchId;
-      if (!batchId) {
-        alert('请先选择团购批次');
-        return;
-      }
-      const selectedBatch = availableBatches?.find((b) => b.id === batchId);
-      if (selectedBatch && !selectedBatch.serviceIds?.includes(cartItem.id)) {
-        alert('该批次不包含所选服务项目');
-        return;
-      }
-    }
-
+    const index = selectedGroupBuyCartIndex;
+    const item = index === null ? undefined : cartWithAdjustedPrices[index];
+    if (index === null || !item || item.type !== 'service') { alert('请选择要应用团购券的服务项目'); return; }
+    if (item.quantity !== 1) { alert('一张团购券只可用于一次服务'); return; }
+    const code = groupBuyCode.trim();
     setGroupBuyRedeeming(true);
     try {
-      const result = await groupBuyApi.redeemVoucher({
-        code: groupBuyCode.trim(),
-        batchId,
-        customerId: selectedCustomer?.id,
-        servicePrice: cartItem.originalPrice,
-        serviceId: cartItem.id,
-      });
-      if (result?.voucher) {
-        setCart((prev) => {
-          const next = [...prev];
-          const item = next[selectedGroupBuyCartIndex];
-          if (item) {
-            item.groupBuyInfo = {
-              voucherId: result.voucher!.id,
-              code: groupBuyCode.trim(),
-              price: result.priceInfo?.price ?? item.originalPrice,
-              description: result.priceInfo?.description || '',
-            };
-          }
-          return next;
-        });
-        setShowGroupBuyModal(false);
-      } else {
-        alert('核销失败');
+      const result = await groupBuyApi.verifyVoucher(code, item.id, item.originalPrice);
+      const voucher = result?.voucher;
+      const quote = result?.priceInfo;
+      if (!voucher || !quote) throw new Error('暂时无法取得该团购券的报价');
+      if (cartWithAdjustedPrices.some((row, i) => i !== index && row.groupBuyInfo?.voucherId === voucher.id)) {
+        throw new Error('这张团购券已用于账单中的另一项服务');
       }
-    } catch (err: unknown) {
-      alert('核销失败：' + (err as Error).message);
+      setCart(previous => previous.map((row, i) => i === index && row.id === item.id && row.type === 'service'
+        ? { ...row, groupBuyInfo: { voucherId: voucher.id, code, price: quote.price, description: quote.description } }
+        : row));
+      setShowGroupBuyModal(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '应用团购券失败');
     } finally {
       setGroupBuyRedeeming(false);
     }
@@ -1835,7 +1796,7 @@ const Checkout: React.FC = () => {
                   disabled={groupBuyRedeeming || !groupBuyVerifyResult || selectedGroupBuyCartIndex === null}
                   className="flex-1 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 text-white rounded-xl font-medium transition-colors"
                 >
-                  {groupBuyRedeeming ? '核销中...' : '确认核销'}
+                  {groupBuyRedeeming ? '验证中...' : '应用到本单'}
                 </button>
               </div>
             </div>

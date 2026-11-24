@@ -68,7 +68,7 @@ export async function priceSettlement(shopId: string, input: unknown) {
       vouchers.add(raw.groupBuyVoucherId);
       const { data: voucher, error } = await supabase.from('group_buy_vouchers').select('*, group_buy_batches(*)').eq('id', raw.groupBuyVoucherId).eq('shop_id', shopId).maybeSingle();
       const batch = voucher?.group_buy_batches;
-      if (error || !voucher || !batch || voucher.status !== 'used' || voucher.used_by_customer_id !== body.customerId || (voucher.used_order_id && voucher.used_order_id !== body.id) || !batch.service_ids?.includes(String(raw.id))) throw new Error('团购券归属或状态不正确');
+      if (error || !voucher || !batch || !(voucher.status === 'unused' || (voucher.status === 'used' && voucher.used_by_customer_id === body.customerId)) || (voucher.used_order_id && voucher.used_order_id !== body.id) || !batch.service_ids?.includes(String(raw.id))) throw new Error('团购券归属或状态不正确');
       if(batch.shop_id!==shopId || batch.is_active===false || !Number.isFinite(Date.parse(batch.valid_from)) || !Number.isFinite(Date.parse(batch.valid_to)) || new Date(batch.valid_from)>new Date() || new Date(batch.valid_to)<=new Date()) throw new Error('团购活动已停用或不在有效期内');
       final = batch.price_type === 'fixed' ? Number(batch.fixed_price) : batch.price_type === 'per_service' ? Number(batch.service_prices?.[raw.id]) : round(originalPrice * getPurchaseVIPDiscount(batch.vip_level));
       if (!Number.isFinite(final) || final < 0 || final > originalPrice) throw new Error('团购价格不正确');

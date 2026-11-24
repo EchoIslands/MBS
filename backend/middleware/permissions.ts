@@ -21,6 +21,8 @@ const policies = {
   'product:fulfill': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER].includes(role),
   'vip:edit': (role: UserRole) => role === UserRole.CEO,
   'survey:manage': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE].includes(role),
+  'settlement:operate': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.CASHIER, UserRole.STYLIST].includes(role),
+  'settlement:all': (role: UserRole) => [UserRole.CEO, UserRole.CUSTOMER_SERVICE, UserRole.SHOP_MANAGER, UserRole.CASHIER].includes(role),
   'settlement:override': (role: UserRole) => role === UserRole.CEO || role === UserRole.CASHIER,
 };
 export type Permission = keyof typeof policies;

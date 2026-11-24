@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Phone, UserRound } from 'lucide-react';
 import { loginAsCustomer, useAppStore } from '../../store';
 import { customerApi } from '../../api';
@@ -176,7 +176,7 @@ const CustomerLogin: React.FC = () => {
             </div>
           </div>
           {setupRequired && <div><label className="sr-only">确认密码</label><div className="relative"><input type={showConfirmPassword ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]*" maxLength={6} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value.replace(/\D/g, '').slice(0, 6))} autoComplete="new-password" placeholder="再次输入密码" className="w-full p-3 pr-12 border border-gray-300 rounded-xl" /><button type="button" aria-label={showConfirmPassword ? '隐藏确认密码' : '显示确认密码'} onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-0 inset-y-0 px-3 text-gray-500">{showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button></div></div>}
-          <p className="text-xs text-gray-500">忘记密码？请联系门店重置，重置密码为手机号后六位。</p>
+          <Link className="text-sm font-semibold text-[#75411f]" to={customerPasswordChangePath(returnTo)}>设置密码或忘记密码</Link>
           </> : <div className="space-y-3">
             <label htmlFor="customer-sms-code" className="sr-only">短信验证码</label>
             <div className="flex gap-2">

@@ -26,7 +26,7 @@
           <image class="password-visibility-icon" src="/assets/icons/{{showConfirmPassword ? 'eye' : 'eye-off'}}.png" mode="aspectFit" aria-hidden="true" />
         </button>
       </view></view>
-      <view class="login-hint">忘记密码？请联系门店重置，重置密码为手机号后六位。</view>
+      <view class="login-hint" bindtap="openPasswordSetup"><text style="color:#75411f;font-weight:600">设置密码或忘记密码</text></view>
     </block>
     <block wx:if="{{loginMode === 'sms'}}">
       <view class="login-field"><view class="login-input-wrap">

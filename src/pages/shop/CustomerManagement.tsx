@@ -770,7 +770,7 @@ const CustomerManagement: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3 mb-4">
-              {canEditCustomer(userRole) && <button disabled={accountBusy || !!error || loading} className="rounded-lg bg-blue-50 text-blue-700 px-3 py-2 disabled:opacity-50" onClick={()=>{if(window.confirm('确认重置此顾客密码为手机号后六位？请可靠告知本人。')) void runAccountAction(()=>customerApi.resetPassword(viewingCustomer.id));}}>重置顾客密码</button>}
+              {canEditCustomer(userRole) && <button disabled={accountBusy || !!error || loading} className="rounded-lg bg-blue-50 text-blue-700 px-3 py-2 disabled:opacity-50" onClick={()=>{if(window.confirm('确认停用此顾客的原密码并注销其现有会话？顾客可使用短信验证码登录或自行设置新密码。')) void runAccountAction(()=>customerApi.resetPassword(viewingCustomer.id));}}>重置顾客密码</button>}
               <button disabled={accountBusy || !!error || loading || viewingCustomer.identityVerified} className="rounded-lg bg-green-50 text-green-700 px-3 py-2 disabled:opacity-50" onClick={()=>{if(window.confirm('请确认顾客本人已到店，并已人工核实其手机号和档案。确认完成核实？')) void runAccountAction(()=>customerApi.verifyIdentity(viewingCustomer.id));}}>{viewingCustomer.identityVerified?'顾客本人已核实':'确认顾客本人'}</button>
             </div>
             {actionError && <p role="alert" className="text-red-700 mb-4">{actionError}</p>}

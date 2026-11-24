@@ -1,6 +1,8 @@
 import {sortStylistsByRank} from '../../shared/lib/stylistOrder.js';
 import type { Request, Response } from 'express';
 import { supabase } from '../db/index.js';
+import { imageReference } from '../lib/imageData.js';
+import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, type CustomerAuthAttempt } from '../lib/customerSecurity.js';
 import { verifyPassword } from '../lib/password.js';
 import { createDurationEstimator, describeQueue, queueOrder, QUEUE_RULES, type QueueRow } from '../../shared/lib/liveQueue.js';
 const readAllowed=['ceo','shop_manager','customer_service','stylist','queue_display'];
@@ -15,7 +17,7 @@ async function readQueue(shopId:string,date:string) {
  supabase.from('employees').select('id,name,role,title,is_gold_stylist,avatar,queue_pause_until,queue_availability_version').eq('shop_id',shopId).eq('is_active',true).in('role',['stylist','shop_manager'])]);
  if((a.data?.length||0)>=500||a.error||h.error||s.error||staff.error)throw new Error('QUEUE_READ_FAILED');
  if((a.data||[]).length===500)throw new Error('QUEUE_CAPACITY');
- return {rows:(a.data||[]) as QueueRow[],history:(h.data||[]) as QueueRow[],phone:s.data?.phone||'',availability:sortStylistsByRank(staff.data||[]).map(e=>({id:e.id,name:e.name,role:e.role,avatar:e.avatar||'',pausedUntil:e.queue_pause_until,version:e.queue_availability_version||0}))};
+ return {rows:(a.data||[]) as QueueRow[],history:(h.data||[]) as QueueRow[],phone:s.data?.phone||'',availability:sortStylistsByRank(staff.data||[]).map(e=>({id:e.id,name:e.name,role:e.role,avatar:imageReference(e.avatar, '/api/shops/' + encodeURIComponent(shopId) + '/employees/' + encodeURIComponent(e.id) + '/avatar') || '',pausedUntil:e.queue_pause_until,version:e.queue_availability_version||0}))};
 }
 async function readEvents(ids:string[],shopId:string){
  if(!ids.length)return [];
@@ -40,12 +42,19 @@ export async function staffQueueSnapshot(req:Request,res:Response){
  const staff=req.employee!;if(!readAllowed.includes(staff.role)||req.params.shopId!==staff.shopId)return res.status(403).json({success:false,error:'无权访问此门店排队'});
  try{
  const date=String(req.query.date||new Date(Date.now()+8*3600000).toISOString().slice(0,10));
- const notices=await supabase.from('queue_notification_outbox').select('id,booking_id,status,channel,reason,created_at').eq('shop_id',staff.shopId).gte('created_at',new Date(Date.now()-86400000).toISOString()).order('id',{ascending:false}).limit(2000);
+ const display = staff.role === 'queue_display';
+ const notices=display ? null : await supabase.from('queue_notification_outbox').select('id,booking_id,status,channel,reason,created_at').eq('shop_id',staff.shopId).gte('created_at',new Date(Date.now()-86400000).toISOString()).order('id',{ascending:false}).limit(2000);
  const {rows,history,availability}=await readQueue(staff.shopId,date);const snapshotNow=Date.now(),estimate=createDurationEstimator(history,snapshotNow);const visible=rows.filter(b=>staff.role!=='stylist'||b.stylist_id===staff.id).sort(queueOrder);
 
  res.setHeader('Cache-Control','no-store');res.json({success:true,data:{serverTime:new Date().toISOString(),rules:QUEUE_RULES,availability:availability.filter(e=>staff.role!=='stylist'||e.id===staff.id),bookings:visible.map(b=>{
 
- return {...describeQueue(b,rows,history,snapshotNow,availability.find(e=>e.id===b.stylist_id)?.pausedUntil,estimate),notification:staff.role==='stylist'?null:(notices.error||(notices.data?.length||0)>=1000)?{status:'phone',reason:'通知状态不可用或达到上限，请电话核实'}:(notices.data||[]).find(n=>n.booking_id===b.id)||null,customerName:b.customer_name||'顾客',customerPhone:b.customer_phone||'',stylistId:b.stylist_id,latestEventId:Number(b.queue_version||0),
+ const details = describeQueue(b,rows,history,snapshotNow,availability.find(e=>e.id===b.stylist_id)?.pausedUntil,estimate);
+ if (display) return {
+   id: details.id, state: details.state, serviceName: details.serviceName, queueNumber: details.queueNumber,
+   progressStale: details.progressStale, progressRemainingMinutes: details.progressRemainingMinutes,
+   version: details.version, stylistId: b.stylist_id,
+ };
+ return {...details,notification:staff.role==='stylist'?null:(!notices || notices.error||(notices.data?.length||0)>=1000)?{status:'phone',reason:'通知状态不可用或达到上限，请电话核实'}:(notices.data||[]).find(n=>n.booking_id===b.id)||null,customerName:b.customer_name||'顾客',customerPhone:b.customer_phone||'',stylistId:b.stylist_id,latestEventId:Number(b.queue_version||0),
  unacknowledged:b.queue_state==='called'&&Number(b.queue_call_event_id||0)>Number(b.queue_ack_event_id||0),needsHelp:!!b.queue_help_requested_at&&(!b.queue_contacted_at||Date.parse(b.queue_help_requested_at)>Date.parse(b.queue_contacted_at))};})}});
  }catch(e){return fail(res,e);}
 }
@@ -63,23 +72,47 @@ export async function liveQueueAction(req:Request,res:Response){
  }catch(e){return fail(res,e);}
 }
 
-async function verifyKioskStylist(shopId:string,employeeId:string,password:unknown){
- if(typeof employeeId!=='string'||typeof password!=='string'||!password)return null;
- const {data,error}=await supabase.from('employees').select('id,shop_id,name,role,password_hash,is_active').eq('id',employeeId).eq('shop_id',shopId).maybeSingle();
- if(error||!data||data.is_active!==true||data.role!=='stylist')return null;
- return await verifyPassword(password,data.password_hash)?data:null;
+async function verifyKioskStylist(req: Request, res: Response, employeeId: unknown, password: unknown) {
+ const display = req.employee!;
+ if (typeof employeeId !== 'string' || !employeeId || employeeId.length > 128 || typeof password !== 'string' || !password || Buffer.byteLength(password, 'utf8') > 72) {
+  res.status(400).json({ success: false, error: '请输入发型师登录密码' });
+  return null;
+ }
+ let attempt: CustomerAuthAttempt | undefined;
+ try {
+  const decision = await beginCustomerAuthAttempt(JSON.stringify(['kiosk', display.shopId, employeeId]), 'employee');
+  if (decision.allowed === false) {
+   res.setHeader('Retry-After', decision.retryAfterSeconds);
+   res.status(429).json({ success: false, error: '此发型师的快捷操作验证次数过多，请稍后再试' });
+   return null;
+  }
+  attempt = decision.attempt;
+  const { data, error } = await supabase.from('employees').select('id,role,password_hash,is_active').eq('id',employeeId).eq('shop_id',display.shopId).maybeSingle();
+  if (error) throw error;
+  const verified = data?.is_active === true && data.role === 'stylist' && await verifyPassword(password, data.password_hash);
+  await finishCustomerAuthAttempt(attempt, verified ? 'success' : 'failure');
+  attempt = undefined;
+  if (verified) return data;
+  res.status(401).json({ success: false, error: '发型师身份验证失败，请重新输入登录密码' });
+  return null;
+ } catch {
+  res.status(503).json({ success: false, error: '发型师身份验证暂不可用' });
+  return null;
+ } finally {
+  if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
+ }
 }
 export async function kioskQueueAction(req:Request,res:Response){
  const display=req.employee;
  if(!display||display.role!=='queue_display'||display.shopId!==req.params.shopId)return res.status(403).json({success:false,error:'仅显示屏账号可使用发型师快捷操作'});
  const {employeeId,password,bookingId,action,version,minutes,note}=req.body||{};
  if(typeof bookingId!=='string'||typeof action!=='string'||!Number.isInteger(version)||version<0||(minutes!=null&&(!Number.isInteger(minutes)||minutes<5||minutes>180))||(note!=null&&(typeof note!=='string'||note.length>300)))return res.status(400).json({success:false,error:'快捷操作参数无效'});
- const stylist=await verifyKioskStylist(display.shopId,employeeId,password);
- if(!stylist)return res.status(401).json({success:false,error:'发型师身份验证失败，请重新输入登录密码'});
+ const stylist = await verifyKioskStylist(req, res, employeeId, password);
+ if (!stylist) return;
  try{
-  const {data,error}=await supabase.rpc('live_queue_action',{p_booking_id:bookingId,p_shop_id:display.shopId,p_actor_id:stylist.id,p_actor_type:'staff',p_action:action,p_version:version,p_minutes:minutes??null,p_note:note??null});
+  const {error}=await supabase.rpc('live_queue_action',{p_booking_id:bookingId,p_shop_id:display.shopId,p_actor_id:stylist.id,p_actor_type:'staff',p_action:action,p_version:version,p_minutes:minutes??null,p_note:note??null});
   if(error){const code=error.message;const map:Record<string,string>={QUEUE_STALE_VERSION:'现场状态已变化，请刷新后重试',QUEUE_FORBIDDEN:'该操作不属于此发型师的服务',QUEUE_STATE_CONFLICT:'当前状态不允许该操作，请刷新后核对',QUEUE_STYLIST_BUSY:'该发型师仍在服务，请先结束当前服务'};const key=Object.keys(map).find(k=>code.includes(k));return res.status(key==='QUEUE_FORBIDDEN'?403:key?409:503).json({success:false,error:key?map[key]:'排队操作暂不可用，请联系前台'});}
-  res.setHeader('Cache-Control','no-store');return res.json({success:true,data});
+  res.setHeader('Cache-Control','no-store');return res.json({success:true,data:{recorded:true}});
  }catch(e){return fail(res,e);}
 }
 export async function kioskQueueAvailability(req:Request,res:Response){
@@ -87,8 +120,8 @@ export async function kioskQueueAvailability(req:Request,res:Response){
  if(!display||display.role!=='queue_display'||display.shopId!==req.params.shopId)return res.status(403).json({success:false,error:'仅显示屏账号可使用发型师快捷操作'});
  const {employeeId,password,version,minutes}=req.body||{};
  if(typeof employeeId!=='string'||!Number.isInteger(version)||version<0||!Number.isInteger(minutes)||minutes!==0&&(minutes<5||minutes>180))return res.status(400).json({success:false,error:'快捷状态参数无效'});
- const stylist=await verifyKioskStylist(display.shopId,employeeId,password);
- if(!stylist)return res.status(401).json({success:false,error:'发型师身份验证失败，请重新输入登录密码'});
+ const stylist = await verifyKioskStylist(req, res, employeeId, password);
+ if (!stylist) return;
  try{const {error}=await supabase.rpc('live_queue_availability',{p_shop_id:display.shopId,p_actor_id:stylist.id,p_stylist_id:stylist.id,p_version:version,p_minutes:minutes});if(error)return res.status(error.message.includes('FORBIDDEN')?403:409).json({success:false,error:'状态已变化或无权操作，请刷新后核对'});return res.json({success:true,data:{recorded:true}});}catch(e){return fail(res,e);}
 }
 export async function staffQueueAvailability(req:Request,res:Response){

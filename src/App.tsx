@@ -221,6 +221,7 @@ export default function App() {
         <Route path="/customer/try-on/:shopId" element={<HairTryOn />} />
         <Route path="/customer/agreement" element={<CustomerLegal kind="agreement" />} />
         <Route path="/customer/privacy" element={<CustomerLegal kind="privacy" />} />
+        <Route path="/customer/change-password" element={<ChangePassword />} />
         <Route path="/invite" element={<InviteLanding />} />
         <Route path="/customer/invite/claim" element={<InviteLanding />} />
         <Route element={<CustomerRouteGuard />}>
@@ -228,7 +229,6 @@ export default function App() {
           <Route path="/customer/payment-order" element={<CustomerPaymentOrder />} />
           <Route path="/customer/checkout/:bookingId" element={<CustomerServiceCheckout />} />
           <Route path="/customer/recharge" element={<CustomerRecharge />} />
-          <Route path="/customer/change-password" element={<ChangePassword />} />
           <Route path="/customer/membership" element={<CustomerMembership />} />
           <Route path="/customer/packages" element={<CustomerPackages />} />
           <Route path="/customer/invite" element={<CustomerInvite />} />

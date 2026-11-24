@@ -1074,13 +1074,15 @@ export const customerApi = {
     if (!USE_REAL_API) throw new Error('头像上传需要连接正式服务');
     return httpThrowing<string>(API_BASE + '/upload/customer-avatar', { method: 'POST', body: JSON.stringify({ image }) }, 60000);
   },
-  changePassword: async (id: string, currentPassword: string, newPassword: string, confirmPassword: string): Promise<void> => {
-    const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/password/change', {
+  changePasswordWithSms: async (phone: string, code: string, newPassword: string, confirmPassword: string): Promise<Customer> => {
+    if (!USE_REAL_API) throw new Error('修改密码需要连接正式服务');
+    const response = await fetch(API_BASE + '/customers/sms/password', {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      body: JSON.stringify({ phone, code, newPassword, confirmPassword }),
     });
     const result = await response.json();
-    if (!response.ok || !result.success) throw new Error(result.error || '修改失败');
+    if (!response.ok || !result.success || !result.data?.id) throw new Error(result.error || '修改失败');
+    return normalizeCustomerDates(result.data);
   },
   verifyIdentity: async (id: string): Promise<void> => {
     const response = await fetch(API_BASE + '/customers/' + encodeURIComponent(id) + '/identity/verify', {

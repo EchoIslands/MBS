@@ -37,7 +37,7 @@ import {
 import {
   purchaseVIPPlans,
   storedValuePlans,
-} from '../../../shared/mockData';
+} from '../../../shared/membershipPlans';
 import {
   getPurchaseVIPLabel,
   getStoredValueLabel,

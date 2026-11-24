@@ -19,6 +19,10 @@ Component({
   },
 
   methods: {
+    openSmsLogin() {
+      if (this.data.loggingIn) return;
+      wx.navigateTo({ url: '/pages/login/login?mode=sms' });
+    },
     onPasswordInput(e) { this.setData({ password: String(e.detail.value || '').replace(/\D/g, '').slice(0, 6), error: '' }); },
     onConfirmPasswordInput(e) { this.setData({ confirmPassword: String(e.detail.value || '').replace(/\D/g, '').slice(0, 6), error: '' }); },
 

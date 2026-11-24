@@ -4,6 +4,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { createRequire } from 'module';
+import { randomUUID } from 'node:crypto';
+import { hashPassword } from '../backend/lib/password.js';
 import 'dotenv/config';
 
 import {
@@ -23,6 +25,12 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1);
 }
 
+let target: URL;
+try { target = new URL(SUPABASE_URL); } catch { throw new Error('开发数据库地址无效'); }
+if (!['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) || process.env.MBS_ALLOW_LOCAL_SEED !== '1') {
+  throw new Error('演示数据只允许导入明确授权的本机空库');
+}
+
 // 加载 ws 传输（Node.js 20 需要）
 let wsTransport: unknown = undefined;
 try {
@@ -39,16 +47,19 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 const upsertMany = async (table: string, rows: unknown[], conflict = 'id') => {
   if (!rows.length) return;
-  const { error } = await db.from(table).upsert(rows, { onConflict: conflict });
+  const { error } = await db.from(table).upsert(rows, { onConflict: conflict, ignoreDuplicates: true });
   if (error) {
-    console.error(`❌ ${table} 导入失败:`, error.message);
+    throw new Error(`${table} 导入失败: ${error.message}`);
   } else {
     console.log(`✅ ${table}: 导入 ${rows.length} 条数据`);
   }
 };
 
 const main = async () => {
-  console.log('🚀 开始导入数据到 Supabase...');
+  const { count, error } = await db.from('shops').select('id', { count: 'exact', head: true });
+  if (error || count !== 0) throw new Error('目标门店表必须为空');
+  const unusedPassword = await hashPassword(randomUUID());
+  console.log('开始导入本机演示数据');
   console.log(`   URL: ${SUPABASE_URL}\n`);
 
   // 1. 店铺
@@ -84,7 +95,7 @@ const main = async () => {
           rating: e.rating || 5.0,
           specialty: e.specialty || '',
           role: e.role || 'stylist',
-          password_hash: '123456',
+          password_hash: unusedPassword,
           is_active: true,
           created_at: new Date().toISOString(),
         });

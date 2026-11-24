@@ -10,6 +10,9 @@ process.env.JWT_SECRET = 'synthetic-test-secret-only-01234567890123456789';
 process.env.NODE_ENV = 'test';
 const { supabase } = await import('../backend/db/index.js');
 const { hashPassword, verifyPassword, isPasswordHash } = await import('../backend/lib/password.js');
+const { smsCodeKey, smsPhoneKey } = await import('../backend/services/customerSms.js');
+const challenges = new Map<string,string>();
+const allowSms = (phone: string, code: string) => challenges.set(smsPhoneKey(phone), smsCodeKey(phone, code));
 const { getJwtSecret } = await import('../backend/lib/tokens.js');
 const { default: jwt } = await import('jsonwebtoken');
 const realFetch = globalThis.fetch;
@@ -129,6 +132,22 @@ Object.assign(supabase, {rpc: async (name: string, args: FixtureRpcArgs) => {
   return {data:[structuredClone(row)],error:null};
  }
  if (failRpc) return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
+ if (name === 'verify_customer_sms_code') {
+  const phone = String(args.p_phone_hash);
+  const code = challenges.get(phone);
+  if (!code || code !== args.p_code_hash) return { data: false, error: null };
+  challenges.delete(phone);
+  return { data: true, error: null };
+ }
+ if (name === 'resolve_sms_customer') {
+  const existing = tables.customers.find(row => row.phone === args.p_phone);
+  if (existing) return { data: existing.id, error: null };
+  if (args.p_phone === '13800000111') {
+   tables.customers.push({id:'sms-first-time', shop_id:'s1', phone:args.p_phone, password_hash:null, identity_verified:false});
+   return {data:'sms-first-time',error:null};
+  }
+  return {data:null,error:null};
+ }
  if (name === 'begin_customer_auth_attempt_v2') return { data: [authDecisionOverride ?? (rpcFailures < 5 ? {allowed:true,attempt_id:'00000000-0000-4000-8000-000000000001'} : {allowed:false,reason:'temporary_lock',retry_after_seconds:900})], error: null };
  if (name === 'finish_customer_auth_attempt_v2') { authOutcomes.push(args.p_outcome); if(rejectAuthFinish)return {data:false,error:null}; if(args.p_outcome!=='cancelled') rpcFailures = args.p_outcome==='success' ? 0 : rpcFailures+1; return {data:true,error:null}; }
  return { data: null, error: { code: 'PGRST202', message: 'synthetic migration missing' } };
@@ -211,6 +230,20 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const migrated=tables.employees[0].password_hash;await login('ceo');assert.equal(tables.employees[0].password_hash,migrated);
   });
   const ceo=await login('ceo'),cs=await login('cs'),stylist=await login('stylist'),manager=await login('manager');
+  await t.test('显示屏权限只开放本店显示和本人快捷操作入口', async () => {
+   tables.employees.push({id:'display',shop_id:'s1',name:'Synthetic display',role:'queue_display',phone:'synthetic-display',is_active:true,password_hash:tables.employees[0].password_hash});
+   try {
+    const display = await login('display');
+    assert.equal((await request('/auth/me',display)).status,200);
+    for (const path of ['/customers','/employees','/settlements','/product-orders/refunds/shop/s1','/group-buy/vouchers','/queues/s2/live']) {
+     assert.equal((await request(path,display)).status,403);
+    }
+    for (const path of ['/settlements','/customer-packages/sample/consume','/group-buy/vouchers/redeem']) {
+     assert.equal((await request(path,display,'POST',{})).status,403);
+    }
+    assert.equal((await request('/product-orders/refunds/shop/s2',cs)).status,403);
+   } finally { tables.employees.pop(); }
+  });
   await t.test('员工登录由数据库限流；失败锁定与安全组件故障不发凭证',async()=>{
    rpcFailures=0;
    try {
@@ -310,16 +343,36 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/shops/s2',manager,'PUT',{name:'x'})).status,403);
    assert.equal((await request('/shops/s1',manager,'PUT',{name:'Synthetic updated'})).status,200);
   });
+  await t.test('新顾客首次设密通过短信自助建档，验证之前没有档案', async () => {
+   const phone = '13800000111';
+   const setup = {phone, code:'987654', newPassword:'246810', confirmPassword:'246810', client:'mini'};
+   try {
+    assert.equal((await request('/customers/sms/password','','POST',setup)).status,401);
+    assert.equal(tables.customers.some(c=>c.phone===phone),false);
+    allowSms(phone,setup.code);
+    const saved = await request('/customers/sms/password','','POST',setup);
+    assert.equal(saved.status,200);
+    assert.equal(saved.body.data.identityVerified,false);
+    assert.ok(saved.body.token);
+   } finally { tables.customers = tables.customers.filter(c=>c.phone!==phone); }
+  });
   await t.test('顾客手机号设密、哈希登录、身份隔离和员工重置',async()=>{
-      const setup=await request('/customers/login','','POST',{phone:'13800000001'});
-   assert.equal(setup.status,200);assert.equal(setup.body.setupRequired,true);
-   assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'12345',setupPassword:true})).status,400);
-   const set=await request('/customers/login','','POST',{phone:'13800000001',password:'123456',setupPassword:true,client:'mini'});
-   assert.equal(set.status,200);assert.ok(isPasswordHash(tables.customers[0].password_hash));assert.notEqual(tables.customers[0].password_hash,'123456');
+   const phone = '13800000001';
+   const inputs = { phone, newPassword: '246810', confirmPassword: '246810', client: 'mini' };
+   const oldSetup = await request('/customers/login','','POST',{phone,password:'246810',setupPassword:true});
+   const unknown = await request('/customers/login','','POST',{phone:'13800000009',password:'246810',setupPassword:true});
+   assert.equal(oldSetup.status,401); assert.deepEqual(oldSetup.body,unknown.body);
+   assert.equal((await request('/customers/sms/password','','POST',inputs)).status,400);
+   assert.equal((await request('/customers/sms/password','','POST',{...inputs,code:'999999'})).status,401);
+   assert.equal(tables.customers[0].password_hash,null);
+   allowSms(phone,'987654');
+   const set=await request('/customers/sms/password','','POST',{...inputs,code:'987654'});
+   assert.equal(set.status,200);assert.ok(isPasswordHash(tables.customers[0].password_hash));
    assert.equal(set.body.data.passwordHash,undefined);assert.ok(set.body.token);assert.match(set.cookie!,/HttpOnly/);
+   assert.equal((await request('/customers/sms/password','','POST',{...inputs,code:'987654'})).status,401);
    const r=set;
    assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'000000',client:'mini'})).status,401);
-   const h5=await request('/customers/login','','POST',{phone:'13800000001',password:'123456'});
+   const h5=await request('/customers/login','','POST',{phone:'13800000001',password:'246810'});
    assert.equal(h5.status,200);assert.equal(h5.body.token,undefined);assert.match(h5.cookie!,/HttpOnly/);
    assert.equal((await request('/customers/c1/public')).status,401);
    assert.equal((await request('/customers/c1/public',ceo)).status,401);
@@ -342,21 +395,21 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/customers/c1/password/reset',cs,'POST')).status,200);
    assert.ok(isPasswordHash(tables.customers[0].password_hash));
    assert.equal((await request('/customers/c1/public',r.body.token)).status,401);
-   assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'000001'})).status,200);
-   const resetLogin=await request('/customers/login','','POST',{phone:'13800000001',password:'000001',client:'mini'});assert.equal(resetLogin.status,200);
-   assert.equal(resetLogin.body.data.mustChangePassword,true);
-   assert.equal((await request('/customers/c1/packages',resetLogin.body.token)).status,403);
+   assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'000001'})).status,401);
+   assert.equal(tables.customers[0].identity_verified,false);
+   allowSms(phone,'987653');
+   assert.equal((await request('/customers/sms/login','','POST',{phone,code:'987653'})).status,200);
    assert.equal((await request('/customers/c1/login-credential',cs,'POST',{identityVerified:true})).status,404);
     const legacyCredential=jwt.sign({id:'c1',shopId:'s1',kind:'customer-login'},getJwtSecret(),{algorithm:'HS256',audience:'customer-login',issuer:'mbs',expiresIn:900});
     assert.equal((await request('/customers/c1/public',legacyCredential)).status,401);
     rpcFailures=0;
-    assert.equal((await request('/customers/login','','POST',{phone:'13800000002'})).body.setupRequired,true);
-    assert.equal((await request('/customers/login','','POST',{phone:'13800000002',password:'123456',setupPassword:true})).status,200);
+    allowSms('13800000002','987654');
+    assert.equal((await request('/customers/sms/password','','POST',{phone:'13800000002',code:'987654',newPassword:'246810',confirmPassword:'246810'})).status,200);
     for (let i=0;i<5;i++) assert.equal((await request('/customers/login','','POST',{phone:'13800000002',password:'999999'})).status,401);
    assert.equal((await request('/customers/login','','POST',{phone:'13800000002',password:'999999'})).status,429);
   });
 
-  await t.test('登录限流HTTP：区分原因和Retry-After；故障/首次设密探测取消占位；完成失败不签发凭证',async()=>{
+  await t.test('登录限流HTTP：区分原因和Retry-After；故障取消占位，首次设密探测计入失败；完成失败不签发凭证',async()=>{
    rpcFailures=0;
    const added={id:'auth-probe',shop_id:'s1',phone:'13800000008',password_hash:null};
    tables.customers.push(added);
@@ -377,8 +430,8 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
      assert.equal(r.status,503); assert.match(r.body.error,/043/);
     }
     authDecisionOverride=undefined; authOutcomes.length=0;
-    assert.equal((await request('/customers/login','','POST',{phone:added.phone})).body.setupRequired,true);
-    assert.deepEqual(authOutcomes,['cancelled']); assert.equal(rpcFailures,0);
+    assert.equal((await request('/customers/login','','POST',{phone:added.phone})).status,401);
+    assert.deepEqual(authOutcomes,['failure']); rpcFailures=0;
     failCustomerRead=true; authOutcomes.length=0;
     assert.equal((await request('/customers/login','','POST',{phone:added.phone,password:'246810'})).status,503);
     assert.deepEqual(authOutcomes,['cancelled']); assert.equal(rpcFailures,0); failCustomerRead=false;
@@ -513,24 +566,20 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    rpcFailures=0;
    const weak={id:'legacy',shop_id:'s1',name:'Synthetic legacy',phone:'13800000004',password_hash:await hashPassword('123456'),is_weak_password:true,identity_verified:false,identity_verified_at:null,identity_verified_by:null,stored_value_balance:321};
    tables.customers.push(weak);
-   const login=await request('/customers/login','','POST',{phone:weak.phone,password:'123456',client:'mini'});
-   assert.equal(login.status,200);assert.equal(login.body.data.mustChangePassword,true);
-   assert.deepEqual(Object.keys(login.body.data).sort(),['id','identityVerified','mustChangePassword','shopId']);
-   const token=login.body.token;
-   assert.equal((await request('/customers/legacy/public',token)).body.data.mustChangePassword,true);
-   for (const path of ['/customers/legacy/packages','/bookings/customer/legacy','/reviews/customer/legacy','/coupons/customer/legacy']) {
-     const blocked=await request(path,token);assert.equal(blocked.status,403);assert.equal(blocked.body.code,'PASSWORD_CHANGE_REQUIRED');
-   }
-   // 不相信 token 中的改密声明，数据库状态才是边界。
+   assert.equal((await request('/customers/login','','POST',{phone:weak.phone,password:'123456',client:'mini'})).status,401);
    const {signCustomerToken}=await import('../backend/lib/tokens.js');
-   const bypass=signCustomerToken(weak.id,weak.shop_id,weak.password_hash,false);
-   assert.equal((await request('/customers/legacy/packages',bypass)).status,403);
-   assert.equal((await request('/customers/c1/password/change',token,'POST',{})).status,403);
+   const token=signCustomerToken(weak.id,weak.shop_id,weak.password_hash,false);
+   assert.equal((await request('/customers/legacy/packages',token)).status,403);
    const before=weak.password_hash;
-   const change=(currentPassword:string,newPassword:string,confirmPassword=newPassword)=>request('/customers/legacy/password/change',token,'POST',{currentPassword,newPassword,confirmPassword,client:'mini'});
-   for (const args of [['123456','123456'],['000000','246810'],['123456','246810','246811'],['123456','12345']]) assert.equal((await change(...args as [string,string,string?])).status,400);
-   assert.equal(weak.password_hash,before);assert.equal(weak.is_weak_password,true);
-   const changed=await change('123456','246810');assert.equal(changed.status,200);assert.ok(changed.body.token);
+   assert.equal((await request('/customers/legacy/password/change',token,'POST',{currentPassword:'123456',newPassword:'246810',confirmPassword:'246810'})).status,400);
+   assert.equal(weak.password_hash,before);
+   allowSms(weak.phone,'987653');
+   const smsLogin=await request('/customers/sms/login','','POST',{phone:weak.phone,code:'987653',client:'mini'});
+   assert.equal(smsLogin.status,200);assert.equal(smsLogin.body.data.mustChangePassword,false);
+   assert.equal((await request('/customers/legacy/packages',smsLogin.body.token)).status,200);
+   allowSms(weak.phone,'987654');
+   const changed=await request('/customers/sms/password','','POST',{phone:weak.phone,code:'987654',newPassword:'246810',confirmPassword:'246810',client:'mini'});
+   assert.equal(changed.status,200);assert.ok(changed.body.token);
    assert.equal(weak.is_weak_password,false);assert.ok(await verifyPassword('246810',weak.password_hash));
    assert.equal(weak.identity_verified,false);assert.equal(weak.identity_verified_at,null);assert.equal(weak.identity_verified_by,null);
    assert.equal((await request('/customers/legacy/public',token)).status,401);
@@ -540,7 +589,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/customers/legacy/identity/verify',cs,'POST',{})).status,200);
    assert.equal((await request('/customers/legacy/public',changed.body.token)).body.data.identityVerified,true);
    weak.is_weak_password=true;
-   assert.equal((await request('/customers/legacy/packages',changed.body.token)).status,403);
+   assert.equal((await request('/customers/legacy/packages',changed.body.token)).status,200);
    tables.customers.splice(tables.customers.indexOf(weak),1);
   });
   await t.test('全项目复核：团购、上传、商品及优惠券写入拒绝匿名、低权限、跨店',async()=>{

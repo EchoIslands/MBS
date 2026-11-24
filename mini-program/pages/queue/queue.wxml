@@ -1,6 +1,6 @@
 <view class="live-queue-page">
  <view class="live-queue-top"><text class="live-queue-title">我的排队</text><button class="queue-secondary" bindtap="onRefresh">立即刷新</button></view>
- <view class="queue-sync {{stale ? 'queue-sync-stale' : ''}}">{{stale ? '同步尚未完成或已中断，旧数据不能代表现场顺序' : '页面开启时约每5秒同步'}} · 上次成功 {{lastSyncLabel}}</view>
+ <view class="queue-sync {{stale ? 'queue-sync-stale' : ''}}">{{stale ? '同步尚未完成或已中断，旧数据不能代表现场顺序' : '页面开启时约每2秒同步'}} · 上次成功 {{lastSyncLabel}}</view>
  <view wx:if="{{error}}" class="queue-warning">{{error}}</view>
  <view wx:if="{{message}}" class="queue-message">{{message}}</view>
  <view wx:if="{{loading}}" class="queue-panel">正在同步门店现场…</view>

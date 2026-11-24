@@ -16,8 +16,35 @@ test('真实 PostgreSQL 引擎隔离验证：迁移、事务回滚、限流与�
     await db.exec(`INSERT INTO shops(id,name) VALUES ('s','Synthetic shop');
       INSERT INTO customers(id,shop_id,name,phone,stored_value_balance,balance,withdrawable_referral_amount) VALUES('c','s','Synthetic customer','13800000001',100,100,20);
       INSERT INTO customer_packages(id,shop_id,customer_id,name,service_id,total_times,used_times,expires_at) VALUES('p','s','c','Synthetic package','svc',2,0,NOW()+INTERVAL '1 day');`);
+    for (const migration of ['062_remove_employee_default_password.sql','063_group_buy_checkout_redemption.sql']) {
+      await db.exec(await readFile(new URL('../migrations/' + migration, import.meta.url), 'utf8'));
+    }
     const scalar = async (sql: string) => Object.values((await db.query(sql)).rows[0] as object)[0];
     const create = (id: string, total: number, complete = true, pkg: string | null = null) => db.query('SELECT * FROM create_settlement_atomic($1::jsonb,$2,$3,$4)', [JSON.stringify({ id,shop_id:'s',customer_id:'c',items:[{type:'service',id:'svc',name:'Synthetic service',quantity:1,originalPrice:pkg?0:total}],subtotal:total,discount:0,total,payment_method:'balance',customer_package_id:pkg,used_benefit_ids:[] }), 'staff','Synthetic staff',complete]);
+    await t.test('团购券随交易预留、撤回、核销，失败和并发不会多用', async () => {
+      const batch = '00000000-0000-4000-8000-000000000001';
+      const voucher = '00000000-0000-4000-8000-000000000002';
+      await db.query("INSERT INTO group_buy_batches(id,shop_id,name,service_ids,valid_to) VALUES($1,'s','Synthetic batch',ARRAY['svc'],NOW()+INTERVAL '1 day')", [batch]);
+      await db.query("INSERT INTO group_buy_vouchers(id,batch_id,shop_id,code) VALUES($1,$2,'s','SYNTHETIC')", [voucher,batch]);
+      const checkout = (id: string, complete: boolean, total=10, payment='cash') => db.query(
+        'SELECT id FROM create_settlement_atomic($1::jsonb,$2,$3,$4)',
+        [JSON.stringify({ id,shop_id:'s',customer_id:'c',items:[{type:'service',id:'svc',name:'Synthetic voucher service',quantity:1,originalPrice:20,groupBuyVoucherId:voucher}],subtotal:20,discount:0,total,payment_method:payment }), 'staff','Synthetic staff',complete]);
+      const voucherState = async () => (await db.query('SELECT status, used_order_id FROM group_buy_vouchers WHERE id=$1',[voucher])).rows[0];
+      await assert.rejects(checkout('voucher-insufficient', true, 1000, 'balance'), /INSUFFICIENT_BALANCE/);
+      assert.deepEqual(await voucherState(), {status:'unused', used_order_id:null});
+      await checkout('voucher-draft', false);
+      assert.deepEqual(await voucherState(), {status:'unused', used_order_id:'voucher-draft'});
+      await assert.rejects(checkout('voucher-already-reserved', true), /VOUCHER_UNAVAILABLE/);
+      await db.query("SELECT delete_settlement_draft_atomic('voucher-draft','s')");
+      assert.deepEqual(await voucherState(), {status:'unused', used_order_id:null});
+      const results = await Promise.allSettled([checkout('voucher-a', true),checkout('voucher-b', true)]);
+      assert.equal(results.filter(row => row.status === 'fulfilled').length, 1);
+      const state = await voucherState() as { status: string; used_order_id: string };
+      assert.equal(state.status, 'used');
+      assert.ok(['voucher-a','voucher-b'].includes(state.used_order_id));
+      await db.query('SELECT id FROM finalize_settlement_atomic($1,$2,$3,$4)', [state.used_order_id,'s','staff','Synthetic staff']);
+      assert.deepEqual(await voucherState(), state);
+    });
     await t.test('历史无支付记录可释放过期认领；近期认领与有支付记录单据拒绝释放', async () => {
       await create('legacy-claim', 58, false);
       await db.exec("UPDATE settlements SET checkout_payment_started=TRUE WHERE id='legacy-claim'");

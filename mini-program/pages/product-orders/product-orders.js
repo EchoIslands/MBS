@@ -148,57 +148,33 @@ Page({
     const index = e.currentTarget.dataset.index;
     const order = this.data.filteredOrders[index];
     if (!order) return;
-    const amountText = `¥${(order.payableAmount / 100).toFixed(2)}`;
     const customerId = getCustomerId();
-    if (!customerId) {
-      ensureLogin({ content: '登录后即可支付订单' });
+    if (!customerId) { ensureLogin({ content: '登录后即可查看订单付款信息' }); return; }
+    const amount = Number(order.payableAmount);
+    if (!Number.isFinite(amount) || amount < 0) { wx.showToast({ title: '请刷新确认订单金额', icon: 'none' }); return; }
+    if (order.paymentMethod === 'store_pickup') {
+      wx.showModal({ title: '到店付款', content: '请到店后由前台确认收款，订单金额 ¥' + amount.toFixed(2), showCancel: false });
       return;
     }
-
-    const actions = ['余额支付', '到店自提付款', '取消'];
-    wx.showActionSheet({
-      itemList: actions,
-      success: async (res) => {
-        const method = actions[res.tapIndex];
-        if (method === '取消') return;
-        const paymentMethod = method === '余额支付' ? 'balance' : 'store_pickup';
-
-        if (paymentMethod === 'balance') {
-          const balance = (this.data.customer?.storedValueBalance || 0);
-          if (balance < order.payableAmount / 100) {
-            wx.showModal({
-              title: '余额不足',
-              content: `订单金额 ${amountText}，当前余额 ¥${balance.toFixed(2)}，是否前往充值？`,
-              confirmText: '去充值',
-              cancelText: '到店自提付款',
-              success: (modalRes) => {
-                if (modalRes.confirm) {
-                  wx.navigateTo({ url: `/pages/recharge/recharge?shopId=${this.data.shopId}` });
-                } else {
-                  this.doPay(order.id, customerId, 'store_pickup');
-                }
-              },
-            });
-            return;
-          }
-        }
-
-        this.doPay(order.id, customerId, paymentMethod);
-      },
+    wx.showModal({
+      title: '确认余额支付', content: '订单金额 ¥' + amount.toFixed(2),
+      success: ({ confirm }) => { if (confirm) void this.doPay(order.id, customerId); },
     });
   },
 
-  async doPay(orderId, customerId, paymentMethod) {
-    wx.showLoading({ title: paymentMethod === 'balance' ? '支付中' : '处理中' });
+  async doPay(orderId, customerId) {
+    if (this.payingOrder) return;
+    this.payingOrder = true;
+    wx.showLoading({ title: '支付中' });
     try {
-      await payProductOrder(orderId, customerId, paymentMethod);
+      await payProductOrder(orderId, customerId, 'balance');
       wx.hideLoading();
-      wx.showToast({ title: paymentMethod === 'balance' ? '支付成功' : '已切换为到店自提付款' });
+      wx.showToast({ title: '支付成功' });
       this.onRefresh();
     } catch (err) {
       wx.hideLoading();
       wx.showToast({ title: err.message || '支付失败', icon: 'none' });
-    }
+    } finally { this.payingOrder = false; }
   },
 
   handleReorder(e) {

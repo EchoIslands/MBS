@@ -706,6 +706,7 @@ const Profile: React.FC = () => {
           <button type="button" className="customer-secondary text-left" onClick={() => navigate('/customer/privacy', { state: { customerBack: true } })}>隐私政策 ›</button>
         </div>
 
+        <button type="button" className="customer-secondary w-full" onClick={() => navigate('/customer/change-password')}>设置或修改密码</button>
         {/* 退出登录 */}
         <button
           onClick={handleLogout}

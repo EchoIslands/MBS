@@ -98,7 +98,7 @@
       <!-- 4. 操作按钮 -->
       <view class="order-card-actions">
         <block wx:if="{{item.status === 'pending'}}">
-          <view class="btn btn-primary order-action-btn" catchtap="handlePay" data-index="{{index}}">去支付</view>
+          <view class="btn btn-primary order-action-btn" catchtap="handlePay" data-index="{{index}}">{{item.paymentMethod === 'store_pickup' ? '到店付款说明' : '去支付'}}</view>
           <view class="btn btn-secondary order-action-btn" catchtap="showDetail" data-index="{{index}}">查看详情</view>
         </block>
         <block wx:elif="{{item.status === 'shipped'}}">

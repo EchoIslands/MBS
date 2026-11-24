@@ -116,9 +116,9 @@ export async function rechargeCustomer(customerId, shopId, storedValueLevel) {
   return result?.data || null;
 }
 
-export async function changeCustomerPassword(currentPassword, newPassword, confirmPassword) {
-  const result = await post('/customers/' + encodeURIComponent(getCustomerId()) + '/password/change', { currentPassword, newPassword, confirmPassword, client: 'mini' });
-  if (!result?.token) throw new Error('未获取有效登录凭证，请重新登录');
+export async function changeCustomerPassword(phone, code, newPassword, confirmPassword) {
+  const result = await post('/customers/sms/password', { phone, code, newPassword, confirmPassword, client: 'mini' });
+  if (!result?.token || !result?.data?.id) throw new Error('未获取有效登录凭证');
   setToken(result.token);
   setPasswordChangeRequired(false);
   return result.data;

@@ -351,6 +351,7 @@
       </view>
     </view>
 
+    <navigator url="/pages/change-password/change-password" class="btn btn-logout">设置或修改密码</navigator>
     <!-- 12) 退出登录 -->
     <view class="btn btn-logout" bindtap="handleLogout">
       <mbs-icon name="logOut" size="28" color="var(--danger)" />

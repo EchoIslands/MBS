@@ -21,7 +21,8 @@ import { getToken, getCustomerId, setPasswordChangeRequired } from './storage';
 
 function getApiBase() {
   // 允许通过本地缓存覆盖，便于测试环境切换后端地址
-  const customBase = wx.getStorageSync('mbs_api_base');
+  const customBase = typeof wx.getAccountInfoSync === 'function' && wx.getAccountInfoSync()?.miniProgram?.envVersion === 'develop'
+    ? wx.getStorageSync('mbs_api_base') : '';
   if (customBase) return customBase;
   // 默认使用生产域名（已备案，国内访问稳定）
   return 'https://www.hsxx8888.cn/api';
@@ -49,7 +50,7 @@ export function request(url, options = {}) {
     ...(requestToken && !url.startsWith('http') ? { Authorization: 'Bearer ' + requestToken } : {}),
     ...(options.headers || {}),
   };
-  const usesCustomerSession = !url.startsWith('http') && !['/customers/login', '/customers/sms/send', '/customers/sms/login'].includes(url)
+  const usesCustomerSession = !url.startsWith('http') && !['/customers/login', '/customers/sms/send', '/customers/sms/login', '/customers/sms/password'].includes(url)
     && (requestToken || requestCustomerId) && (!requestToken || headers.Authorization === 'Bearer ' + requestToken);
 
   return new Promise((resolve, reject) => {

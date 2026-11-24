@@ -449,7 +449,7 @@ router.get('/batches/:id/export-vouchers', async (req: Request, res: Response) =
 });
 
 // POST /group-buy/vouchers/verify
-router.post('/vouchers/verify', async (req: Request, res: Response) => {
+router.post('/vouchers/verify', requirePermission('settlement:operate'), async (req: Request, res: Response) => {
   try {
     const { code, serviceId, servicePrice, shopId } = req.body || {};
     if (!code || !shopId) {
@@ -480,7 +480,7 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
       res.status(404).json(fail('券码未绑定批次'));
       return;
     }
-    if (voucher.status !== 'unused') {
+    if (voucher.status !== 'unused' || voucher.used_order_id) {
       res.status(400).json(fail('券码已使用或已失效'));
       return;
     }
@@ -521,7 +521,7 @@ router.post('/vouchers/verify', async (req: Request, res: Response) => {
 });
 
 // POST /group-buy/vouchers/redeem
-router.post('/vouchers/redeem', async (req: Request, res: Response) => {
+router.post('/vouchers/redeem', requirePermission('shop:edit'), async (req: Request, res: Response) => {
   try {
     const { code, customerId, servicePrice, serviceId, shopId } = req.body || {};
     if (!code || !shopId) {
@@ -630,7 +630,7 @@ router.post('/vouchers/:id/revoke', async (req: Request, res: Response) => {
 });
 
 // GET /group-buy/vouchers?shopId=xxx&batchId=xxx&status=xxx
-router.get('/vouchers', async (req: Request, res: Response) => {
+router.get('/vouchers', requirePermission('settlement:all'), async (req: Request, res: Response) => {
   try {
     const shopId = req.query.shopId as string;
     if (!shopId) {

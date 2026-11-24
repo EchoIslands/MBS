@@ -308,6 +308,7 @@ export const loginAsEmployee = (
   employeeId: string,
   password?: string
 ): Employee | null => {
+  if (isRealApi()) return null;
   const shop = mockShops.find((s) => s.id === shopId);
   const employee = shop?.employees.find((e) => e.id === employeeId);
   if (shop && employee) {

@@ -26,6 +26,7 @@ Page({
   async onLoad(options = {}) {
     const remembered = wx.getStorageSync(REMEMBERED_PHONE_KEY);
     if (typeof remembered === 'string' && /^1[3-9]\d{9}$/.test(remembered)) this.setData({ phone: remembered });
+    if (options.mode === 'sms') this.setData({ loginMode: 'sms' });
     this.inviteRef = options.inviteRef || '';
     this.returnOrderNo = paymentOrderNumber(options);
     if (options.reason === 'session_expired') {
@@ -106,6 +107,12 @@ Page({
     if (loginMode !== 'password' && loginMode !== 'sms' || this.data.loggingIn || this.data.smsSending) return;
     if (typeof wx.hideKeyboard === 'function') wx.hideKeyboard();
     this.setData({ loginMode, error: '', password: '', confirmPassword: '', smsCode: '', setupRequired: false });
+  },
+
+  openPasswordSetup() {
+    if (this.data.loading || this.data.loggingIn || this.data.smsSending) return;
+    const query = [this.returnOrderNo ? 'returnOrderNo=' + this.returnOrderNo : '', this.inviteRef ? 'inviteRef=' + encodeURIComponent(this.inviteRef) : ''].filter(Boolean).join('&');
+    wx.navigateTo({ url: '/pages/change-password/change-password' + (query ? '?' + query : '') });
   },
 
   onSmsCodeInput(e) { this.setData({ smsCode: String(e.detail.value || '').replace(/\D/g, '').slice(0, 6), error: '' }); },
