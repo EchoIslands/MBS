@@ -281,13 +281,14 @@ export const getAuthUser = (): unknown | null => {
 // 认证相关 API
 export const authApi = {
   // 登录
-  login: async (phone: string, password: string): Promise<{ token: string; user: AuthUser }> => {
+  login: async (identifier: string, password: string, displayLogin = false): Promise<{ token: string; user: AuthUser }> => {
+    const loginError = displayLogin ? '显示屏账号或密码错误' : '手机号或密码错误';
     if (USE_REAL_API) {
       const result = await http<{ success: boolean; error?: string; data: { token: string; user: AuthUser } }>(
         `${API_BASE}/auth/login`,
         {
           method: 'POST',
-          body: JSON.stringify({ phone, password }),
+          body: JSON.stringify(displayLogin ? { loginName: identifier, password } : { phone: identifier, password }),
         }
       );
       if (result?.success && result.data?.token) {
@@ -297,29 +298,32 @@ export const authApi = {
       }
       // 真实 API 明确返回失败时，直接抛错，不再降级到 mock token
       // 否则 mock token 会和后续真实 API 混用，导致 401
-      throw new Error(result?.error || '手机号或密码错误');
+      throw new Error(result?.error || loginError);
     }
 
     // Mock 兜底
     const allEmployees = mockShops.flatMap((s) =>
       s.employees.map((e) => ({ ...e, shopId: s.id }))
     );
-    const employee = allEmployees.find((e) => e.phone === phone);
+    const employee = allEmployees.find((e) => displayLogin
+      ? e.role === UserRole.QUEUE_DISPLAY && (e.loginName === identifier.trim().toLowerCase() || e.phone === identifier)
+      : e.phone === identifier);
 
     if (!employee) {
-      throw new Error('手机号或密码错误');
+      throw new Error(loginError);
     }
 
     const customPassword = getEmployeePassword(employee.id);
     const expectedPassword = customPassword ?? '123456';
     if (password !== expectedPassword) {
-      throw new Error('手机号或密码错误');
+      throw new Error(loginError);
     }
     
     const mockUser = {
       id: employee.id,
       name: employee.name,
       phone: employee.phone,
+      loginName: employee.loginName,
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || UserRole.STYLIST,
@@ -497,6 +501,7 @@ function normalizeEmployee(b: unknown): Employee {
   const raw = b as Record<string, unknown>;
   return {
     ...(raw as unknown as Employee),
+    loginName: typeof raw.login_name === 'string' ? raw.login_name : undefined,
     isActive: raw.is_active !== false,
     isGoldStylist: raw.is_gold_stylist === true,
   };
@@ -516,7 +521,7 @@ export const employeeApi = {
     return mockShops[0]?.employees || [];
   },
 
-  create: async (data: Partial<Employee> & { password: string; phone: string }): Promise<Employee | null> => {
+  create: async (data: Partial<Employee> & { password: string }): Promise<Employee | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
       const result = await http<{ success: boolean; data: Employee }>(`${API_BASE}/employees`, {
@@ -531,6 +536,7 @@ export const employeeApi = {
       id: `emp_${Date.now()}`,
       name: data.name || '',
       phone: data.phone,
+      loginName: data.loginName,
       title: data.title || '',
       role: (data.role || UserRole.STYLIST) as UserRole,
       specialty: data.specialty || '',

@@ -41,6 +41,7 @@ import type { Settlement } from '../../shared/types.js';
 import { invitationMiniProgramCode } from '../services/miniProgramCode.js';
 import { priceSettlement } from '../lib/settlementPricing.js';
 import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
+import { displayLoginNameHint, normalizeDisplayLoginName } from '../../shared/lib/displayLoginName.js';
 import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS } from '../lib/tokens.js';
 import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
@@ -66,15 +67,21 @@ getJwtSecret(); // 生产密钥配置不合格时拒绝启动
 
 /**
  * POST /api/auth/login
- * 员工登录：手机号 + 密码 → 查 employees 表 → 签发 JWT
+ * 员工用手机号登录，显示屏也可以用专用账号名登录。
  */
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
-    const { phone, password } = req.body;
-    if (typeof phone !== 'string' || typeof password !== 'string' || !phone || !password) {
-      res.status(400).json({ success: false, error: '手机号和密码不能为空' });
+    const { phone, loginName, password } = req.body;
+    const displayLogin = loginName !== undefined;
+    const legacyDisplayPhone = displayLogin && typeof loginName === 'string' && isValidPhone(loginName.trim());
+    const identifier = displayLogin
+      ? (legacyDisplayPhone ? loginName.trim() : normalizeDisplayLoginName(loginName))
+      : phone;
+    if (typeof identifier !== 'string' || typeof password !== 'string' || !identifier || !password) {
+      res.status(400).json({ success: false, error: displayLogin ? '请输入有效的显示屏账号和密码' : '手机号和密码不能为空' });
       return;
     }
+    const loginError = displayLogin ? '显示屏账号或密码错误' : '手机号或密码错误';
     // 使用数据库持久化的失败次数限制，和顾客登录分开计数。
     const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
     const loginIp = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
@@ -87,11 +94,13 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       }
       attempt = decision.attempt;
       // 只读取登录所需字段，避免传输员工记录中的大字段。
-      const { data: employees, error: queryError } = await supabase
+      const employeeQuery = supabase
         .from('employees')
         .select('id,shop_id,name,phone,role,avatar,title,specialty,rating,password_hash,is_active')
-      .eq('phone', phone)
-      .eq('is_active', true);
+        .eq(displayLogin && !legacyDisplayPhone ? 'login_name' : 'phone', identifier)
+        .eq('is_active', true);
+      if (displayLogin) employeeQuery.eq('role', 'queue_display');
+      const { data: employees, error: queryError } = await employeeQuery;
 
     if (queryError) {
       console.error('[auth] 查询员工失败:', queryError.message);
@@ -101,7 +110,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     if (!employees || employees.length === 0) {
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
-      res.status(401).json({ success: false, error: '手机号或密码错误' });
+      res.status(401).json({ success: false, error: loginError });
       return;
     }
 
@@ -110,7 +119,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     // 成功校验旧密码后平滑迁移为哈希。
     if (password === '123456' || !(await verifyPassword(password, employee.password_hash))) {
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
-      res.status(401).json({ success: false, error: '手机号或密码错误' });
+      res.status(401).json({ success: false, error: loginError });
       return;
     }
 
@@ -138,7 +147,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       shopId: employee.shop_id || '',
       name: employee.name,
       role: employee.role || 'stylist',
-      phone: employee.phone || phone,
+      phone: employee.phone || '',
     };
 
     const token = jwt.sign({ ...payload, kind: 'employee', passwordVersion: passwordVersion(employee.password_hash) }, getJwtSecret(), { algorithm: 'HS256', audience: 'employee', issuer: 'mbs', expiresIn: '7d' });
@@ -147,6 +156,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       id: employee.id,
       name: employee.name,
       phone: employee.phone,
+      ...(displayLogin && !legacyDisplayPhone ? { loginName: identifier } : {}),
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || 'stylist',
@@ -188,6 +198,7 @@ authRouter.get('/me', authMiddleware, async (req: Request, res: Response) => {
       id: employee.id,
       name: employee.name,
       phone: employee.phone,
+      ...(employee.login_name ? { loginName: employee.login_name } : {}),
       avatar: employee.avatar || '',
       title: employee.title || '',
       role: employee.role || 'stylist',
@@ -266,10 +277,11 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
-    const { name, phone, title, role: newRole, password, specialty, avatar, is_active, is_gold_stylist, isGoldStylist } = req.body;
+    const { name, phone, loginName, title, role: newRole, password, specialty, avatar, is_active, is_gold_stylist, isGoldStylist } = req.body;
 
-    if (!name || !phone || !newRole || !password) {
-      res.status(400).json({ success: false, error: '姓名、手机号、角色、密码为必填项' });
+    const display = newRole === 'queue_display';
+    if (!name || (!display && !phone) || !newRole || !password) {
+      res.status(400).json({ success: false, error: '请填写姓名、登录账号、岗位和密码' });
       return;
     }
 
@@ -298,16 +310,11 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
-    // 检查手机号是否已存在
-    const { data: existing, error: _checkError } = await supabase
-      .from('employees')
-      .select('id')
-      .eq('phone', phone)
-      .single();
-
-    if (existing) {
-      res.status(400).json({ success: false, error: '该手机号已存在' });
-      return;
+    const displayName = display ? normalizeDisplayLoginName(loginName) : null;
+    if (display && !displayName) return res.status(400).json({ success: false, error: displayLoginNameHint });
+    if (!display) {
+      const { data: existing } = await supabase.from('employees').select('id').eq('phone', phone).limit(1);
+      if (existing?.length) return res.status(400).json({ success: false, error: '该手机号已存在' });
     }
 
     const id = generateEmployeeId();
@@ -315,7 +322,8 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
       id,
       shop_id: shopId,
       name,
-      phone,
+      phone: display ? null : phone,
+      ...(displayName ? { login_name: displayName } : {}),
       title: title || '',
       role: newRole,
       password_hash: await hashPassword(password),
@@ -330,6 +338,9 @@ employeesRouter.post('/', authMiddleware, async (req: Request, res: Response) =>
     const { data, error } = await supabase.from('employees').insert(employeeData).select().single();
 
     if (error) {
+      if (display && error.code === '23505' && error.message.includes('employees_login_name_uidx')) {
+        return res.status(409).json({ success: false, error: '该显示屏账号名已使用' });
+      }
       console.error('[employees] 创建失败:', error.message);
       res.status(500).json({ success: false, error: '创建员工失败' });
       return;
@@ -388,11 +399,23 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
     }
 
     const { id } = req.params;
-    const { name, phone, title, role: newRole, password, specialty, avatar, is_active, isActive, is_gold_stylist, isGoldStylist } = req.body;
+    const { name, phone, loginName, title, role: newRole, password, specialty, avatar, is_active, isActive, is_gold_stylist, isGoldStylist } = req.body;
 
-    // 不能修改自己以外的 CEO（CEO 可以，店长不行）
+    const { data: target, error: targetError } = await supabase.from('employees')
+      .select('role').eq('id', id).eq('shop_id', shopId).maybeSingle();
+    if (targetError) return res.status(500).json({ success: false, error: '读取员工资料失败' });
+    if (!target) return res.status(404).json({ success: false, error: '员工不存在' });
+
+    // 显示屏账号及其登录方式由 CEO 管理。
+    const display = (newRole ?? target.role) === 'queue_display';
+    if ((display || target.role === 'queue_display' || loginName !== undefined) && role !== 'ceo') {
+      return res.status(403).json({ success: false, error: '显示屏账号只能由 CEO 管理' });
+    }
+    if (display !== (target.role === 'queue_display') && (typeof password !== 'string' || !password)) {
+      return res.status(400).json({ success: false, error: '切换显示屏岗位时，请设置新密码' });
+    }
+
     if (id !== currentId) {
-      const { data: target } = await supabase.from('employees').select('role').eq('id', id).eq('shop_id', shopId).single();
       if (role === 'shop_manager' && (phone !== undefined || password !== undefined) && target?.role !== 'stylist') {
         res.status(403).json({ success: false, error: '店长只能为本店发型师调整登录凭证' });
         return;
@@ -415,7 +438,25 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
-    if (phone !== undefined) updateData.phone = phone;
+    if (display && (loginName !== undefined || target.role !== 'queue_display')) {
+      const normalized = normalizeDisplayLoginName(loginName);
+      if (!normalized) return res.status(400).json({ success: false, error: displayLoginNameHint });
+      updateData.login_name = normalized;
+      updateData.phone = null;
+    } else if (!display && target.role === 'queue_display') {
+      if (typeof phone !== 'string' || !isValidPhone(phone)) {
+        return res.status(400).json({ success: false, error: '更换为员工岗位时，请填写手机号' });
+      }
+      const { data: existing, error: phoneError } = await supabase.from('employees').select('id').eq('phone', phone);
+      if (phoneError) return res.status(500).json({ success: false, error: '读取员工资料失败' });
+      if (existing?.some((employee) => employee.id !== id)) {
+        return res.status(400).json({ success: false, error: '该手机号已存在' });
+      }
+      updateData.login_name = null;
+      updateData.phone = phone;
+    } else if (!display && phone !== undefined) {
+      updateData.phone = phone;
+    }
     if (title !== undefined) updateData.title = title;
     if (newRole !== undefined) updateData.role = newRole;
     if (password === '123456') return res.status(400).json({ success: false, error: '请使用非默认员工密码' });
@@ -435,6 +476,9 @@ employeesRouter.put('/:id', authMiddleware, async (req: Request, res: Response) 
       .single();
 
     if (error) {
+      if (display && error.code === '23505' && error.message.includes('employees_login_name_uidx')) {
+        return res.status(409).json({ success: false, error: '该显示屏账号名已使用' });
+      }
       console.error('[employees] 更新失败:', error.message);
       res.status(500).json({ success: false, error: '更新员工失败' });
       return;

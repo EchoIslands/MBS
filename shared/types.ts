@@ -213,6 +213,7 @@ export interface Employee {
   id: string;
   name: string;
   phone?: string; // 发型师手机号
+  loginName?: string; // 显示屏账号名
   avatar?: string;
   title?: string; // 职称，如：首席发型师、资深发型师等
   rating: number; // 员工个人评分

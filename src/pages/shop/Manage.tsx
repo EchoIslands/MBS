@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Save, Plus, Trash2, Store, Clock, User, Eye, EyeOff, Link2, Copy, Check, Package, Calendar, Edit2, Award, Camera } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { Service, Employee, OpeningHours, UserRole, StockholderBenefitConfig } from '../../../shared/types';
+import { displayLoginNameHint, normalizeDisplayLoginName } from '../../../shared/lib/displayLoginName';
 import { getAvatarUrl } from '../../lib/avatar';
 import { shopApi, employeeApi } from '../../api';
 import { VerticalScrollSlider } from '../../components/VerticalScrollSlider';
@@ -34,6 +35,7 @@ const roleLabels: Partial<Record<UserRole, string>> = {
   [UserRole.CUSTOMER_SERVICE]: '客服',
   [UserRole.CASHIER]: '收银',
   [UserRole.STYLIST]: '技师/发型师',
+  [UserRole.QUEUE_DISPLAY]: '店内显示屏账号',
 };
 
 // 岗位键：统一「能上钟被预约的技师 + 后台员工」的选择项
@@ -107,6 +109,7 @@ const ShopManage: React.FC = () => {
   const [newEmployee, setNewEmployee] = useState({
     name: '',
     phone: '',
+    loginName: '',
     specialty: '',
     avatar: '',
     position: 'stylist' as PositionKey,
@@ -132,6 +135,7 @@ const ShopManage: React.FC = () => {
   const [editForm, setEditForm] = useState({
     name: '',
     phone: '',
+    loginName: '',
     specialty: '',
     avatar: '',
     password: '',
@@ -275,6 +279,7 @@ const ShopManage: React.FC = () => {
     setEditForm({
       name: emp.name || '',
       phone: emp.phone || '',
+      loginName: emp.loginName || '',
       specialty: emp.specialty || '',
       avatar: emp.avatar || '',
       password: '',
@@ -284,14 +289,22 @@ const ShopManage: React.FC = () => {
 
   const closeEditEmployee = () => {
     setEditingEmployee(null);
-    setEditForm({ name: '', phone: '', specialty: '', avatar: '', password: '', position: 'stylist' });
+    setEditForm({ name: '', phone: '', loginName: '', specialty: '', avatar: '', password: '', position: 'stylist' });
   };
 
   const saveEmployeeEdit = async () => {
     if (!editingEmployee) return;
     const payload: Partial<Employee> & { password?: string } = {};
     if (editForm.name !== editingEmployee.name) payload.name = editForm.name;
-    if (editForm.phone !== editingEmployee.phone) payload.phone = editForm.phone;
+    if (editForm.position === 'queue_display') {
+      if (editForm.loginName !== (editingEmployee.loginName || '') || editingEmployee.role !== UserRole.QUEUE_DISPLAY) {
+        const loginName = normalizeDisplayLoginName(editForm.loginName);
+        if (!loginName) { alert(displayLoginNameHint); return; }
+        payload.loginName = loginName;
+      }
+    } else if (editForm.phone !== (editingEmployee.phone || '') || editingEmployee.role === UserRole.QUEUE_DISPLAY) {
+      payload.phone = editForm.phone.trim();
+    }
     if (editForm.specialty !== (editingEmployee.specialty || '')) payload.specialty = editForm.specialty;
     if (editForm.avatar !== (editingEmployee.avatar || '')) payload.avatar = editForm.avatar;
     if (editForm.password.trim()) payload.password = editForm.password.trim();
@@ -345,10 +358,13 @@ const ShopManage: React.FC = () => {
     currentEmployee?.id === editingEmployee?.id ? [] : availablePositions;
 
   const addEmployee = async () => {
-    if (!newEmployee.name || !newEmployee.phone || !newEmployee.password) {
-      alert('请填写姓名、手机号和登录密码');
+    const display = newEmployee.position === 'queue_display';
+    if (!newEmployee.name || !newEmployee.password || (!display && !newEmployee.phone.trim())) {
+      alert(display ? '请填写姓名、账号名和登录密码' : '请填写姓名、手机号和登录密码');
       return;
     }
+    const loginName = display ? normalizeDisplayLoginName(newEmployee.loginName) : null;
+    if (display && !loginName) { alert(displayLoginNameHint); return; }
     const meta = positionMeta[newEmployee.position];
     if (!canAddRole(meta.role)) {
       alert('当前角色无权添加该类型员工');
@@ -357,7 +373,7 @@ const ShopManage: React.FC = () => {
     try {
       const created = await employeeApi.create({
         name: newEmployee.name,
-        phone: newEmployee.phone,
+        ...(loginName ? { loginName } : { phone: newEmployee.phone.trim() }),
         title: positionLabels[newEmployee.position],
         specialty: newEmployee.specialty,
         avatar: newEmployee.avatar || getAvatarUrl(newEmployee.name),
@@ -370,6 +386,7 @@ const ShopManage: React.FC = () => {
         setNewEmployee({
           name: '',
           phone: '',
+          loginName: '',
           specialty: '',
           avatar: '',
           position: 'stylist',
@@ -792,9 +809,11 @@ const ShopManage: React.FC = () => {
                 />
                 <input
                   type="text"
-                  placeholder="手机号 *（用于登录）"
-                  value={newEmployee.phone}
-                  onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
+                  placeholder={newEmployee.position === 'queue_display' ? '显示屏账号名 *' : '手机号 *（用于登录）'}
+                  aria-label={newEmployee.position === 'queue_display' ? '显示屏账号名' : '手机号'}
+                  autoCapitalize="none"
+                  value={newEmployee.position === 'queue_display' ? newEmployee.loginName : newEmployee.phone}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, [newEmployee.position === 'queue_display' ? 'loginName' : 'phone']: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                 />
                 <input
@@ -885,7 +904,7 @@ const ShopManage: React.FC = () => {
                         )}
                       </div>
                       <div className="text-sm text-gray-500">
-                        手机号：{employee.phone || '-'}
+                        {employee.role === UserRole.QUEUE_DISPLAY ? `登录账号：${employee.loginName || employee.phone || '-'}` : `手机号：${employee.phone || '-'}`}
                         <span className="mx-1">·</span>
                         评分：{employee.rating}
                         {employee.specialty && (
@@ -965,11 +984,16 @@ const ShopManage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">手机号</label>
+                    <label htmlFor="employee-edit-login" className="block text-sm font-medium text-gray-700 mb-1">
+                      {editForm.position === 'queue_display' ? '显示屏账号名' : '手机号'}
+                    </label>
                     <input
+                      id="employee-edit-login"
                       type="text"
-                      value={editForm.phone}
-                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      autoCapitalize="none"
+                      placeholder={editForm.position === 'queue_display' ? editingEmployee.phone || '输入显示屏账号名' : undefined}
+                      value={editForm.position === 'queue_display' ? editForm.loginName : editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, [editForm.position === 'queue_display' ? 'loginName' : 'phone']: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                     />
                   </div>

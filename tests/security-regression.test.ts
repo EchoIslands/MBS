@@ -230,6 +230,39 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    const migrated=tables.employees[0].password_hash;await login('ceo');assert.equal(tables.employees[0].password_hash,migrated);
   });
   const ceo=await login('ceo'),cs=await login('cs'),stylist=await login('stylist'),manager=await login('manager');
+  await t.test('显示屏用独立账号名登录，员工继续用手机号', async () => {
+   const password = 'Fixture-screen-57';
+   const create = { name: 'Synthetic screen', role: 'queue_display', loginName: ' HSXX8888 ', password };
+   const loginDisplay = (loginName: string) => request('/auth/login', '', 'POST', { loginName, password });
+   assert.equal((await request('/employees', manager, 'POST', create)).status, 403);
+   const created = await request('/employees', ceo, 'POST', create);
+   assert.equal(created.status, 201);
+   const id = created.body.data.id;
+   const legacy = { id: 'legacy-screen', shop_id: 's1', name: 'Legacy screen', role: 'queue_display',
+    phone: '13800000999', is_active: true, password_hash: await hashPassword(password) };
+   tables.employees.push(legacy);
+   try {
+    assert.equal(created.body.data.phone, null);
+    assert.equal(created.body.data.login_name, 'hsxx8888');
+    assert.equal(created.body.data.password_hash, undefined);
+    const signedIn = await loginDisplay('HSXX8888');
+    assert.equal(signedIn.status, 200);
+    assert.equal(signedIn.body.data.user.id, id);
+    assert.equal(signedIn.body.data.user.role, 'queue_display');
+    assert.equal((await request('/employees', signedIn.body.data.token)).status, 403);
+    assert.equal((await loginDisplay(legacy.phone)).body.data?.user.id, legacy.id);
+    const revised = await request(`/employees/${legacy.id}`, ceo, 'PUT', { loginName: 'front-screen' });
+    assert.equal(revised.status, 200);
+    assert.equal(revised.body.data.phone, null);
+    assert.equal((await loginDisplay('front-screen')).body.data?.user.id, legacy.id);
+    const fakeStaffPhone = tables.employees[0].phone;
+    tables.employees[0].phone = '13800000998';
+    try {
+     assert.equal((await request('/auth/login', '', 'POST', { loginName: '13800000998', password: 'old-password' })).status, 401);
+     assert.equal((await request('/auth/login', '', 'POST', { phone: '13800000998', password: 'old-password' })).status, 200);
+    } finally { tables.employees[0].phone = fakeStaffPhone; }
+   } finally { tables.employees = tables.employees.filter(row => row.id !== id && row.id !== legacy.id); }
+  });
   await t.test('显示屏权限只开放本店显示和本人快捷操作入口', async () => {
    tables.employees.push({id:'display',shop_id:'s1',name:'Synthetic display',role:'queue_display',phone:'synthetic-display',is_active:true,password_hash:tables.employees[0].password_hash});
    try {

@@ -9,22 +9,22 @@ import { isRealApi } from '../../../shared/api-base';
 
 const DEFAULT_SHOP_ID = 'shop1';
 
-// 只保留 4 个登录模式：CEO、客服专员、店长、发型师
 type LoginMode = 'ceo' | 'cs' | 'manager' | 'stylist' | 'display';
 
 const ShopLogin: React.FC = () => {
   const [loginMode, setLoginMode] = useState<LoginMode>('manager');
-  const [phone, setPhone] = useState<string>('');
+  const [identifier, setIdentifier] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const navigate = useNavigate();
+  const displayLogin = loginMode === 'display';
 
   const handleModeChange = (mode: LoginMode) => {
     setLoginMode(mode);
     setError('');
-    setPhone('');
+    setIdentifier('');
     setPassword('');
     setShowPassword(false);
   };
@@ -37,7 +37,7 @@ const ShopLogin: React.FC = () => {
 
     try {
       // 优先使用真实 API 登录
-      const result = await authApi.login(phone, password);
+      const result = await authApi.login(identifier, password, displayLogin);
 
       if (result?.user) {
         // 登录成功，需要把用户同步设置到 zustand store
@@ -75,16 +75,18 @@ const ShopLogin: React.FC = () => {
 
       // 真实 API 模式启用时，直接显示后端返回的错误，不再降级到 mock 登录
       if (isRealApi()) {
-        setError(apiError instanceof Error ? apiError.message : '手机号或密码错误');
+        setError(apiError instanceof Error ? apiError.message : '账号或密码错误');
         return;
       }
 
       // 本地 mock 模式或后端不可达时，降级到 mock 登录
       const fallbackShop = mockShops.find((s) => s.id === DEFAULT_SHOP_ID);
-      const fallbackEmployee = fallbackShop?.employees.find((emp) => emp.phone === phone);
+      const fallbackEmployee = fallbackShop?.employees.find((emp) => displayLogin
+        ? emp.role === UserRole.QUEUE_DISPLAY && (emp.loginName === identifier.trim().toLowerCase() || emp.phone === identifier)
+        : emp.phone === identifier);
 
       if (!fallbackEmployee) {
-        setError(apiError instanceof Error ? apiError.message : '手机号或密码错误');
+        setError(apiError instanceof Error ? apiError.message : '账号或密码错误');
         return;
       }
 
@@ -135,7 +137,7 @@ const ShopLogin: React.FC = () => {
     display: {
       title: '显示屏账号',
       subtitle: '只显示全店排队状态，可在大屏进入发型师快捷操作',
-      placeholder: '请输入显示屏账号手机号',
+      placeholder: '请输入显示屏账号名',
       icon: <Monitor size={22} />,
     },
   };
@@ -180,16 +182,19 @@ const ShopLogin: React.FC = () => {
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">手机号</label>
+            <label htmlFor="shop-login-identifier" className="block text-sm font-medium text-gray-700 mb-2">
+              {displayLogin ? '账号名' : '手机号'}
+            </label>
             <div className="relative">
-              <Phone
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-                size={20}
-              />
+              {React.createElement(displayLogin ? Monitor : Phone, {
+                className: 'absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400',
+                size: 20,
+              })}
               <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                id="shop-login-identifier"
+                type={displayLogin ? 'text' : 'tel'}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -197,7 +202,9 @@ const ShopLogin: React.FC = () => {
                   }
                 }}
                 placeholder={current.placeholder}
-                autoComplete="off"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 disabled={loading}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all disabled:bg-gray-100"
               />
@@ -251,7 +258,7 @@ const ShopLogin: React.FC = () => {
                 <span>登录中...</span>
               </>
             ) : (
-              '登录后台'
+              displayLogin ? '登录显示屏' : '登录后台'
             )}
           </button>
         </form>

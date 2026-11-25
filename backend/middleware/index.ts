@@ -35,7 +35,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         return;
       }
     }
-    req.employee = { id: employee.id, shopId: employee.shop_id, name: employee.name, role: employee.role, phone: employee.phone };
+    req.employee = { id: employee.id, shopId: employee.shop_id, name: employee.name, role: employee.role, phone: employee.phone || '' };
     res.setHeader('Cache-Control', 'no-store');
     next();
   } catch { res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
