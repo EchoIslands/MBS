@@ -77,11 +77,16 @@ let rpcFailures = 0;
 let authDecisionOverride: Record<string, unknown>;
 let rejectAuthFinish = false;
 const authOutcomes: string[] = [];
+const kioskWrites: { name: string; args: FixtureRpcArgs }[] = [];
 let failRpc = false;
 let draftDeleteError: {message?:string;code?:string} | null = null;
 let completeCheckout = false;
 let checkoutRpcCalls = 0;
 Object.assign(supabase, {rpc: async (name: string, args: FixtureRpcArgs) => {
+ if (name === 'live_queue_kiosk_action' || name === 'live_queue_availability') {
+  kioskWrites.push({ name, args });
+  return { data: {}, error: null };
+ }
  if (name==='create_booking_once') {
   const row=args.p_booking as Row;tables.bookings.push({...row});return {data:row,error:null};
  }
@@ -274,6 +279,15 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     for (const path of ['/settlements','/customer-packages/sample/consume','/group-buy/vouchers/redeem']) {
      assert.equal((await request(path,display,'POST',{})).status,403);
     }
+    const pause = {employeeId:'manager',password:'old-password',version:0,minutes:20,stylistId:'stylist'};
+    assert.equal((await request('/queues/s1/kiosk/availability',display,'POST',pause)).status,200);
+    assert.equal((await request('/queues/s1/kiosk/action',display,'POST',{employeeId:'manager',password:'old-password',version:1,bookingId:'manager-booking',action:'called'})).status,200);
+    assert.equal((await request('/queues/s1/kiosk/availability',display,'POST',{...pause,employeeId:'ceo'})).status,401);
+    assert.equal((await request('/queues/s1/kiosk/availability',display,'POST',{...pause,password:'wrong'})).status,401);
+    assert.deepEqual(kioskWrites.splice(0), [
+     {name:'live_queue_availability',args:{p_shop_id:'s1',p_actor_id:'manager',p_stylist_id:'manager',p_version:0,p_minutes:20}},
+     {name:'live_queue_kiosk_action',args:{p_shop_id:'s1',p_actor_id:'manager',p_booking_id:'manager-booking',p_action:'called',p_version:1,p_minutes:null,p_note:null}},
+    ]);
     assert.equal((await request('/product-orders/refunds/shop/s2',cs)).status,403);
    } finally { tables.employees.pop(); }
   });

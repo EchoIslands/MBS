@@ -4,7 +4,7 @@ import { supabase } from '../db/index.js';
 import { imageReference } from '../lib/imageData.js';
 import { beginCustomerAuthAttempt, finishCustomerAuthAttempt, type CustomerAuthAttempt } from '../lib/customerSecurity.js';
 import { verifyPassword } from '../lib/password.js';
-import { createDurationEstimator, describeQueue, queueOrder, QUEUE_RULES, type QueueRow } from '../../shared/lib/liveQueue.js';
+import { canOperateOwnQueueOnDisplay, createDurationEstimator, describeQueue, queueOrder, QUEUE_RULES, type QueueRow } from '../../shared/lib/liveQueue.js';
 const readAllowed=['ceo','shop_manager','customer_service','stylist','queue_display'];
 const writeAllowed=['ceo','shop_manager','customer_service','stylist'];
 const eventMessages:Record<string,string>={ready:'请准备返回门店，即将轮到您。',called:'已正式叫号，请在10分钟内到服务位；收到后请点“我已看到”。',missed:'叫号宽限已结束，前台已确认过号。返回后请联系前台补位。',returned:'前台已确认您返回，排队顺序已更新。',service_started:'发型师已开始为您服务。',service_finished:'本次服务已结束。',progress_updated:'前序服务进度已更新，请查看最新等待范围。',reordered:'前台按现场情况调整了顺序，如有疑问请联系门店。'};
@@ -89,7 +89,8 @@ async function verifyKioskStylist(req: Request, res: Response, employeeId: unkno
   attempt = decision.attempt;
   const { data, error } = await supabase.from('employees').select('id,role,password_hash,is_active').eq('id',employeeId).eq('shop_id',display.shopId).maybeSingle();
   if (error) throw error;
-  const verified = data?.is_active === true && data.role === 'stylist' && await verifyPassword(password, data.password_hash);
+  const verified = data?.is_active === true && canOperateOwnQueueOnDisplay(data.role)
+   && password !== '123456' && await verifyPassword(password, data.password_hash);
   await finishCustomerAuthAttempt(attempt, verified ? 'success' : 'failure');
   attempt = undefined;
   if (verified) return data;
@@ -110,7 +111,7 @@ export async function kioskQueueAction(req:Request,res:Response){
  const stylist = await verifyKioskStylist(req, res, employeeId, password);
  if (!stylist) return;
  try{
-  const {error}=await supabase.rpc('live_queue_action',{p_booking_id:bookingId,p_shop_id:display.shopId,p_actor_id:stylist.id,p_actor_type:'staff',p_action:action,p_version:version,p_minutes:minutes??null,p_note:note??null});
+  const {error}=await supabase.rpc('live_queue_kiosk_action',{p_booking_id:bookingId,p_shop_id:display.shopId,p_actor_id:stylist.id,p_action:action,p_version:version,p_minutes:minutes??null,p_note:note??null});
   if(error){const code=error.message;const map:Record<string,string>={QUEUE_STALE_VERSION:'现场状态已变化，请刷新后重试',QUEUE_FORBIDDEN:'该操作不属于此发型师的服务',QUEUE_STATE_CONFLICT:'当前状态不允许该操作，请刷新后核对',QUEUE_STYLIST_BUSY:'该发型师仍在服务，请先结束当前服务'};const key=Object.keys(map).find(k=>code.includes(k));return res.status(key==='QUEUE_FORBIDDEN'?403:key?409:503).json({success:false,error:key?map[key]:'排队操作暂不可用，请联系前台'});}
   res.setHeader('Cache-Control','no-store');return res.json({success:true,data:{recorded:true}});
  }catch(e){return fail(res,e);}

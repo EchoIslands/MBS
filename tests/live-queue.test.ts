@@ -92,6 +92,38 @@ test('staff pauses are scoped, versioned and block new service; no automatic fin
  }finally{await db.close();}
 });
 
+test('shared display lets a manager run their own service without inheriting management powers', async () => {
+ const db = await database();
+ try {
+  await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;`);
+  await db.exec(await readFile(new URL('../migrations/065_queue_display_self_service.sql', import.meta.url), 'utf8'));
+  await db.exec(`UPDATE bookings SET stylist_id = 'manager' WHERE id = 'b'`);
+  await action(db, 'b', 'arrived', 0);
+  await action(db, 'b2', 'arrived', 0);
+  const kiosk = (id: string, operation: string, version: number, actor = 'manager', minutes: number | null = null) =>
+   db.query(`SELECT public.live_queue_kiosk_action($1, 's', $2, $3, $4, $5)`, [id, actor, operation, version, minutes]);
+  await assert.rejects(kiosk('b', 'reordered', 1), /QUEUE_FORBIDDEN/);
+  await assert.rejects(kiosk('b2', 'called', 1), /QUEUE_FORBIDDEN/);
+  await assert.rejects(kiosk('b', 'called', 1, 'stylist'), /QUEUE_FORBIDDEN/);
+  await kiosk('b', 'called', 1);
+  await assert.rejects(kiosk('b', 'service_started', 1), /QUEUE_STALE_VERSION/);
+  await kiosk('b', 'service_started', 2);
+  await kiosk('b', 'progress_updated', 3, 'manager', 10);
+  await kiosk('b', 'service_finished', 4);
+  await kiosk('b2', 'called', 1, 'stylist');
+  assert.deepEqual((await db.query(`SELECT actor_id, actor_type FROM booking_queue_events WHERE booking_id = 'b' AND event_type = 'service_finished'`)).rows, [
+   { actor_id: 'manager', actor_type: 'staff' },
+  ]);
+  const signature = 'public.live_queue_kiosk_action(text,text,text,text,integer,integer,text)';
+  const { rows } = await db.query<{anon: boolean; authenticated: boolean; service_role: boolean}>(
+   `SELECT has_function_privilege('anon', $1, 'EXECUTE') AS anon,
+           has_function_privilege('authenticated', $1, 'EXECUTE') AS authenticated,
+           has_function_privilege('service_role', $1, 'EXECUTE') AS service_role`, [signature],
+  );
+  assert.deepEqual(rows[0], { anon: false, authenticated: false, service_role: true });
+ } finally { await db.close(); }
+});
+
 test('arrival correction updates default priority and invalidates stale devices, preserving explicit reorders',async()=>{
  const db=await database();try{
  await action(db,'b','arrived',0);

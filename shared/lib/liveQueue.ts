@@ -1,4 +1,8 @@
 /** Queue estimates describe uncertainty; they never decide order or manufacture service progress. */
+export function canOperateOwnQueueOnDisplay(role: unknown): boolean {
+  return role === 'stylist' || role === 'shop_manager';
+}
+
 export type QueueRow = {
  id:string; shop_id:string; customer_id:string; customer_name?:string; customer_phone?:string;
  stylist_id?:string; stylist_name?:string; service_id?:string; service_name?:string; status:string;

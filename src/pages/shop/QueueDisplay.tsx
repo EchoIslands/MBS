@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { liveQueueApi } from '../../api';
 import { useAppStore } from '../../store';
 import { useLiveQueue } from '../../hooks/useLiveQueue';
-import type { LiveQueueDesk, QueueAvailability } from '../../../shared/lib/liveQueue';
+import { canOperateOwnQueueOnDisplay, type LiveQueueDesk, type QueueAvailability } from '../../../shared/lib/liveQueue';
 import { getAvatarUrl } from '../../lib/avatar';
 
 type Operator = { employeeId: string; name: string; password: string };
@@ -33,8 +33,8 @@ export default function QueueDisplay() {
   }, [operator]);
 
   const unlock = () => {
-    if (!pending || !password.trim()) return;
-    setOperator({ employeeId: pending.id, name: pending.name, password: password.trim() });
+    if (!pending || !password) return;
+    setOperator({ employeeId: pending.id, name: pending.name, password });
     setMessage('请选择本人操作。提交时会验证密码');
     setPassword('');
     setPending(null);
@@ -103,7 +103,7 @@ export default function QueueDisplay() {
       <div className="mb-4 rounded-xl border border-orange-200 bg-white p-4 text-lg text-gray-700">
         <strong>{displayAccount ? '显示屏专用账号 · 默认只读' : '店内显示屏只读'}</strong> ·{' '}
         {displayAccount
-          ? '发型师点击本人卡片后输入自己的登录密码，可在本屏操作本人状态。'
+          ? '店长和发型师可点击本人卡片，输入自己的登录密码后操作。'
           : '状态操作请在员工操作台完成。'}
       </div>
 
@@ -137,15 +137,20 @@ export default function QueueDisplay() {
               : state === 'paused'
                 ? 'border-gray-200 bg-gray-100 text-gray-700'
                 : 'border-emerald-200 bg-emerald-50 text-emerald-900';
-          const canOperate = availability.role === 'stylist';
+          const canOperate = displayAccount && canOperateOwnQueueOnDisplay(availability.role);
           const own = operator?.employeeId === availability.id;
 
           return (
             <article key={availability.id} className="rounded-3xl border border-orange-200 bg-white p-7">
               <button
                 type="button"
+                disabled={!canOperate || stale || busy}
                 className="w-full text-left"
-                onClick={() => displayAccount && canOperate && setPending(availability)}
+                onClick={() => {
+                  setOperator(null);
+                  setPassword('');
+                  setPending(availability);
+                }}
               >
                 <div className="flex items-center gap-4">
                   <img
@@ -156,7 +161,7 @@ export default function QueueDisplay() {
                   />
                   <div>
                     <h2 className="text-3xl font-bold">{availability.name}</h2>
-                    <p className="mt-1 text-lg text-gray-500">服务台</p>
+                    <p className="mt-1 text-lg text-gray-500">{canOperate ? '点击操作本人状态' : '服务台'}</p>
                   </div>
                 </div>
                 <p className={`my-5 rounded-2xl border p-5 text-3xl font-bold ${stateTone}`}>
@@ -188,7 +193,7 @@ export default function QueueDisplay() {
                 </>
               )}
 
-              {displayAccount && own && (
+              {canOperate && own && !stale && (
                 <div className="mt-5 grid grid-cols-2 gap-2">
                   <button disabled={busy} onClick={() => void runAvailability(availability, 20)} className="rounded-xl bg-orange-100 p-3 font-bold disabled:opacity-50">暂停20分钟</button>
                   <button disabled={busy} onClick={() => void runAvailability(availability, 0)} className="rounded-xl border p-3 font-bold disabled:opacity-50">恢复接客</button>
@@ -200,7 +205,6 @@ export default function QueueDisplay() {
                   {!current && !called && next && <button disabled={busy} onClick={() => void runBooking(next, 'called')} className="col-span-2 rounded-xl bg-orange-100 p-3 font-bold disabled:opacity-50">叫下一位</button>}
                 </div>
               )}
-              {displayAccount && <p className="mt-4 text-sm text-gray-500">{canOperate ? '点击头像卡片可切换操作人。服务器会校验本人身份，不能操作其他发型师。' : '店长状态由客服或 CEO 在员工操作台代操作。'}</p>}
             </article>
           );
         })}
@@ -213,11 +217,11 @@ export default function QueueDisplay() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onSubmit={(event) => { event.preventDefault(); unlock(); }}>
             <h2 className="text-2xl font-bold">解锁 {pending.name} 的操作</h2>
-            <p className="mt-3 text-gray-600">请输入该发型师本人登录密码。操作区在 1 分钟后或页面离开前台时自动锁定。</p>
-            <input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="发型师登录密码" className="mt-5 w-full rounded-xl border p-4" />
+            <p className="mt-3 text-gray-600">请输入本人的员工登录密码。操作区在 1 分钟后或页面离开前台时自动锁定。</p>
+            <input autoFocus type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="本人登录密码" className="mt-5 w-full rounded-xl border p-4" />
             <div className="mt-5 flex gap-3">
               <button type="button" onClick={() => { setPending(null); setPassword(''); }} className="flex-1 rounded-xl border p-3">取消</button>
-              <button type="submit" disabled={!password.trim()} className="flex-1 rounded-xl bg-orange-500 p-3 font-bold text-white disabled:opacity-50">解锁操作</button>
+              <button type="submit" disabled={!password || stale} className="flex-1 rounded-xl bg-orange-500 p-3 font-bold text-white disabled:opacity-50">解锁操作</button>
             </div>
           </form>
         </div>
