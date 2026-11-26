@@ -8,6 +8,7 @@ const REMEMBERED_PHONE_KEY = 'mbs_customer_login_phone';
 Page({
   data: {
     loginMode: 'password',
+    passwordSmsStep: false,
     smsCode: '',
     smsSending: false,
     smsSeconds: 0,
@@ -106,7 +107,8 @@ Page({
     const loginMode = e.currentTarget.dataset.mode;
     if (loginMode !== 'password' && loginMode !== 'sms' || this.data.loggingIn || this.data.smsSending) return;
     if (typeof wx.hideKeyboard === 'function') wx.hideKeyboard();
-    this.setData({ loginMode, error: '', password: '', confirmPassword: '', smsCode: '', setupRequired: false });
+    this.passwordChallenge = undefined;
+    this.setData({ loginMode, passwordSmsStep: false, error: '', password: '', confirmPassword: '', smsCode: '', setupRequired: false });
   },
 
   openPasswordSetup() {
@@ -142,7 +144,8 @@ Page({
   onConfirmPasswordInput(e) { this.setData({ confirmPassword: String(e.detail.value || '').replace(/\D/g, '').slice(0, 6), error: '' }); },
 
   onPhoneInput(e) {
-    this.setData({ phone: e.detail.value, setupRequired: false, password: '', confirmPassword: '', smsCode: '', error: '' });
+    this.passwordChallenge = undefined;
+    this.setData({ phone: e.detail.value, passwordSmsStep: false, setupRequired: false, password: '', confirmPassword: '', smsCode: '', error: '' });
   },
 
   onRememberPhoneChange(e) {
@@ -152,7 +155,7 @@ Page({
   },
 
   async onLogin() {
-    if(this.data.loggingIn || this.data.restoringSession) return;
+    if (this.data.loggingIn || this.data.restoringSession || this.data.smsSending) return;
     const { phone } = this.data;
     if (!phone || !/^1\d{10}$/.test(phone)) {
       this.setData({ error: '请输入正确的手机号' });
@@ -165,8 +168,13 @@ Page({
       if (this.data.loginMode === 'password' && this.data.password && !/^\d{6}$/.test(this.data.password)) throw new Error('密码必须为六位数字');
       if (this.data.setupRequired && this.data.password !== this.data.confirmPassword) throw new Error('两次输入的密码不一致');
       const result = this.data.loginMode === 'sms'
-        ? { customer: await loginCustomerWithSms(phone.trim(), this.data.smsCode) }
+        ? { customer: await loginCustomerWithSms(phone.trim(), this.data.smsCode, this.passwordChallenge) }
         : await loginCustomer(phone.trim(), this.data.password, this.data.setupRequired);
+      if (result.passwordChallenge) {
+        this.passwordChallenge = result.passwordChallenge;
+        this.setData({ loginMode: 'sms', passwordSmsStep: true, password: '', confirmPassword: '', smsCode: '', showPassword: false });
+        return;
+      }
       if (result.setupRequired) { this.setData({ setupRequired: true, password: '', confirmPassword: '', showPassword: false, showConfirmPassword: false }); return; }
       const customer = result.customer;
       if (customer && customer.id) {
@@ -179,6 +187,10 @@ Page({
         this.setData({ error: '登录失败，请检查手机号' });
       }
     } catch (err) {
+      if (err.response?.code === 'PASSWORD_CHALLENGE_EXPIRED') {
+        this.passwordChallenge = undefined;
+        this.setData({ loginMode: 'password', passwordSmsStep: false, smsCode: '' });
+      }
       this.setData({ error: err.message || '登录失败，请稍后重试' });
     } finally {
       this.setData({ loggingIn: false });

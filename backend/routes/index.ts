@@ -42,7 +42,7 @@ import { invitationMiniProgramCode } from '../services/miniProgramCode.js';
 import { priceSettlement } from '../lib/settlementPricing.js';
 import { hashPassword, verifyPassword, isPasswordHash, passwordVersion } from '../lib/password.js';
 import { displayLoginNameHint, normalizeDisplayLoginName } from '../../shared/lib/displayLoginName.js';
-import { getJwtSecret, signCustomerToken, CUSTOMER_COOKIE, CUSTOMER_SESSION_SECONDS } from '../lib/tokens.js';
+import { getJwtSecret, signCustomerToken, verifyCustomerToken, signCustomerPasswordChallenge, verifyCustomerPasswordChallenge, CUSTOMER_COOKIE, CUSTOMER_DEVICE_COOKIE_SECONDS } from '../lib/tokens.js';
 import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 
@@ -1804,11 +1804,33 @@ customersRouter.post('/sms/send', async (req: Request, res: Response) => {
   } catch { return res.status(503).json({ success: false, error: '验证码服务暂不可用' }); }
 });
 
+function setCustomerDeviceCookie(res: Response, token: string) {
+  res.cookie(CUSTOMER_COOKIE, token, {
+    httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1',
+    sameSite: 'strict', path: '/api', maxAge: CUSTOMER_DEVICE_COOKIE_SECONDS * 1000,
+  });
+}
+
+async function openCustomerDevice(res: Response, customerId: string, shopId: string, hash: string, mini: boolean) {
+  const { data: sessionId, error } = await supabase.rpc('open_customer_device_session', { p_customer_id: customerId, p_shop_id: shopId });
+  if (error || typeof sessionId !== 'string') throw new Error('登录状态暂时无法建立');
+  const token = signCustomerToken(customerId, shopId, hash, false, true, sessionId);
+  if (mini) return { token };
+  setCustomerDeviceCookie(res, token);
+  return {};
+}
+
 customersRouter.post('/sms/login', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
   const code = req.body?.code;
   if (!/^1[3-9]\d{9}$/.test(phone) || typeof code !== 'string' || !/^\d{6}$/.test(code)) return res.status(400).json({ success: false, error: '请输入手机号和六位验证码' });
+  const challengeInput = req.body?.passwordChallenge;
+  const challenge = challengeInput !== undefined ? verifyCustomerPasswordChallenge(challengeInput) : null;
+  const challengeExpired = () => res.status(400).json({
+    success: false, code: 'PASSWORD_CHALLENGE_EXPIRED', error: '密码验证已失效，请重新输入密码或直接使用短信登录',
+  });
+  if (challengeInput !== undefined && !challenge) return challengeExpired();
   const forwarded = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
   const ip = typeof forwarded === 'string' && forwarded.trim() ? forwarded.split(',')[0].trim() : req.ip || 'unknown';
   let attempt: CustomerAuthAttempt | undefined;
@@ -1816,22 +1838,34 @@ customersRouter.post('/sms/login', async (req: Request, res: Response) => {
     const decision = await beginCustomerAuthAttempt(JSON.stringify(['sms-login', ip]));
     if (decision.allowed === false) { res.setHeader('Retry-After', decision.retryAfterSeconds); return res.status(429).json({ success: false, ...decision }); }
     attempt = decision.attempt;
+    if (challenge) {
+      const { data: account, error } = await supabase.from('customers').select('password_hash,is_weak_password')
+        .eq('id', challenge.id).eq('shop_id', challenge.shopId).eq('phone', phone).maybeSingle();
+      if (error) return res.status(503).json({ success: false, error: '客户档案暂不可用，请稍后重试' });
+      if (!account || !account.password_hash || account.is_weak_password ||
+          passwordVersion(account.password_hash) !== challenge.passwordVersion) return challengeExpired();
+    }
     if (!(await verifySmsCode(phone, code))) { await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined; return res.status(401).json({ success: false, error: '验证码错误或已过期' }); }
-    const { data: customerId, error: resolveError } = await supabase.rpc('resolve_sms_customer', { p_phone: phone });
-    if (resolveError || !customerId) return res.status(503).json({ success: false, error: '客户档案暂不可用或存在重复，请联系门店' });
-    const { data: customer, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash`).eq('id', customerId).single();
+    let customerId = challenge?.id;
+    if (!customerId) {
+      const { data, error } = await supabase.rpc('resolve_sms_customer', { p_phone: phone });
+      if (error || !data) return res.status(503).json({ success: false, error: '客户档案暂不可用或存在重复，请联系门店' });
+      customerId = data;
+    }
+    const { data: customer, error } = await supabase.from('customers').select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password, identity_verified`).eq('id', customerId).eq('phone', phone).maybeSingle();
+    if (challenge && !error && (!customer || customer.shop_id !== challenge.shopId || customer.is_weak_password ||
+        passwordVersion(customer.password_hash || '') !== challenge.passwordVersion)) return challengeExpired();
     if (error || !customer) return res.status(503).json({ success: false, error: '客户档案暂不可用，请联系门店' });
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
-    const { password_hash: passwordHash, ...safe } = customer;
-    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash || '', false, true);
-    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
-    return res.json({ success: true, data: toCamelCase({ ...safe, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...(req.body?.client === 'mini' ? { token } : {}) });
+    const { password_hash: passwordHash, is_weak_password: weak, ...safe } = customer;
+    const session = await openCustomerDevice(res, customer.id, customer.shop_id, passwordHash || '', req.body?.client === 'mini');
+    return res.json({ success: true, data: toCamelCase({ ...safe, must_change_password: false, identity_verified: customer.identity_verified === true && weak !== true }), ...session });
   } catch { return res.status(503).json({ success: false, error: '验证码登录暂不可用' }); }
   finally { if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {}); }
 });
 /**
  * POST /api/customers/login
- * 顾客登录：手机号 + 自设六位数字密码
+ * 顾客密码登录第一步。密码正确也只能获得短信验证凭证。
  */
 customersRouter.post('/login', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -1859,11 +1893,13 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: '手机号或密码错误。可使用验证码直接登录，或验证手机号后设置密码' });
     }
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
-    const { password_hash: _passwordHash, is_weak_password: _weakPassword, ...safeCustomer } = customer;
-    const verifiedCustomer = { ...safeCustomer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) };
-    const token = signCustomerToken(customer.id, customer.shop_id, passwordHash);
-    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
-    return res.json({ success: true, data: toCamelCase(verifiedCustomer), ...(req.body?.client === 'mini' ? { token } : {}) });
+    if (req.body?.supportsPasswordSms !== true) {
+      return res.status(409).json({ success: false, code: 'PASSWORD_SMS_REQUIRED', error: '此设备需要验证手机号，请切换到短信验证码登录' });
+    }
+    return res.json({
+      success: true, verificationRequired: true,
+      passwordChallenge: signCustomerPasswordChallenge(customer.id, customer.shop_id, passwordHash),
+    });
   } catch (error) {
     return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '身份验证暂不可用' });
   } finally {
@@ -1906,9 +1942,8 @@ customersRouter.post('/sms/password', async (req: Request, res: Response) => {
     const { data: saved, error: saveError } = await (oldHash == null ? update.is('password_hash', null) : update.eq('password_hash', oldHash)).select('id').maybeSingle();
     if (saveError) return res.status(503).json({ success: false, error: '密码保存失败，请重新获取验证码' });
     if (!saved) return res.status(409).json({ success: false, error: '账号资料已更新，请重新获取验证码' });
-    const token = signCustomerToken(customer.id, customer.shop_id, hash, false, true);
-    res.cookie(CUSTOMER_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api', maxAge: CUSTOMER_SESSION_SECONDS * 1000 });
-    return res.json({ success: true, data: toCamelCase({ ...customer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...(req.body?.client === 'mini' ? { token } : {}) });
+    const session = await openCustomerDevice(res, customer.id, customer.shop_id, hash, req.body?.client === 'mini');
+    return res.json({ success: true, data: toCamelCase({ ...customer, must_change_password: false, identity_verified: await isCustomerVerified(customer.id, customer.shop_id) }), ...session });
   } catch {
     return res.status(503).json({ success: false, error: '密码服务暂不可用' });
   }
@@ -1918,8 +1953,19 @@ customersRouter.post('/:id/password/change', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   return res.status(400).json({ success: false, code: 'SMS_VERIFICATION_REQUIRED', error: '设置或修改密码需短信验证。请更新客户端，或返回登录页使用验证码直接登录' });
 });
-customersRouter.post('/logout', (_req: Request, res: Response) => {
-  res.clearCookie(CUSTOMER_COOKIE, { httpOnly: true, sameSite: 'strict', path: '/api' });
+customersRouter.post('/logout', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.clearCookie(CUSTOMER_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1', sameSite: 'strict', path: '/api' });
+  const cookie = (req.headers.cookie || '').split(';').map(value => value.trim())
+    .find(value => value.startsWith(CUSTOMER_COOKIE + '='))?.slice(CUSTOMER_COOKIE.length + 1);
+  const credential = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : cookie;
+  let identity: ReturnType<typeof verifyCustomerToken> | undefined;
+  try { if (credential) identity = verifyCustomerToken(credential); } catch { /* Invalid credentials already cannot be used. */ }
+  if (identity?.sessionId) {
+    const { error } = await supabase.from('customer_device_sessions').delete()
+      .eq('id', identity.sessionId).eq('customer_id', identity.id).eq('shop_id', identity.shopId);
+    if (error) return res.status(503).json({ success: false, error: '服务器暂未确认退出，请稍后重试' });
+  }
   res.json({ success: true });
 });
 
@@ -1941,6 +1987,11 @@ customersRouter.get('/:id/public', (req, res, next) => { void customerIdentity(r
       return;
     }
 
+    if (req.customer?.sessionId && !req.headers.authorization) {
+      const token = (req.headers.cookie || '').split(';').map(value => value.trim())
+        .find(value => value.startsWith(CUSTOMER_COOKIE + '='))?.slice(CUSTOMER_COOKIE.length + 1);
+      if (token) setCustomerDeviceCookie(res, token);
+    }
     res.json({ success: true, data: { ...toCamelCase(customer), mustChangePassword: false } });
   } catch (err: unknown) {
     console.error('[customers] 获取公开客户信息异常:', (err as Error).message);

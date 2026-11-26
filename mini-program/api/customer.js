@@ -26,7 +26,8 @@ export async function uploadMyAvatar(image) {
  * 获取顾客登录信息（手机号登录/自动注册）
  */
 export async function loginCustomer(phone, password, setupPassword = false) {
-  const result = await post('/customers/login', { phone, password, setupPassword, client: 'mini' });
+  const result = await post('/customers/login', { phone, password, setupPassword, supportsPasswordSms: true, client: 'mini' });
+  if (result?.verificationRequired && typeof result.passwordChallenge === 'string') return { passwordChallenge: result.passwordChallenge };
   if (result?.setupRequired) return { setupRequired: true };
   if (!result?.token) throw new Error('未获取有效登录凭证');
   setToken(result.token);
@@ -38,8 +39,8 @@ export async function sendCustomerSmsCode(phone) {
   return post('/customers/sms/send', { phone, client: 'mini' });
 }
 
-export async function loginCustomerWithSms(phone, code) {
-  const result = await post('/customers/sms/login', { phone, code, client: 'mini' });
+export async function loginCustomerWithSms(phone, code, passwordChallenge) {
+  const result = await post('/customers/sms/login', { phone, code, ...(passwordChallenge ? { passwordChallenge } : {}), client: 'mini' });
   if (!result?.token || !result?.data?.id) throw new Error('未获取有效登录凭证');
   setToken(result.token);
   setPasswordChangeRequired(result.data.mustChangePassword === true);
@@ -49,6 +50,10 @@ export async function restoreCustomerSession() {
   const id = getCustomerId();
   if (!id || !getToken()) return null;
   return getCustomerPublic(id);
+}
+
+export async function logoutCustomer() {
+  return post('/customers/logout', {});
 }
 
 /**

@@ -23,6 +23,7 @@ const CustomerLogin: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
+  const [passwordChallenge, setPasswordChallenge] = useState<string>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState<'password' | 'sms'>(() => new URLSearchParams(window.location.search).get('mode') === 'sms' ? 'sms' : 'password');
@@ -106,8 +107,14 @@ const CustomerLogin: React.FC = () => {
       if (loginMode === 'password' && password && !/^\d{6}$/.test(password)) throw new Error('密码必须为六位数字');
       if (setupRequired && password !== confirmPassword) throw new Error('两次输入的密码不一致');
       const result = loginMode === 'sms'
-        ? { setupRequired: false, customer: await customerApi.loginWithSms(trimmedPhone, smsCode) }
+        ? { setupRequired: false, customer: await customerApi.loginWithSms(trimmedPhone, smsCode, passwordChallenge) }
         : await loginAsCustomer(trimmedPhone, password || undefined, setupRequired);
+      if ('passwordChallenge' in result && result.passwordChallenge) {
+        setPasswordChallenge(result.passwordChallenge);
+        setPassword(''); setConfirmPassword(''); setSmsCode('');
+        setLoginMode('sms');
+        return;
+      }
       if (loginMode === 'sms' && result.customer) useAppStore.getState().setCurrentCustomer(result.customer);
       if (result.setupRequired) {
         setSetupRequired(true);
@@ -124,6 +131,11 @@ const CustomerLogin: React.FC = () => {
         setError('暂时无法登录，请检查手机号或联系门店');
       }
     } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'PASSWORD_CHALLENGE_EXPIRED') {
+        setPasswordChallenge(undefined);
+        setSmsCode('');
+        setLoginMode('password');
+      }
       setError(err instanceof Error ? err.message : '登录失败，请稍后重试');
     } finally {
       busy.current = false;
@@ -144,7 +156,7 @@ const CustomerLogin: React.FC = () => {
         
         <form onSubmit={handleLogin} autoComplete="on" className="space-y-5 sm:space-y-6">
           <div className="flex gap-2">
-            {(['password', 'sms'] as const).map(mode => <button key={mode} type="button" disabled={loading || smsSending} aria-pressed={loginMode === mode} onClick={() => { setLoginMode(mode); setSetupRequired(false); setPassword(''); setConfirmPassword(''); setSmsCode(''); setError(''); }} className={`flex-1 rounded-xl border p-3 text-sm font-semibold transition-colors ${loginMode === mode ? 'border-[#e5ab7a] bg-[#fff0df] text-[#75411f]' : 'border-[#eee6df] bg-[#faf8f5] text-[#665b52]'}`}>{mode === 'sms' ? '短信验证码登录' : '密码登录'}</button>)}
+            {(['password', 'sms'] as const).map(mode => <button key={mode} type="button" disabled={loading || smsSending} aria-pressed={loginMode === mode} onClick={() => { setLoginMode(mode); setPasswordChallenge(undefined); setSetupRequired(false); setPassword(''); setConfirmPassword(''); setSmsCode(''); setError(''); }} className={`flex-1 rounded-xl border p-3 text-sm font-semibold transition-colors ${loginMode === mode ? 'border-[#e5ab7a] bg-[#fff0df] text-[#75411f]' : 'border-[#eee6df] bg-[#faf8f5] text-[#665b52]'}`}>{mode === 'sms' ? '短信验证码登录' : '密码登录'}</button>)}
           </div>
           <div>
             <label className="sr-only" htmlFor="customer-login-phone">
@@ -158,7 +170,7 @@ const CustomerLogin: React.FC = () => {
                 type="tel"
                 value={phone}
                 disabled={loading || smsSending}
-                onChange={(e) => { setPhone(e.target.value); setSmsCode(''); smsRequest.current = { phone: '', at: 0 }; setSetupRequired(false); setPassword(''); setConfirmPassword(''); setError(''); }}
+                onChange={(e) => { setPhone(e.target.value); setPasswordChallenge(undefined); setSmsCode(''); smsRequest.current = { phone: '', at: 0 }; setSetupRequired(false); setPassword(''); setConfirmPassword(''); setError(''); }}
                 placeholder="请输入手机号"
                 autoComplete="username"
                 className="w-full pl-10 pr-4 py-3 border border-[#e8dfd6] bg-[#faf8f6] rounded-xl focus:ring-2 focus:ring-[#e5ab7a] focus:border-transparent outline-none transition-all text-sm sm:text-base"
@@ -184,7 +196,7 @@ const CustomerLogin: React.FC = () => {
               <button type="button" disabled={loading} onClick={() => void pasteSmsCode()} className="px-3 rounded-xl border border-[#ecd5c0] text-[#75411f] bg-[#fff2e5]">粘贴</button>
             </div>
             <button type="button" disabled={smsSending || loading || smsSeconds > 0} onClick={() => void sendSmsCode()} className="w-full p-3 rounded-xl border border-[#ecd5c0] text-[#75411f] bg-[#fff2e5] disabled:opacity-50">{smsSending ? '发送中...' : smsSeconds > 0 ? `${smsSeconds} 秒后重发` : '获取验证码'}</button>
-            <p className="text-xs text-gray-500">新用户验证手机号后自动注册，老用户直接登录。</p>
+            <p className="text-xs text-gray-500">{passwordChallenge ? '密码已通过。请获取并输入短信验证码完成登录。' : '新用户验证手机号后自动注册，老用户直接登录。'}</p>
           </div>}
           <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={rememberPhone} onChange={e => { setRememberPhone(e.target.checked); if (!e.target.checked) { try { localStorage.removeItem(REMEMBERED_PHONE_KEY); } catch { /* 浏览器禁用存储时仍允许继续登录。 */ } } }} />记住手机号（不保存密码）</label>
 
@@ -199,7 +211,7 @@ const CustomerLogin: React.FC = () => {
             disabled={loading || smsSending}
             className="w-full bg-gradient-to-r from-[#ffc18c] to-[#ffb276] hover:from-[#ffb276] hover:to-[#ffa765] disabled:opacity-60 disabled:cursor-not-allowed text-[#302923] py-3 sm:py-3.5 px-4 sm:px-6 rounded-xl font-bold shadow-[0_8px_20px_rgba(170,101,54,0.18)] transition-all text-sm sm:text-base min-h-[52px]"
           >
-            {loading ? '处理中...' : setupRequired ? '设置密码并登录' : '立即登录'}
+            {loading ? '处理中...' : passwordChallenge ? '验证并登录' : setupRequired ? '设置密码并登录' : '立即登录'}
           </button>
           
         </form>

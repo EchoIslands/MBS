@@ -76,8 +76,15 @@ export async function customerIdentity(req: Request, res: Response, next: NextFu
     const identity = verifyCustomerToken(token);
     if (req.params[param] !== identity.id) { res.status(403).json({ success: false, error: '仅可访问本人资料' }); return; }
     const fields: string = includeProfile ? `${CUSTOMER_SELF_FIELDS}, identity_verified, password_hash, is_weak_password` : 'id, shop_id, password_hash, is_weak_password';
-    const { data, error } = await supabase.from('customers').select(fields).eq('id', identity.id).eq('shop_id', identity.shopId).maybeSingle<Record<string, unknown>>();
+    const [{ data, error }, session] = await Promise.all([
+      supabase.from('customers').select(fields).eq('id', identity.id).eq('shop_id', identity.shopId).maybeSingle<Record<string, unknown>>(),
+      identity.sessionId ? supabase.rpc('touch_customer_device_session', {
+        p_id: identity.sessionId, p_customer_id: identity.id, p_shop_id: identity.shopId,
+      }) : Promise.resolve(null),
+    ]);
     if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
+    if (session?.error) { res.status(503).json({ success: false, error: '登录状态暂时无法核验' }); return; }
+    if (session && session.data !== true) { res.status(401).json({ success: false, error: '登录已失效，请重新验证手机号' }); return; }
     if (!data) { res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return; }
     if (passwordVersion(String(data.password_hash || '')) !== identity.passwordVersion) {
       res.status(401).json({ success: false, error: '顾客会话已失效，请重新登录' }); return;

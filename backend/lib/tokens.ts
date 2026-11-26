@@ -15,10 +15,13 @@ export function getJwtSecret(): string {
 
 export const CUSTOMER_COOKIE = 'mbs_customer_auth';
 export const CUSTOMER_SESSION_SECONDS = 30 * 24 * 60 * 60;
+export const CUSTOMER_DEVICE_COOKIE_SECONDS = 365 * 24 * 60 * 60;
 export const CUSTOMER_RESTRICTED_SESSION_SECONDS = 2 * 60 * 60;
-export function signCustomerToken(id: string, shopId: string, passwordHash: string, mustChangePassword = false, smsVerified = false): string {
-  return jwt.sign({ id, shopId, kind: 'customer', smsVerified, mustChangePassword, passwordVersion: passwordVersion(passwordHash) }, getJwtSecret(), {
-    algorithm: 'HS256', audience: 'customer', issuer: 'mbs', expiresIn: mustChangePassword ? CUSTOMER_RESTRICTED_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS,
+export function signCustomerToken(id: string, shopId: string, passwordHash: string, mustChangePassword = false, smsVerified = false, sessionId?: string): string {
+  return jwt.sign({ id, shopId, kind: 'customer', smsVerified, mustChangePassword, passwordVersion: passwordVersion(passwordHash), ...(sessionId ? { sessionId } : {}) }, getJwtSecret(), {
+    algorithm: 'HS256', audience: 'customer', issuer: 'mbs',
+    // Device credentials expire server-side after idle time and can be revoked individually.
+    ...(sessionId && !mustChangePassword ? {} : { expiresIn: mustChangePassword ? CUSTOMER_RESTRICTED_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS }),
   });
 }
 
@@ -27,5 +30,24 @@ export function verifyCustomerToken(token: string) {
   if (typeof value === 'string' || value.kind !== 'customer' || typeof value.id !== 'string' || typeof value.shopId !== 'string' || typeof value.passwordVersion !== 'string') {
     throw new Error('无效顾客凭证');
   }
-  return { id: value.id, shopId: value.shopId, passwordVersion: value.passwordVersion, mustChangePassword: value.mustChangePassword === true, smsVerified: value.smsVerified === true };
+  if (value.sessionId !== undefined && (typeof value.sessionId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.sessionId))) {
+    throw new Error('无效顾客会话');
+  }
+  return { id: value.id, shopId: value.shopId, passwordVersion: value.passwordVersion, mustChangePassword: value.mustChangePassword === true, smsVerified: value.smsVerified === true, sessionId: value.sessionId as string | undefined };
+}
+
+const passwordChallengeAudience = 'customer-password-sms';
+export function signCustomerPasswordChallenge(id: string, shopId: string, passwordHash: string): string {
+  return jwt.sign({ id, shopId, passwordVersion: passwordVersion(passwordHash) }, getJwtSecret(), {
+    algorithm: 'HS256', audience: passwordChallengeAudience, issuer: 'mbs', expiresIn: '15m',
+  });
+}
+
+export function verifyCustomerPasswordChallenge(challenge: unknown) {
+  if (typeof challenge !== 'string' || challenge.length > 2048) return null;
+  try {
+    const value = jwt.verify(challenge, getJwtSecret(), { algorithms: ['HS256'], audience: passwordChallengeAudience, issuer: 'mbs' });
+    if (typeof value === 'string' || typeof value.id !== 'string' || typeof value.shopId !== 'string' || typeof value.passwordVersion !== 'string') return null;
+    return { id: value.id as string, shopId: value.shopId as string, passwordVersion: value.passwordVersion as string };
+  } catch { return null; }
 }

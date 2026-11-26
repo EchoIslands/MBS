@@ -1,4 +1,4 @@
-import { getCustomerPublic, getCustomerBookings, getCustomerBenefits, updateMyProfile, uploadMyAvatar } from '../../api/customer';
+import { getCustomerPublic, getCustomerBookings, getCustomerBenefits, updateMyProfile, uploadMyAvatar, logoutCustomer } from '../../api/customer';
 import { getShop } from '../../api/shop';
 import { cancelBooking, respondDelay } from '../../api/booking';
 import { getCustomerReviews } from '../../api/review';
@@ -590,8 +590,11 @@ goToCoupons() {
     wx.showModal({
       title: '退出登录',
       content: '确定要退出当前账号吗？',
-      success: (res) => {
+      success: async (res) => {
         if (res.confirm) {
+          const token = getToken();
+          if (token) await logoutCustomer().catch(() => {});
+          if (getToken() && getToken() !== token) return;
           clearCustomerId();
           wx.reLaunch({ url: '/pages/login/login' });
         }

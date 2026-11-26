@@ -240,7 +240,7 @@ export const loginAsCustomer = async (
   phone: string,
   password?: string,
   setupPassword = false
-): Promise<{ setupRequired: boolean; customer?: Customer }> => {
+): Promise<{ setupRequired: boolean; customer?: Customer; passwordChallenge?: string }> => {
   const trimmedPhone = phone.trim();
 
   // 1. 尝试真实 API 登录

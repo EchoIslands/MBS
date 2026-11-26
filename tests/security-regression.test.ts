@@ -2,7 +2,7 @@ import type {FixtureRow as Row, FixtureRpcArgs} from './helpers/fixture-types.js
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
-import {generateKeyPairSync,createCipheriv,createSign} from 'node:crypto';
+import {generateKeyPairSync,createCipheriv,createSign,randomUUID} from 'node:crypto';
 // 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
 process.env.SUPABASE_URL = 'https://synthetic.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
@@ -142,6 +142,17 @@ Object.assign(supabase, {rpc: async (name: string, args: FixtureRpcArgs) => {
   const code = challenges.get(phone);
   if (!code || code !== args.p_code_hash) return { data: false, error: null };
   challenges.delete(phone);
+  return { data: true, error: null };
+ }
+ if (name === 'open_customer_device_session') {
+  const id = randomUUID();
+  (tables.customer_device_sessions ??= []).push({ id, customer_id: args.p_customer_id, shop_id: args.p_shop_id, last_seen_at: Date.now() });
+  return { data: id, error: null };
+ }
+ if (name === 'touch_customer_device_session') {
+  const row = tables.customer_device_sessions?.find(row => row.id === args.p_id && row.customer_id === args.p_customer_id && row.shop_id === args.p_shop_id);
+  if (!row || Number(row.last_seen_at) <= Date.now() - 30 * 86400000) return { data: false, error: null };
+  row.last_seen_at = Date.now();
   return { data: true, error: null };
  }
  if (name === 'resolve_sms_customer') {
@@ -415,12 +426,24 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    allowSms(phone,'987654');
    const set=await request('/customers/sms/password','','POST',{...inputs,code:'987654'});
    assert.equal(set.status,200);assert.ok(isPasswordHash(tables.customers[0].password_hash));
-   assert.equal(set.body.data.passwordHash,undefined);assert.ok(set.body.token);assert.match(set.cookie!,/HttpOnly/);
+   assert.equal(set.body.data.passwordHash,undefined);assert.ok(set.body.token);assert.equal(set.cookie,null);
    assert.equal((await request('/customers/sms/password','','POST',{...inputs,code:'987654'})).status,401);
    const r=set;
    assert.equal((await request('/customers/login','','POST',{phone:'13800000001',password:'000000',client:'mini'})).status,401);
-   const h5=await request('/customers/login','','POST',{phone:'13800000001',password:'246810'});
+   const legacyPassword=await request('/customers/login','','POST',{phone,password:'246810'});
+   assert.equal(legacyPassword.status,409);assert.equal(legacyPassword.cookie,null);
+   const first=await request('/customers/login','','POST',{phone,password:'246810',supportsPasswordSms:true});
+   assert.equal(first.status,200);assert.equal(first.body.verificationRequired,true);
+   assert.equal(first.body.token,undefined);assert.equal(first.body.data,undefined);assert.equal(first.cookie,null);
+   const passwordChallenge = first.body.passwordChallenge;
+   assert.equal((await request('/customers/c1/public',passwordChallenge)).status,401);
+   allowSms(phone,'345678');
+   const loginBody = {phone,code:'345678',passwordChallenge};
+   assert.equal((await request('/customers/sms/login','','POST',{...loginBody,phone:'13800000002'})).status,400);
+   assert.equal((await request('/customers/sms/login','','POST',{...loginBody,code:'111111'})).status,401);
+   const h5=await request('/customers/sms/login','','POST',loginBody);
    assert.equal(h5.status,200);assert.equal(h5.body.token,undefined);assert.match(h5.cookie!,/HttpOnly/);
+   assert.equal((await request('/customers/sms/login','','POST',loginBody)).status,401);
    assert.equal((await request('/customers/c1/public')).status,401);
    assert.equal((await request('/customers/c1/public',ceo)).status,401);
    assert.equal(r.body.data.idCardNumber,undefined);assert.equal(r.body.data.openidMini,undefined);
@@ -429,7 +452,21 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal(ownProfile.status,200);
    assert.equal(calls-profileReadsBefore,1,'本人校验和展示资料仅查库一次');
    for (const field of ['passwordHash','isWeakPassword','openidMini','idCardNumber']) assert.equal(ownProfile.body.data[field],undefined);
-   assert.equal((await request('/customers/c1/public','','GET',undefined,r.cookie!.split(';')[0])).status,200);
+   const h5Cookie=h5.cookie!.split(';')[0];
+   assert.equal((await request('/customers/c1/public','','GET',undefined,h5Cookie)).status,200);
+   const webSession = tables.customer_device_sessions.at(-1)!;
+   webSession.last_seen_at=Date.now()-29*86400000;
+   assert.equal((await request('/customers/c1/public','','GET',undefined,h5Cookie)).status,200);
+   assert.ok(Number(webSession.last_seen_at)>Date.now()-60000);
+   webSession.last_seen_at=Date.now()-31*86400000;
+   assert.equal((await request('/customers/c1/public','','GET',undefined,h5Cookie)).status,401);
+   const secondDeviceCode = '345679';
+   allowSms(phone,secondDeviceCode);
+   const secondDevice = await request('/customers/sms/login','','POST',{phone,code:secondDeviceCode,client:'mini'});
+   assert.equal(secondDevice.status,200);
+   assert.equal((await request('/customers/logout',secondDevice.body.token,'POST',{})).status,200);
+   assert.equal((await request('/customers/c1/public',secondDevice.body.token)).status,401);
+   assert.equal((await request('/customers/c1/public',r.body.token)).status,200);
    assert.equal((await request('/customers/c2/public',r.body.token)).status,403);
    assert.equal((await request('/customers/c1/packages',r.body.token)).status,200);
    for (const path of ['/bookings/customer/c1','/reviews/customer/c1','/coupons/customer/c1','/product-orders/customer/c1']) {

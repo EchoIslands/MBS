@@ -1098,14 +1098,17 @@ export const customerApi = {
     if (!response.ok || !result.success) throw new Error(result.error || '核实失败');
     notifyCustomerChange();
   },
-  login: async (phone: string, password?: string, setupPassword = false): Promise<{ setupRequired: boolean; customer?: Customer } | null> => {
+  login: async (phone: string, password?: string, setupPassword = false): Promise<{ setupRequired: boolean; customer?: Customer; passwordChallenge?: string } | null> => {
     if (!USE_REAL_API) return null;
     const response = await fetch(API_BASE + '/customers/login', {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, password, setupPassword }),
+      body: JSON.stringify({ phone, password, setupPassword, supportsPasswordSms: true }),
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || '身份验证失败');
+    if (result.verificationRequired && typeof result.passwordChallenge === 'string') {
+      return { setupRequired: false, passwordChallenge: result.passwordChallenge };
+    }
     return result.setupRequired ? { setupRequired: true } : { setupRequired: false, customer: normalizeCustomerDates(result.data) };
   },
   sendSmsCode: async (phone: string): Promise<void> => {
@@ -1117,14 +1120,16 @@ export const customerApi = {
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || '验证码发送失败');
   },
-  loginWithSms: async (phone: string, code: string): Promise<Customer> => {
+  loginWithSms: async (phone: string, code: string, passwordChallenge?: string): Promise<Customer> => {
     if (!USE_REAL_API) throw new Error('短信登录需要连接正式服务');
     const response = await fetch(API_BASE + '/customers/sms/login', {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, code }),
+      body: JSON.stringify({ phone, code, passwordChallenge }),
     });
     const result = await response.json();
-    if (!response.ok || !result.success || !result.data?.id) throw new Error(result.error || '验证码登录失败');
+    if (!response.ok || !result.success || !result.data?.id) {
+      throw Object.assign(new Error(result.error || '验证码登录失败'), { code: result.code });
+    }
     return normalizeCustomerDates(result.data);
   },
   resetPassword: async (id: string): Promise<void> => {

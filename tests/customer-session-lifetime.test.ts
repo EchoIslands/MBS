@@ -1,6 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
+import { readFile } from 'node:fs/promises';
+import { PGlite } from '@electric-sql/pglite';
+
+test('device session migration enforces 30-day inactivity, scope and revocation', async () => {
+ const db = new PGlite();
+ try {
+  await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+   CREATE TABLE shops (id text PRIMARY KEY);
+   CREATE TABLE customers (id text PRIMARY KEY, shop_id text REFERENCES shops(id));
+   INSERT INTO shops VALUES ('shop1'), ('other');
+   INSERT INTO customers VALUES ('customer1', 'shop1');`);
+  const migration = await readFile(new URL('../migrations/067_customer_device_sessions.sql', import.meta.url), 'utf8');
+  await db.exec(migration);
+  await db.exec(migration);
+  const { rows: [{ id }] } = await db.query<{id: string}>("SELECT open_customer_device_session('customer1','shop1') AS id");
+  const touch = async (customerId: string, shopId: string) =>
+   (await db.query<{valid: boolean}>('SELECT touch_customer_device_session($1,$2,$3) AS valid', [id, customerId, shopId])).rows[0].valid;
+  assert.equal(await touch('customer1','other'), false);
+  assert.equal(await touch('someone-else','shop1'), false);
+  await db.query("UPDATE customer_device_sessions SET last_seen_at=now()-interval '29 days' WHERE id=$1", [id]);
+  assert.equal(await touch('customer1','shop1'), true);
+  assert.equal((await db.query<{recent: boolean}>("SELECT last_seen_at > now()-interval '1 minute' AS recent FROM customer_device_sessions WHERE id=$1", [id])).rows[0].recent, true);
+  await db.query("UPDATE customer_device_sessions SET last_seen_at=now()-interval '30 days' WHERE id=$1", [id]);
+  assert.equal(await touch('customer1','shop1'), false);
+  const { rows: [{ id: nextId }] } = await db.query<{id: string}>("SELECT open_customer_device_session('customer1','shop1') AS id");
+  assert.notEqual(nextId, id);
+  await db.query('DELETE FROM customer_device_sessions WHERE id=$1',[nextId]);
+  assert.equal((await db.query<{valid:boolean}>("SELECT touch_customer_device_session($1,'customer1','shop1') AS valid",[nextId])).rows[0].valid,false);
+  assert.equal((await db.query<{allowed: boolean}>("SELECT has_function_privilege('authenticated','public.touch_customer_device_session(uuid,text,text)','EXECUTE') AS allowed")).rows[0].allowed, false);
+ } finally { await db.close(); }
+});
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {signCustomerToken,CUSTOMER_SESSION_SECONDS,CUSTOMER_RESTRICTED_SESSION_SECONDS} from '../backend/lib/tokens';
