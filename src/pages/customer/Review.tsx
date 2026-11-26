@@ -149,7 +149,7 @@ export default function ReviewPage() {
       {submittedKey === key && <>
         <section className="customer-card text-center"><CheckCircle size={32} className="mx-auto mb-3 text-green-700" />
           <h2 className="font-bold">评价提交成功，感谢您的反馈！</h2><ScoreSummary value={(serviceScore + stylistScore) / 2} />
-          <p className="text-sm text-[#71665d]">您的评价将在 24 小时内公开展示</p>
+          {[serviceComment, stylistComment, comment].some(text => text.trim()) && <p className="text-sm text-gray-600">文字内容将在门店审核后公开。</p>}
         </section>
         <section className="customer-card space-y-3"><h2 className="flex items-center gap-2 font-bold"><Share2 size={18} />分享您的体验给好友</h2>
           <button type="button" className="customer-primary w-full" onClick={() => void copy()}>复制店铺链接</button>

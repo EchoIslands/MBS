@@ -1,16 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import { supabase } from '../db/index.js';
 import { CUSTOMER_COOKIE, verifyCustomerToken } from '../lib/tokens.js';
-import { authMiddleware } from './index.js';
+import { authMiddleware, hasStaffToken } from './index.js';
 import { customerIdentity } from './permissions.js';
 
 /** 只用 token 类型选择验证器；真正的签名、账号状态仍由验证器检查。 */
-function hasStaffToken(req: Request): boolean {
-  const value = jwt.decode(req.headers.authorization?.slice(7) || '');
-  return !!value && typeof value === 'object' && value.kind === 'employee';
-}
-
 export function optionalStaff(req: Request, res: Response, next: NextFunction): void {
   if (hasStaffToken(req)) { void authMiddleware(req, res, next); return; }
   next();

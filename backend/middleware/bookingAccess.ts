@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { authMiddleware } from './index.js';
+import { authMiddleware, hasStaffToken } from './index.js';
 import { customerIdentity } from './permissions.js';
 import { CUSTOMER_COOKIE, verifyCustomerToken } from '../lib/tokens.js';
 import { supabase } from '../db/index.js';
@@ -8,8 +7,7 @@ import { supabase } from '../db/index.js';
 /** 预约写入和详情统一校验；公开列表只能返回无顾客标识的时段占用。 */
 export async function bookingAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
-  const decoded = bearer ? jwt.decode(bearer) : null;
-  const staffToken = decoded && typeof decoded === 'object' && decoded.kind === 'employee';
+  const staffToken = hasStaffToken(req);
   const publicSlots = req.method === 'GET' && req.path === '/';
   if (publicSlots && !staffToken) { next(); return; }
   const authorizeResource = async () => {

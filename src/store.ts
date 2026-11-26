@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 import { AppState, UserRole, Customer, Shop, Employee, Product, CartItem } from '../shared/types';
 import { mockCustomers, mockShops, shopPasswords, stylistPasswords, ceoPasswords, csPasswords, managerPasswords } from '../shared/mockData';
 import { customerApi, clearAuthToken, authApi, shopApi } from './api';
+import { EMPLOYEE_SESSION_EXPIRED_EVENT } from '../shared/employeeSession';
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -51,8 +52,9 @@ export const useAppStore = create<AppState>()(
         });
       },
       logout: () => {
-        clearAuthToken();
-        if (isRealApi()) void fetch(getApiBase() + '/customers/logout', { method: 'POST', credentials: 'include' }).catch(() => {
+        if (get().currentEmployee) void authApi.logout()?.catch(() => {});
+        else clearAuthToken();
+        if (isRealApi() && get().currentCustomer) void fetch(getApiBase() + '/customers/logout', { method: 'POST', credentials: 'include' }).catch(() => {
           console.warn('[logout] 顾客会话注销请求未完成，请关闭共享设备上的浏览器');
         });
         saveCustomerSession(null);
@@ -134,6 +136,16 @@ export const useAppStore = create<AppState>()(
   )
 );
 
+if (isRealApi() && typeof window !== 'undefined') {
+  window.addEventListener(EMPLOYEE_SESSION_EXPIRED_EVENT, () => {
+    clearAuthToken();
+    const { currentCustomer, currentEmployee } = useAppStore.getState();
+    if (currentEmployee) {
+      useAppStore.setState({ currentEmployee: null, currentShop: null, userRole: currentCustomer ? UserRole.CUSTOMER : null });
+    }
+  });
+}
+
 // 会话持久化 key
 const CUSTOMER_SESSION_KEY = 'mbs_customer_session';
 const EMPLOYEE_SESSION_KEY = 'mbs_employee_session';
@@ -160,6 +172,10 @@ const loadCustomerSession = (): Customer | null => {
 // 保存/读取员工会话
 const saveEmployeeSession = (state: { currentShop: Shop | null; currentEmployee: Employee | null; userRole: UserRole | null }) => {
   try {
+    if (isRealApi()) {
+      localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+      return;
+    }
     if (state.currentEmployee) {
       localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(state));
     } else {
@@ -185,10 +201,12 @@ let restoringEmployee: Promise<void> | null=null;
 export const restoreEmployeeSession = (): Promise<void> => {
   if(restoringEmployee) return restoringEmployee;
   restoringEmployee=(async()=>{
-    const session=loadEmployeeSession();
-    if(!session?.currentEmployee) return;
-    if(isRealApi()) {for(const key of Object.keys(localStorage)) if(key.startsWith('mbs_employee_password_')) localStorage.removeItem(key);}
-    if(!isRealApi()) {useAppStore.setState({...session});return;}
+    if(!isRealApi()) {
+      const session=loadEmployeeSession();
+      if (session?.currentEmployee) useAppStore.setState({...session});
+      return;
+    }
+    clearAuthToken();
     const user=await authApi.getCurrentUser() as (Employee & {shopId:string}) | null;
     if(!user?.id || !user.shopId) {
       clearAuthToken();saveEmployeeSession({currentShop:null,currentEmployee:null,userRole:null});

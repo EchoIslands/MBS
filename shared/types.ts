@@ -695,6 +695,7 @@ export interface Review {
   replyBy?: string;
   replyAt?: Date;
   isHidden?: boolean;
+  moderationPending?: boolean;
 }
 
 export interface Reminder {

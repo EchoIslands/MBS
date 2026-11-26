@@ -57,7 +57,7 @@ const ReviewManagement: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await shopApi.getShopReviews(currentShop.id);
+      const data = await shopApi.getShopReviews(currentShop.id, true);
       setRawReviews(data);
     } catch (err: unknown) {
       console.error('加载评价失败:', err);
@@ -84,7 +84,7 @@ const ReviewManagement: React.FC = () => {
     skillRating: r.stylistScore,
     environmentRating: Math.round(r.overallScore || 5),
     priceRating: r.stylistScore,
-    comment: r.comment || '',
+    comment: [r.serviceComment, r.stylistComment, r.comment].filter(Boolean).join('\n'),
     tags: [],
     reply: r.reply,
     replyBy: r.replyBy,
@@ -106,7 +106,7 @@ const ReviewManagement: React.FC = () => {
     skillRating: r.stylistScore,
     serviceRating: r.serviceScore,
     communicationRating: Math.round(r.overallScore || 5),
-    comment: r.comment || '',
+    comment: [r.serviceComment, r.stylistComment, r.comment].filter(Boolean).join('\n'),
     tags: [],
     reply: r.reply,
     replyAt: r.replyAt,
@@ -115,11 +115,9 @@ const ReviewManagement: React.FC = () => {
   });
 
   useEffect(() => {
-    const shop = rawReviews
-      .filter((r) => !r.isHidden)
-      .map(mapToShopReview);
+    const shop = rawReviews.map(mapToShopReview);
     const stylist = rawReviews
-      .filter((r) => r.stylistId && !r.isHidden)
+      .filter((r) => r.stylistId)
       .map(mapToStylistReview);
     setShopReviews(shop);
     setStylistReviews(stylist);
@@ -137,7 +135,8 @@ const ReviewManagement: React.FC = () => {
     !userRole ||
     userRole === UserRole.CEO ||
     userRole === UserRole.SHOP_OWNER ||
-    userRole === UserRole.SHOP_MANAGER;
+    userRole === UserRole.SHOP_MANAGER ||
+    userRole === UserRole.CUSTOMER_SERVICE;
 
   const visibleShopReviews = useMemo(() => {
     let reviews = shopReviews.filter((r) => r.shopId === currentShop.id);
@@ -159,7 +158,7 @@ const ReviewManagement: React.FC = () => {
     activeTab === 'shop' ? visibleShopReviews : visibleStylistReviews;
 
   const stats = useMemo(() => {
-    const reviews = activeTab === 'shop' ? shopReviews.filter((r) => r.shopId === currentShop.id) : stylistReviews.filter((r) => r.shopId === currentShop.id);
+    const reviews = (activeTab === 'shop' ? shopReviews : stylistReviews).filter((r) => r.shopId === currentShop.id && !r.isHidden);
     const total = reviews.length;
     const avgRating =
       total > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / total).toFixed(1) : '0.0';
@@ -209,7 +208,7 @@ const ReviewManagement: React.FC = () => {
     try {
       await reviewApi.hideReview(reviewId, !target.isHidden);
       setRawReviews((prev) =>
-        prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden } : r))
+        prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden, moderationPending: false } : r))
       );
     } catch (err: unknown) {
       console.error('隐藏评价失败:', err);
@@ -223,7 +222,7 @@ const ReviewManagement: React.FC = () => {
     try {
       await reviewApi.hideReview(reviewId, !target.isHidden);
       setRawReviews((prev) =>
-        prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden } : r))
+        prev.map((r) => (r.id === reviewId ? { ...r, isHidden: !target.isHidden, moderationPending: false } : r))
       );
     } catch (err: unknown) {
       console.error('隐藏评价失败:', err);
@@ -264,7 +263,7 @@ const ReviewManagement: React.FC = () => {
               </span>
               {review.isHidden && (
                 <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs">
-                  已隐藏
+                  {rawReviews.find(item => item.id === review.id)?.moderationPending ? '待审核' : '已隐藏'}
                 </span>
               )}
             </div>
@@ -293,7 +292,8 @@ const ReviewManagement: React.FC = () => {
             <button
               onClick={() => toggleHideShopReview(review.id)}
               className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
-              title={review.isHidden ? '显示' : '隐藏'}
+              title={review.isHidden ? '审核通过并公开' : '隐藏'}
+              aria-label={review.isHidden ? '审核通过并公开' : '隐藏评价'}
             >
               {review.isHidden ? (
                 <EyeOff size={16} className="text-gray-500" />
@@ -439,7 +439,7 @@ const ReviewManagement: React.FC = () => {
               )}
               {review.isHidden && (
                 <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs">
-                  已隐藏
+                  {rawReviews.find(item => item.id === review.id)?.moderationPending ? '待审核' : '已隐藏'}
                 </span>
               )}
             </div>
@@ -468,7 +468,8 @@ const ReviewManagement: React.FC = () => {
             <button
               onClick={() => toggleHideStylistReview(review.id)}
               className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
-              title={review.isHidden ? '显示' : '隐藏'}
+              title={review.isHidden ? '审核通过并公开' : '隐藏'}
+              aria-label={review.isHidden ? '审核通过并公开' : '隐藏评价'}
             >
               {review.isHidden ? (
                 <EyeOff size={16} className="text-gray-500" />

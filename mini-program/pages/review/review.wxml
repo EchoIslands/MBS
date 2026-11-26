@@ -201,7 +201,7 @@
           </block>
           <text class="success-score-num">{{avgScore}} 分</text>
         </view>
-        <view class="success-hint">您的评价将在 24 小时内公开展示</view>
+        <view class="success-hint" wx:if="{{serviceComment || stylistComment || comment}}">文字内容将在门店审核后公开。</view>
       </view>
 
       <view class="card share-card">

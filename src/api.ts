@@ -4,7 +4,8 @@ import { buildFinancialReport, FINANCIAL_TIME_BASIS } from '../shared/lib/financ
 import { Shop, Booking, Review, Queue, Customer, Employee, UserRole, PurchaseVIPLevel, StoredValueLevel, Settlement, MemberBenefitRecord, FinancialReport, RefundRequest, ServiceRefundCandidate, SatisfactionSurvey, Product, ProductOrder, ProductOrderRefund, ProductInventoryLog, OwnerDashboard, StylistPerformance, Coupon, CustomerCoupon, CustomerInsights, GroupBuyBatch, GroupBuyVoucher, PurchaseVIPPlan, StoredValuePlan, SpecialVIPConfig, CustomerPackage, PackageUsageLog, MembershipEnrollment } from '../shared/types';
 import { mockShops, mockBookings, mockReviews, mockQueues, mockCustomers, mockSettlements, mockMemberBenefitRecords } from '../shared/mockData';
 import { purchaseVIPPlans, storedValuePlans } from '../shared/membershipPlans';
-import { http, getApiBase, isRealApi } from '../shared/api-base';
+import { http, getApiBase, isRealApi, apiFetch as fetch } from '../shared/api-base';
+import { EMPLOYEE_SESSION_SELECTOR } from '../shared/employeeSession';
 import { getEmployeePassword } from './lib/employeePassword';
 import { notifyCustomerChange } from './lib/customerChanges';
 
@@ -29,7 +30,14 @@ const BOOKINGS_CACHE_KEY = 'mbs_bookings_cache';
 const SETTLEMENTS_CACHE_KEY = 'mbs_settlements_cache';
 const BENEFITS_CACHE_KEY = 'mbs_benefits_cache';
 const SHOPS_CACHE_KEY = 'mbs_shops_cache';
-if (USE_REAL_API) { try { localStorage.removeItem(CUSTOMERS_CACHE_KEY); } catch (_e) { /* ignore */ } }
+if (USE_REAL_API) {
+  try {
+    for (const key of [CUSTOMERS_CACHE_KEY, AUTH_TOKEN_KEY, AUTH_USER_KEY, 'mbs_employee_session']) localStorage.removeItem(key);
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('mbs_employee_password_')) localStorage.removeItem(key);
+    }
+  } catch { /* Storage may be disabled. Cookie authentication does not require it. */ }
+}
 
 // 启动时从 localStorage 恢复客户数据（真实 API 模式下不要覆盖 mock fallback）
 if (!USE_REAL_API) {
@@ -258,13 +266,19 @@ export const saveAuthToken = (token: string) => {
 
 // 获取 Token
 export const getAuthToken = (): string | null => {
+  if (USE_REAL_API) return employeeCookieActive ? EMPLOYEE_SESSION_SELECTOR : null;
   return localStorage.getItem(AUTH_TOKEN_KEY);
 };
 
+let employeeCookieActive = false;
+
 // 删除 Token
 export const clearAuthToken = () => {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
+  employeeCookieActive = false;
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+  } catch { /* The current session has already been cleared in memory. */ }
 };
 
 // 保存用户信息
@@ -284,17 +298,17 @@ export const authApi = {
   login: async (identifier: string, password: string, displayLogin = false): Promise<{ token: string; user: AuthUser }> => {
     const loginError = displayLogin ? '显示屏账号或密码错误' : '手机号或密码错误';
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; error?: string; data: { token: string; user: AuthUser } }>(
+      const result = await http<{ success: boolean; error?: string; data: { user: AuthUser } }>(
         `${API_BASE}/auth/login`,
         {
           method: 'POST',
           body: JSON.stringify(displayLogin ? { loginName: identifier, password } : { phone: identifier, password }),
         }
       );
-      if (result?.success && result.data?.token) {
-        saveAuthToken(result.data.token);
-        saveAuthUser(result.data.user);
-        return { token: result.data.token, user: result.data.user };
+      if (result?.success && result.data?.user?.id) {
+        clearAuthToken();
+        employeeCookieActive = true;
+        return { token: EMPLOYEE_SESSION_SELECTOR, user: result.data.user };
       }
       // 真实 API 明确返回失败时，直接抛错，不再降级到 mock token
       // 否则 mock token 会和后续真实 API 混用，导致 401
@@ -341,7 +355,7 @@ export const authApi = {
   
   // 获取当前用户
   getCurrentUser: async () => {
-    const token = getAuthToken();
+    const token = USE_REAL_API ? EMPLOYEE_SESSION_SELECTOR : getAuthToken();
     if (!token) return null;
     
     // mock token 直接解析
@@ -359,7 +373,8 @@ export const authApi = {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (result?.success && result.data) {
-        saveAuthUser(result.data);
+        if (USE_REAL_API) employeeCookieActive = true;
+        else saveAuthUser(result.data);
         return result.data;
       }
       return null;
@@ -372,6 +387,9 @@ export const authApi = {
   // 登出
   logout: () => {
     clearAuthToken();
+    if (USE_REAL_API) return http(`${API_BASE}/auth/logout`, {
+      method: 'POST', headers: { Authorization: `Bearer ${EMPLOYEE_SESSION_SELECTOR}` },
+    });
   },
   
   // 检查是否已登录
@@ -453,9 +471,10 @@ export const shopApi = {
     return mockBookings.filter((b) => b.shopId === id);
   },
 
-  getShopReviews: async (id: string): Promise<Review[]> => {
+  getShopReviews: async (id: string, forStaff = false): Promise<Review[]> => {
     if (USE_REAL_API) {
-      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/shop/${id}`, { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} });
+      const token = forStaff ? getAuthToken() : null;
+      const result = await http<{ success: boolean; data: Review[] }>(`${API_BASE}/reviews/shop/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (result?.data) return result.data;
       // 真实 API 已启用但未返回数据，说明后端异常，直接抛错避免静默 fallback
       throw new Error('后端评价接口异常，请检查数据库和部署状态');

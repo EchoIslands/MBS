@@ -1,12 +1,12 @@
 import {useEffect,useState,useRef} from 'react';
 import {getAuthToken} from '../../api';
-import {getApiBase} from '../../../shared/api-base';
+import {apiFetch,getApiBase} from '../../../shared/api-base';
 import type {CommissionEntry} from '../../../shared/lib/commission';
 type Source={id:string;kind:string;source_record_id:string;occurred_at:string;payload:{customer_id?:string;customer_name?:string;name?:string;total?:number;amount?:number;price?:number;settlement_id?:string}};
 const kindLabels:Record<string,string>={settlements:'服务结算',stored_value_transactions:'储值充值',customer_packages:'次卡销售',refund_requests:'服务退款',manual_refund_receipts:'人工核实退款',income:'销售计提',redemption:'核销不重复计提',gift:'店铺补贴',transfer_in:'利润转入',transfer_out:'利润转出',refund:'退款冲减',correction:'退款转移冲正'};
 type Data={entries:CommissionEntry[];sources:Source[];employees:Array<{id:string;name:string;is_active:boolean}>;summary:Array<{employeeId:string;period:string;base:number;rate:number;transfers:number;commission:number}>;canConfirm:boolean;total:number;page:number};
 async function request<T>(path:string,body?:object):Promise<T>{
- const res=await fetch(getApiBase()+'/commissions'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken()},body:body?JSON.stringify(body):undefined});
+ const res=await apiFetch(getApiBase()+'/commissions'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken()},body:body?JSON.stringify(body):undefined});
  const result=await res.json();if(!res.ok||!result.success)throw new Error(result.error||'提成读取失败');return result.data;
 }
 export default function CommissionPanel(){

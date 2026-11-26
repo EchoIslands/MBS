@@ -1,3 +1,5 @@
+import { EMPLOYEE_SESSION_EXPIRED_EVENT, EMPLOYEE_SESSION_EXPIRED_HEADER, EMPLOYEE_SESSION_SELECTOR } from './employeeSession';
+
 /**
  * 通用 API 请求基础层
  *
@@ -44,7 +46,7 @@ export async function http<T>(url: string, opts: RequestInit = {}, timeoutMs = 1
   if (opts.signal?.aborted) controller.abort();
   else opts.signal?.addEventListener('abort', abort, { once: true });
   try {
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       credentials: 'include',
       ...opts,
       headers: {
@@ -66,4 +68,13 @@ export async function http<T>(url: string, opts: RequestInit = {}, timeoutMs = 1
     clearTimeout(timeoutId);
     opts.signal?.removeEventListener('abort', abort);
   }
+}
+export async function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+  const response = await globalThis.fetch(url, opts);
+  if (typeof window !== 'undefined' && response.status === 401 &&
+      response.headers.get(EMPLOYEE_SESSION_EXPIRED_HEADER) === '1' &&
+      new Headers(opts.headers).get('Authorization') === `Bearer ${EMPLOYEE_SESSION_SELECTOR}`) {
+    window.dispatchEvent(new Event(EMPLOYEE_SESSION_EXPIRED_EVENT));
+  }
+  return response;
 }

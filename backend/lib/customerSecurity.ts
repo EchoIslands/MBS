@@ -19,12 +19,17 @@ export type CustomerAuthAttempt = { ipKey: string; attemptId: string };
 type AuthDecision = { allowed: true; attempt: CustomerAuthAttempt } | {
   allowed: false; code: string; error: string; retryAfterSeconds: number; retryAt: string;
 };
-export const CUSTOMER_AUTH_UNAVAILABLE = '登录安全组件暂不可用，请联系门店确认043数据库更新';
+export const CUSTOMER_AUTH_UNAVAILABLE = '登录安全验证暂不可用，请稍后重试或联系门店';
 
-export async function beginCustomerAuthAttempt(ip: string, scope: 'customer' | 'employee' = 'customer'): Promise<AuthDecision> {
+export async function beginCustomerAuthAttempt(ip: string, scope: 'customer' | 'employee' = 'customer', dimension: 'network' | 'account' = 'network'): Promise<AuthDecision> {
   if (!ip || ip === 'unknown') throw new Error(CUSTOMER_AUTH_UNAVAILABLE);
-  const ipKey = customerAuthIpKey(ip, scope);
-  const { data, error } = await supabase.rpc('begin_customer_auth_attempt_v2', { p_ip_hash: ipKey });
+  const account = dimension === 'account';
+  const ipKey = account
+    ? createHmac('sha256', getJwtSecret()).update(scope + '-auth-account:' + ip).digest('hex')
+    : customerAuthIpKey(ip, scope);
+  const { data, error } = account
+    ? await supabase.rpc('begin_customer_password_account_attempt', { p_account_hash: ipKey })
+    : await supabase.rpc('begin_customer_auth_attempt_v2', { p_ip_hash: ipKey });
   if (error) throw new Error(CUSTOMER_AUTH_UNAVAILABLE);
   const row = Array.isArray(data) && data.length === 1 ? data[0] : null;
   if (row?.allowed === true && typeof row.attempt_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.attempt_id)) {
@@ -39,7 +44,7 @@ export async function beginCustomerAuthAttempt(ip: string, scope: 'customer' | '
   const label = reason === 'daily_limit' ? '当前网络今日密码错误次数已达上限' :
     reason === 'temporary_lock' ? '当前网络连续输错密码，已暂时锁定' : '当前网络正在验证的请求较多';
   return { allowed: false, code: (scope === 'employee' ? 'EMPLOYEE_AUTH_' : 'CUSTOMER_AUTH_') + reason.toUpperCase(), retryAfterSeconds, retryAt,
-    error: `${label}，请于北京时间 ${time} 后重试。本次尚未验证密码。` };
+    error: `${account ? label.replace('当前网络', '此登录账号') : label}，请于北京时间 ${time} 后重试。本次尚未验证密码。${account && scope === 'customer' ? '也可使用短信验证码登录。' : ''}` };
 }
 
 export async function finishCustomerAuthAttempt(attempt: CustomerAuthAttempt, outcome: 'success' | 'failure' | 'cancelled'): Promise<void> {

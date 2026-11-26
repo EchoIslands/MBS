@@ -1,15 +1,10 @@
+import { getAuthToken } from '../api';
+import { apiFetch } from '../../shared/api-base';
+
 // 图片上传（base64 → Supabase Storage URL）
 const API_BASE = typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE
   ? (import.meta as { env?: Record<string, string> }).env!.VITE_API_BASE
   : '/api';
-
-function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem('mbs_auth_token');
-  } catch (_e) {
-    return null;
-  }
-}
 
 export const uploadImage = async (base64Image: string): Promise<string> => {
   const token = getAuthToken();
@@ -17,8 +12,9 @@ export const uploadImage = async (base64Image: string): Promise<string> => {
   const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
-    const res = await fetch(`${API_BASE}/upload/image`, {
+    const res = await apiFetch(`${API_BASE}/upload/image`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

@@ -4,6 +4,7 @@ import { useAppStore, restoreEmployeeSession, restoreCustomerSession } from "./s
 import CustomerMainLayout from './components/CustomerMainLayout';
 import { CustomerPageFrame } from './components/CustomerPage';
 import { customerLoginRedirect, customerPasswordChangePath } from './lib/customerLoginRedirect';
+import { isRealApi } from '../shared/api-base';
 
 const OperationsWorkbench = lazy(() => import('./pages/shop/OperationsWorkbench'));
 
@@ -107,7 +108,7 @@ const ShopRouteGuard = () => {
   useEffect(() => {
     let active=true;
     (async()=>{
-      if (!checked && (!currentEmployee || !currentShop) && hasEmployeeSession()) {
+      if (!checked && (!currentEmployee || !currentShop) && (isRealApi() || hasEmployeeSession())) {
         await restoreEmployeeSession();
       }
       if (active) setChecked(true);

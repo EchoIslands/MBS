@@ -16,7 +16,7 @@ const ReviewsManagement: React.FC = () => {
     setLoading(true);
     try {
       setError(null);
-      const data = await shopApi.getShopReviews(currentShop.id);
+      const data = await shopApi.getShopReviews(currentShop.id, true);
       setReviews(data);
     } catch (err: unknown) {
       console.error('加载评价失败:', err);

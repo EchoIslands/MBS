@@ -36,3 +36,4 @@ dist-ssr
 # Project-local private plans and diagnostics (never publish)
 /私人资料/
 /mini-program/project.private.config.json
+/mbs-localstorage-export-*.json

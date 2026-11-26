@@ -59,7 +59,7 @@ const ShopLogin: React.FC = () => {
         } as Employee;
         setCurrentEmployee(employee);
         // 员工会话单独持久化，与顾客会话隔离
-        try {
+        if (!isRealApi()) try {
           localStorage.setItem('mbs_employee_session', JSON.stringify({
             currentShop: shop,
             currentEmployee: employee,

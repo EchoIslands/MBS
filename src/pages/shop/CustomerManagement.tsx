@@ -47,7 +47,6 @@ import {
   canCreateCustomer,
   canEditCustomer,
   canExportCustomers,
-  canDeleteCustomer,
   filterCustomersByRole,
   getCustomerDataScope,
 } from '../../../shared/permissions';
@@ -1131,7 +1130,6 @@ const CustomerManagement: React.FC = () => {
             )}
 
             <details className="mb-5"><summary className="cursor-pointer font-bold text-gray-700">完整档案与转介绍资料</summary><dl className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm">{customerColumns.map(column=><div key={column.label}><dt className="text-gray-500">{column.label}</dt><dd className="break-words">{column.value(viewingCustomer)}</dd></div>)}<div><dt className="text-gray-500">身份证号</dt><dd>{viewingCustomer.idCardNumber || '—'}</dd></div></dl></details>
-            {canDeleteCustomer(userRole) && <button disabled={accountBusy || !!error || loading} className="text-red-600 mb-4 disabled:opacity-50" onClick={()=>{if(window.confirm('确定删除此客户档案吗？关联历史数据可能受影响，请谨慎确认。')) void runAccountAction(async()=>{await customerApi.delete(viewingCustomer.id);setViewingId(null);});}}>删除客户</button>}
             {/* 底部按钮 */}
             <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
               <button

@@ -45,6 +45,7 @@ import { displayLoginNameHint, normalizeDisplayLoginName } from '../../shared/li
 import { getJwtSecret, signCustomerToken, verifyCustomerToken, signCustomerPasswordChallenge, verifyCustomerPasswordChallenge, CUSTOMER_COOKIE, CUSTOMER_DEVICE_COOKIE_SECONDS } from '../lib/tokens.js';
 import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
+import { EMPLOYEE_SESSION_COOKIE, EMPLOYEE_SESSION_SELECTOR } from '../../shared/employeeSession.js';
 
 const mainRouter = Router();
 mainRouter.use('/operations-workbench', operationsWorkbenchRouter);
@@ -64,6 +65,11 @@ type DbRecord = Record<string, any>;
 // ===================== auth =====================
 const authRouter = Router();
 getJwtSecret(); // 生产密钥配置不合格时拒绝启动
+const employeeSessionSeconds = 12 * 60 * 60;
+const employeeCookieOptions = () => ({
+  httpOnly: true, secure: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1',
+  sameSite: 'strict' as const, path: '/api',
+});
 
 /**
  * POST /api/auth/login
@@ -86,6 +92,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
     const loginIp = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
     let attempt: CustomerAuthAttempt | undefined;
+    let accountAttempt: CustomerAuthAttempt | undefined;
     try {
       const decision = await beginCustomerAuthAttempt(loginIp, 'employee');
       if (decision.allowed === false) {
@@ -93,6 +100,12 @@ authRouter.post('/login', async (req: Request, res: Response) => {
         return res.status(429).json({ success: false, ...decision });
       }
       attempt = decision.attempt;
+      const accountDecision = await beginCustomerAuthAttempt(identifier, 'employee', 'account');
+      if (accountDecision.allowed === false) {
+        res.setHeader('Retry-After', accountDecision.retryAfterSeconds);
+        return res.status(429).json({ success: false, ...accountDecision });
+      }
+      accountAttempt = accountDecision.attempt;
       // 只读取登录所需字段，避免传输员工记录中的大字段。
       const employeeQuery = supabase
         .from('employees')
@@ -109,6 +122,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     }
 
     if (!employees || employees.length === 0) {
+      await finishCustomerAuthAttempt(accountAttempt, 'failure'); accountAttempt = undefined;
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       res.status(401).json({ success: false, error: loginError });
       return;
@@ -118,6 +132,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
     // 成功校验旧密码后平滑迁移为哈希。
     if (password === '123456' || !(await verifyPassword(password, employee.password_hash))) {
+      await finishCustomerAuthAttempt(accountAttempt, 'failure'); accountAttempt = undefined;
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       res.status(401).json({ success: false, error: loginError });
       return;
@@ -140,8 +155,9 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       }
     }
 
+    await finishCustomerAuthAttempt(accountAttempt, 'success'); accountAttempt = undefined;
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
-    // 3. 签发 JWT（有效期 7 天）
+    // 员工会话只放在 HttpOnly Cookie 中。
     const payload: AuthEmployee = {
       id: employee.id,
       shopId: employee.shop_id || '',
@@ -150,7 +166,8 @@ authRouter.post('/login', async (req: Request, res: Response) => {
       phone: employee.phone || '',
     };
 
-    const token = jwt.sign({ ...payload, kind: 'employee', passwordVersion: passwordVersion(employee.password_hash) }, getJwtSecret(), { algorithm: 'HS256', audience: 'employee', issuer: 'mbs', expiresIn: '7d' });
+    const sessionSeconds = employee.role === 'queue_display' ? 7 * 86400 : employeeSessionSeconds;
+    const token = jwt.sign({ ...payload, kind: 'employee', passwordVersion: passwordVersion(employee.password_hash) }, getJwtSecret(), { algorithm: 'HS256', audience: 'employee', issuer: 'mbs', expiresIn: sessionSeconds });
 
     const user = {
       id: employee.id,
@@ -166,8 +183,11 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     };
 
     console.log('[auth] 员工登录成功');
-    res.json({ success: true, data: { token, user } });
+    res.setHeader('Cache-Control', 'no-store');
+    res.cookie(EMPLOYEE_SESSION_COOKIE, token, { ...employeeCookieOptions(), maxAge: sessionSeconds * 1000 });
+    res.json({ success: true, data: { user } });
     } finally {
+      if (accountAttempt) await finishCustomerAuthAttempt(accountAttempt, 'cancelled').catch(() => {});
       if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
     }
   } catch (err: unknown) {
@@ -220,6 +240,13 @@ authRouter.get('/me', authMiddleware, async (req: Request, res: Response) => {
  */
 authRouter.post('/verify', authMiddleware, (req: Request, res: Response) => {
   res.json({ success: true, valid: true, employee: req.employee });
+});
+authRouter.post('/logout', (req: Request, res: Response) => {
+  if (req.headers.authorization !== `Bearer ${EMPLOYEE_SESSION_SELECTOR}`) {
+    return res.status(403).json({ success: false, error: '退出请求无效' });
+  }
+  res.clearCookie(EMPLOYEE_SESSION_COOKIE, employeeCookieOptions());
+  return res.json({ success: true });
 });
 
 mainRouter.use('/auth', authRouter);
@@ -1876,6 +1903,7 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
   const platformIp = process.env.VERCEL === '1' ? req.headers['x-vercel-forwarded-for'] : undefined;
   const loginIp = typeof platformIp === 'string' && platformIp.trim() ? platformIp.split(',')[0].trim() : req.ip || 'unknown';
   let attempt: CustomerAuthAttempt | undefined;
+  let accountAttempt: CustomerAuthAttempt | undefined;
   try {
     const decision = await beginCustomerAuthAttempt(loginIp);
     if (decision.allowed === false) {
@@ -1883,15 +1911,23 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
       return res.status(429).json({ success: false, ...decision });
     }
     attempt = decision.attempt;
+    const accountDecision = await beginCustomerAuthAttempt(normalizedPhone, 'customer', 'account');
+    if (accountDecision.allowed === false) {
+      res.setHeader('Retry-After', accountDecision.retryAfterSeconds);
+      return res.status(429).json({ success: false, ...accountDecision });
+    }
+    accountAttempt = accountDecision.attempt;
     const { data: customers, error } = await supabase.from('customers')
       .select(`${CUSTOMER_SELF_FIELDS}, password_hash, is_weak_password`).eq('phone', normalizedPhone).limit(2);
     if (error) return res.status(503).json({ success: false, error: '身份验证暂不可用' });
     const customer = customers?.length === 1 ? customers[0] : null;
     const passwordHash = customer?.password_hash;
     if (!customer || !passwordHash || customer.is_weak_password === true || password === '123456' || password === normalizedPhone.slice(-6) || !(await verifyCustomerPassword(password, passwordHash))) {
+      await finishCustomerAuthAttempt(accountAttempt, 'failure'); accountAttempt = undefined;
       await finishCustomerAuthAttempt(attempt, 'failure'); attempt = undefined;
       return res.status(401).json({ success: false, error: '手机号或密码错误。可使用验证码直接登录，或验证手机号后设置密码' });
     }
+    await finishCustomerAuthAttempt(accountAttempt, 'success'); accountAttempt = undefined;
     await finishCustomerAuthAttempt(attempt, 'success'); attempt = undefined;
     if (req.body?.supportsPasswordSms !== true) {
       return res.status(409).json({ success: false, code: 'PASSWORD_SMS_REQUIRED', error: '此设备需要验证手机号，请切换到短信验证码登录' });
@@ -1903,6 +1939,7 @@ customersRouter.post('/login', async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(503).json({ success: false, error: error instanceof Error && error.message === CUSTOMER_AUTH_UNAVAILABLE ? CUSTOMER_AUTH_UNAVAILABLE : '身份验证暂不可用' });
   } finally {
+    if (accountAttempt) await finishCustomerAuthAttempt(accountAttempt, 'cancelled').catch(() => {});
     if (attempt) await finishCustomerAuthAttempt(attempt, 'cancelled').catch(() => {});
   }
 });
@@ -2593,29 +2630,8 @@ customersRouter.post('/:id/membership/revoke', requirePermission('customer:edit'
  * DELETE /api/customers/:id
  * 删除客户
  */
-customersRouter.delete('/:id', requirePermission('customer:delete'), async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const shopId = req.employee!.shopId;
-
-    const { error } = await supabase
-      .from('customers')
-      .delete()
-      .eq('id', id)
-      .eq('shop_id', shopId);
-
-    if (error) {
-      console.error('[customers] 删除客户失败:', error.message);
-      res.status(500).json({ success: false, error: '删除客户失败' });
-      return;
-    }
-
-    console.log(`[customers] 客户 ${id} 删除成功`);
-    res.json({ success: true });
-  } catch (err: unknown) {
-    console.error('[customers] 删除客户异常:', (err as Error).message);
-    res.status(500).json({ success: false, error: '服务器错误' });
-  }
+customersRouter.delete('/:id', requirePermission('customer:delete'), (_req: Request, res: Response) => {
+  res.status(409).json({ success: false, code: 'CUSTOMER_DELETE_BLOCKED', error: '顾客档案已保留，以保护历史交易和储值记录' });
 });
 
 /**
@@ -3017,6 +3033,7 @@ const reviewFromDb = (r: Record<string, unknown>): Record<string, unknown> => ({
   replyBy: r.reply_by,
   replyAt: r.reply_at,
   isHidden: r.is_hidden,
+  moderationPending: r.moderation_pending === true,
 });
 
 // 创建评价
@@ -3050,6 +3067,11 @@ reviewsRouter.post('/', customerSession, async (req: Request, res: Response) => 
     if (![serviceScore, stylistScore].every(score => typeof score === 'number' && Number.isFinite(score) && score >= 1 && score <= 5)) {
       return res.status(400).json({ success: false, error: '评分须为1至5分' });
     }
+    const comments = [serviceComment, stylistComment, comment];
+    if (comments.some(value => value != null && (typeof value !== 'string' || value.length > 1000))) {
+      return res.status(400).json({ success: false, error: '评价文字每项最多 1000 字' });
+    }
+    const moderationPending = comments.some(value => typeof value === 'string' && value.trim().length > 0);
 
     // 防止同一预约重复评价
     const { data: existing } = await supabase
@@ -3095,6 +3117,8 @@ reviewsRouter.post('/', customerSession, async (req: Request, res: Response) => 
         service_comment: serviceComment || '',
         stylist_comment: stylistComment || '',
         comment: comment || '',
+        is_hidden: moderationPending,
+        moderation_pending: moderationPending,
         is_aware_of_membership_benefits: Boolean(isAwareOfMembershipBenefits),
         customer_name: customerName,
       })
@@ -3226,7 +3250,7 @@ reviewsRouter.get('/shop/:shopId', optionalStaff, async (req: Request, res: Resp
 
     res.json({
       success: true,
-      data: req.employee ? (data || []).map(reviewFromDb) : (data || []).filter(r => !r.is_hidden).map(r => {
+      data: req.employee ? (data || []).map(reviewFromDb) : (data || []).filter(r => !r.is_hidden && !r.moderation_pending).map(r => {
         const review = reviewFromDb(r);
         for (const key of ['customerId', 'bookingId', 'replyBy']) delete review[key];
         review.customerName = r.customer_name ? String(r.customer_name).slice(0, 1) + '**' : '顾客';
@@ -3293,10 +3317,13 @@ reviewsRouter.put('/:id/hide', authMiddleware, requirePermission('review:manage'
   try {
     const { id } = req.params;
     const { isHidden } = req.body;
+    if (typeof isHidden !== 'boolean') {
+      return res.status(400).json({ success: false, error: '请明确选择隐藏或公开评价' });
+    }
 
     const { data, error } = await supabase
       .from('reviews')
-      .update({ is_hidden: Boolean(isHidden) })
+      .update(isHidden ? { is_hidden: true } : { is_hidden: false, moderation_pending: false })
       .eq('id', id)
       .select()
       .single();
