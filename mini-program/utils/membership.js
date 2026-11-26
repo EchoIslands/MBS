@@ -27,10 +27,10 @@ export const BenefitType = {
 
 export const purchaseVIPPlans = [
   { level: PurchaseVIPLevel.REGULAR, name: '普通用户', discount: 1, benefits: ['按店内正常价格消费'] },
-  { level: PurchaseVIPLevel.BRONZE, name: '普卡 VIP', discount: 0.88, benefits: ['全场 8.8 折（假发除外）', '消费满 59 元送洗发水', '积分 1.2 倍'] },
-  { level: PurchaseVIPLevel.SILVER, name: '银卡 VIP', discount: 0.78, benefits: ['全场 7.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 1.5 倍', '每次消费送饮品'] },
-  { level: PurchaseVIPLevel.GOLD, name: '金卡 VIP', discount: 0.68, benefits: ['全场 6.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 2 倍', '每次消费送饮品', '不满意重做'] },
-  { level: PurchaseVIPLevel.DIAMOND, name: '钻石 VIP', discount: 0.58, benefits: ['全场 5.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 3 倍', '每次消费送饮品', '不满意重做', '单次免费剪发一次'] },
+  { level: PurchaseVIPLevel.BRONZE, name: '普卡 VIP', discount: 0.88, benefits: ['全场 8.8 折', '消费满 59 元送洗发水', '积分 1.2 倍'] },
+  { level: PurchaseVIPLevel.SILVER, name: '银卡 VIP', discount: 0.78, benefits: ['全场 7.8 折', '消费满 59 元送洗发水+护发素', '积分 1.5 倍', '每次消费送饮品'] },
+  { level: PurchaseVIPLevel.GOLD, name: '金卡 VIP', discount: 0.68, benefits: ['全场 6.8 折', '消费满 59 元送洗发水+护发素', '积分 2 倍', '每次消费送饮品', '不满意重做'] },
+  { level: PurchaseVIPLevel.DIAMOND, name: '钻石 VIP', discount: 0.58, benefits: ['全场 5.8 折', '消费满 59 元送洗发水+护发素', '积分 3 倍', '每次消费送饮品', '不满意重做', '单次免费剪发一次'] },
 ];
 
 export const storedValuePlans = [
@@ -136,16 +136,18 @@ export function generateBenefits(customer) {
 }
 
 /**
- * 计算单个项目的折后价（假发不参与折扣）
+ * 计算单个项目的折后价，包括假发。
  * @param {number} price 原价
  * @param {Customer} customer 顾客
  * @param {string} category 商品分类或 'service'
  */
 export function calcDiscountedItemPrice(price, customer, category = 'service') {
   const effectivePrice = Number(price) || 0;
-  if (category === 'wig') return effectivePrice;
+  if (category === null) return effectivePrice;
   const discount = customer ? getCustomerEffectiveDiscount(customer) : 1;
-  return Math.round(effectivePrice * discount * 100) / 100;
+  const priceInCents = Math.round(effectivePrice * 100);
+  const discountInBasisPoints = Math.round(discount * 10000);
+  return Math.round(priceInCents * discountInBasisPoints / 10000) / 100;
 }
 
 // ==================== 股东会员权益计算（与 H5 shared/lib/membership.ts 保持一致） ====================

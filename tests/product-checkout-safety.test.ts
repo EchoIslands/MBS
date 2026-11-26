@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
+import {calcDiscountedItemPrice, calcSettlementDiscountDetail} from '../shared/lib/membership';
+import {ProductCategory, PurchaseVIPLevel, StoredValueLevel} from '../shared/types';
 
 test('058 checkout: retries, changed prices, expiry and actual sales',async t=>{
  const db=new PGlite();
@@ -43,6 +45,42 @@ test('058 checkout: retries, changed prices, expiry and actual sales',async t=>{
  assert.equal(Number(await scalar("SELECT expire_product_order_reservations('s')")),0);
  assert.equal(Number(await scalar("SELECT stock FROM products WHERE id='p'")),98);
  assert.equal(Number(await scalar("SELECT sales FROM products WHERE id='p'")),2);
+ });
+ await t.test('066 applies the same wig discount in shop settlement, mini-program and atomic checkout', async () => {
+  await db.exec(`UPDATE products SET category='wig',price=10.25 WHERE id='p';
+    UPDATE customers SET purchase_vip_level='gold',purchase_vip_expires_at=NOW()+INTERVAL '1 day',
+      stored_value_level='store_1000',stored_value_expires_at=NOW()+INTERVAL '1 day' WHERE id='c';`);
+  const wigOrder = (id: string, unit: number, quantity = 1) => {
+   const total = Math.round(unit * quantity * 100) / 100;
+   return db.query<{id: string; payable_amount: string}>('SELECT * FROM create_product_order_atomic($1::jsonb,$2::jsonb)', [
+    JSON.stringify({id,shop_id:'s',customer_id:'c',order_no:id,request_key:id.padEnd(20,'_'),request_fingerprint:'a'.repeat(64),
+     total_amount:total,payable_amount:total,discount_amount:0,payment_method:'balance'}),
+    JSON.stringify([{product_id:'p',price:unit,quantity,total_amount:total}]),
+   ]);
+  };
+  await wigOrder('pre-066', 10.25);
+  const migration = await readFile(new URL('../migrations/066_wig_membership_discount.sql', import.meta.url), 'utf8');
+  await db.exec(migration);
+  await db.exec(migration);
+  const miniSource = await readFile(new URL('../mini-program/utils/membership.js', import.meta.url), 'utf8');
+  const mini = await import(`data:text/javascript;base64,${Buffer.from(miniSource).toString('base64')}`);
+  const unit = calcDiscountedItemPrice(10.25, PurchaseVIPLevel.GOLD, StoredValueLevel.STORE_1000, ProductCategory.WIG);
+  assert.equal(unit, 5.92);
+  assert.equal(mini.calcDiscountedItemPrice(10.25, {purchaseVIPLevel:'gold',storedValueLevel:'store_1000'}, 'wig'), unit);
+  const detail = calcSettlementDiscountDetail([
+   {originalPrice:10.25,quantity:3,category:ProductCategory.WIG},
+   {originalPrice:10.25,quantity:1,category:'service'},
+  ], PurchaseVIPLevel.GOLD, StoredValueLevel.STORE_1000);
+  assert.equal(detail.total, 23.68);
+  assert.equal(detail.discount, 17.32);
+  await assert.rejects(wigOrder('stale-066', 10.25), /CHECKOUT_PRICE_CHANGED/);
+  const previousBalance = Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'"));
+  const {rows} = await wigOrder('new-066', unit, 3);
+  assert.equal(Number(rows[0].payable_amount), 17.76);
+  assert.equal(Number(await scalar("SELECT stored_value_balance FROM customers WHERE id='c'")), Math.round((previousBalance - 17.76) * 100) / 100);
+  assert.equal(Number((await wigOrder('pre-066', 10.25)).rows[0].payable_amount), 10.25);
+  await db.exec("UPDATE customers SET purchase_vip_expires_at=NOW()-INTERVAL '1 day',stored_value_expires_at=NOW()-INTERVAL '1 day' WHERE id='c'");
+  assert.equal(Number((await wigOrder('expired-066', 10.25)).rows[0].payable_amount), 10.25);
  });
  } finally {await db.close();}
 });

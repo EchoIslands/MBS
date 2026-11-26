@@ -73,14 +73,10 @@ export function getFinalDiscount(
 /**
  * 判断商品/服务是否参与会员折扣
  * - 服务默认参与
- * - 假发默认不参与
- * - 其他商品默认参与
+ * - 有分类的商品（含假发）默认参与
  */
 export function isDiscountable(category?: ProductCategory | 'service'): boolean {
-  if (category === 'service') return true;
-  if (category === ProductCategory.WIG) return false;
-  // 假发以外的商品默认参与折扣
-  return category !== undefined;
+  return category != null;
 }
 
 /**
@@ -93,8 +89,9 @@ export function calcDiscountedItemPrice(
   category?: ProductCategory | 'service'
 ): number {
   if (!isDiscountable(category)) return originalPrice;
-  const final = getFinalDiscount(purchaseLevel, storedValueLevel);
-  return Math.round(originalPrice * final * 100) / 100;
+  const priceInCents = Math.round(originalPrice * 100);
+  const discountInBasisPoints = Math.round(getFinalDiscount(purchaseLevel, storedValueLevel) * 10000);
+  return Math.round(priceInCents * discountInBasisPoints / 10000) / 100;
 }
 
 /**
@@ -115,19 +112,21 @@ export function calcSettlementDiscountDetail(
 
   let subtotal = 0;
   let afterPurchaseVIP = 0;
+  let afterStoredValue = 0;
 
   items.forEach((item) => {
     const itemTotal = item.originalPrice * item.quantity;
     subtotal += itemTotal;
     if (isDiscountable(item.category)) {
-      afterPurchaseVIP += itemTotal * purchaseDiscount;
+      afterPurchaseVIP += calcDiscountedItemPrice(item.originalPrice, purchaseLevel, StoredValueLevel.NONE, item.category) * item.quantity;
+      afterStoredValue += calcDiscountedItemPrice(item.originalPrice, purchaseLevel, storedValueLevel, item.category) * item.quantity;
     } else {
       afterPurchaseVIP += itemTotal;
+      afterStoredValue += itemTotal;
     }
   });
 
   const purchaseVIPDiscountAmount = Math.round((subtotal - afterPurchaseVIP) * 100) / 100;
-  const afterStoredValue = Math.round(afterPurchaseVIP * storedDiscount * 100) / 100;
   const storedValueDiscountAmount = Math.round((afterPurchaseVIP - afterStoredValue) * 100) / 100;
 
   // 权益抵扣金额（如免费剪发按原价抵扣）

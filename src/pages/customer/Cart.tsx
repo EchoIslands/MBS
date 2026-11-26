@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Crown, Loader2, Wallet, AlertCircle, X, Ticket } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { ProductCategory, CustomerCoupon, Coupon } from '../../../shared/types';
+import { CustomerCoupon, Coupon } from '../../../shared/types';
 import { calcDiscountedItemPriceForCustomer } from '../../lib/membership';
 import ProductImage from '../../components/ProductImage';
 import { productOrderApi, couponApi } from '../../api';
@@ -234,7 +234,6 @@ const Cart: React.FC = () => {
                     item.product.category
                   );
                   const hasDiscount = memberPrice < item.product.price;
-                  const isWig = item.product.category === ProductCategory.WIG;
                   return (
                     <div
                       key={item.id}
@@ -312,11 +311,6 @@ const Cart: React.FC = () => {
                               <Trash2 size={18} />
                             </button>
                           </div>
-                          {isWig && (
-                            <div className="text-[11px] text-gray-400">
-                              假发不参与会员折扣
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>

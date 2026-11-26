@@ -46,6 +46,7 @@ import {
   getEffectivePurchaseVIPLevel,
   getEffectiveStoredValueLevel,
   isVIPExpiringSoon,
+  calcDiscountedItemPrice,
   calcSettlementDiscountDetail,
   isDiscountable,
   getPurchaseVIPDiscount,
@@ -308,7 +309,11 @@ const Checkout: React.FC = () => {
           await handleContinueSettlement(existing);
           return;
         }
-        const draftTotal = customer ? Math.round(booking.price * getCustomerEffectiveDiscount(customer) * 100) / 100 : booking.price;
+        const draftTotal = customer
+          ? calcDiscountedItemPrice(
+            booking.price, getEffectivePurchaseVIPLevel(customer), getEffectiveStoredValueLevel(customer), 'service'
+          )
+          : booking.price;
         const draft = await settlementApi.create({
           id: submissionId.current,
           shopId,
@@ -780,6 +785,8 @@ const Checkout: React.FC = () => {
     submissionLock.current = true;
     setSubmitting(true);
 
+    const purchaseLevel = getEffectivePurchaseVIPLevel(selectedCustomer!);
+    const storedLevel = getEffectiveStoredValueLevel(selectedCustomer!);
     const settlementItems: SettlementItem[] = cartWithAdjustedPrices.map((item, index) => {
       const override = priceOverrides[index];
       const isOverridden = override !== undefined && item.type === 'service';
@@ -788,10 +795,13 @@ const Checkout: React.FC = () => {
         discountedUnit = override;
       } else if (item.groupBuyInfo) {
         discountedUnit = item.groupBuyInfo.price;
-      } else if (item.type === 'product' && !isDiscountable(item.category)) {
-        discountedUnit = item.originalPrice;
       } else {
-        discountedUnit = Math.round(item.originalPrice * getCustomerEffectiveDiscount(selectedCustomer!) * 100) / 100;
+        discountedUnit = calcDiscountedItemPrice(
+          item.originalPrice,
+          purchaseLevel,
+          storedLevel,
+          item.type === 'service' ? 'service' : item.category,
+        );
       }
       const isPackageDeducted = !isOverridden && !!selectedPackage && item.type === 'service' && item.id === selectedPackage.serviceId;
       return {

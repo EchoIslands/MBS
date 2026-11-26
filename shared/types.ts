@@ -387,7 +387,7 @@ export interface SettlementItem {
   quantity: number;
   discountedPrice: number;       // 折后单价
   total: number;                 // 折后小计
-  category?: ProductCategory | 'service'; // 商品分类或服务标记（用于假发等排除折扣）
+  category?: ProductCategory | 'service'; // 商品分类或服务标记（用于判断会员折扣资格）
   employeeId?: string;           // 服务发型师 ID
   employeeName?: string;         // 服务发型师姓名
 }

@@ -24,7 +24,7 @@ export const purchaseVIPPlans: PurchaseVIPPlan[] = [
     period: '年',
     discount: 0.88,
     pointsRate: 1.2,
-    benefits: ['全场 8.8 折（假发除外）', '消费满 59 元送洗发水', '积分 1.2 倍'],
+    benefits: ['全场 8.8 折', '消费满 59 元送洗发水', '积分 1.2 倍'],
     color: 'orange',
   },
   {
@@ -34,7 +34,7 @@ export const purchaseVIPPlans: PurchaseVIPPlan[] = [
     period: '年',
     discount: 0.78,
     pointsRate: 1.5,
-    benefits: ['全场 7.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 1.5 倍', '每次消费送饮品'],
+    benefits: ['全场 7.8 折', '消费满 59 元送洗发水+护发素', '积分 1.5 倍', '每次消费送饮品'],
     color: 'blue',
   },
   {
@@ -44,7 +44,7 @@ export const purchaseVIPPlans: PurchaseVIPPlan[] = [
     period: '年',
     discount: 0.68,
     pointsRate: 2,
-    benefits: ['全场 6.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 2 倍', '每次消费送饮品', '不满意重做'],
+    benefits: ['全场 6.8 折', '消费满 59 元送洗发水+护发素', '积分 2 倍', '每次消费送饮品', '不满意重做'],
     color: 'yellow',
   },
   {
@@ -54,7 +54,7 @@ export const purchaseVIPPlans: PurchaseVIPPlan[] = [
     period: '年',
     discount: 0.58,
     pointsRate: 3,
-    benefits: ['全场 5.8 折（假发除外）', '消费满 59 元送洗发水+护发素', '积分 3 倍', '每次消费送饮品', '不满意重做', '单次免费剪发一次'],
+    benefits: ['全场 5.8 折', '消费满 59 元送洗发水+护发素', '积分 3 倍', '每次消费送饮品', '不满意重做', '单次免费剪发一次'],
     color: 'purple',
   },
 ];

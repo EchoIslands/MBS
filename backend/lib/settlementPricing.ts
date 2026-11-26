@@ -1,5 +1,5 @@
 import { supabase } from '../db/index.js';
-import { calcSettlementDiscountDetail, getEffectivePurchaseVIPLevel, getEffectiveStoredValueLevel, getFinalDiscount, getPurchaseVIPDiscount } from '../../shared/lib/membership.js';
+import { calcDiscountedItemPrice, calcSettlementDiscountDetail, getEffectivePurchaseVIPLevel, getEffectiveStoredValueLevel, getPurchaseVIPDiscount } from '../../shared/lib/membership.js';
 import { Customer, MemberBenefitRecord, ProductCategory, PurchaseVIPLevel, StoredValueLevel, SettlementItem, Service } from '../../shared/types.js';
 
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -75,7 +75,7 @@ export async function priceSettlement(shopId: string, input: unknown) {
     }
     if (final === undefined) normal.push({ originalPrice, quantity: raw.quantity, category });
     else { extraSubtotal += originalPrice * raw.quantity; extraTotal += final * raw.quantity; }
-    const discountedPrice = final ?? (category === 'wig' ? originalPrice : round(originalPrice * getFinalDiscount(purchase, stored)));
+    const discountedPrice = final ?? calcDiscountedItemPrice(originalPrice, purchase, stored, category);
     items.push({ type: raw.type, id: String(row.id), name: row.name, originalPrice, quantity: raw.quantity,
       discountedPrice, total: round(discountedPrice * raw.quantity), category, employeeId: raw.employeeId, employeeName: employeeResult.data?.find(e => e.id === raw.employeeId)?.name,
       priceOverride: raw.priceOverride, groupBuyVoucherId: raw.groupBuyVoucherId });

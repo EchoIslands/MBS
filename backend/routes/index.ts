@@ -4138,7 +4138,7 @@ productOrdersRouter.post('/', (req, res, next) => { req.params.customerIdentityI
       }
 
       const originalPrice = Number(product.price || 0);
-      // 应用与 H5/小程序一致的会员折扣（假发不参与折扣）
+      // 应用与 H5 和小程序一致的会员折扣，含假发。
       const unitPrice = calcDiscountedItemPrice(
         originalPrice,
         purchaseLevel,
