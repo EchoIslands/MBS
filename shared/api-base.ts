@@ -50,7 +50,7 @@ export async function http<T>(url: string, opts: RequestInit = {}, timeoutMs = 1
       credentials: 'include',
       ...opts,
       headers: {
-        'Content-Type': 'application/json',
+        ...(opts.body != null ? { 'Content-Type': 'application/json' } : {}),
         ...(opts.headers || {}),
       },
       signal: controller.signal,

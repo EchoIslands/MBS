@@ -1,7 +1,9 @@
 import type {FixtureRow as Row, FixtureRpcArgs} from './helpers/fixture-types.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createServer } from 'node:http';
+import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+import { Socket } from 'node:net';
+import { once } from 'node:events';
 import {generateKeyPairSync,createCipheriv,createSign,randomUUID} from 'node:crypto';
 import { customerDraft, customerPatch } from '../src/lib/customerEditor.js';
 // 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
@@ -48,6 +50,7 @@ class Query {
  filters: ((r:Row)=>boolean)[]=[]; operation='select'; payload: Row | Row[]; columns='*'; singleRow=false;
  rowStart=0;rowEnd:number|undefined;exactCount=false;
  constructor(public table:string) { calls++; }
+ abortSignal(){return this;}
  select(columns='*',options?:{count?:string}) {this.columns=columns;this.exactCount=options?.count==='exact';return this;}
  eq(k:string,v:unknown) {this.filters.push(r=>Array.isArray(r[k]) && typeof v==='string' && v.startsWith('{') ? JSON.stringify(r[k])===JSON.stringify(JSON.parse('['+v.slice(1,-1)+']')) : r[k]===v);return this;}
  is(k:string,v:unknown) {this.filters.push(r=>r[k]===v || (v===null && r[k]===undefined));return this;}
@@ -67,7 +70,11 @@ class Query {
   let rows=matched.slice(this.rowStart,this.rowEnd).slice(0,this.maxRows ?? syntheticRowCap);
   if(failMigration && this.table==='employees' && this.operation==='update') return Promise.resolve({data:null,error:{message:'synthetic migration failure'}}).then(resolve,reject);
   if(this.operation==='update')rows.forEach(r=>Object.assign(r,this.payload));
-  if(this.operation==='insert'){rows=Array.isArray(this.payload)?this.payload:[this.payload];(tables[this.table]??=[]).push(...structuredClone(rows));}
+  if(this.operation==='insert'){
+   rows=Array.isArray(this.payload)?this.payload:[this.payload];
+   if(this.table==='customers' && rows.some(row=>(tables.customers||[]).some(existing=>existing.id===row.id))) return Promise.resolve({data:null,error:{code:'23505',message:'synthetic duplicate'}}).then(resolve,reject);
+   (tables[this.table]??=[]).push(...structuredClone(rows));
+  }
   if(this.operation==='delete')tables[this.table]=(tables[this.table]||[]).filter(r=>!rows.includes(r));
   const data=rows.map(r=>this.columns.includes('group_buy_batches(*)')?{...structuredClone(r),group_buy_batches:tables.group_buy_batches.find(b=>b.id===r.batch_id)}:this.columns==='*'?structuredClone(r):Object.fromEntries(this.columns.split(',').map(k=>[k.trim(),r[k.trim()]])));
   return Promise.resolve({data:this.singleRow?(data[0]||null):data,error:null,count:this.exactCount?matched.length:null}).then(resolve,reject);
@@ -197,6 +204,21 @@ const login=async(id:string)=>employeeToken(await request('/auth/login','','POST
 
 test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',async(t)=>{
  try {
+  await t.test('serverless GET with an already-ended JSON stream reaches the route instead of waiting forever',async()=>{
+   const req=new IncomingMessage(new Socket());
+   req.method='GET';req.url='/api/health';req.headers={'content-type':'application/json'};
+   req.push(null);req.resume();await once(req,'end');
+   assert.equal(req.readableEnded,true);
+   const res=new ServerResponse(req);
+   let timeout:ReturnType<typeof setTimeout>|undefined;
+   try{
+    const body=await Promise.race([
+      new Promise<string>(resolve=>{res.end=((chunk:unknown)=>{resolve(String(chunk));return res;}) as typeof res.end;void handler(req as Parameters<typeof handler>[0],res as Parameters<typeof handler>[1]);}),
+      new Promise<never>((_resolve,reject)=>{timeout=setTimeout(()=>reject(new Error('ended request never reached health route')),1000);}),
+    ]);
+    assert.equal(JSON.parse(body).success,true);
+   }finally{clearTimeout(timeout);req.destroy();res.destroy();}
+  });
   await t.test('浏览器员工会话必须带 HttpOnly Cookie，退出会清除 Cookie', async () => {
    const selector = 'employee-session';
    const session = employeeCookie(await request('/auth/login','','POST',{phone:'synthetic-ceo',password:'old-password'}));
@@ -451,6 +473,9 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     const created = await request('/customers', cs, 'POST', { id: 'fixture-staff-create', ...patch });
     assert.equal(created.status, 200);
     assert.equal(created.body.data.lastStylist, 'Synthetic stylist');
+    const replay=await request('/customers',cs,'POST',{id:'fixture-staff-create',...patch});
+    assert.equal(replay.status,200);assert.equal(replay.body.replayed,true);
+    assert.equal((await request('/customers',cs,'POST',{id:'fixture-staff-create',...patch,name:'Different'})).status,409);
     const compatible = await request('/customers', cs, 'POST', {
       id: 'fixture-legacy-create', name: draft.name, phone: '13800000217',
       membershipLevel: 'regular', purchaseVIPLevel: 'regular', storedValueLevel: 'none',
@@ -850,6 +875,7 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
       assert.equal(part.status,200);
       assert.equal(part.body.hasMore, page < 5);
       assert.equal(part.body.data.length,page < 5 ? 200 : 3);
+      if(page===0){assert.equal(part.body.total,1003);assert.equal(part.body.pageSize,200);}
       paged.push(...part.body.data);
     }
     assert.equal(new Set(paged.map(row=>row.id)).size,1003);

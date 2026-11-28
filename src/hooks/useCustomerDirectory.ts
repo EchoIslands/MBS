@@ -9,6 +9,7 @@ export function useCustomerDirectory(scope: string) {
   const inFlight = useRef<Promise<boolean> | null>(null);
   const queued = useRef<Promise<boolean> | null>(null);
   const lastStarted = useRef(0);
+  const snapshotReady = useRef(false);
   const abortController = useRef<AbortController | null>(null);
   const [loadedCount, setLoadedCount] = useState(0);
   const [snapshot, setSnapshot] = useState<{ scope: string; customers: Customer[]; syncedAt: number }>({ scope: '', customers: [], syncedAt: 0 });
@@ -40,6 +41,7 @@ export function useCustomerDirectory(scope: string) {
     } }).then(customers => {
       if (request !== generation.current || scopeRef.current !== scope) return false;
       setSnapshot({ scope, customers, syncedAt: Date.now() });
+      snapshotReady.current = true;
       setError(null);
       return true;
     }).catch(err => {
@@ -57,10 +59,11 @@ export function useCustomerDirectory(scope: string) {
   useEffect(() => {
     scopeRef.current = scope;
     setSnapshot({ scope, customers: [], syncedAt: 0 });
+    snapshotReady.current = false;
     setError(null);
     void refresh(false);
     const visibleRefresh = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastStarted.current >= 60_000) void refresh(false);
+      if (snapshotReady.current && !inFlight.current && document.visibilityState === 'visible' && Date.now() - lastStarted.current >= 60_000) void refresh(false);
     };
     const unsubscribe = subscribeCustomerChanges(() => { void refresh(); });
     window.addEventListener('focus', visibleRefresh);

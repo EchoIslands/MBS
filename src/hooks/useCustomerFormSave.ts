@@ -5,17 +5,19 @@ export function useCustomerFormSave(formKey: string | undefined) {
   const inFlight = useRef(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveUncertain, setSaveUncertain] = useState(false);
 
   useEffect(() => { setSaveError(null); }, [formKey]);
 
   const saveCustomer = async (action: () => Promise<void>) => {
-    if (inFlight.current) return;
+    if (inFlight.current || saveUncertain) return;
     inFlight.current = true;
     setSaving(true);
     setSaveError(null);
     try {
       await action();
     } catch (error: unknown) {
+      if ((error as {code?:string}).code === 'SAVE_RESULT_UNCONFIRMED') setSaveUncertain(true);
       setSaveError(error instanceof Error ? error.message : '保存失败，请稍后重试');
     } finally {
       inFlight.current = false;
@@ -23,5 +25,5 @@ export function useCustomerFormSave(formKey: string | undefined) {
     }
   };
 
-  return { saveCustomer, saving, saveError };
+  return { saveCustomer, saving, saveError, saveUncertain };
 }

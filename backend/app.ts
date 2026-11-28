@@ -3,6 +3,7 @@ import apiRouter from './routes/index.js';
 import analyticsRoutes from '../server/routes/analytics.js';
 import uploadRoutes from '../server/routes/upload.js';
 import groupBuyRoutes from './routes/groupBuy.js';
+import { randomUUID } from 'node:crypto';
 
 // express 内部属性 _body 未在类型定义中暴露
 interface RequestWithBody extends Request {
@@ -11,6 +12,19 @@ interface RequestWithBody extends Request {
 }
 
 const app = express();
+
+// Correlate customer failures without recording bodies, identities, cookies or query strings.
+app.use((req,res,next) => {
+  if (!req.path.startsWith('/api/customers')) return next();
+  const requestId = randomUUID();
+  const started = performance.now();
+  res.setHeader('X-MBS-Request-ID',requestId);
+  res.on('finish',() => {
+    const duration = Math.round(performance.now()-started);
+    if (res.statusCode >= 500 || duration >= 3000) console.warn(`[customer-request] id=${requestId} method=${req.method} status=${res.statusCode} duration_ms=${duration}`);
+  });
+  next();
+});
 
 // 网页和 API 同源；小程序请求不受浏览器 CORS 限制。跨站网页不开放读取 API 响应。
 app.use((_req, res, next) => {
@@ -24,6 +38,12 @@ app.use((_req, res, next) => {
 //      导致 req.body 为 {}，客户姓名/电话等字段丢失。
 const MAX_JSON_BYTES = 3 * 1024 * 1024; // 兼容现有2MB图片的base64载荷。
 const getRawBody = (req: Request): Promise<string> => {
+  if (req.readableEnded) {
+    if (Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding']) {
+      return Promise.reject(new Error('请求正文已被读取，无法安全执行保存'));
+    }
+    return Promise.resolve('');
+  }
   return new Promise((resolve, reject) => {
     let data = '';
     let size = 0;
@@ -51,6 +71,9 @@ const getRawBody = (req: Request): Promise<string> => {
 };
 
 const jsonBodyParser = async (req: RequestWithBody, _res: Response, next: NextFunction): Promise<void> => {
+  // Read requests carry no JSON body. In a serverless invocation the stream may
+  // already be ended; waiting for its next 'end' event would never reach a route.
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
   // 已经解析过就不再处理
   if (req._body || (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body))) {
     return next();

@@ -9,6 +9,7 @@ import { EMPLOYEE_SESSION_SELECTOR } from '../shared/employeeSession';
 import { getEmployeePassword } from './lib/employeePassword';
 import { notifyCustomerChange } from './lib/customerChanges';
 import { readCustomerDirectory, type CustomerDirectoryPage } from './lib/customerDirectory';
+import { verifyCustomerSave } from './lib/customerSave';
 
 interface AuthUser extends Employee {
   shopId?: string;
@@ -1196,7 +1197,7 @@ export const customerApi = {
       const rows = await readCustomerDirectory(page => http<CustomerDirectoryPage>(
         `${API_BASE}/customers?summary=1${compact ? '&compact=1' : ''}&page=${page}`,
         { headers: { Authorization: `Bearer ${token}` }, signal: options.signal },
-        15000,
+        20000,
       ), options.onProgress, options.signal);
       return rows.map(normalizeCustomerDates);
     }
@@ -1212,13 +1213,17 @@ export const customerApi = {
   create: async (data: Partial<Customer>): Promise<Customer> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers`, {
+      const payload = {...data, id:data.id || 'cust_'+crypto.randomUUID()};
+      const saved = await verifyCustomerSave(async () => {
+        const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers`, {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
         headers: { Authorization: `Bearer ${token}` },
-      });
-      if (result?.success) { notifyCustomerChange(); return normalizeCustomerDates(result.data); }
-      throw new Error('操作失败或无权访问');
+        }, 25000);
+        if (!result?.data?.id) throw new Error('未能确认客户已保存');
+        return result.data;
+      }, () => customerApi.getById(payload.id,true), payload);
+      notifyCustomerChange(); return normalizeCustomerDates(saved);
     }
     // Mock fallback
     const newCustomer = { id: `cust${Date.now()}`, ...data, joinedAt: new Date() } as Customer;
@@ -1237,13 +1242,16 @@ export const customerApi = {
       if (previous && Object.keys(patch).length === 0) return previous;
       const expected = previous ? Object.fromEntries(Object.keys(patch).map(key => [key, previous[key as keyof Customer] ?? null])) : {};
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}`, {
+      const saved = await verifyCustomerSave(async () => {
+        const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ ...patch, _expected: expected }),
         headers: { Authorization: `Bearer ${token}` },
-      });
-      if (result?.success) { notifyCustomerChange(); return normalizeCustomerDates(result.data); }
-      throw new Error('操作失败或无权访问');
+        }, 25000);
+        if (!result?.data?.id) throw new Error('未能确认客户已保存');
+        return result.data;
+      }, () => customerApi.getById(id,true), patch);
+      notifyCustomerChange(); return normalizeCustomerDates(saved);
     }
     const idx = mockCustomers.findIndex((c) => c.id === id);
     if (idx !== -1) {
@@ -2568,7 +2576,7 @@ async function httpThrowing<T>(url: string, opts: RequestInit = {}, timeout = 15
   if (opts.signal?.aborted) controller.abort();
   else opts.signal?.addEventListener('abort',abort,{once:true});
   try {
-    const res=await fetch(url,{credentials:'include',...opts,headers:{'Content-Type':'application/json',...(opts.headers || {})},signal:controller.signal});
+    const res=await fetch(url,{credentials:'include',...opts,headers:{...(opts.body != null ? {'Content-Type':'application/json'} : {}),...(opts.headers || {})},signal:controller.signal});
     const data=await res.json().catch(()=>null);
     if(!res.ok || data?.success===false) throw Object.assign(new Error(data?.error || '请求失败 ('+res.status+')'),{status:res.status,statusCode:res.status,code:data?.code,response:data});
     if(!data || !('data' in data)) throw new Error('服务返回格式异常，请刷新核对');

@@ -46,6 +46,7 @@ import { getJwtSecret, signCustomerToken, verifyCustomerToken, signCustomerPassw
 import { hashCustomerPassword, verifyCustomerPassword, isCustomerPassword } from '../lib/customerPassword.js';
 import { requirePermission, requireOwnShop, scopeCustomerQuery, requireCustomerScope, personalCustomerAccess, customerIdentity } from '../middleware/permissions.js';
 import { EMPLOYEE_SESSION_COOKIE, EMPLOYEE_SESSION_SELECTOR } from '../../shared/employeeSession.js';
+import { withReadDeadline } from '../lib/readDeadline.js';
 
 const mainRouter = Router();
 mainRouter.use('/operations-workbench', operationsWorkbenchRouter);
@@ -2182,7 +2183,7 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
     const customerFields: string = req.query.summary === '1' && req.query.compact === '1'
       ? 'id, shop_id, name, phone, purchase_vip_level, purchase_vip_expires_at, stored_value_level, stored_value_expires_at, stored_value_balance, withdrawable_referral_amount, is_stockholder, points, balance'
       : req.query.summary === '1' ? CUSTOMER_DIRECTORY_FIELDS : '*';
-    const customerQuery = () => scopeCustomerQuery(supabase.from('customers').select(customerFields), req)
+    const customerQuery = (count = false) => scopeCustomerQuery(supabase.from('customers').select(customerFields, count ? {count:'exact'} : undefined), req)
       .order('created_at', {ascending:false}).order('id', {ascending:false});
     if (req.query.summary === '1' && req.query.page !== undefined) {
       const rawPage = req.query.page;
@@ -2190,11 +2191,23 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
         return res.status(400).json({ success: false, error: '客户目录页码无效' });
       }
       const page = Number(rawPage), size = 200;
-      const { data, error } = await customerQuery().range(page * size, page * size + size);
+      const started = performance.now();
+      let result;
+      try {
+        result = await withReadDeadline(signal => customerQuery(page === 0).range(page * size, page * size + size).abortSignal(signal));
+      } catch {
+        const duration = Math.round(performance.now() - started);
+        res.append('Server-Timing', `customer_page;dur=${duration}`);
+        console.warn(`[customer-directory] read_timeout page=${page} duration_ms=${duration}`);
+        return res.status(503).json({ success:false, code:'CUSTOMER_DIRECTORY_READ_TIMEOUT', error:'客户目录读取超时，请重试' });
+      }
+      const {data,error,count} = result;
+      res.append('Server-Timing', `customer_page;dur=${Math.round(performance.now() - started)}`);
       if (error || !Array.isArray(data)) {
         return res.status(503).json({ success: false, error: '客户目录暂时无法读取，请重试' });
       }
-      return res.json({ success: true, data: toCamelCaseList((data as unknown as DbRecord[]).slice(0, size)), hasMore: data.length > size });
+      return res.json({ success: true, data: toCamelCaseList((data as unknown as DbRecord[]).slice(0, size)), hasMore: data.length > size,
+        ...(page === 0 && Number.isInteger(count) ? {total:count,pageSize:size} : {}) });
     }
     if (req.query.summary === '1' && req.query.compact === '1' && req.query.recent === '1') {
       const { data, error } = await customerQuery().limit(5);
@@ -2289,6 +2302,14 @@ customersRouter.post('/', requirePermission('customer:create'), async (req: Requ
       .single();
 
     if (error) {
+      if (error.code === '23505' && typeof body.id === 'string') {
+        const {data:existing,error:readError}=await supabase.from('customers').select('*').eq('id',customerId).eq('shop_id',shopId).maybeSingle();
+        if(readError) return res.status(503).json({success:false,error:'建档结果暂时无法核对，请刷新后确认'});
+        if(existing && Object.entries(insertData).every(([field,value])=>customerValuesEqual(field,value,existing[field]))) {
+          return res.json({success:true,data:toCamelCase(existing),replayed:true});
+        }
+        return res.status(409).json({success:false,error:'建档编号或手机号已存在，请刷新核对，勿重复建档'});
+      }
       console.error('[customers] 创建客户失败:', error.message);
       res.status(500).json({ success: false, error: '创建客户失败，请稍后重试' });
       return;

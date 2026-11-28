@@ -44,3 +44,15 @@ test('permanent failure, unauthorized and cancelled reads do not loop or expose 
   }, undefined, controller.signal));
   assert.equal(calls, 1);
 });
+
+test('remaining directory pages run concurrently in bounded batches, with ordered complete results',async()=>{
+  let active=0,peak=0;
+  const result=await readCustomerDirectory(async page=>{
+    active++;peak=Math.max(peak,active);
+    await new Promise(resolve=>setTimeout(resolve,5));
+    active--;
+    return {success:true,data:[{id:'page-'+page}] as Customer[],hasMore:page<6,...(page===0?{total:7,pageSize:1}:{})};
+  });
+  assert.equal(peak,3);
+  assert.deepEqual(result.map(row=>row.id),Array.from({length:7},(_,i)=>'page-'+i));
+});

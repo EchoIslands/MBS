@@ -15,7 +15,9 @@ type Props = {
 };
 export default function CustomerEditor({customer, latest, enabled, onClose, onReload, onSave}: Props) {
   const [draft, setDraft] = useState(() => customerDraft(customer));
-  const { saveCustomer, saving, saveError } = useCustomerFormSave(customer?.id || 'add');
+  const [newId] = useState(() => 'cust_' + crypto.randomUUID());
+  const { saveCustomer, saving, saveError, saveUncertain } = useCustomerFormSave(customer?.id || 'add');
+  const buildPatch = () => ({...customerPatch(draft, customer), ...(!customer ? {id:newId} : {})});
   const changedElsewhere = !!customer && !!latest && JSON.stringify(customer) !== JSON.stringify(latest);
   const field = (key: string, label: string, type = 'text') => <label className="block text-sm text-gray-700" key={key} htmlFor={'customer-'+key}>
     {label}
@@ -35,14 +37,14 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
       event.preventDefault();
       const submitter = (event.nativeEvent as SubmitEvent).submitter;
       const openMembership = submitter?.getAttribute('value') === 'membership';
-      if (enabled) void saveCustomer(() => onSave(customerPatch(draft, customer), openMembership));
+      if (enabled) void saveCustomer(() => onSave(buildPatch(), openMembership));
     }}>
       <div className="flex items-center justify-between mb-5"><h2 className="text-xl font-bold">{customer ? '编辑客户信息' : '添加新客户'}</h2><button type="button" aria-label="关闭编辑" disabled={saving} onClick={onClose}><X /></button></div>
       {!enabled && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">客户数据尚未同步成功，请先关闭窗口并刷新核对。</p>}
       {changedElsewhere && <div role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-amber-800">服务端档案已有更新。当前输入保留；保存仍校验修改前的值。
         <button type="button" disabled={saving} className="ml-2 underline" onClick={() => { if(window.confirm('重新载入会放弃本次未保存的输入，继续？')) onReload(); }}>重新载入最新资料</button>
       </div>}
-      <fieldset disabled={saving || !enabled}>
+      <fieldset disabled={saving || !enabled || saveUncertain}>
         {section('基本资料', <>
           {field('name','客户称呼 *')}{field('phone','联系方式 *','tel')}
           {field('wechat','微信')}{field('source','客户来源')}
@@ -60,7 +62,7 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
         {section('会员资料', <>
           <div className="md:col-span-2 flex flex-wrap items-center gap-2 text-sm text-gray-600">
             <span>下方档位用于纠正既有资料。新办、升级、续费及储值请到会员管理操作。</span>
-            <button type="button" onClick={() => void saveCustomer(() => onSave(customerPatch(draft, customer), true))}
+            <button type="button" onClick={() => void saveCustomer(() => onSave(buildPatch(), true))}
               className="text-orange-700 underline">保存并前往会员管理</button>
           </div>
           {select('purchaseVIPLevel','购买型 VIP 等级',Object.values(PurchaseVIPLevel).map(value=>[value,getPurchaseVIPLabel(value)]))}
@@ -89,8 +91,8 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
       {saveError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{saveError}</p>}
       <div className="flex flex-wrap gap-3 justify-end border-t pt-4">
         <button type="button" disabled={saving} onClick={onClose} className="rounded-xl bg-gray-100 px-5 py-2.5">取消</button>
-        <button type="submit" disabled={saving || !enabled} className="rounded-xl bg-orange-500 text-white px-5 py-2.5 disabled:opacity-50">{saving ? '保存中…' : '保存'}</button>
-        {!customer && <button type="submit" value="membership" disabled={saving || !enabled}
+        <button type="submit" disabled={saving || !enabled || saveUncertain} className="rounded-xl bg-orange-500 text-white px-5 py-2.5 disabled:opacity-50">{saving ? '保存中…' : '保存'}</button>
+        {!customer && <button type="submit" value="membership" disabled={saving || !enabled || saveUncertain}
           className="rounded-xl border border-orange-300 px-5 py-2.5 text-orange-700 disabled:opacity-50">保存并办理会员</button>}
       </div>
     </form>

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { supabase } from '../db/index.js';
 import { getJwtSecret } from '../lib/tokens.js';
 import { passwordVersion } from '../lib/password.js';
+import { withReadDeadline } from '../lib/readDeadline.js';
 import { EMPLOYEE_SESSION_COOKIE, EMPLOYEE_SESSION_SELECTOR, EMPLOYEE_SESSION_EXPIRED_HEADER } from '../../shared/employeeSession.js';
 
 export interface AuthEmployee { id: string; shopId: string; name: string; role: string; phone: string; }
@@ -33,9 +34,11 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     if (typeof value === 'string' || value.kind !== 'employee' || typeof value.id !== 'string') throw new Error();
     decoded = value;
   } catch { rejectSession('登录已过期，请重新登录'); return; }
+  const authStarted = performance.now();
   try {
-    const { data: employee, error } = await supabase.from('employees')
-      .select('id, shop_id, name, role, phone, is_active, password_hash').eq('id', decoded.id).maybeSingle();
+    const { data: employee, error } = await withReadDeadline(signal => supabase.from('employees')
+      .select('id, shop_id, name, role, phone, is_active, password_hash').eq('id', decoded.id).abortSignal(signal).maybeSingle());
+    res.append('Server-Timing', `employee_auth;dur=${Math.round(performance.now() - authStarted)}`);
     if (error) { res.status(503).json({ success: false, error: '身份验证暂不可用' }); return; }
     if (!employee || employee.is_active !== true || !employee.shop_id ||
       decoded.passwordVersion !== passwordVersion(String(employee.password_hash || ''))) {
@@ -54,5 +57,10 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     req.employee = { id: employee.id, shopId: employee.shop_id, name: employee.name, role: employee.role, phone: employee.phone || '' };
     res.setHeader('Cache-Control', 'no-store');
     next();
-  } catch { res.status(503).json({ success: false, error: '身份验证暂不可用' }); }
+  } catch (error) {
+    const duration = Math.round(performance.now() - authStarted);
+    res.append('Server-Timing', `employee_auth;dur=${duration}`);
+    console.warn(`[employee-auth] read_failed duration_ms=${duration}`);
+    res.status(503).json({ success: false, code: (error as {code?:string}).code === 'DATABASE_READ_TIMEOUT' ? 'EMPLOYEE_AUTH_READ_TIMEOUT' : 'EMPLOYEE_AUTH_READ_FAILED', error: '身份验证暂不可用，请重试' });
+  }
 }
