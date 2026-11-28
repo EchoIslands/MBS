@@ -1197,7 +1197,7 @@ export const customerApi = {
         `${API_BASE}/customers?summary=1${compact ? '&compact=1' : ''}&page=${page}`,
         { headers: { Authorization: `Bearer ${token}` }, signal: options.signal },
         15000,
-      ), options.onProgress);
+      ), options.onProgress, options.signal);
       return rows.map(normalizeCustomerDates);
     }
     const result = await http<{ success: boolean; data: Customer[] }>(

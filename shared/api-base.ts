@@ -62,7 +62,7 @@ export async function http<T>(url: string, opts: RequestInit = {}, timeoutMs = 1
     if (body === null) throw new Error('服务返回格式异常，请稍后重试');
     return body as T;
   } catch (error) {
-    if (timedOut) throw new Error(`请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`);
+    if (timedOut) throw Object.assign(new Error(`请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`), { code: 'REQUEST_TIMEOUT' });
     throw error;
   } finally {
     clearTimeout(timeoutId);

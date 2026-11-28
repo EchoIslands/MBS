@@ -18,3 +18,29 @@ test('directory rejects missing pages, transport errors and duplicate records in
   await assert.rejects(readCustomerDirectory(async () => { throw new Error('offline'); }), /offline/);
   await assert.rejects(readCustomerDirectory(async () => ({ success: true, data: [{ id: 'same' }] as Customer[], hasMore: true })), /发生变化/);
 });
+
+test('transient timeout retries the failed page and preserves completed pages', async () => {
+  const reads: number[] = [];
+  let failed = false;
+  const rows = await readCustomerDirectory(async page => {
+    reads.push(page);
+    if (page === 1 && !failed) { failed = true; throw Object.assign(new Error('timeout'), { code: 'REQUEST_TIMEOUT' }); }
+    return { success: true, data: [{ id: 'customer-' + page }] as Customer[], hasMore: page === 0 };
+  });
+  assert.deepEqual(reads, [0, 1, 1]);
+  assert.equal(rows.length, 2);
+});
+
+test('permanent failure, unauthorized and cancelled reads do not loop or expose partial totals', async () => {
+  for (const status of [401, 403, 409, 503]) {
+    let calls = 0;
+    await assert.rejects(readCustomerDirectory(async () => { calls++; throw Object.assign(new Error('failed'), { status }); }), /failed/);
+    assert.equal(calls, status === 503 ? 2 : 1);
+  }
+  const controller = new AbortController();
+  let calls = 0;
+  await assert.rejects(readCustomerDirectory(async () => {
+    calls++; controller.abort(); throw new TypeError('cancelled network request');
+  }, undefined, controller.signal));
+  assert.equal(calls, 1);
+});

@@ -31,6 +31,7 @@ export function useCustomerDirectory(scope: string) {
     const request = ++generation.current;
     lastStarted.current = Date.now();
     setSyncing(true);
+    setError(null);
     setLoadedCount(0);
     const controller = new AbortController();
     abortController.current = controller;
