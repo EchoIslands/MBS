@@ -106,13 +106,23 @@ const CustomerManagement: React.FC = () => {
   const canUseTable = [UserRole.CEO,UserRole.CUSTOMER_SERVICE,UserRole.SHOP_MANAGER].includes(userRole as UserRole);
   const tableView = canUseTable && searchParams.get('view') === 'table';
   React.useEffect(() => { setShowEdit(null);setShowAdd(false);setViewingId(null);setActionError(null); }, [scope]);
-  const handleSave = async (patch: Partial<Customer>) => {
-    try {
-      if (showEdit) await customerApi.update(showEdit.id, patch, showEdit);
-      else await customerApi.create(patch);
-    } catch (err) { await fetchCustomers(); throw err; }
+  const openMembershipFor = (id: string) => navigate('/shop/membership?customerId=' + encodeURIComponent(id));
+  const handleSave = async (patch: Partial<Customer>, openMembership: boolean) => {
+    let saved: Customer | null;
+    if (showEdit) {
+      try {
+        saved = await customerApi.update(showEdit.id, patch, showEdit);
+      } catch (err) {
+        if ((err as { status?: number }).status === 409) void fetchCustomers(false);
+        throw err;
+      }
+    } else {
+      saved = await customerApi.create(patch);
+    }
+    if (!saved?.id) throw new Error('未能确认客户资料已保存，请刷新核对');
     setShowEdit(null);setShowAdd(false);
-    await fetchCustomers(false);
+    if (openMembership) openMembershipFor(saved.id);
+    else void fetchCustomers(false);
   };
   const runAccountAction = async (action: () => Promise<void>) => {
     if (accountBusy || error || loading) return;

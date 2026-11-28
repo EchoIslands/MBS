@@ -1,5 +1,6 @@
 import { membershipOperation } from '../../../shared/lib/membershipOperation';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Crown,
   Star,
@@ -52,8 +53,11 @@ import MembershipFollowups from './MembershipFollowups';
 type ModalMode = 'purchase' | 'storedValue' | null;
 
 const MembershipManagement: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const targetCustomerId = searchParams.get('customerId');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [customerLoadError, setCustomerLoadError] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterVIP, setFilterVIP] = useState<PurchaseVIPLevel | 'all'>('all');
   const [filterStored, setFilterStored] = useState<StoredValueLevel | 'all'>('all');
@@ -80,11 +84,12 @@ const MembershipManagement: React.FC = () => {
     const fetchCustomers = async () => {
       try {
         setLoading(true);
-        const data = await customerApi.getAll();
+        const data = await customerApi.getDirectory();
         if (Array.isArray(data)) {
           setCustomers(data);
         }
       } catch (err: unknown) {
+        setCustomerLoadError(true);
         console.error('[MembershipManagement] 获取客户列表失败:', err instanceof Error ? (err as Error).message : '未知错误');
       } finally {
         setLoading(false);
@@ -92,6 +97,7 @@ const MembershipManagement: React.FC = () => {
     };
     fetchCustomers();
   }, []);
+  const targetCustomer = targetCustomerId ? customers.find(customer => customer.id === targetCustomerId) : undefined;
 
   // 加载全店次卡（用于会员表格与详情展示）
   useEffect(() => {
@@ -1162,6 +1168,19 @@ const MembershipManagement: React.FC = () => {
     <ShopLayout title="会员管理">
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6">
+          {targetCustomerId && <section aria-label="为指定客户办理会员" className="mb-6 rounded-2xl border border-orange-200 bg-white p-5">
+            {loading ? <p role="status">正在查找客户档案…</p> : targetCustomer ? <>
+              <h2 className="font-bold text-gray-900">为 {targetCustomer.name} 办理会员</h2>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button type="button" onClick={() => openPurchaseModal(targetCustomer)} className="rounded-xl bg-purple-600 px-4 py-2 text-white">办理 VIP</button>
+                <button type="button" onClick={() => openStoredModal(targetCustomer)} className="rounded-xl bg-green-600 px-4 py-2 text-white">办理储值</button>
+                <Link to="/shop/customers" className="self-center text-sm text-gray-700 underline">返回客户管理</Link>
+              </div>
+            </> : <>
+              <p role="alert">{customerLoadError ? '客户档案加载失败，请刷新后重试。' : '未在本店找到该客户档案。'}</p>
+              <Link to="/shop/customers" className="mt-2 inline-block text-sm text-gray-700 underline">返回客户管理</Link>
+            </>}
+          </section>}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {stats.map((stat, index) => {
               const Icon = stat.icon;

@@ -23,6 +23,9 @@ export function customerPatch(draft: CustomerDraft, previous?: Customer): Partia
   const baseline = customerDraft(previous);
   const patch: Record<string, unknown> = {};
   if (!draft.name?.trim() || !/^1[3-9]\d{9}$/.test(draft.phone?.trim() || '')) throw new Error('请填写客户姓名和有效的11位手机号');
+  if (!previous && ['purchaseVIPLevel', 'storedValueLevel', 'isStockholder', ...customerCorrectionFields].some(key => draft[key] !== baseline[key])) {
+    throw new Error('请先保存客户档案，再办理会员或更正账户资料');
+  }
   for (const [key, value] of Object.entries(draft)) {
     if (value === baseline[key]) continue;
     if (numeric.has(key)) {
@@ -51,6 +54,9 @@ export function customerPatch(draft: CustomerDraft, previous?: Customer): Partia
   if (previous && 'storedValueBalance' in patch && Object.keys(patch).some(key => key !== 'storedValueBalance')) {
     throw new Error('余额调整请单独保存；其他资料请另一次修改，避免资金与资料部分保存');
   }
-  if (!previous) return { name:draft.name.trim(), phone:draft.phone.trim(), gender:'other', tags:[], membershipLevel:MembershipLevel.REGULAR, purchaseVIPLevel:PurchaseVIPLevel.REGULAR, storedValueLevel:StoredValueLevel.NONE, ...patch } as Partial<Customer>;
+  if (!previous) return { name:draft.name.trim(), phone:draft.phone.trim(), gender:'other', tags:[], ...patch } as Partial<Customer>;
   return patch as Partial<Customer>;
 }
+
+const customerCorrectionFields = ['storedValueBalance', 'points', 'totalSpent', 'referralConsumption',
+  'sharedFund', 'totalSharedFund', 'withdrawableAmount'] as const;

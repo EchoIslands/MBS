@@ -2251,7 +2251,8 @@ customersRouter.post('/', requirePermission('customer:create'), async (req: Requ
       if (['last_visit_at', 'last_stylist', 'last_service_items'].includes(field)) continue;
       // Old staff clients send default zero values when opening a file.
       const value = insertData[field];
-      if (value == null || value === false || value === 0 || value === '' || value === 'none' || (Array.isArray(value) && value.length === 0)) {
+      const defaultRegularLevel = (field === 'membership_level' || field === 'purchase_vip_level') && value === 'regular';
+      if (defaultRegularLevel || value == null || value === false || value === 0 || value === '' || value === 'none' || (Array.isArray(value) && value.length === 0)) {
         delete insertData[field];
       } else {
         return res.status(400).json({ success: false, error: '新建档案后请通过会员或账户操作办理权益和资金变更' });

@@ -11,7 +11,7 @@ type Props = {
   enabled: boolean;
   onClose: () => void;
   onReload: () => void;
-  onSave: (patch: Partial<Customer>) => Promise<void>;
+  onSave: (patch: Partial<Customer>, openMembership: boolean) => Promise<void>;
 };
 export default function CustomerEditor({customer, latest, enabled, onClose, onReload, onSave}: Props) {
   const [draft, setDraft] = useState(() => customerDraft(customer));
@@ -33,7 +33,9 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
   return <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto p-4" role="dialog" aria-modal="true" aria-label={customer ? '编辑客户信息' : '添加新客户'}>
     <form className="bg-white rounded-2xl p-5 md:p-6 w-full max-w-3xl my-6" onSubmit={event => {
       event.preventDefault();
-      if (enabled) void saveCustomer(async () => { await onSave(customerPatch(draft, customer)); });
+      const submitter = (event.nativeEvent as SubmitEvent).submitter;
+      const openMembership = submitter?.getAttribute('value') === 'membership';
+      if (enabled) void saveCustomer(() => onSave(customerPatch(draft, customer), openMembership));
     }}>
       <div className="flex items-center justify-between mb-5"><h2 className="text-xl font-bold">{customer ? '编辑客户信息' : '添加新客户'}</h2><button type="button" aria-label="关闭编辑" disabled={saving} onClick={onClose}><X /></button></div>
       {!enabled && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">客户数据尚未同步成功，请先关闭窗口并刷新核对。</p>}
@@ -53,7 +55,14 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
             <p className="md:col-span-2 text-xs text-gray-500">可由门店补录历史服务。预约服务正式结算后自动更新；预约、改期或取消不会记为上次消费。</p>
           </div>
         </>)}
+        {!customer && <p className="mb-5 text-sm text-gray-600">先保存客户档案。需要开通 VIP 或储值时，可选择「保存并办理会员」。</p>}
+        {customer && <>
         {section('会员资料', <>
+          <div className="md:col-span-2 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+            <span>下方档位用于纠正既有资料。新办、升级、续费及储值请到会员管理操作。</span>
+            <button type="button" onClick={() => void saveCustomer(() => onSave(customerPatch(draft, customer), true))}
+              className="text-orange-700 underline">保存并前往会员管理</button>
+          </div>
           {select('purchaseVIPLevel','购买型 VIP 等级',Object.values(PurchaseVIPLevel).map(value=>[value,getPurchaseVIPLabel(value)]))}
           {select('storedValueLevel','储值会员等级',Object.values(StoredValueLevel).map(value=>[value,getStoredValueLabel(value)]))}
           {select('isStockholder','股东身份',[['false','非股东'],['true','股东']])}
@@ -63,19 +72,27 @@ export default function CustomerEditor({customer, latest, enabled, onClose, onRe
           {field('storedValueBalance','储值余额（元）','number')}
           <div className="text-sm self-end py-2">原余额：¥{Number(customer?.storedValueBalance || 0).toFixed(2)}<br/>本次差额：{Number.isFinite(Number(draft.storedValueBalance)) ? '¥'+(Number(draft.storedValueBalance)-Number(customer?.storedValueBalance || 0)).toFixed(2) : '请填写有效金额'}</div>
         </>)}
+        </>}
         <details className="mb-6"><summary className="cursor-pointer font-bold text-gray-800 mb-3">历史资料与人工纠错</summary>
           <p className="text-sm text-gray-500 mb-3">保留原有人工维护能力；没有修改的字段不会提交。累计消费与上次到店不等于本次收款。</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {field('points','积分','number')}{field('totalSpent','累计消费金额（元）','number')}
+            {customer && <>{field('points','积分','number')}{field('totalSpent','累计消费金额（元）','number')}</>}
             {select('hasBooking','是否有预约',yesNo)}
             {select('isReferred','是否转介绍',yesNo)}{field('referrerName','转介绍人员姓名')}{field('referrerPhone','转介绍人员电话','tel')}
-            {field('referralConsumption','转介绍带来的消费（元）','number')}{field('sharedFund','共享基金（元）','number')}
-            {field('totalSharedFund','合计共享基金（元）','number')}{field('withdrawableAmount','可消费金额（元）','number')}
+            {customer && <>
+              {field('referralConsumption','转介绍带来的消费（元）','number')}{field('sharedFund','共享基金（元）','number')}
+              {field('totalSharedFund','合计共享基金（元）','number')}{field('withdrawableAmount','可消费金额（元）','number')}
+            </>}
           </div>
         </details>
       </fieldset>
       {saveError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{saveError}</p>}
-      <div className="flex gap-3 justify-end border-t pt-4"><button type="button" disabled={saving} onClick={onClose} className="rounded-xl bg-gray-100 px-5 py-2.5">取消</button><button type="submit" disabled={saving || !enabled} className="rounded-xl bg-orange-500 text-white px-5 py-2.5 disabled:opacity-50">{saving ? '保存中…' : '保存'}</button></div>
+      <div className="flex flex-wrap gap-3 justify-end border-t pt-4">
+        <button type="button" disabled={saving} onClick={onClose} className="rounded-xl bg-gray-100 px-5 py-2.5">取消</button>
+        <button type="submit" disabled={saving || !enabled} className="rounded-xl bg-orange-500 text-white px-5 py-2.5 disabled:opacity-50">{saving ? '保存中…' : '保存'}</button>
+        {!customer && <button type="submit" value="membership" disabled={saving || !enabled}
+          className="rounded-xl border border-orange-300 px-5 py-2.5 text-orange-700 disabled:opacity-50">保存并办理会员</button>}
+      </div>
     </form>
   </div>;
 }

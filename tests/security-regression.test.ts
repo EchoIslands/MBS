@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
 import {generateKeyPairSync,createCipheriv,createSign,randomUUID} from 'node:crypto';
+import { customerDraft, customerPatch } from '../src/lib/customerEditor.js';
 // 在导入数据库模块之前指定合成配置；测试不读取生产数据，也不允许任何外网请求。
 process.env.SUPABASE_URL = 'https://synthetic.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
@@ -440,6 +441,28 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
    assert.equal((await request('/shops/s1',stylist,'PUT',{name:'x'})).status,403);
    assert.equal((await request('/shops/s2',manager,'PUT',{name:'x'})).status,403);
    assert.equal((await request('/shops/s1',manager,'PUT',{name:'Synthetic updated'})).status,200);
+  });
+  await t.test('客户管理实际建档表单可以保存，旧页面的普通档位兼容，建档不能授予权益或余额', async () => {
+   const previous = tables.customers;
+   tables.customers = [...previous];
+   try {
+    const draft = { ...customerDraft(), name: 'Synthetic customer', phone: '13800000216', lastStylist: 'Synthetic stylist' };
+    const patch = customerPatch(draft);
+    const created = await request('/customers', cs, 'POST', { id: 'fixture-staff-create', ...patch });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.data.lastStylist, 'Synthetic stylist');
+    const compatible = await request('/customers', cs, 'POST', {
+      id: 'fixture-legacy-create', name: draft.name, phone: '13800000217',
+      membershipLevel: 'regular', purchaseVIPLevel: 'regular', storedValueLevel: 'none',
+    });
+    assert.equal(compatible.status, 200);
+    for (const forbidden of [{ purchaseVIPLevel: 'diamond' }, { isStockholder: true }, { storedValueBalance: 100 }]) {
+      assert.equal((await request('/customers', cs, 'POST', { ...patch, ...forbidden })).status, 400);
+    }
+    assert.equal(tables.customers.length, previous.length + 2);
+   } finally {
+    tables.customers = previous;
+   }
   });
   await t.test('新顾客首次设密通过短信自助建档，验证之前没有档案', async () => {
    const phone = '13800000111';
