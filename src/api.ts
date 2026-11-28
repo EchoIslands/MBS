@@ -8,6 +8,7 @@ import { http, getApiBase, isRealApi, apiFetch as fetch } from '../shared/api-ba
 import { EMPLOYEE_SESSION_SELECTOR } from '../shared/employeeSession';
 import { getEmployeePassword } from './lib/employeePassword';
 import { notifyCustomerChange } from './lib/customerChanges';
+import { readCustomerDirectory, type CustomerDirectoryPage } from './lib/customerDirectory';
 
 interface AuthUser extends Employee {
   shopId?: string;
@@ -1188,8 +1189,17 @@ export const customerApi = {
     return [...mockCustomers];
   },
 
-  getDirectory: async (compact = false, recent = false): Promise<Customer[]> => {
+  getDirectory: async (compact = false, recent = false, options: { signal?: AbortSignal; onProgress?: (loaded: number) => void } = {}): Promise<Customer[]> => {
     if (!USE_REAL_API) return customerApi.getAll();
+    if (!recent) {
+      const token = getAuthToken();
+      const rows = await readCustomerDirectory(page => http<CustomerDirectoryPage>(
+        `${API_BASE}/customers?summary=1${compact ? '&compact=1' : ''}&page=${page}`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: options.signal },
+        15000,
+      ), options.onProgress);
+      return rows.map(normalizeCustomerDates);
+    }
     const result = await http<{ success: boolean; data: Customer[] }>(
       `${API_BASE}/customers?summary=1${compact ? '&compact=1' : ''}${compact && recent ? '&recent=1' : ''}`,
       { headers: { Authorization: `Bearer ${getAuthToken()}` } },
@@ -1263,10 +1273,10 @@ export const customerApi = {
     return false;
   },
 
-  getById: async (id: string): Promise<Customer | null> => {
+  getById: async (id: string, summary = false): Promise<Customer | null> => {
     if (USE_REAL_API) {
       const token = getAuthToken();
-      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}${token ? '' : '/public'}`, {
+      const result = await http<{ success: boolean; data: Customer }>(`${API_BASE}/customers/${id}${token ? (summary ? '?summary=1' : '') : '/public'}`, {
         credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (result?.success && result.data) return result.data;

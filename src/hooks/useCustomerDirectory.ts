@@ -9,6 +9,8 @@ export function useCustomerDirectory(scope: string) {
   const inFlight = useRef<Promise<boolean> | null>(null);
   const queued = useRef<Promise<boolean> | null>(null);
   const lastStarted = useRef(0);
+  const abortController = useRef<AbortController | null>(null);
+  const [loadedCount, setLoadedCount] = useState(0);
   const [snapshot, setSnapshot] = useState<{ scope: string; customers: Customer[]; syncedAt: number }>({ scope: '', customers: [], syncedAt: 0 });
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -29,7 +31,12 @@ export function useCustomerDirectory(scope: string) {
     const request = ++generation.current;
     lastStarted.current = Date.now();
     setSyncing(true);
-    const job = customerApi.getDirectory().then(customers => {
+    setLoadedCount(0);
+    const controller = new AbortController();
+    abortController.current = controller;
+    const job = customerApi.getDirectory(false, false, { signal: controller.signal, onProgress: count => {
+      if (request === generation.current && scopeRef.current === scope) setLoadedCount(count);
+    } }).then(customers => {
       if (request !== generation.current || scopeRef.current !== scope) return false;
       setSnapshot({ scope, customers, syncedAt: Date.now() });
       setError(null);
@@ -61,6 +68,7 @@ export function useCustomerDirectory(scope: string) {
     const interval = window.setInterval(visibleRefresh, 60_000);
     return () => {
       invalidatePending();
+      abortController.current?.abort();
       scopeRef.current = '';
       inFlight.current = null;
       queued.current = null;
@@ -77,6 +85,6 @@ export function useCustomerDirectory(scope: string) {
     customers: sameScope ? snapshot.customers : [],
     syncedAt: sameScope ? snapshot.syncedAt : 0,
     loading: !sameScope || (!snapshot.syncedAt && !error),
-    error, syncing, refresh,
+    error, syncing, refresh, loadedCount,
   };
 }

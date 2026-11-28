@@ -19,7 +19,7 @@ import { authMiddleware, AuthEmployee } from '../middleware/index.js';
 import { operationError } from '../lib/rpcErrors.js';
 import {businessDayRange} from '../lib/businessTime.js';
 import {imageReference,sendShopImage,restoreImageReference} from '../lib/imageData.js';
-import { CUSTOMER_SELF_FIELDS } from '../lib/customerFields.js';
+import { CUSTOMER_SELF_FIELDS, CUSTOMER_DIRECTORY_FIELDS } from '../lib/customerFields.js';
 import {startsDuringOpening} from '../../shared/lib/bookingHours.js';
 import { serviceWithStylistRequirements, stylistCanPerformService } from '../../shared/lib/serviceEligibility.js';
 import { bookingAccess } from '../middleware/bookingAccess.js';
@@ -2179,11 +2179,23 @@ customersRouter.get('/', requirePermission('customer:read'), async (req: Request
       }
       throw new Error('客户资料超过单次同步上限，请联系项目维护人员');
     };
-    const customerFields = req.query.summary === '1' && req.query.compact === '1'
+    const customerFields: string = req.query.summary === '1' && req.query.compact === '1'
       ? 'id, shop_id, name, phone, purchase_vip_level, purchase_vip_expires_at, stored_value_level, stored_value_expires_at, stored_value_balance, withdrawable_referral_amount, is_stockholder, points, balance'
-      : '*';
+      : req.query.summary === '1' ? CUSTOMER_DIRECTORY_FIELDS : '*';
     const customerQuery = () => scopeCustomerQuery(supabase.from('customers').select(customerFields), req)
       .order('created_at', {ascending:false}).order('id', {ascending:false});
+    if (req.query.summary === '1' && req.query.page !== undefined) {
+      const rawPage = req.query.page;
+      if (typeof rawPage !== 'string' || !/^(0|[1-9]\d{0,2})$/.test(rawPage)) {
+        return res.status(400).json({ success: false, error: '客户目录页码无效' });
+      }
+      const page = Number(rawPage), size = 200;
+      const { data, error } = await customerQuery().range(page * size, page * size + size);
+      if (error || !Array.isArray(data)) {
+        return res.status(503).json({ success: false, error: '客户目录暂时无法读取，请重试' });
+      }
+      return res.json({ success: true, data: toCamelCaseList((data as unknown as DbRecord[]).slice(0, size)), hasMore: data.length > size });
+    }
     if (req.query.summary === '1' && req.query.compact === '1' && req.query.recent === '1') {
       const { data, error } = await customerQuery().limit(5);
       if (error || !Array.isArray(data)) throw new Error('最近客户资料读取失败');
@@ -2646,7 +2658,7 @@ customersRouter.get('/:id', requirePermission('customer:read'), requireCustomerS
 
     const { data: customer, error } = await supabase
       .from('customers')
-      .select('*')
+      .select(req.query.summary === '1' ? CUSTOMER_DIRECTORY_FIELDS : '*')
       .eq('id', id)
       .eq('shop_id', shopId)
       .single();
@@ -2662,7 +2674,8 @@ customersRouter.get('/:id', requirePermission('customer:read'), requireCustomerS
       return;
     }
 
-    const camelCustomer = toCamelCase(customer);
+    const camelCustomer = toCamelCase(customer as unknown as DbRecord);
+    if (req.query.summary === '1') return res.json({ success: true, data: camelCustomer });
 
     const [{ data: profiles }, { data: visits }] = await Promise.all([
       supabase.from('customer_profiles').select('*').eq('customer_id', id),

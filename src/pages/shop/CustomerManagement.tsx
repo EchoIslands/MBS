@@ -70,6 +70,7 @@ const CustomerManagement: React.FC = () => {
   const [showEdit, setShowEdit] = useState<Customer | null>(null);
   const [editorVersion, setEditorVersion] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [filterLevel, setFilterLevel] = useState('all');
   const [filterMember, setFilterMember] = useState('all');
@@ -79,7 +80,7 @@ const CustomerManagement: React.FC = () => {
   const { currentEmployee, currentShop, userRole } = useAppStore();
 
   const scope = currentEmployee ? [currentEmployee.id, currentShop?.id, userRole].join(':') : '';
-  const {customers, loading, error, syncing, syncedAt, refresh: fetchCustomers} = useCustomerDirectory(scope);
+  const {customers, loading, error, syncing, syncedAt, refresh: fetchCustomers, loadedCount} = useCustomerDirectory(scope);
   const [detail, setDetail] = useState<Customer | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -105,7 +106,7 @@ const CustomerManagement: React.FC = () => {
   const countText = (count: number) => syncedAt ? count : '—';
   const canUseTable = [UserRole.CEO,UserRole.CUSTOMER_SERVICE,UserRole.SHOP_MANAGER].includes(userRole as UserRole);
   const tableView = canUseTable && searchParams.get('view') === 'table';
-  React.useEffect(() => { setShowEdit(null);setShowAdd(false);setViewingId(null);setActionError(null); }, [scope]);
+  React.useEffect(() => { setShowEdit(null);setShowAdd(false);setViewingId(null);setActionError(null);setSaveNotice(''); }, [scope]);
   const openMembershipFor = (id: string) => navigate('/shop/membership?customerId=' + encodeURIComponent(id));
   const handleSave = async (patch: Partial<Customer>, openMembership: boolean) => {
     let saved: Customer | null;
@@ -120,6 +121,7 @@ const CustomerManagement: React.FC = () => {
       saved = await customerApi.create(patch);
     }
     if (!saved?.id) throw new Error('未能确认客户资料已保存，请刷新核对');
+    setSaveNotice(`${saved.name} 的档案已保存。列表正在刷新；若同步失败，请重试刷新，无需重复建档。`);
     setShowEdit(null);setShowAdd(false);
     if (openMembership) openMembershipFor(saved.id);
     else void fetchCustomers(false);
@@ -385,9 +387,10 @@ const CustomerManagement: React.FC = () => {
           <button aria-pressed={!tableView} onClick={()=>{const next=new URLSearchParams(searchParams);next.delete('view');setSearchParams(next,{replace:true});}} className={!tableView?'rounded-lg px-4 py-2 bg-orange-500 text-white':'rounded-lg px-4 py-2 bg-gray-100'}>日常视图</button>
           {canUseTable && <button aria-pressed={tableView} onClick={()=>{const next=new URLSearchParams(searchParams);next.set('view','table');setSearchParams(next,{replace:true});}} className={tableView?'rounded-lg px-4 py-2 bg-orange-500 text-white':'rounded-lg px-4 py-2 bg-gray-100'}>表格视图</button>}
         </div>
-        <p role="status" className="text-sm text-gray-600">{error ? '同步失败，暂停编辑和导出' : syncing ? '正在同步客户数据…' : syncedAt ? '最近同步：'+new Date(syncedAt).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+'（北京时间）' : '正在载入'}<br/>同页两视图共用数据；其他操作员变更每分钟检查，返回页面时同步。</p>
+        <p role="status" className="text-sm text-gray-600">{error ? '同步失败，暂停编辑和导出' : syncing ? `正在同步客户数据${loadedCount ? '，已读取 '+loadedCount+' 位' : ''}…` : syncedAt ? '最近同步：'+new Date(syncedAt).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+'（北京时间）' : '正在载入'}<br/>同页两视图共用数据；其他操作员变更每分钟检查，返回页面时同步。</p>
       </div>
       {actionError && <p role="alert" className="mb-4 rounded-lg bg-red-50 text-red-700 p-3">{actionError}</p>}
+      {saveNotice && <p role="status" className="mb-4 rounded-lg bg-green-50 text-green-800 p-3">{saveNotice}</p>}
 
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">

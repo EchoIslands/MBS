@@ -81,22 +81,27 @@ const MembershipManagement: React.FC = () => {
 
   // 从真实 API 获取客户数据
   useEffect(() => {
+    let active = true;
     const fetchCustomers = async () => {
       try {
         setLoading(true);
-        const data = await customerApi.getDirectory();
-        if (Array.isArray(data)) {
+        setCustomerLoadError(false);
+        setCustomers([]);
+        const found = targetCustomerId ? await customerApi.getById(targetCustomerId, true) : null;
+        const data = targetCustomerId ? (found ? [found] : []) : await customerApi.getDirectory();
+        if (active && Array.isArray(data)) {
           setCustomers(data);
         }
       } catch (err: unknown) {
-        setCustomerLoadError(true);
+        if (active) setCustomerLoadError(true);
         console.error('[MembershipManagement] 获取客户列表失败:', err instanceof Error ? (err as Error).message : '未知错误');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchCustomers();
-  }, []);
+    return () => { active = false; };
+  }, [targetCustomerId]);
   const targetCustomer = targetCustomerId ? customers.find(customer => customer.id === targetCustomerId) : undefined;
 
   // 加载全店次卡（用于会员表格与详情展示）
@@ -1181,7 +1186,7 @@ const MembershipManagement: React.FC = () => {
               <Link to="/shop/customers" className="mt-2 inline-block text-sm text-gray-700 underline">返回客户管理</Link>
             </>}
           </section>}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {!targetCustomerId && <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {stats.map((stat, index) => {
               const Icon = stat.icon;
               return (
@@ -1198,9 +1203,9 @@ const MembershipManagement: React.FC = () => {
                 </div>
               );
             })}
-          </div>
+          </div>}
 
-          {canRevokeMembership && <MembershipFollowups />}
+          {canRevokeMembership && !targetCustomerId && <MembershipFollowups />}
           {renderPlanCards()}
           {renderCustomerList()}
 

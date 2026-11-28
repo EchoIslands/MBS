@@ -834,11 +834,29 @@ test('本地安全整改回归：隔离内存数据库与真实 HTTP 路由',asy
     assert.equal(result.body.data.find((c:Row)=>c.id==='page-c1002').profile.hairType,'dry');
     assert.ok(!result.body.data.some((c:Row)=>c.id==='other-page'));
     failDashboardTable='customer_visit_records';
+    const individual=await request('/customers/page-c0?summary=1',token);
+    assert.equal(individual.status,200);assert.equal(individual.body.data.id,'page-c0');
+    assert.equal(individual.body.data.profile,undefined);assert.equal(individual.body.data.visitRecords,undefined);
     const summary=await request('/customers?summary=1',token);
     assert.equal(summary.status,200);
     assert.equal(summary.body.data.length,1003);
     assert.equal(summary.body.data[0].visitRecords,undefined);
     assert.ok(!summary.body.data.some((c:Row)=>c.id==='other-page'));
+    tables.customers[0].avatar='synthetic-large-image';
+    tables.customers[0].openid_mini='private-wechat-id';
+    const paged: Row[] = [];
+    for (let page = 0; page < 6; page++) {
+      const part = await request('/customers?summary=1&page='+page, token);
+      assert.equal(part.status,200);
+      assert.equal(part.body.hasMore, page < 5);
+      assert.equal(part.body.data.length,page < 5 ? 200 : 3);
+      paged.push(...part.body.data);
+    }
+    assert.equal(new Set(paged.map(row=>row.id)).size,1003);
+    for (const field of ['avatar','openidMini','passwordHash','visitRecords','profile']) assert.equal(paged[0][field],undefined);
+    assert.equal((await request('/customers?summary=1&page=-1',token)).status,400);
+    const scopedPage = await request('/customers?summary=1&page=0',stylist);
+    assert.equal(scopedPage.status,200);assert.equal(scopedPage.body.data.length,0);
     const compact=await request('/customers?summary=1&compact=1',token);
     assert.equal(compact.status,200);assert.equal(compact.body.data.length,1003);
     assert.deepEqual(Object.keys(compact.body.data[0]).sort(),['id','shopId','name','phone'].sort());

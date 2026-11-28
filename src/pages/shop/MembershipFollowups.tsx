@@ -9,7 +9,7 @@ export default function MembershipFollowups(){
  const [tasks,setTasks]=useState<Task[]>([]),[logs,setLogs]=useState<Log[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[synced,setSynced]=useState(0),[filter,setFilter]=useState('pending'),[editing,setEditing]=useState<Task|null>(null),[outcome,setOutcome]=useState('contacted'),[nextAt,setNextAt]=useState(''),[note,setNote]=useState('');
  const sequence=useRef(0);
  const load=useCallback(async()=>{const seq=++sequence.current;try{
- const [customers,result]=await Promise.all([customerApi.getAll(),http<{data:Log[]}>(getApiBase()+'/customers/membership-followups',{headers:{Authorization:'Bearer '+getAuthToken()}})]);
+ const [customers,result]=await Promise.all([customerApi.getDirectory(true),http<{data:Log[]}>(getApiBase()+'/customers/membership-followups',{headers:{Authorization:'Bearer '+getAuthToken()}})]);
  if(!Array.isArray(customers)||!Array.isArray(result?.data))throw Error('到期任务读取失败');
  if(seq!==sequence.current)return;
  const records=result.data;const list:Task[]=[];

@@ -1,2 +1,5 @@
 // 本人展示资料白名单；密码哈希及微信标识不得出现在响应中。
 export const CUSTOMER_SELF_FIELDS = 'id, shop_id, name, phone, avatar, gender, birthday, membership_level, purchase_vip_level, stored_value_level, points, balance, stored_value_balance, total_spent, visit_count, last_visit_at, purchase_vip_expires_at, stored_value_expires_at, withdrawable_referral_amount, is_stockholder, referral_earnings, referral_bonus_rate';
+
+// Directory rows preserve editable values, but never load image blobs or authentication identifiers.
+export const CUSTOMER_DIRECTORY_FIELDS = 'id,shop_id,name,phone,gender,age,tags,visit_count,total_spent,membership_level,balance,points,birthday,preferences,is_stockholder,stockholder_since,referral_bonus_rate,referral_earnings,served_by_stylist_ids,source,created_at,last_visit_at,purchase_vip_level,purchase_vip_expires_at,stored_value_level,stored_value_balance,stored_value_expires_at,withdrawable_referral_amount,total_saved,wechat,id_card_number,hobbies,is_referred,referrer_name,referrer_phone,referral_consumption,shared_fund,total_shared_fund,withdrawable_amount,has_booking,last_service_items,last_stylist,is_member,has_recharged,recharge_level,identity_verified';
